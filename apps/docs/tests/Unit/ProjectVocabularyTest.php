@@ -89,6 +89,23 @@ it('fails when an App-domain name or a retired Node name is present', function (
     'covers glob' => ['docs/reference/example.md', "apps/gateway/app/Actions/AppInstances/CreateAppInstanceAction.php\n", 'AppInstance'],
 ]);
 
+it('keeps exact line findings and line-specific exceptions when filtering file patterns', function (): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, 'apps/gateway/app/Example.php', "Clean line\nAppInstance\n\$credentials->appId;\napp_id\nClean line\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toBe(
+                "apps/gateway/app/Example.php:2: retired name AppInstance\n".
+                "apps/gateway/app/Example.php:4: retired name app_id\n",
+            );
+    } finally {
+        vocabularyRemove($root);
+    }
+});
+
 it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename migration', function (): void {
     $root = vocabularyFixture();
     try {

@@ -8,7 +8,7 @@
          failOnPhpunitWarning="true"
          defaultTimeLimit="2"
          timeoutForSmallTests="2"
-         timeoutForMediumTests="30"
+         timeoutForMediumTests="2"
          timeoutForLargeTests="2"
 >
     <testsuites>

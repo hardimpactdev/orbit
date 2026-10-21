@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
+FIXTURES = Path(__file__).resolve().parent / 'Fixtures/GeneratedMerge'
 loader = importlib.machinery.SourceFileLoader('generated_merge', str(ROOT / 'bin/generated-merge'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 TOOL = importlib.util.module_from_spec(spec)
@@ -34,23 +35,67 @@ class GeneratedMergeTest(unittest.TestCase):
     def setUpClass(cls):
         cls.scratch = tempfile.TemporaryDirectory(prefix='orbit-merge-test-')
         cls.tree = Path(cls.scratch.name) / 'repo'
-        git(ROOT, 'clone', '--quiet', '--shared', str(ROOT), str(cls.tree))
+        cls.tree.mkdir()
+        git(cls.tree, 'init', '--quiet')
+        # A standalone repository keeps unrelated product history and files out
+        # of every real preview and generator checkout. Copy current sources,
+        # including uncommitted changes, rather than a stale HEAD snapshot.
+        paths = [
+            '.gitignore', 'apps/docs/.gitignore', 'apps/gateway/.gitignore',
+            '.gitattributes', 'bin/generated-merge', 'bin/docs-openapi',
+            'bin/mcp-tools', 'bin/docs-nav',
+            'apps/docs/app', 'apps/docs/artisan', 'apps/docs/bootstrap/app.php',
+            'apps/docs/bootstrap/providers.php', 'apps/docs/config',
+            'apps/docs/composer.json', 'apps/docs/composer.lock',
+            'apps/gateway/artisan', 'apps/gateway/public/index.php',
+            'apps/gateway/config',
+            'apps/gateway/composer.json', 'apps/gateway/composer.lock',
+            'apps/gateway/extensions/conn',
+            'apps/gateway/app/Providers/ExtensionServiceProvider.php',
+            'apps/gateway/app/Support', 'apps/gateway/app/Data/Activities',
+            'apps/gateway/app/Data/Routes',
+            'apps/gateway/app/Http/Middleware', 'apps/gateway/app/Http/Authorization',
+            'apps/gateway/app/Http/Controllers/Controller.php',
+            'apps/gateway/app/Http/Controllers/Api/ActivitiesController.php',
+            'apps/gateway/app/Http/Controllers/Api/RoutesController.php',
+            'apps/gateway/app/Http/Requests/Activities/ListActivitiesRequest.php',
+            'apps/gateway/app/Http/Requests/Routes/StoreRouteRequest.php',
+            'apps/gateway/app/Domain/Extensions',
+            'apps/gateway/app/Domain/Routes/RoutePublication.php',
+            'apps/cli/app/Commands/Activities', 'apps/cli/app/Commands/Routes',
+            'packages/php-sdk/src/Requests/Activities',
+            'packages/php-sdk/src/Requests/Routes',
+            'packages/php-sdk/src/Responses/Activities',
+            'packages/php-sdk/src/Responses/Routes',
+            'apps/web/bun.lock',
+        ]
+        for path in paths:
+            source, target = ROOT / path, cls.tree / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
+        for project in ('apps/docs', 'apps/gateway'):
+            for folder in ('bootstrap/cache', 'storage/logs'):
+                target = cls.tree / project / folder
+                target.mkdir(parents=True)
+                shutil.copy2(ROOT / project / folder / '.gitignore', target / '.gitignore')
+        # Boot real Laravel route discovery and the real Conn provider. Queue,
+        # deployment and console-command providers are not merge inputs.
+        shutil.copy2(ROOT / 'apps/docs/tests/Fixtures/GeneratedMerge/app.php',
+                     cls.tree / 'apps/gateway/bootstrap/app.php')
+        (cls.tree / 'apps/gateway/bootstrap/providers.php').write_text('<?php return [];\n')
+        (cls.tree / 'apps/gateway/routes').mkdir()
+        for path in TOOL.ARTIFACTS:
+            (cls.tree / path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(FIXTURES / 'base' / path, cls.tree / path)
         for key, value in {'user.name': 'Merge test', 'user.email': 'merge@example.test',
                            'commit.gpgsign': 'false', 'core.hooksPath': '/dev/null',
                            'gc.auto': '0', 'maintenance.auto': 'false'}.items():
             git(cls.tree, 'config', key, value)
-        # Include the candidate driver even when the suite runs before commit.
-        for path in ('.gitattributes', 'bin/generated-merge'):
-            shutil.copy2(ROOT / path, cls.tree / path)
         TOOL.dependencies(cls.tree, ROOT)
         TOOL.install(cls.tree)
-        # Unrelated suites and apps are not generator inputs. Do not copy their
-        # thousands of files into every private merge checkout.
-        for path in ('apps/gateway/tests', 'apps/cli/tests', 'apps/docs/tests',
-                     'apps/e2e', 'apps/desktop', 'apps/agent', 'apps/pi-server',
-                     'apps/web/tests', 'apps/web/fixtures', 'packages/php-sdk/tests',
-                     'packages/php-sdk/fixtures', '.agents'):
-            shutil.rmtree(cls.tree / path)
         # Keep real core and extension discovery without generating every core
         # endpoint. Activities anchors the navigation assertion; route:create is
         # also required by the generator's own request-schema checks.
@@ -72,55 +117,23 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
 Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
     ->middleware(RequireEnabledExtension::class.':conn')->name('conn:me');
 ''')
-        # The static generator evaluates rule constants in PHP subprocesses.
-        # Keep the real form requests reached by this route corpus, not every
-        # unrelated product request. Non-request helpers stay available too.
-        requests = {
-            'apps/gateway/app/Http/Requests/Activities/ListActivitiesRequest.php',
-            'apps/gateway/app/Http/Requests/Routes/StoreRouteRequest.php',
-        }
-        request_roots = [cls.tree / 'apps/gateway/app/Http/Requests',
-                         *(cls.tree / 'apps/gateway/extensions').glob('*/src/Http/Requests')]
-        for folder in request_roots:
-            for path in folder.rglob('*Request.php'):
-                if path.relative_to(cls.tree).as_posix() not in requests:
-                    path.unlink()
-        git(cls.tree, 'add', '-u')
+        # The static generator evaluates request constants in PHP subprocesses.
+        # Conn's settings requests are not inputs to this route corpus.
+        shutil.rmtree(cls.tree / 'apps/gateway/extensions/conn/src/Http/Requests')
         # Keep the real Gateway, CLI, SDK and all generators. The documentation
         # corpus only needs the core pages and ADR table used by these merges;
         # linting unrelated product guides belongs to `composer docs-lint`.
-        api_groups = [group for tab in json.loads((cls.tree / 'docs/docs.json').read_text())['navigation']['tabs']
-                      if tab['tab'] == 'API' for group in tab['groups'] if 'openapi' in group]
-        openapi = (cls.tree / 'docs/openapi.json').read_bytes()
-        shutil.rmtree(cls.tree / 'docs')
-        for folder in ('decisions', 'domains', 'solutions', 'generated'):
-            (cls.tree / 'docs' / folder).mkdir(parents=True)
+        for folder in ('decisions', 'domains', 'solutions'):
+            (cls.tree / 'docs' / folder).mkdir(parents=True, exist_ok=True)
         for page in ('README', 'mission', 'architecture', 'tech-stack', 'concepts',
                      'decisions/README', 'domains/README', 'solutions/README'):
             (cls.tree / f'docs/{page}.md').write_text('# Documentation\n\nOrbit checks documentation.\n')
         (cls.tree / 'docs/mission.md').write_text(
             '# Mission\n\nOrbit checks documentation.\n\n## Principles\n\nAgents operate, humans steer.\n')
-        (cls.tree / 'docs/decisions/overview.mdx').write_text(
-            '# Decisions\n\n## Records\n\n| Record | Decision | Status |\n| --- | --- | --- |\n\n'
-            '## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n')
-        config = {'navigation': {'tabs': [
-            {'tab': 'Guides', 'groups': [
-                {'group': 'Overview', 'pages': ['mission', 'architecture', 'tech-stack', 'concepts']},
-                {'group': 'Records', 'pages': ['decisions/overview']},
-            ]},
-            {'tab': 'API', 'groups': api_groups},
-        ]}, 'redirects': []}
-        (cls.tree / 'docs/docs.json').write_text(json.dumps(config, indent=2) + '\n')
-        (cls.tree / 'docs/openapi.json').write_bytes(openapi)
-        (cls.tree / 'docs/generated/context.json').write_text(
-            json.dumps({'schema_version': 1, 'documents': []}, indent=4) + '\n')
         for config in ('adr-legacy-allowlist', 'adr-retired-slugs', 'docs-covers-ratchet'):
             (cls.tree / f'apps/docs/config/{config}.php').write_text('<?php return [];\n')
-        env = dict(os.environ, APP_CONFIG_CACHE=str(cls.tree / 'private-config.php'),
-                   ORBIT_DOCS_ROOT=str(cls.tree / 'docs'))
-        subprocess.run(['php', 'apps/docs/artisan', 'orbit:docs-index'], cwd=cls.tree,
-                       env=env, check=True, capture_output=True)
-        git(cls.tree, 'add', '-A', 'docs', 'apps/docs/config', '.gitattributes', 'bin/generated-merge')
+        git(cls.tree, 'add', '-A', '--', '.', ':!apps/web/node_modules')
+        git(cls.tree, 'add', '-f', 'docs/generated/context.json')
         git(cls.tree, 'commit', '--quiet', '--allow-empty', '-m', 'fixture baseline')
         cls.base = git(cls.tree, 'rev-parse', 'HEAD')
         git(cls.tree, 'update-ref', 'refs/remotes/origin/main', cls.base)
@@ -174,74 +187,76 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         for path, contents in before.items():
             self.assertTrue(contents == (tree / path).read_bytes(), f'{path} changed during freshness checks')
 
-    def merge_both_orders(self, first, second, conflicts, cache_lookups=False):
+    def combined(self, kind):
+        # Apply both edits directly, without a merge driver, then install the
+        # recorded real generator output. Both merge orders must equal this
+        # complete tree. Separate read-only tests rebuild every recorded byte.
+        self.fresh(self.base)
+        self.changes(kind, branches=False)
+        for path in TOOL.ARTIFACTS:
+            shutil.copy2(FIXTURES / kind / path, self.tree / path)
+        git(self.tree, 'add', '-u')
+        git(self.tree, 'add', 'docs/decisions')
+        return git(self.tree, 'write-tree')
+
+    def changes(self, kind, branches=True):
+        return (self.adr_additions if kind == 'adr' else self.endpoint_changes)(branches)
+
+    def merge_order(self, kind, reverse=False, cache_lookups=False):
+        first, second = self.changes(kind)
+        if reverse:
+            first, second = second, first
+        expected_tree = self.combined(kind)
+        self.fresh(first)
         vanilla = subprocess.run(['git', '-c', 'merge.orbit-generated.driver=git merge-file %A %O %B',
                                   'merge-tree', '--write-tree', first, second],
                                  cwd=self.tree, text=True, capture_output=True)
         self.assertEqual(vanilla.returncode, 1, 'fixture must reproduce a real generated-file conflict')
+        conflicts = TOOL.ARTIFACTS if kind == 'adr' else [TOOL.ARTIFACTS[i] for i in (1, 3, 4, 5)]
         for path in conflicts:
             self.assertIn(f'CONFLICT (content): Merge conflict in {path}', vanilla.stdout)
-        results = []
-        trees = []
-        orders = ((first, second), (second, first))
-        # Every command uses immutable SHAs and its own checkout. These are
-        # independent real integrations, not sequential setup for one another.
-        with tempfile.TemporaryDirectory(prefix='reverse-', dir=self.scratch.name) as directory, ExitStack() as processes:
-            reverse = Path(directory) / 'repo'
-            git(self.tree, 'clone', '--quiet', '--shared', '--no-checkout', str(self.tree), str(reverse))
-            for key in ('user.name', 'user.email', 'commit.gpgsign', 'core.hooksPath', 'gc.auto', 'maintenance.auto'):
-                git(reverse, 'config', key, git(self.tree, 'config', key))
-            TOOL.install(reverse)
-            git(reverse, 'checkout', '--quiet', '--detach', second)
-            self.fresh(first)
-            previews = [processes.enter_context(subprocess.Popen(
-                [str(ROOT / 'bin/docs-merge-check'), '--base', current, '--head', other],
-                cwd=self.tree, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-                for current, other in orders]
-            env = dict(os.environ, ORBIT_GENERATED_MERGE_DEPENDENCIES=str(ROOT))
-            backward = processes.enter_context(subprocess.Popen(
-                ['git', 'merge', '--quiet', '--no-edit', '--no-ff', first], cwd=reverse,
-                env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-            cached = {}
+        cached = {}
+        if cache_lookups:
+            # Prime one cold build; Git must read the same bytes from separate
+            # driver processes. The spy delegates to the real generator.
+            previous = Path.cwd()
+            try:
+                os.chdir(self.tree)
+                with mock.patch.object(TOOL, 'regenerate', wraps=TOOL.regenerate) as build:
+                    for path in TOOL.ARTIFACTS:
+                        output = Path(self.scratch.name) / 'artifact'
+                        TOOL.merge(['unused', str(output), 'unused', path, first, second])
+                        cached[path] = output.read_bytes()
+                    self.assertEqual(build.call_count, 1)
+            finally:
+                os.chdir(previous)
+        result = subprocess.run(['git', 'merge', '--quiet', '--no-edit', '--no-ff', second],
+                                cwd=self.tree, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(git(self.tree, 'diff', '--name-only', '--diff-filter=U'), '')
+        for path in TOOL.ARTIFACTS:
+            contents = (self.tree / path).read_bytes()
+            self.assertEqual(contents, (FIXTURES / kind / path).read_bytes(), path)
             if cache_lookups:
-                # Prime the real driver's cold cache once, then let the actual
-                # Git merge exercise its process-independent cache reads.
-                shutil.rmtree(self.tree / '.git/orbit/generated-merge', ignore_errors=True)
-                previous = Path.cwd()
-                try:
-                    os.chdir(self.tree)
-                    with mock.patch.object(TOOL, 'regenerate', wraps=TOOL.regenerate) as build:
-                        for path in TOOL.ARTIFACTS:
-                            output = Path(self.scratch.name) / 'artifact'
-                            TOOL.merge(['unused', str(output), 'unused', path, first, second])
-                            cached[path] = output.read_bytes()
-                        self.assertEqual(build.call_count, 1)
-                finally:
-                    os.chdir(previous)
-            forward = processes.enter_context(subprocess.Popen(
-                ['git', 'merge', '--quiet', '--no-edit', '--no-ff', second], cwd=self.tree,
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-            for tree, merge, preview in zip((self.tree, reverse), (forward, backward), previews):
-                stdout, stderr = merge.communicate()
-                self.assertEqual(merge.returncode, 0, stdout + stderr)
-                self.assertEqual(git(tree, 'diff', '--name-only', '--diff-filter=U'), '')
-                stdout, stderr = preview.communicate()
-                self.assertEqual(preview.returncode, 2, stdout + stderr)
-                self.assertIn('merge_conflict:', stderr)
-                self.assertIn('local_driver_clean:', stderr)
-                results.append({path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS})
-                trees.append(git(tree, 'rev-parse', 'HEAD^{tree}'))
-            for path, contents in cached.items():
-                self.assertEqual(contents, (self.tree / path).read_bytes())
-        self.assertTrue(results[0] == results[1], 'merge order changed generated output')
-        self.assertEqual(trees[0], trees[1], 'merge order changed maintained sources')
-        # Identical whole trees have identical lint and generation inputs.
-        self.check()
+                self.assertEqual(contents, cached[path], path)
+        self.assertEqual(git(self.tree, 'rev-parse', 'HEAD^{tree}'), expected_tree,
+                         'merge order changed maintained sources or generated output')
 
-    def test_independent_adr_additions(self):
+    def preview_order(self, kind, reverse=False):
+        first, second = self.changes(kind)
+        if reverse:
+            first, second = second, first
+        result = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', first, '--head', second],
+                                cwd=self.tree, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('merge_conflict:', result.stderr)
+        self.assertIn('local_driver_clean:', result.stderr)
+
+    def adr_additions(self, branches=True):
         commits = []
         for number in ('0998', '0999'):
-            self.fresh(self.base)
+            if branches:
+                self.fresh(self.base)
             slug = f'{number}-merge-fixture'
             (self.tree / f'docs/decisions/{slug}.md').write_text(
                 f'---\ntitle: "ADR {number}: Merge fixture"\n'
@@ -268,16 +283,37 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             text = text.replace('\n\n| [' + number, '\n| [' + number)
             overview.write_text(text)
             self.mark_derived(number, [TOOL.ARTIFACTS[0], *TOOL.ARTIFACTS[3:]])
-            commits.append(self.commit(f'add ADR {number}'))
-        self.merge_both_orders(*commits, conflicts=TOOL.ARTIFACTS)
+            if branches:
+                commits.append(self.commit(f'add ADR {number}'))
+        return commits
 
-    def test_independent_endpoint_changes(self):
+    def test_independent_adr_additions(self):
+        self.merge_order('adr')
+
+    def test_reversed_adr_additions(self):
+        self.merge_order('adr', reverse=True)
+
+    def test_base_freshness(self):
+        self.check()
+
+    def test_independent_adr_previews(self):
+        self.preview_order('adr')
+
+    def test_reversed_adr_previews(self):
+        self.preview_order('adr', reverse=True)
+
+    def test_adr_freshness(self):
+        self.combined('adr')
+        self.check()
+
+    def endpoint_changes(self, branches=True):
         commits = []
         # Separate route sources and maintained nav entries must survive;
         # conflicting derived markers must be replaced, never text-unioned.
         for name, file, prefix in (('alpha', 'apps/gateway/routes/api.php', 'v1'),
                                    ('beta', 'apps/gateway/extensions/conn/routes/api.php', 'api/v1')):
-            self.fresh(self.base)
+            if branches:
+                self.fresh(self.base)
             path = self.tree / file
             path.write_text(path.read_text() + '\n'
                             f"Route::get('{prefix}/merge-fixture-{name}', "
@@ -291,9 +327,25 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
                 f'GET {endpoint}')
             config_path.write_text(json.dumps(config, indent=2) + '\n')
             self.mark_derived(name, TOOL.ARTIFACTS[3:])
-            commits.append(self.commit(f'add endpoint {name}'))
-        self.merge_both_orders(*commits, conflicts=[TOOL.ARTIFACTS[index] for index in (1, 3, 4, 5)],
-                               cache_lookups=True)
+            if branches:
+                commits.append(self.commit(f'add endpoint {name}'))
+        return commits
+
+    def test_independent_endpoint_changes(self):
+        self.merge_order('endpoint', cache_lookups=True)
+
+    def test_reversed_endpoint_changes(self):
+        self.merge_order('endpoint', reverse=True)
+
+    def test_independent_endpoint_previews(self):
+        self.preview_order('endpoint')
+
+    def test_reversed_endpoint_previews(self):
+        self.preview_order('endpoint', reverse=True)
+
+    def test_endpoint_freshness(self):
+        self.combined('endpoint')
+        self.check()
 
     def test_changed_merged_locks_refuse_old_dependencies(self):
         for lock in ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock'):
@@ -320,6 +372,10 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
                     os.chdir(previous)
 
     def test_maintained_conflicts_are_not_unioned(self):
+        for path in TOOL.ARTIFACTS:
+            if path not in TOOL.MAINTAINED:
+                with self.assertRaisesRegex(ValueError, 'unexpected maintained path:'):
+                    TOOL.sources(['unused', 'unused', 'unused', path])
         with self.assertRaises(ValueError):
             TOOL.merge_value({'title': 'base'}, {'title': 'one'}, {'title': 'two'})
         with self.assertRaises(ValueError):

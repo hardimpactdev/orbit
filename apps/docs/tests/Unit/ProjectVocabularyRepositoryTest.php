@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
-use Tests\Support\MediumTests;
 
 pest()->group('subprocess');
 
@@ -14,5 +13,3 @@ it('accepts this repository', function (): void {
 
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
 });
-
-MediumTests::in(__FILE__);

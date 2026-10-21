@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Support\Console\Animation;
 use Tests\Support\AnimationCadence;
-use Tests\Support\MediumTests;
 
 pest()->group('subprocess');
 
@@ -114,5 +113,3 @@ describe('animation composition cadence', function (): void {
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
     });
 });
-
-MediumTests::in(__FILE__);

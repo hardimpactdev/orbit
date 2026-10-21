@@ -1,0 +1,1192 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Orbit Gateway API",
+    "version": "v1",
+    "description": "The HTTP API of the active Orbit Gateway. The CLI and the PHP SDK send every fleet command through these endpoints over WireGuard. See [Using the API](/api/overview) for transport, authentication, envelopes, and errors."
+  },
+  "servers": [
+    {
+      "url": "https://gateway.orbit",
+      "description": "The active Gateway on the private WireGuard network, resolved by Orbit private DNS."
+    }
+  ],
+  "security": [],
+  "tags": [
+    {
+      "name": "Gateway",
+      "description": "Status and trust of the active Gateway, and the releases of the Gateway itself."
+    },
+    {
+      "name": "Nodes",
+      "description": "Machines in the fleet, their roles, access grants, and storage settings."
+    },
+    {
+      "name": "Clusters",
+      "description": "Groups of Nodes with one Router and one development TLD."
+    },
+    {
+      "name": "Firewall",
+      "description": "Named UFW rules on one Node."
+    },
+    {
+      "name": "Fleet rollout",
+      "description": "The rollout of each verified Gateway release to the managed Nodes, and its catch-up."
+    },
+    {
+      "name": "Tools",
+      "description": "Packages that Orbit installs on a Node through a Tool Manager."
+    },
+    {
+      "name": "Metrics",
+      "description": "The Prometheus and Grafana role and its exporters."
+    },
+    {
+      "name": "GitHub App",
+      "description": "The Gateway's own read-only GitHub App and the accounts that installed it."
+    },
+    {
+      "name": "Analytics",
+      "description": "The analytics role, its Plausible version, and the Stats API key the Gateway uses to read visits."
+    },
+    {
+      "name": "Projects",
+      "description": "Repository records with one type, default branch, and web root each."
+    },
+    {
+      "name": "Instances",
+      "description": "Development checkouts and production releases of a Project on one Node."
+    },
+    {
+      "name": "Environment",
+      "description": "Stored Instance environment configuration and its .env projection."
+    },
+    {
+      "name": "Routes",
+      "description": "Domains that reach an Instance."
+    },
+    {
+      "name": "Database connections",
+      "description": "The registry of mysql, pgsql, and sqlite connections."
+    },
+    {
+      "name": "WebSocket apps",
+      "description": "The Reverb apps that the websocket role serves for Instances."
+    },
+    {
+      "name": "Processes",
+      "description": "systemd services and Docker containers owned by an Instance, a Node, or a Project definition."
+    },
+    {
+      "name": "Schedules",
+      "description": "Recurring commands run by native systemd timers."
+    },
+    {
+      "name": "Tasks",
+      "description": "Task groups and ordered subtasks."
+    },
+    {
+      "name": "Extensions",
+      "description": "Gateway-owned extension switches."
+    },
+    {
+      "name": "Doctor",
+      "description": "Verify-only drift checks across the fleet."
+    },
+    {
+      "name": "Activities",
+      "description": "The Gateway log of authorized commands."
+    },
+    {
+      "name": "Operations",
+      "description": "Long operations, such as an Instance deploy or rollback, that run on the Gateway queue as named steps."
+    },
+    {
+      "name": "ai-router",
+      "description": "CLIProxyAPI quota snapshots, provider pools, and account controls."
+    },
+    {
+      "name": "Vaultwarden",
+      "description": "The copy of database credentials into a Vaultwarden collection."
+    },
+    {
+      "name": "Conn",
+      "description": "Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node."
+    },
+    {
+      "name": "Realtime",
+      "description": "The record-change event feed broadcast to Reverb, its channel authorization, and Reverb connection discovery."
+    },
+    {
+      "name": "Node callbacks",
+      "description": "Endpoints that managed Nodes and Caddy call; operators do not call them."
+    }
+  ],
+  "paths": {
+    "/api/v1/activities": {
+      "get": {
+        "operationId": "activity-list",
+        "summary": "List Activities",
+        "tags": [
+          "Activities"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "caller_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "List recent gateway command activity.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Activity"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/activities?limit=25&request_id=9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81&before_id=480&status=failed&command=instance:deploy&caller_node_id=2&target_node_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Activities\\ListActivitiesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListActivitiesRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/conn/me": {
+      "get": {
+        "operationId": "conn-me",
+        "summary": "Show the calling Node",
+        "tags": [
+          "Conn"
+        ],
+        "x-orbit-extension": "conn",
+        "description": "Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the Conn endpoints without a node access grant.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/conn/me\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/merge-fixture-alpha": {
+      "get": {
+        "operationId": "activity-merge-fixture-alpha",
+        "summary": "activity:merge-fixture-alpha",
+        "tags": [
+          "Activities"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "caller_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Activity"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/merge-fixture-alpha?limit=25&request_id=1&before_id=1&status=success&command=['/usr/bin/php', 'artisan', 'queue:work']&caller_node_id=1&target_node_id=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/merge-fixture-beta": {
+      "get": {
+        "operationId": "activity-merge-fixture-beta",
+        "summary": "activity:merge-fixture-beta",
+        "tags": [
+          "Activities"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "command",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "caller_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Activity"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/merge-fixture-beta?limit=25&request_id=1&before_id=1&status=success&command=['/usr/bin/php', 'artisan', 'queue:work']&caller_node_id=1&target_node_id=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/routes": {
+      "post": {
+        "operationId": "route-create",
+        "summary": "Create a Route",
+        "tags": [
+          "Routes"
+        ],
+        "description": "Create an explicit Route.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 253
+                      },
+                      "publication": {
+                        "type": "string",
+                        "enum": [
+                          "private",
+                          "public"
+                        ]
+                      },
+                      "instance_id": {
+                        "type": "integer"
+                      },
+                      "web_root": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "domain",
+                      "instance_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 253
+                      },
+                      "publication": {
+                        "type": "string",
+                        "enum": [
+                          "private"
+                        ]
+                      },
+                      "node_id": {
+                        "type": "integer"
+                      },
+                      "upstream": {
+                        "type": "string",
+                        "maxLength": 253
+                      },
+                      "process_id": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "domain",
+                      "node_id"
+                    ],
+                    "oneOf": [
+                      {
+                        "required": [
+                          "upstream"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "process_id"
+                        ]
+                      }
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Route"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Route"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/routes\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '\"example\"'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Routes\\CreateRouteRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateRouteRequest(domain: 'app.example.test'))->dto();\n"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The request ID the Gateway assigned or accepted; the same value is in the `X-Orbit-Request-Id` response header and in the Activity record."
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`."
+              },
+              "message": {
+                "type": "string",
+                "description": "Safe message without credentials, environment values, or remote output."
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Bounded, redacted details such as the conflicting record IDs or the failed validation rule."
+              },
+              "request_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "DevelopmentDeployStep": {
+        "type": "object",
+        "properties": {},
+        "required": [
+          "name",
+          "command",
+          "timeout_seconds",
+          "required"
+        ]
+      },
+      "DevelopmentDeploySteps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/DevelopmentDeployStep"
+        }
+      },
+      "TaskAgentSnapshot": {
+        "type": "object",
+        "required": [
+          "thread_id",
+          "kind",
+          "cursor",
+          "archived"
+        ],
+        "properties": {
+          "thread_id": {
+            "type": "integer",
+            "description": "The agent thread ID."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "delta"
+            ],
+            "description": "`snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`."
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "idle",
+              "working",
+              "asking_for_input",
+              "done",
+              "failed",
+              null
+            ]
+          },
+          "input_requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "details": {}
+              },
+              "required": [
+                "id",
+                "kind",
+                "details"
+              ]
+            }
+          },
+          "entries": {
+            "type": "array",
+            "description": "The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "`message` or `activity`."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The role of a message, or the tool of an activity."
+                },
+                "text": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "label",
+                "text",
+                "at"
+              ]
+            }
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model_calls": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "peak_context_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "overloaded",
+              "rate_limited",
+              "server_error",
+              null
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "True when the snapshot is the transcript Orbit saved before the task VM was deleted."
+          }
+        }
+      },
+      "Activity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "caller_node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "target_node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "caller_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "occurred_at": {
+            "type": "string"
+          }
+        }
+      },
+      "Route": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cluster_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generation_basis_node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "publication": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replaces_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "replaced_by_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "replacement_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_set_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RouteTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTarget"
+            }
+          },
+          "process_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analytics_instance_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "web_root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RouteTarget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "instance_id": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

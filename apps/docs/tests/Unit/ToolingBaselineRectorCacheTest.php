@@ -3,14 +3,11 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
-use Tests\Support\MediumTests;
 use Tests\Support\ToolingBaselineFixture;
 
 pest()->group('subprocess');
 
 it('detects an unchanged child after only its parent gains a property with a warm Rector cache', function (): void {
-    expect($this->size()->isMedium())->toBeTrue();
-
     $root = ToolingBaselineFixture::create();
     try {
         mkdir($root.'/src');
@@ -48,5 +45,3 @@ PHP);
         ToolingBaselineFixture::remove($root);
     }
 });
-
-MediumTests::in(__FILE__);

@@ -10,7 +10,7 @@ it('enforces stock per-test limits and fails on risky tests or unavailable enfor
         'failOnPhpunitWarning' => 'true',
         'defaultTimeLimit' => '2',
         'timeoutForSmallTests' => '2',
-        'timeoutForMediumTests' => '30',
+        'timeoutForMediumTests' => '2',
         'timeoutForLargeTests' => '2',
     ];
 

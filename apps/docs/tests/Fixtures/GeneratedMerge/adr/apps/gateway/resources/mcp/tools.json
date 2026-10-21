@@ -1,0 +1,212 @@
+{
+  "tools": [
+    {
+      "name": "activity-list",
+      "extension": null,
+      "title": "List Activities",
+      "description": "List recent gateway command activity.",
+      "method": "GET",
+      "path": "/api/v1/activities",
+      "path_inputs": [],
+      "query_inputs": [
+        "limit",
+        "request_id",
+        "before_id",
+        "status",
+        "command",
+        "caller_node_id",
+        "target_node_id"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "before_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "command": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "caller_node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "target_node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "conn-me",
+      "extension": "conn",
+      "title": "Show the calling Node",
+      "description": "Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the Conn endpoints without a node access grant.",
+      "method": "GET",
+      "path": "/api/v1/conn/me",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "route-create",
+      "extension": null,
+      "title": "Create a Route",
+      "description": "Create an explicit Route.",
+      "method": "POST",
+      "path": "/api/v1/routes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              }
+            ]
+          },
+          "instance_id": {
+            "type": "integer"
+          },
+          "web_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "upstream": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "process_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              "instance_id": {
+                "type": "integer"
+              },
+              "web_root": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "domain",
+              "instance_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              },
+              "node_id": {
+                "type": "integer"
+              },
+              "upstream": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "process_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "node_id"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "upstream"
+                ]
+              },
+              {
+                "required": [
+                  "process_id"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  ]
+}
