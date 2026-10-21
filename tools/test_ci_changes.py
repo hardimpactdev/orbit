@@ -38,6 +38,8 @@ class SelectionTest(unittest.TestCase):
             # GuestScriptContractTest, real bootstrap/gate inputs and delivery line tests.
             'apps/cli/app/Commands/NodeListCommand.php': ('e2e', 'docs', 'api-reference'),
             'apps/gateway/tests/Support/SubprocessFixture.php': ('e2e',),
+            'apps/gateway/routes/api.php': ('cli',),
+            'apps/gateway/tests/Programs/requirements.txt': ('agent',),
             'apps/docs/app/Console/Commands/DocsLintCommand.php': ('e2e',),
             'packages/php-sdk/composer.json': ('e2e', 'docs', 'api-reference'),
             'docs/openapi.json': ('e2e',),

@@ -345,7 +345,7 @@ Root `composer check` runs `bin/review-check`, the candidate gate. The Orbit Pro
 The gate checks the working tree as it is, including uncommitted and untracked files. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
-2. It runs `bin/project-vocabulary`, `bin/tooling-baseline`, and `bin/docs-nav`.
+2. It runs `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, and `bin/docs-nav`.
 3. It seeds absent quality caches with `bin/worktree-cache`.
 4. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 4 to 8 share the machine.
 5. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.

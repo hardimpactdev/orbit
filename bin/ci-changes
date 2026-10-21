@@ -36,6 +36,8 @@ RULES = [
     # use real Composer projects. docs-openapi reads Gateway, CLI and SDK sources.
     ('apps/cli/*', {'cli', 'docs', 'e2e', 'api-reference'}),
     ('apps/gateway/*', {'gateway', 'docs', 'e2e', 'api-reference'}),
+    # CLI CommandSurfaceTest checks its commands against the named Gateway routes.
+    ('apps/gateway/routes/api.php', {'cli'}),
     ('apps/docs/*', {'docs', 'e2e', 'api-reference'}),
     ('apps/e2e/*', {'e2e'}),
     # CLI has the SDK Composer path repository. Gateway and CLI response tests
@@ -54,6 +56,8 @@ RULES = [
     ('apps/agent/tests/*', {'gateway'}),
     # tools/check_agent_release.py compares this pin with apps/agent/Cargo.toml.
     ('apps/gateway/resources/machine-software/recipe.json', {'agent'}),
+    # The agent delivery check installs the remote-program tests' Python requirements.
+    ('apps/gateway/tests/Programs/requirements.txt', {'agent'}),
     # TaskTopologyCatalogParityTest and TopologySeedContractTest read the E2E catalog/harness.
     ('apps/e2e/resources/topology-nodes.json', {'gateway'}),
     ('apps/e2e/app/E2E/Value/TopologyRecipe.php', {'gateway'}),
