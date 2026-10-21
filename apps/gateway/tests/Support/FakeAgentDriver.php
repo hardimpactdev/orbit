@@ -115,7 +115,7 @@ class FakeAgentDriver implements AgentDriver
         return $this->observation ?? throw new AgentDriverException('Unavailable');
     }
 
-    public function read(AgentThread $thread, ?string $cursor): AgentObservation
+    public function read(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): AgentObservation
     {
         $this->readCursors[] = $cursor;
 

@@ -205,7 +205,7 @@ function tick_pi_failure(object $state): void
         }
 
         return Http::response([
-            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
             'session' => ['id' => $state->sessionId ?? 'implementer-thread'],
             'state' => isset($state->state) ? $state->state : 'failed', 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
             'providerError' => $state->providerError ?? null,

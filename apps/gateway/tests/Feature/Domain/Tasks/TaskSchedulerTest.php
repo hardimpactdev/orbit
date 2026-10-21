@@ -1733,8 +1733,6 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         idle: false,
         pendingApprovalId: null,
         pendingUserInputId: null,
-        lastAssistantText: null,
-        lastUserText: null,
         hasNewCommitsSinceThreadStart: false,
         prUrl: null,
         ciSummary: null,

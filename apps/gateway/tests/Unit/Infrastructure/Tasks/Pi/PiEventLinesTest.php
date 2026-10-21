@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Tasks\Pi\PiClient;
 use App\Infrastructure\Tasks\Pi\PiEventLines;
 use GuzzleHttp\Psr7\Exception\TimeoutException;
 use GuzzleHttp\Psr7\Stream;
@@ -53,4 +54,12 @@ it('joins events split across reads and skips malformed lines', function (): voi
     $stream = scripted_stream(['{"kind":"ent', "ry\",\"sequence\":3}\nnot json\n{\"no\":\"kind\"}\n"]);
 
     expect(iterator_to_array(new PiEventLines(5)->read($stream), false))->toBe([['kind' => 'entry', 'sequence' => 3]]);
+});
+
+it('accepts a line at the byte limit followed by another line in the same read', function (): void {
+    $line = str_pad('{"kind":"heartbeat"}', PiClient::SESSION_MAX_BYTES);
+    $stream = Utils::streamFor($line."\n{\"kind\":\"heartbeat\"}\n");
+
+    expect(iterator_to_array(new PiEventLines(5)->read($stream), false))
+        ->toBe([['kind' => 'heartbeat'], ['kind' => 'heartbeat']]);
 });

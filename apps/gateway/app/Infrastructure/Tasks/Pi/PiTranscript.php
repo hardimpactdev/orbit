@@ -45,7 +45,7 @@ final class PiTranscript
         }
 
         return match ($message['role'] ?? null) {
-            'user' => $this->message($id, 'user', $this->text($message['content'] ?? null), $at),
+            'user', 'system' => $this->message($id, $message['role'], $this->text($message['content'] ?? null), $at),
             'assistant' => $this->assistant($id, $message, $at),
             'toolResult' => [$this->toolResult($id, $message, $at)],
             default => [],
