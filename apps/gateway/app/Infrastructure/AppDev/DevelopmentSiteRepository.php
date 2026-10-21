@@ -195,7 +195,7 @@ final readonly class DevelopmentSiteRepository
         $sites = $sites->map(static function (DevelopmentSite $site) use ($bindings): DevelopmentSite {
             $binding = $bindings->first(static fn ($target): bool => $target->route?->domain === $site->domain);
 
-            return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->app_id);
+            return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->pusherId());
         });
         $sites = $this->withoutDuplicateSecondarySites($sites);
 

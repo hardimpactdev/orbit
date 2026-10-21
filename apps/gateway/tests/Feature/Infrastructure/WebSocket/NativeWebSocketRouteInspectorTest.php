@@ -15,6 +15,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('inspects the current release route list as the production user without exposing application output', function (string $output, ?bool $collision): void {
     $home = sys_get_temp_dir().'/orbit-route-inspection-'.Str::uuid();
     $files = new Filesystem;
@@ -28,13 +30,17 @@ it('inspects the current release route list as the production user without expos
     $instance->setRelation('node', $node)->setRelation('project', new Project(['root' => 'public']));
     $ssh = Mockery::mock(SshExecutor::class);
     $ssh->shouldReceive('execute')->once()->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($home): CommandResult {
-        expect(array_slice($command->arguments, 0, 6))->toBe(['sudo', '-u', 'orbit-mealou', '-H', 'python3', '-c'])
-            ->and(array_slice($command->arguments, 7))->toBe(['/home/orbit-mealou', '/home/orbit-mealou/current', 'php8.5']);
-        $arguments = array_slice($command->arguments, 4);
-        $arguments[3] = $home;
-        $arguments[4] = $home.'/current';
-        $arguments[5] = PHP_BINARY;
-        $process = new Process($arguments);
+        expect(array_slice($command->arguments, 0, 8))->toBe(['sudo', '-n', '-u', 'orbit-mealou', '-H', 'python3', '-I', '-c'])
+            ->and($command->arguments[9])->toBe('instances.inspect-source');
+        [$source, $json] = explode("\0", $command->input, 2);
+        $payload = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        expect($payload)->toMatchArray(['inspection' => 'laravel_routes', 'home' => '/home/orbit-mealou',
+            'application' => '/home/orbit-mealou/current', 'php' => 'php8.5']);
+        $payload['home'] = $home;
+        $payload['application'] = $home.'/current';
+        $payload['php'] = PHP_BINARY;
+        $process = new Process(array_slice($command->arguments, 5));
+        $process->setInput($source."\0".json_encode($payload, JSON_THROW_ON_ERROR));
         $process->run();
 
         return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);

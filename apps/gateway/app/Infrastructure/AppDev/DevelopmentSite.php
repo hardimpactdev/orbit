@@ -52,9 +52,9 @@ final readonly class DevelopmentSite
         public ?string $websocketAppId = null,
     ) {}
 
-    public function withWebSocket(string $key, string $appId): self
+    public function withWebSocket(string $key, string $websocketAppId): self
     {
-        return clone ($this, ['websocketKey' => $key, 'websocketAppId' => $appId]);
+        return clone ($this, ['websocketKey' => $key, 'websocketAppId' => $websocketAppId]);
     }
 
     public function asSecondary(): self

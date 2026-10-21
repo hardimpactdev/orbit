@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteInspector;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Instance;
 use Throwable;
 
 final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInspector
 {
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private RemoteProgramRunner $runner, private RemoteProgramCatalog $catalog) {}
 
     public function hasCollisions(Instance $instance): bool
     {
@@ -27,42 +27,21 @@ final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInsp
         }
 
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['sudo', '-u', $user, '-H', 'python3', '-c', <<<'PYTHON'
-                    import json, pathlib, subprocess, sys
-                    home = pathlib.Path(sys.argv[1])
-                    current = home / 'current'
-                    if home.resolve(strict=True) != home or not current.is_symlink():
-                        raise SystemExit(42)
-                    release = current.resolve(strict=True)
-                    application = pathlib.Path(sys.argv[2]).resolve(strict=True)
-                    if release.parent != home / 'releases' or not application.is_relative_to(release):
-                        raise SystemExit(42)
-                    result = subprocess.run([sys.argv[3], 'artisan', 'route:list', '--json', '--no-interaction'],
-                                            cwd=application, capture_output=True, timeout=45)
-                    if result.returncode != 0:
-                        raise SystemExit(42)
-                    routes = json.loads(result.stdout)
-                    if not isinstance(routes, list) or any(not isinstance(r, dict) or not isinstance(r.get('uri'), str) for r in routes):
-                        raise SystemExit(42)
-                    # Root fallback runs after explicit routes; the edge reserves its Pusher paths.
-                    # Any other leading parameter can consume either reserved prefix.
-                    uris = [r['uri'].strip('/') for r in routes]
-                    collision = any(uri.split('/')[0].lower() in ('app', 'apps')
-                                    or (uri.startswith('{') and uri != '{fallbackPlaceholder}') for uri in uris)
-                    print('collision' if collision else 'clear')
-                    PYTHON, $home, $instance->applicationDirectory(), 'php'.$version],
-                maxOutputBytes: 1024,
-            ), 'websocket-route-inspection', 'websocket.route_inspection_failed', commandTimeout: 60);
-            $state = trim($result->stdout);
+            $result = $this->runner->run(
+                $instance->node,
+                $this->catalog->program('instances.inspect-source', user: $user),
+                ['inspection' => 'laravel_routes', 'home' => $home, 'application' => $instance->applicationDirectory(), 'php' => 'php'.$version],
+                timeoutSeconds: 60,
+            );
+            $collision = $result->data['collision'] ?? null;
         } catch (Throwable) {
             throw $this->failure();
         }
-        if (! in_array($state, ['collision', 'clear'], true)) {
+        if ($result->outcome !== 'routes_inspected' || ! is_bool($collision)) {
             throw $this->failure();
         }
 
-        return $state === 'collision';
+        return $collision;
     }
 
     private function failure(): ResourceOperationException
