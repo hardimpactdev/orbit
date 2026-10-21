@@ -157,10 +157,19 @@ def deb_fields(host, path):
 
 
 def keep(host, file, name):
-    """Copy a .deb into the cache as <name>_<sha256>.deb. Cached files are never deleted: they are the rollback."""
-    target = host.path(CACHE) / f'{name}_{sha256(file)}.deb'
-    if not target.is_file():
-        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(file), str(target)], privileged=True)
+    """Publish a complete, verified .deb atomically, replacing a corrupt cache entry."""
+    digest = sha256(file)
+    target = host.path(CACHE) / f'{name}_{digest}.deb'
+    if target.is_file() and sha256(target) == digest:
+        return target
+    candidate = host.run(['mktemp', str(target.parent / '.orbit-php-XXXXXXXX')], privileged=True).stdout.strip()
+    try:
+        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(file), candidate], privileged=True)
+        if sha256(candidate) != digest:
+            raise Outcome('download_failed', {'package': name, 'reason': 'cache copy digest mismatch'})
+        host.run(['mv', '-fT', '--', candidate, str(target)], privileged=True)
+    finally:
+        host.run(['rm', '-f', '--', candidate], privileged=True)
     return target
 
 
@@ -178,6 +187,8 @@ def download_files(host, pins, mirror, work, architecture):
     by_name = {pin['name']: pin for pin in pins}
     while remaining:
         argv = ['curl', '--parallel', '--parallel-immediate', '--parallel-max', '4']
+        # Each of at most two source passes gets 300 seconds, including queued batches of four.
+        transfer_limit = str(300 / ((len(remaining) + 3) // 4))
         candidates = {}
         for name, sources in remaining.items():
             if not sources:
@@ -189,7 +200,8 @@ def download_files(host, pins, mirror, work, architecture):
                 argv.append('--next')
             candidates[name] = candidate
             argv += ['--fail', '--silent', '--show-error', '--location', '--proto', '=https',
-                     '--proto-redir', '=https', '--tlsv1.2', '--write-out', '%{json}\n',
+                     '--proto-redir', '=https', '--tlsv1.2', '--connect-timeout', '15', '--max-time', transfer_limit,
+                     '--write-out', '%{json}\n',
                      '--output', str(candidate), '--url', sources.pop(0)]
         completed = host.run(argv, check=False)
         # Parallel transfers finish out of order. curl reports each file's own transport result.

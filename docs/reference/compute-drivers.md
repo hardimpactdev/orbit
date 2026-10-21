@@ -192,8 +192,12 @@ Then it gets the files:
 2. It downloads missing pinned files with one `curl --parallel --parallel-max 4` process per source pass. It tries `artifact_mirror` first, then the pin's URL for files with transport failures.
 
    Each file uses a separate candidate path. All files pass verification before rollback preparation and serial package installation. An interrupt stops the curl process and its active transfers before the installer exits.
+
+   Each transfer has a 15-second connection limit. Each source pass divides a 300-second budget across its batches of four transfers and sets curl's total transfer limit accordingly. Both source passes fit within 600 seconds of the installer's 900-second limit.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
-4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one. A file already there is not downloaded again. The cache grows with each build; an operator can delete the files of builds that no machine runs.
+4. It keeps every file in `/var/cache/orbit/php-packages`. A cached file with the expected digest is not downloaded again. A corrupt entry is replaced.
+
+   Cache writes stage a complete file in the cache directory, check its digest, then rename it atomically into place. The cache grows with each build; an operator can delete the files of builds that no machine runs.
 
 Then it keeps the installed build for a rollback:
 

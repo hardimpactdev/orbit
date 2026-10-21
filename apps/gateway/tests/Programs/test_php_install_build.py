@@ -333,6 +333,121 @@ done
                         for connection in connections:
                             connection.close()
 
+    def test_download_bounds_include_every_transfer_and_queued_batch_at_both_sources(self):
+        for name in ('php8.5-curl', 'php8.5-xml', 'php8.5-mbstring', 'php8.5-zip'):
+            self.pin(name, '8.5.12-1')
+        curl = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        curl.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> "$STATE/curl-arguments"\n' + FAKES['curl'])
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        arguments = (self.state / 'curl-arguments').read_text().splitlines()
+        connections = [arguments[index + 1] for index, value in enumerate(arguments) if value == '--connect-timeout']
+        totals = [float(arguments[index + 1]) for index, value in enumerate(arguments) if value == '--max-time']
+        # Seven transfers need two batches per pass; 150 seconds per batch caps each pass at 300.
+        self.assertEqual(connections, ['15'] * 14)
+        self.assertEqual(totals, [150.0] * 14)
+
+    def test_stalled_tls_downloads_time_out_at_both_sources_without_installing(self):
+        curl = shutil.which('curl', path='/usr/bin:/bin')
+        if curl is None:
+            self.skipTest('requires curl')
+        wrapper = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        with socket.create_server(('127.0.0.1', 0)) as listener:
+            listener.settimeout(0.05)
+            port = listener.getsockname()[1]
+            # Shorten only existing bounds; the unfixed installer still stalls indefinitely.
+            wrapper.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                               f'options = ["--noproxy", "*", "--connect-to", "::127.0.0.1:{port}"]\n'
+                               'arguments = list(options)\nprevious = None\n'
+                               'for argument in sys.argv[1:]:\n'
+                               '    arguments.append("0.2" if previous in ("--connect-timeout", "--max-time") else argument)\n'
+                               '    if argument == "--next": arguments.extend(options)\n'
+                               '    previous = argument\n'
+                               f'os.execv({curl!r}, [{curl!r}, *arguments])\n')
+            process = subprocess.Popen(
+                ['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=dict(os.environ, **self.environment), start_new_session=True,
+            )
+            connections = []
+            finished = threading.Event()
+
+            def accept():
+                while not finished.is_set():
+                    try:
+                        connection, _ = listener.accept()
+                        connections.append(connection)
+                    except TimeoutError:
+                        continue
+
+            receiver = threading.Thread(target=accept)
+            receiver.start()
+            try:
+                output, errors = process.communicate(
+                    assemble('php.install-build').encode() + b'\0' + json.dumps(self.payload()).encode(), timeout=3)
+                self.assertEqual(process.returncode, 0, errors.decode())
+                self.assertEqual(json.loads(output)['outcome'], 'download_failed')
+                finished.set()
+                receiver.join(timeout=1)
+                self.assertEqual(len(connections), 2 * len(self.pins))
+                for connection in connections:
+                    connection.settimeout(1)
+                    # Drain the ClientHello; EOF proves no transfer remains alive after timeout.
+                    while connection.recv(65536):
+                        pass
+                self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
+            finally:
+                finished.set()
+                receiver.join(timeout=1)
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate(timeout=5)
+                for connection in connections:
+                    connection.close()
+
+    def test_corrupt_cache_entry_is_replaced_atomically_with_verified_bytes(self):
+        pin = self.pins['php8.5-cli']
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        target = cache / f'php8.5-cli_{pin["sha256"]}.deb'
+        target.write_bytes(b'truncated')
+        old_entry = self.state / 'old-cache-inode'
+        old_entry.hardlink_to(target)
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        self.assertEqual(target.read_bytes(), deb('php8.5-cli', pin['version']))
+        self.assertEqual(old_entry.read_bytes(), b'truncated')
+        self.assertNotEqual(target.stat().st_ino, old_entry.stat().st_ino)
+        self.assertEqual(sorted(path.name for path in cache.iterdir()), self.cached())
+        (self.state / 'calls').write_text('')
+        # Reuse the repaired entries while repairing missing package files.
+        for name in self.pins:
+            (self.state / 'installed' / name).unlink()
+        self.assertEqual(self.run_program()[0], 'applied')
+        self.assertFalse(any(call.startswith('curl ') for call in self.calls()))
+
+    def test_failed_cache_copy_preserves_the_previous_entry_and_removes_staging(self):
+        pin = self.pins['php8.5-cli']
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        target = cache / f'php8.5-cli_{pin["sha256"]}.deb'
+        target.write_bytes(b'truncated')
+        install = Path(self.environment['PATH'].split(':')[0]) / 'install'
+        install.write_text('#!/usr/bin/env bash\n'
+                           'if [ "$1" != -d ] && [[ "${@: -1}" == */php-packages/* ]]; then\n'
+                           '    printf partial > "${@: -1}"; exit 1\nfi\n' + FAKES['install'] + '\n')
+
+        completed = execute('php.install-build', self.payload(), environment=self.environment)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(target.read_bytes(), b'truncated')
+        self.assertEqual(list(cache.iterdir()), [target])
+        self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
+
     def test_cleans_root_owned_repack_trees_before_installing_as_an_unprivileged_user(self):
         sudo = shutil.which('sudo', path='/usr/bin:/bin')
         if os.geteuid() == 0 or sudo is None or subprocess.run(
