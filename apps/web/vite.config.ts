@@ -164,6 +164,8 @@ export default defineConfig({
         fs: { allow: [".", "../../packages/php-sdk/fixtures"] },
     },
     test: {
+        fileParallelism: true,
+        maxWorkers: "100%",
         projects: [
             // Pure logic: health rules, event application, log and uptime formatting.
             {
