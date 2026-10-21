@@ -521,6 +521,36 @@ def docker_sources():
                             r'[a-z][a-z0-9-]*', ['stable'], 'docker')
 
 
+def node_sources():
+    return provider_sources(r'deb\.nodesource\.com',
+                            {'https://deb.nodesource.com/node_' + str(major) + '.x' for major in range(10, 27)},
+                            'nodistro', ['main'], 'node')
+
+
+def consolidate_node(tools, *, apply=False):
+    """The recipe owns Node. Retire duplicate APT ownership only after verifying its replacement."""
+    if 'node' not in tools:
+        return []
+    changes = node_sources()
+    installed = 'nodejs' in packages()
+    actions = (['remove_nodejs_package'] if installed else []) + (['retire_node_source'] if changes else [])
+    if not apply:
+        return actions
+    if inspect({'node': tools['node']})['node'] != tools['node']['version']:
+        raise RecipeFailure('node-ownership', detail='Verify the recipe Node runtime before removing the APT source.')
+    if installed:
+        environment = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive')
+        result = package_command(['apt-get', '--simulate', 'remove', '--', 'nodejs'], ['nodejs'], env=environment)
+        removed = [line.split()[1] for line in result.stdout.splitlines() if line.startswith('Remv ')]
+        if removed != ['nodejs']:
+            raise RecipeFailure('node-ownership', detail='Node removal would affect other packages; inspect dependencies before retrying.')
+        package_command(['apt-get', 'remove', '--yes', '--', 'nodejs'], ['nodejs'], env=environment)
+        if 'nodejs' in packages():
+            raise RecipeFailure('node-ownership', detail='The duplicate nodejs package is still installed.')
+    retire_sources(changes, 'node')
+    return actions
+
+
 def git_preferences(tools):
     return ''.join(f'Package: {name}\nPin: version {tools[name]["version"]}\nPin-Priority: 1001\n\n'
                    f'Package: {name}\nPin: version *\nPin-Priority: -1\n\n' for name in tools).encode()
@@ -560,7 +590,7 @@ def pin_git(payload):
 
 def plan(payload):
     check_git_siblings(payload)
-    actions = configure_git(payload)
+    actions = configure_git(payload) + consolidate_node(payload['tools'])
     if ubuntu_sources_repair() is None:
         report = assess(payload['tools'], git_names=git_packages(payload))
     else:
@@ -642,19 +672,23 @@ def inspect(tools):
     versions = {}
     javascript = set(tools) & {'node', 'pnpm', 'bun', 'vp', 'vp-cli'}
     scope = None
+    prefix = []
     if javascript:
         account = pwd.getpwnam(os.environ['SUDO_USER']) if os.environ.get('SUDO_USER') else pwd.getpwuid(os.getuid())
         scope = vite_scope(account)
+        # Store executables are account-writable. Never inspect them with container/host root privileges.
+        if os.geteuid() == 0:
+            prefix = ['sudo', '-u', account.pw_name, '-H']
     for name, pin in tools.items():
         if pin['source'] == 'ubuntu' or (pin['source'] == 'artifact' and any(a['url'].endswith('.deb') for a in pin.get('artifacts', {}).values())):
             versions[name] = installed.get(pin['package'] if pin['source'] == 'ubuntu' else name)
         elif name == 'bun':
-            versions[name] = binary_version('/opt/orbit/bun/bin/bun')
+            versions[name] = binary_version('/opt/orbit/bun/bin/bun', prefix=prefix)
         elif name == 'vp-cli':
             binary = (scope / 'bin/vp').resolve()
             # Even --version can bootstrap an unmarked Vite+ executable. Never invoke one in a read.
             ready = binary.is_file() and (binary.parent / '.vp-setup-complete').is_file()
-            versions[name] = binary_version(binary, dict(os.environ, VP_HOME=str(scope))) if ready else None
+            versions[name] = binary_version(binary, dict(os.environ, VP_HOME=str(scope)), prefix=prefix) if ready else None
         elif name == 'vp':
             digest = pin.get('lock_sha256')
             target = scope / 'recipe' / ('vp-runtime-' + str(digest))
@@ -671,7 +705,7 @@ def inspect(tools):
             # A moving default can fetch a runtime even for node --version. Inspect exact cached defaults directly.
             default = json_file(scope / 'config.json').get('defaultNodeVersion', '')
             binary = scope / 'js_runtime/node' / default / 'bin/node' if isinstance(default, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', default) else None
-            versions[name] = binary_version(binary) if binary and binary.is_file() else None
+            versions[name] = binary_version(binary, prefix=prefix) if binary and binary.is_file() else None
         else:
             raise RecipeFailure()
         if versions[name] is not None and not isinstance(versions[name], str):
@@ -1044,6 +1078,8 @@ def apply_recipe(payload, snapshots):
             supported(after_assessment)
             if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in after_assessment.values()):
                 raise RecipeFailure()
+            stage = 'node-ownership'
+            consolidate_node(tools, apply=True)
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
             stage = 'restart'

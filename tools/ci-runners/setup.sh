@@ -115,11 +115,14 @@ container() {
   # gets the script, the recipe, and the whole remote program tree in the repository layout that bin/php-build reads.
   local tree=/root/orbit-php-build
   in_ct "$name" rm -rf "$tree"
-  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/apps/gateway/resources/machine-software"
+  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
     "$name$tree/apps/gateway/resources/machine-software/recipe.json" --project "$PROJECT"
   incus file push --recursive "$REPOSITORY/apps/gateway/resources/remote" "$name$tree/apps/gateway/resources/" --project "$PROJECT"
+  incus file push "$REPOSITORY/tools/ci-runners/javascript.py" "$name$tree/tools/ci-runners/javascript.py" --project "$PROJECT"
+  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/vite-plus-package-lock.json" \
+    "$name$tree/apps/gateway/resources/machine-software/vite-plus-package-lock.json" --project "$PROJECT"
   # A recursive push keeps the host's owners; root runs this code, so root owns it.
   in_ct "$name" chown -R root:root "$tree"
 
@@ -140,7 +143,7 @@ apt-get update -qq
 # hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
-  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+  acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
 # A shard container runs only CI jobs, so it purges PHP packages and sources outside the recipe.
 python3 /root/orbit-php-build/bin/php-build install --profile=ci-runner --purge-extras --no-composer >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
@@ -161,6 +164,10 @@ id runner >/dev/null 2>&1 || useradd -m -U -s /bin/bash runner
 # The image grants its default user passwordless sudo in 90-incus.
 rm -f /etc/sudoers.d/runner /etc/sudoers.d/90-incus
 install -d -o runner -g runner /home/runner/work
+
+# Install and verify recipe Node, then retire duplicate APT ownership with a dependency check.
+python3 /root/orbit-php-build/tools/ci-runners/javascript.py
+sudo -u runner -H /usr/local/bin/node --version
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"

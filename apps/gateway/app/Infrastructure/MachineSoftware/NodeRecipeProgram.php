@@ -112,7 +112,7 @@ final readonly class NodeRecipeProgram
         }
 
         $actions = $report['_actions'] ?? [];
-        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources', 'retire_git_source', 'pin_git']) !== []) {
+        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source']) !== []) {
             throw new RuntimeException('Recipe inspection returned invalid planned actions.');
         }
 

@@ -77,6 +77,8 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
+CI selects Node.js from the root `.node-version`, currently `24.22.1`, which includes the [October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). The machine recipe pins the same official Node artifacts for both architectures. `tools/ci-runners/setup.sh container NAME` installs the recipe's Node, Vite+, dispatcher, and pnpm with the shared Node/image installer. It removes Ubuntu's separate `nodejs` package only when the simulated removal affects that package alone. Run this command only after stopping an idle runner service. GitHub Actions' bundled Node executables belong to the runner distribution; changing the project Node pin does not patch them. Verify those executables separately when upgrading the runner.
+
 CI passes its job-scoped, read-only `GITHUB_TOKEN` to Composer through workflow-level `COMPOSER_AUTH`. GitHub API requests use `github-oauth`; `codeload.github.com` uses bearer authentication too, because Composer does not send the API OAuth header to that host. The token stays in the workflow environment and is not written to an auth file.
 
 GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. It has these jobs.
@@ -724,3 +726,5 @@ A PHPStan ignore, a baseline, or a silencing cast keeps the wrong type in the co
 ### Shared-worker feedback
 
 The task check runs no Gateway tests, so it needs neither host sudo nor another Unix identity. The required disposable Gateway privileged CI jobs run the `privileged` group; see [Gateway tests and privilege](#gateway-tests-and-privilege) for the rule. Check report directories permit group reads so the worker can inspect failures.
+
+The shared installer inspects runner-writable JavaScript executables as `runner`, including the setup smoke check. Recipe convergence owns Node.js on fleet Nodes and retires duplicate APT ownership after verifying the replacement and simulating dependency-safe removal.

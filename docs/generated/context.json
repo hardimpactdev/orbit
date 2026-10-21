@@ -1740,7 +1740,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0206"
+                "0206",
+                "2026"
             ]
         },
         {
@@ -2181,7 +2182,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "2026"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
