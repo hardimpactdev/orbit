@@ -20,7 +20,7 @@ use ZipArchive;
 /**
  * GitHub Actions answers for one `web-dist-<sha>` artifact, built from the recorded shapes in
  * `tests/Fixtures/GitHub/WebBuild`, plus a web directory in a temporary directory. The shared
- * release repository's origin is `https://github.com/nckrtl/orbit.git`; every other command runs.
+ * release repository's origin is `https://github.com/hardimpactdev/orbit.git`; every other command runs.
  */
 final class WebArtifactFixture implements ProcessRunner
 {
@@ -100,11 +100,11 @@ final class WebArtifactFixture implements ProcessRunner
 
         // Closures answer each request with a fresh body, so a second install reads GitHub again.
         Http::fake([
-            'https://api.github.com/repos/nckrtl/orbit/installation' => fn () => Http::response(['id' => 7]),
+            'https://api.github.com/repos/hardimpactdev/orbit/installation' => fn () => Http::response(['id' => 7]),
             'https://api.github.com/app/installations/7/access_tokens' => fn () => Http::response($token['body'], $token['status']),
-            'https://api.github.com/repos/nckrtl/orbit/actions/artifacts?name=web-dist-'.$sha.'&per_page=100' => fn () => Http::response($listing),
-            'https://api.github.com/repos/nckrtl/orbit/actions/runs/37647307459' => fn () => Http::response($runBody),
-            'https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11494149862/zip' => fn () => Http::response('', 302, ['Location' => self::Storage]),
+            'https://api.github.com/repos/hardimpactdev/orbit/actions/artifacts?name=web-dist-'.$sha.'&per_page=100' => fn () => Http::response($listing),
+            'https://api.github.com/repos/hardimpactdev/orbit/actions/runs/37647307459' => fn () => Http::response($runBody),
+            'https://api.github.com/repos/hardimpactdev/orbit/actions/artifacts/11494149862/zip' => fn () => Http::response('', 302, ['Location' => self::Storage]),
             self::Storage => fn () => Http::response($archive),
         ]);
 
@@ -163,7 +163,7 @@ final class WebArtifactFixture implements ProcessRunner
         $this->commands[] = $invocation->arguments;
 
         if (array_slice($invocation->arguments, -3) === ['remote', 'get-url', 'origin']) {
-            return new CommandResult(0, "https://github.com/nckrtl/orbit.git\n", '', 1, false);
+            return new CommandResult(0, "https://github.com/hardimpactdev/orbit.git\n", '', 1, false);
         }
 
         return $this->native->run($invocation);

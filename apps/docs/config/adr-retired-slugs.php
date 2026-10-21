@@ -213,4 +213,5 @@ return [
     '0217' => ['0217-deploy-production-instances-automatically-by-polling'],
     '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
+    '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
 ];

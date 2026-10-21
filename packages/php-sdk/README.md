@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 214 public Gateway operations. It preserves typed
+The SDK exposes exactly 228 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -76,6 +76,10 @@ Doctor accepts the current Gateway family set, including Schedule and Database c
 ## Database connections
 
 The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an Instance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Query sends SQL and an optional write flag against a registered slug. Tables, schema, and describe are bodyless reads. Item, collection, attachment, and inspection responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, stored-environment writes, and inspection execution.
+
+## Reverb apps
+
+The SDK exposes typed create, list, show, and destroy requests in `Orbit\Sdk\Requests\WebSocket`. Add and remove requests accept an Instance ID or exact Route domain and an app name. Both requests are bodyless. App responses carry the app ID, key, and attached Instance IDs. Attachment responses carry the changed key names and stored key count. Neither response carries the secret or environment values. Run the environment synchronization request to write stored configuration to the Instance's `.env`.
 
 ## ai-router
 

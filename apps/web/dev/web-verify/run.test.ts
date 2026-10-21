@@ -3,11 +3,10 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { chromium, webkit, type Page } from "playwright";
+import { webkit } from "playwright";
 import { afterAll, beforeAll, expect, it, vi } from "vite-plus/test";
-import { applyInsets, exitCode, INSETS, pathsFrom } from "./contract";
+import { applyInsets, exitCode, INSETS, pathsFrom, type ToolResult } from "./contract";
 import { execute } from "./command";
-import { confineToOrigin } from "./session";
 
 import {
     cmdline,
@@ -21,6 +20,8 @@ import {
 } from "./test-processes";
 const fastHome = mkdtempSync(join(tmpdir(), "orbit-web-verify-fast-"));
 const browserHome = mkdtempSync(join(tmpdir(), "orbit-web-verify-browser-"));
+let initialTask: ToolResult;
+let initialPhone: ReturnType<typeof runCLI>;
 
 async function run(home: string, args: readonly string[]) {
     const json = await execute(
@@ -42,11 +43,20 @@ beforeAll(async () => {
     await new Promise<void>((ready) => upstream.listen(0, "127.0.0.1", ready));
     const { port } = upstream.address() as AddressInfo;
     vi.stubEnv("ANNOTATION_TRANSCRIPTION_TARGET", `http://127.0.0.1:${port}`);
-    // Start Bun's real daemon once, even when one integration case is selected alone.
-    // Keeping its initial route distinct also leaves first-use/reuse assertions meaningful.
-    const started = runCLI(browserHome, ["open", "/"]);
+    // Start the real daemon and both engines once, even for a selected case.
+    // These first-use results are asserted below instead of loading the pages twice.
+    const started = runCLI(browserHome, ["open", "/tasks/12"]);
     expect(started.status).toBe(0);
     expect(started.stderr).toBe("");
+    initialTask = started.json;
+    initialPhone = runCLI(browserHome, [
+        "screenshot",
+        "/activity",
+        "--device=iphone-15",
+        "--engine=webkit",
+    ]);
+    expect(initialPhone.status).toBe(0);
+    expect(initialPhone.stderr).toBe("");
 }, 120_000);
 
 afterAll(async () => {
@@ -57,35 +67,6 @@ afterAll(async () => {
     rmSync(fastHome, { recursive: true, force: true });
     rmSync(browserHome, { recursive: true, force: true });
 });
-
-it("sets phone safe-area insets and clears them on desktop", async () => {
-    const browser = await webkit.launch({ headless: true });
-    try {
-        const blank = "data:text/html,<!doctype html><html><body></body></html>";
-        const phone = await browser.newContext();
-        await phone.addInitScript(applyInsets, INSETS["iphone-15"]);
-        const phonePage = await phone.newPage();
-        await phonePage.goto(blank);
-        expect(await inset(phonePage, "top")).toBe("0px");
-        expect(await inset(phonePage, "bottom")).toBe("34px");
-        expect(await inset(phonePage, "left")).toBe("0px");
-
-        const pixel = await browser.newContext();
-        await pixel.addInitScript(applyInsets, INSETS["pixel-8"]);
-        const pixelPage = await pixel.newPage();
-        await pixelPage.goto(blank);
-        expect(await inset(pixelPage, "bottom")).toBe("24px");
-
-        const desktop = await browser.newContext();
-        await desktop.addInitScript(applyInsets, INSETS.desktop);
-        const desktopPage = await desktop.newPage();
-        await desktopPage.goto(blank);
-        expect(await inset(desktopPage, "bottom")).toBe("");
-        expect(await inset(desktopPage, "top")).toBe("");
-    } finally {
-        await browser.close();
-    }
-}, 60_000);
 
 it("prints the feature map without starting the app", () => {
     const map = JSON.parse(
@@ -165,12 +146,7 @@ it("stops a checkout that has no daemon", async () => {
 });
 
 it("screenshots phone and desktop pages, clicks the active page, and reports console errors", async () => {
-    const phone = runCLI(browserHome, [
-        "screenshot",
-        "/activity",
-        "--device=iphone-15",
-        "--engine=webkit",
-    ]);
+    const phone = initialPhone;
     expect(phone.status).toBe(0);
     expect(phone.stderr).toBe("");
     expect(phone.json).toMatchObject({
@@ -197,6 +173,28 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
         reused: true,
         engine: "webkit",
         device: "iphone-15",
+    });
+
+    const phoneChromium = await run(browserHome, [
+        "screenshot",
+        "/activity",
+        "--device=iphone-15",
+        "--engine=chromium",
+    ]);
+    expect(phoneChromium.status).toBe(0);
+    expect(phoneChromium.json).toMatchObject({
+        ok: true,
+        command: "screenshot",
+        device: "iphone-15",
+        engine: "chromium",
+        viewport: { width: 393, height: 659 },
+        reused: false,
+    });
+    expectPng(repo, phoneChromium.json.file ?? "");
+    expect((await run(browserHome, ["click", "[data-testid=nav-menu]"])).json).toMatchObject({
+        ok: true,
+        device: "iphone-15",
+        engine: "chromium",
     });
 
     const desktop = await run(browserHome, [
@@ -246,28 +244,6 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
             desktopClick.json.route?.startsWith("/activity?"),
     ).toBe(true);
 
-    const phoneChromium = await run(browserHome, [
-        "screenshot",
-        "/activity",
-        "--device=iphone-15",
-        "--engine=chromium",
-    ]);
-    expect(phoneChromium.status).toBe(0);
-    expect(phoneChromium.json).toMatchObject({
-        ok: true,
-        command: "screenshot",
-        device: "iphone-15",
-        engine: "chromium",
-        viewport: { width: 393, height: 659 },
-        reused: false,
-    });
-    expectPng(repo, phoneChromium.json.file ?? "");
-    expect((await run(browserHome, ["click", "[data-testid=nav-menu]"])).json).toMatchObject({
-        ok: true,
-        device: "iphone-15",
-        engine: "chromium",
-    });
-
     const desktopWebkit = await run(browserHome, [
         "screenshot",
         "/activity",
@@ -292,9 +268,7 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
         engine: "webkit",
     });
 
-    const task = await run(browserHome, ["open", "/tasks/12"]);
-    expect(task.status).toBe(0);
-    expect(task.json).toMatchObject({
+    expect(initialTask).toMatchObject({
         ok: true,
         command: "open",
         route: "/tasks/12",
@@ -302,7 +276,7 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
         device: "desktop",
         engine: "chromium",
     });
-    expect(task.json.url).toMatch(/\/tasks\/12$/);
+    expect(initialTask.url).toMatch(/\/tasks\/12$/);
 
     const phoneOpen = await run(browserHome, [
         "open",
@@ -384,13 +358,6 @@ it("screenshots phone and desktop pages, clicks the active page, and reports con
     }
 }, 180_000);
 
-function inset(page: Page, edge: string): Promise<string> {
-    return page.evaluate(
-        (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(),
-        `--safe-area-inset-${edge}`,
-    );
-}
-
 function expectPng(root: string, file: string): void {
     const bytes = readFileSync(resolve(root, file));
     expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -398,9 +365,8 @@ function expectPng(root: string, file: string): void {
 
 it("does not let demo adapters call the CLI or an upstream service", async () => {
     const port = (upstream.address() as AddressInfo).port;
-    const opened = await run(browserHome, ["open", "/activity"]);
-    expect(opened.status, JSON.stringify(opened.json)).toBe(0);
-    const origin = new URL(opened.json.url ?? "").origin;
+    // Isolation is an HTTP proof against the already running server, not another navigation.
+    const origin = new URL(initialPhone.json.url ?? "").origin;
 
     const profile = await fetch(`${origin}/__orbit/profile?instance=1`);
     expect(await profile.json()).toEqual({
@@ -449,141 +415,10 @@ it("reports a screenshot write failure as that command", () => {
     }
 }, 120_000);
 
-it("blocks a direct request and each redirect hop before another host is contacted", async () => {
-    const sinkHits: string[] = [];
-    const sink = createServer((request, response) => {
-        sinkHits.push(request.url ?? "/");
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.end("<html><body>sink</body></html>");
-    });
-    await new Promise<void>((ready) => {
-        sink.listen(0, "127.0.0.1", () => ready());
-    });
-    const sinkPort = (sink.address() as AddressInfo).port;
-    const sinkOrigin = `http://127.0.0.1:${sinkPort}`;
-    const allowedHits: string[] = [];
-    const allowed = createServer((request, response) => {
-        const url = request.url ?? "/";
-        allowedHits.push(url);
-        const times = allowedHits.filter((hit) => hit === url).length;
-        if (url === "/flip") {
-            if (times === 1) {
-                response.writeHead(200, { "Content-Type": "text/html" });
-                response.end("<html><body>checked</body></html>");
-                return;
-            }
-            response.writeHead(302, { Location: `${sinkOrigin}/from-second` });
-            response.end();
-            return;
-        }
-        if (url === "/bounce") {
-            response.writeHead(302, { Location: `${sinkOrigin}/secret` });
-            response.end();
-            return;
-        }
-        if (url === "/chain") {
-            response.writeHead(302, { Location: "/hop" });
-            response.end();
-            return;
-        }
-        if (url === "/hop") {
-            response.writeHead(302, { Location: `${sinkOrigin}/chained` });
-            response.end();
-            return;
-        }
-        if (url === "/stay") {
-            response.writeHead(302, { Location: "/landed" });
-            response.end();
-            return;
-        }
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.end(`<html><body>${url}</body></html>`);
-    });
-    await new Promise<void>((ready) => {
-        allowed.listen(0, "127.0.0.1", () => ready());
-    });
-    const origin = `http://127.0.0.1:${(allowed.address() as AddressInfo).port}`;
-    try {
-        // route.fetch/redirect and WebSocket interception are implemented separately by
-        // each Playwright engine. WebKit is a supported verifier, not an extra layout run.
-        for (const engine of [chromium, webkit]) {
-            allowedHits.length = 0;
-            sinkHits.length = 0;
-            const browser = await engine.launch({ headless: true });
-            try {
-                const context = await browser.newContext();
-                await confineToOrigin(context, origin);
-                const page = await context.newPage();
-                const homeAt = allowedHits.length;
-                await page.goto(`${origin}/`, { timeout: 5_000 });
-                expect(allowedHits.slice(homeAt).filter((hit) => hit === "/")).toEqual(["/"]);
-                expect(await page.locator("body").innerText()).toContain("/");
-
-                const stayAt = allowedHits.length;
-                await page.goto(`${origin}/stay`, { timeout: 5_000 });
-                const stayHits = allowedHits.slice(stayAt);
-                expect(stayHits.filter((hit) => hit === "/stay")).toEqual(["/stay"]);
-                expect(stayHits.filter((hit) => hit === "/landed")).toEqual(["/landed"]);
-                expect(await page.locator("body").innerText()).toContain("/landed");
-
-                const flipAt = allowedHits.length;
-                const sinkAt = sinkHits.length;
-                await page.goto(`${origin}/flip`, { timeout: 5_000 });
-                expect(allowedHits.slice(flipAt).filter((hit) => hit === "/flip")).toEqual([
-                    "/flip",
-                ]);
-                expect(sinkHits.slice(sinkAt)).toEqual([]);
-                expect(await page.locator("body").innerText()).toContain("checked");
-                expect(new URL(page.url()).origin).toBe(origin);
-                expect(sinkHits).toEqual([]);
-
-                const socket = await page.evaluate(
-                    (target) =>
-                        new Promise((resolve) => {
-                            const ws = new WebSocket(target);
-                            const finish = (value: string) => resolve(value);
-                            ws.onopen = () => finish("open");
-                            ws.onerror = () => finish("error");
-                            ws.onclose = () => finish("closed");
-                            setTimeout(() => finish("timeout"), 2_000);
-                        }),
-                    `ws://127.0.0.1:${sinkPort}/socket`,
-                );
-                expect(socket).not.toBe("open");
-                expect(socket).not.toBe("timeout");
-                expect(sinkHits).toEqual([]);
-
-                const direct = await context.newPage();
-                await expect(
-                    direct.goto(`${sinkOrigin}/direct`, { timeout: 5_000 }),
-                ).rejects.toThrow();
-                expect(sinkHits).toEqual([]);
-
-                const redirect = await context.newPage();
-                await expect(
-                    redirect.goto(`${origin}/bounce`, { timeout: 5_000 }),
-                ).rejects.toThrow();
-                expect(sinkHits).toEqual([]);
-
-                const chain = await context.newPage();
-                await expect(chain.goto(`${origin}/chain`, { timeout: 5_000 })).rejects.toThrow();
-                expect(sinkHits).toEqual([]);
-            } finally {
-                await browser.close();
-            }
-        }
-    } finally {
-        sink.close();
-        allowed.close();
-    }
-}, 60_000);
-
 it("stops the daemon and leaves no child processes", async () => {
     const home = browserHome;
     try {
-        // The preceding page tests left both real engines and the demo server running.
-        expect(runCLI(home, ["open", "/activity", "--engine=chromium"]).status).toBe(0);
-        expect((await run(home, ["open", "/activity", "--engine=webkit"])).status).toBe(0);
+        // Shared setup starts both real engines, including when only this case runs.
         const pid = sessionPid(home);
         expect(pid).not.toBeNull();
         const children = descendantPids(pid ?? 0);

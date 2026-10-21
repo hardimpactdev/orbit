@@ -69,10 +69,10 @@ it('keeps absent trust valid but empty and isolates repository account lists', f
 });
 
 it('reads trusted reviewers from the operator value and fails closed on a malformed id', function (): void {
-    $repository = GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git');
+    $repository = GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git');
 
-    expect(TaskReviewTrust::fromConfig($repository, ' Nckrtl/Orbit : 18613261, 42 ; other/repo:7')->accountIds)->toBe([42, 18613261])
-        ->and(TaskReviewTrust::fromConfig($repository, 'nckrtl/orbit:18613261')->accountIds)->toBe([18613261])
-        ->and(TaskReviewTrust::fromConfig($repository, 'nckrtl/orbit:nckrtl')->valid)->toBeFalse()
-        ->and(TaskReviewTrust::fromConfig($repository, 'nckrtl/orbit:')->valid)->toBeFalse();
+    expect(TaskReviewTrust::fromConfig($repository, ' Hardimpactdev/Orbit : 18613261, 42 ; other/repo:7')->accountIds)->toBe([42, 18613261])
+        ->and(TaskReviewTrust::fromConfig($repository, 'hardimpactdev/orbit:18613261')->accountIds)->toBe([18613261])
+        ->and(TaskReviewTrust::fromConfig($repository, 'hardimpactdev/orbit:nckrtl')->valid)->toBeFalse()
+        ->and(TaskReviewTrust::fromConfig($repository, 'hardimpactdev/orbit:')->valid)->toBeFalse();
 });

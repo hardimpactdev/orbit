@@ -461,18 +461,17 @@ exec sleep 600
     /// Flushes the queue as the realtime connection does until `count` lines were sent.
     async fn lines(queue: &StreamQueue, count: usize) -> Vec<String> {
         let mut lines = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while lines.len() < count {
-            assert!(
-                Instant::now() < deadline,
-                "{} of {count} lines",
-                lines.len()
-            );
-            lines.extend(sent(&queue.flush("c", Instant::now()).unwrap()));
-            if lines.len() < count {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let mut tick = tokio::time::interval(Duration::from_millis(10));
+            while lines.len() < count {
+                tick.tick().await;
+                let flush = queue.flush("c", Instant::now()).unwrap();
+                assert!(!flush.finished, "the source ended before {count} lines");
+                lines.extend(sent(&flush));
             }
-        }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{} of {count} lines", lines.len()));
         lines
     }
 
@@ -836,8 +835,7 @@ while :; do i=$((i + 1)); echo "2026-09-25T10:15:02+00:00 beast queue[4242]: ent
             r#"echo "2026-09-25T10:15:02+00:00 queue[7]: token=abc"
 echo "2026-09-25T10:15:02+00:00 queue[7]: one"
 "#,
-            r#"sleep 0.5
-echo "2026-09-25T10:15:03+00:00 queue[7]: three"
+            r#"echo "2026-09-25T10:15:03+00:00 queue[7]: three"
 echo "2026-09-25T10:15:04+00:00 queue[7]: $(head -c 10000 /dev/zero | tr '\0' z)"
 exec sleep 600
 "#,

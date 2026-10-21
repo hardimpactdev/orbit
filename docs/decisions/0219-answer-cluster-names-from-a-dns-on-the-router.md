@@ -175,7 +175,7 @@ An action validates before its first member step. When it fails after a member s
 - A failed candidate gets the Cluster DNS removal and the port 53 prune in its restore. The members never moved.
 - Offline Node removal can leave the delegate on the machine and lists it in `retained_on_node`. Router residue is also listed there. Online removal deletes it before losing access.
 - A LAN address changes only through `node:add` on a Node without Instances. For beast or shark, this ADR does not change that.
-- Member work follows its owning action: [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [ADR 0218 in PR #1302](https://github.com/nckrtl/orbit/blob/2686037bfbf93f6774c37530b8a0a609e5e1c526/docs/decisions/0218-take-long-commands-off-the-request-path.md) move Node and Cluster changes into operations. Until those conversions land, the existing request deadline bounds the work and a partial failure uses the same cleanup gates. This ADR adds no competing execution mechanism.
+- Member work follows its owning action: [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [ADR 0218 in PR #1302](https://github.com/hardimpactdev/orbit/blob/2686037bfbf93f6774c37530b8a0a609e5e1c526/docs/decisions/0218-take-long-commands-off-the-request-path.md) move Node and Cluster changes into operations. Until those conversions land, the existing request deadline bounds the work and a partial failure uses the same cleanup gates. This ADR adds no competing execution mechanism.
 
 ### Firewall
 

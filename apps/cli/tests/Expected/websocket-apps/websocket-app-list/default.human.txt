@@ -1,0 +1,15 @@
+Loading WebSocket apps...
+
+┌  List WebSocket apps
+│
+├  ● Loaded WebSocket apps
+│
+└  Loaded WebSocket apps.
+
+ ┌─────────┬──────────────────────┬──────────────────────┬──────────────┐
+ │ NAME    │ APP ID               │ KEY                  │ INSTANCE IDS │
+ ├─────────┼──────────────────────┼──────────────────────┼──────────────┤
+ │ gateway │ gatewayappid00000001 │ gatewayappkey0000001 │ —            │
+ │ hauzer  │ hauzerappid000000001 │ hauzerappkey00000001 │ 1            │
+ └─────────┴──────────────────────┴──────────────────────┴──────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

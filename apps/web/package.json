@@ -9,7 +9,7 @@
         "build": "tsc && vp build",
         "preview": "vp preview",
         "check": "vp check",
-        "test": "vp test run",
+        "test": "bun run test:unit && bun run test:browser",
         "test:unit": "vp test run --project unit --project verification",
         "test:browser": "vp test run --project browser",
         "types": "openapi-typescript ../../docs/openapi.json -o src/api/schema.d.ts"

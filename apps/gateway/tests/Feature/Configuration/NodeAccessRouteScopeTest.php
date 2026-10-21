@@ -175,6 +175,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:teardown-step:update' => ServingNode::ProjectOwning,
         'instance:transfer' => ServingNode::InstanceTransfer,
         'instance:update' => ServingNode::InstanceOwning,
+        'instance:websocket:add' => ServingNode::EnvironmentInstanceOwning,
+        'instance:websocket:remove' => ServingNode::EnvironmentInstanceOwning,
         'metrics:credentials' => ServingNode::Gateway,
         'metrics:credentials:reset' => ServingNode::Gateway,
         'metrics:disable' => ServingNode::Gateway,
@@ -301,6 +303,10 @@ it('declares node access scope on every active-peer API route', function (): voi
         'vault:status' => ServingNode::Gateway,
         'vault:sync' => ServingNode::Gateway,
         'vault:teardown' => ServingNode::Gateway,
+        'websocket:app:create' => ServingNode::Gateway,
+        'websocket:app:destroy' => ServingNode::Gateway,
+        'websocket:app:list' => ServingNode::Gateway,
+        'websocket:app:show' => ServingNode::Gateway,
     ];
 
     expect($actualScopes)->toBe($expectedScopes);

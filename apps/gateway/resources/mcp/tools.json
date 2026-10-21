@@ -4761,6 +4761,72 @@
       }
     },
     {
+      "name": "instance-websocket-add",
+      "extension": null,
+      "title": "Attach a WebSocket app",
+      "description": "Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).",
+      "method": "PUT",
+      "path": "/api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "instance",
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "instance-websocket-remove",
+      "extension": null,
+      "title": "Detach a WebSocket app",
+      "description": "Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "instance",
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "websocket_app"
+        ]
+      }
+    },
+    {
       "name": "metrics-credentials",
       "extension": null,
       "title": "Show Metrics credentials",
@@ -10065,6 +10131,102 @@
           }
         },
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "websocket-app-create",
+      "extension": null,
+      "title": "Create a WebSocket app",
+      "description": "Creates a Reverb app with a random app ID, key, and secret, and converges the active `websocket` role so that Reverb serves it. Without an active role, the next converge of the role serves it. No response contains the secret. A taken name, `gateway`, or a name that is not a slug returns `validation.failed`.",
+      "method": "POST",
+      "path": "/api/v1/websocket-apps",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+            "maxLength": 63,
+            "description": "WebSocket app name"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "websocket-app-destroy",
+      "extension": null,
+      "title": "Remove a WebSocket app",
+      "description": "Removes a Reverb app, converges the active `websocket` role without it, and returns the removed app. The Gateway app `gateway` returns `websocket.app_reserved` (409). An app that an Instance uses returns `websocket.app_in_use` (409).",
+      "method": "DELETE",
+      "path": "/api/v1/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "websocket-app-list",
+      "extension": null,
+      "title": "List WebSocket apps",
+      "description": "List the Reverb apps on the websocket role.",
+      "method": "GET",
+      "path": "/api/v1/websocket-apps",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "websocket-app-show",
+      "extension": null,
+      "title": "Show a WebSocket app",
+      "description": "Show one Reverb app and the Instances that use it.",
+      "method": "GET",
+      "path": "/api/v1/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
       }
     }
   ]

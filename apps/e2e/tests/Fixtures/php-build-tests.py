@@ -63,7 +63,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(selected['pins']['php8.5-cli']['version'], CORE)
         with self.assertRaisesRegex(build.BuildError, 'no PHP 8.4 build'):
             build.build(recipe(), '8.4', profile='ci-runner')
-        with self.assertRaisesRegex(build.BuildError, 'no arm64 package for libgd3'):
+        with self.assertRaisesRegex(build.BuildError, 'PHP is not available for arm64'):
             build.build(recipe(), architecture='arm64', profile='ci-runner')
 
     def test_modules_match_the_recipe_list_format(self):
@@ -253,6 +253,7 @@ class BumpTest(unittest.TestCase):
             index = '\n'.join([stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
                                for name, pin in recipe()['tools'].items() if pin['source'] == 'artifact'])
             same = copy.deepcopy(recipe())
+            same['architectures'].append('arm64')
             for name, tool in same['tools'].items():
                 if tool['source'] != 'artifact':
                     continue
@@ -260,14 +261,41 @@ class BumpTest(unittest.TestCase):
                 tool['artifacts']['amd64'] = {'url': build.SURY + filename, 'sha256': hashlib.sha256(filename.encode()).hexdigest()}
             path.write_text(json.dumps(same, indent=4) + '\n')
             with patch.object(build, 'signed_release', return_value=''), \
-                 patch.object(build, 'index', return_value=index), \
+                 patch.object(build, 'index', return_value=index) as fetch_index, \
                  redirect_stdout(io.StringIO()) as out:
                 build.bump(str(path), dry_run=False)
             self.assertEqual(path.read_text(), json.dumps(same, indent=4) + '\n')
             self.assertIn("pins Sury's newest PHP build", out.getvalue())
+            self.assertEqual([call.args[1] for call in fetch_index.call_args_list], ['amd64'])
+
+    def test_bump_does_not_add_an_unsupported_architecture_or_take_its_older_versions(self):
+        current = recipe()
+        index = '\n'.join(stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
+                          for name, pin in current['tools'].items() if pin['source'] == 'artifact')
+
+        build.bump_recipe(current, {'amd64': index, 'arm64': ''})
+
+        self.assertEqual(current['tools']['php8.5-common']['version'], CORE)
+        for pin in current['tools'].values():
+            if pin['source'] == 'artifact':
+                self.assertEqual(list(pin['artifacts']), ['amd64'])
 
 
 class RepositoryRecipeTest(unittest.TestCase):
+    def test_mirror_downloads_only_declared_amd64_php_artifacts(self):
+        document = build.load(build.RECIPE)
+        names = set(document['php']['shared']).union(*(set(v['packages']) for v in document['php']['versions'].values()))
+        document['tools'] = {name: document['tools'][name] for name in names}
+        document['artifact_mirror'] = ''
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(build, 'download') as download, redirect_stdout(io.StringIO()):
+            build.mirror(document, Path(directory))
+
+        self.assertEqual(download.call_count, len(names))
+        for call in download.call_args_list:
+            self.assertNotIn('_arm64.deb', call.args[0])
+            self.assertTrue(call.args[0].endswith(('_amd64.deb', '_all.deb')))
+
     def test_ci_build_and_installer_exclude_app_dev_opentelemetry(self):
         document = build.load(build.RECIPE)
         for version in document['php']['versions']:

@@ -58,7 +58,7 @@ describe('CLI install on a Node', function (): void {
         expect($installation->outcome)->toBe(NodeCliInstallation::Installed)
             ->and($installation->version)->toBe('0.4681.0')
             ->and($installation->configured)->toBeTrue()
-            ->and($lines)->toContain('sudo curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 20 --max-time 180 --output /usr/local/bin/orbit-0.4681.0.orbit-candidate -- https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64')
+            ->and($lines)->toContain('sudo curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 20 --max-time 180 --output /usr/local/bin/orbit-0.4681.0.orbit-candidate -- https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64')
             ->and($lines)->toContain('sudo chown root:root -- /usr/local/bin/orbit-0.4681.0.orbit-candidate')
             ->and($lines)->toContain('sudo chmod 0755 -- /usr/local/bin/orbit-0.4681.0.orbit-candidate')
             ->and($lines)->toContain('sudo mv -fT -- /usr/local/bin/orbit-0.4681.0.orbit-candidate /usr/local/bin/orbit-0.4681.0')
@@ -199,7 +199,7 @@ describe('CLI link inspection', function (): void {
         $marker = sys_get_temp_dir().'/orbit-cli-wrapper-ran-'.bin2hex(random_bytes(4));
 
         $state = cliInspect(static function (string $dir) use ($marker): void {
-            file_put_contents($dir.'/orbit', "#!/usr/bin/env bash\ntouch {$marker}\nexec /usr/bin/php /home/nckrtl/orbit/apps/cli/orbit \"\$@\"\n");
+            file_put_contents($dir.'/orbit', "#!/usr/bin/env bash\ntouch {$marker}\nexec /usr/bin/php /home/hardimpactdev/orbit/apps/cli/orbit \"\$@\"\n");
             chmod($dir.'/orbit', 0755);
         });
 

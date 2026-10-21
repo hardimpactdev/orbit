@@ -21,7 +21,7 @@ cd ../desktop && bun install
 bun run dev
 ```
 
-`bun run dev` runs `tauri dev`. Tauri first starts the web app's dev server with `bun run --cwd ../web dev`, then opens the window at `http://localhost:5173` with hot module replacement. The web app's dev server proxies the API to the Gateway in your CLI profile, so the window needs no setup of its own. The [web app README](https://github.com/nckrtl/orbit/blob/main/apps/web/README.md#run-it-locally) describes that proxy and its settings.
+`bun run dev` runs `tauri dev`. Tauri first starts the web app's dev server with `bun run --cwd ../web dev`, then opens the window at `http://localhost:5173` with hot module replacement. The web app's dev server proxies the API to the Gateway in your CLI profile, so the window needs no setup of its own. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md#run-it-locally) describes that proxy and its settings.
 
 The first run compiles the Rust crate in `src-tauri`. Your machine needs Rust and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for its operating system.
 

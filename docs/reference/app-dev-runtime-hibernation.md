@@ -11,6 +11,8 @@ covers:
 
 A development Instance often runs Processes, such as Vite, long after anyone uses the site. Orbit stops those Processes after an idle hour. After an idle week, it also deletes the dependency directories that lockfiles can rebuild. The next HTTP request shows a progress page, and Orbit restores and starts everything before it lets the request through. An explicit `process:start` for a Vite development Process marks the Instance awake, including when Vite was already listening; an automatic HTTP wake does not turn that temporary wake into a manual one.
 
+Hibernation settings live in [`config/orbit.php`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/config/orbit.php).
+
 ## What hibernates
 
 Hibernation applies to a Process that meets every condition:

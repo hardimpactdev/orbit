@@ -249,7 +249,7 @@ it('classifies the Orbit repository as a monorepo during upgrade', function (): 
     $orbit = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
-        'repository_url' => 'https://github.com/nckrtl/orbit.git',
+        'repository_url' => 'https://github.com/hardimpactdev/orbit.git',
         'default_branch' => 'main',
         'root' => 'apps/gateway/public',
     ]);

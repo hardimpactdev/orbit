@@ -40,9 +40,9 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     GitHubTestSupport::storeApp();
-    config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit']);
+    config(['orbit.cli_releases.repository' => 'https://github.com/hardimpactdev/orbit']);
     Http::preventStrayRequests();
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     Http::fake([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_test']),
@@ -57,7 +57,7 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
         $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-'.nightlyRecipeDate()->format('Ymd')], $branchFile === null ? 201 : 422),
         $base.'/pulls?*' => static fn (Request $request) => Http::response(isset($request['head']) ? $pulls : []),
         $base.'/pulls/99' => Http::response($pulls[0] ?? []),
-        $base.'/pulls' => Http::response(['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
+        $base.'/pulls' => Http::response(['html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
     ]);
 }
 
@@ -70,7 +70,7 @@ it('reads exactly main and opens a snapshot PR through the existing App publishe
 
     $url = app(OpenNightlyRecipePullRequestAction::class)->execute();
 
-    expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect($url)->toBe('https://github.com/hardimpactdev/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
         && $request['branch'] === $branch
         && $request['sha'] === $file['sha']
@@ -81,7 +81,7 @@ it('reads exactly main and opens a snapshot PR through the existing App publishe
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
         && $request['head'] === $branch && $request['base'] === 'main');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/pulls?')
-        && ($request['head'] ?? null) === 'nckrtl:'.$branch);
+        && ($request['head'] ?? null) === 'hardimpactdev:'.$branch);
 });
 
 it('does nothing when main already pins today or a newer snapshot', function (int $days): void {
@@ -96,9 +96,9 @@ it('does nothing when main already pins today or a newer snapshot', function (in
 
 it('reuses an existing date PR including a closed operator decision', function (string $state): void {
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
-    nightlyRecipeGitHub(nightlyRecipeFile(), pulls: [['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'state' => $state, 'merged_at' => null]]);
+    nightlyRecipeGitHub(nightlyRecipeFile(), pulls: [['html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'number' => 99, 'state' => $state, 'merged_at' => null]]);
 
-    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/hardimpactdev/orbit/pull/99');
 
     Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'PUT' || str_ends_with($request->url(), '/git/refs'));
 })->with(['open', 'closed']);
@@ -107,7 +107,7 @@ it('recovers after a crash between the date commit and opening its PR without an
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     nightlyRecipeGitHub(nightlyRecipeFile(), nightlyRecipeFile(nightlyRecipeDate()->format('Ymd\THis\Z')));
 
-    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/hardimpactdev/orbit/pull/99');
 
     Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'PUT');
 });
@@ -190,7 +190,7 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
 
     $url = app(OpenPhpBuildPullRequestAction::class)->execute();
 
-    expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect($url)->toBe('https://github.com/hardimpactdev/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
         && str_starts_with($request['branch'], OpenPhpBuildPullRequestAction::BranchPrefix)
         && base64_decode($request['content']) === $bumped);

@@ -201,11 +201,11 @@ Add a first setup step that copies present `vendor` and `node_modules` folders a
 
 ### Cache ownership
 
-Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The cache worker runs as the managed user that owns the store and imports the main CI artifacts with that user's `gh` login, so the login must read `nckrtl/orbit` and its Actions. Run `bin/tia-cache refresh --repository=/fast/apps/orbit/default` once, then check that `bin/tia-cache status --json --remote` lists all five projects in `current`.
+Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The cache worker runs as the managed user that owns the store and imports the main CI artifacts with that user's `gh` login, so the login must read `hardimpactdev/orbit` and its Actions. Run `bin/tia-cache refresh --repository=/fast/apps/orbit/default` once, then check that `bin/tia-cache status --json --remote` lists all five projects in `current`.
 
 Create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately. Point any `ORBIT_MAIN_CACHE_STORE` override at `/fast/apps/orbit/default/.git/orbit-tia/v1`.
 
-Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
+Stop the old ext4 cache worker before retiring `/home/hardimpactdev/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 

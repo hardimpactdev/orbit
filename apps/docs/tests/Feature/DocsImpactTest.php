@@ -407,6 +407,18 @@ it('docs impact reports MCP tool ownership and generator status', function (): v
         ->and(collect($report['surfaces_handled_by_generator'])->pluck('generator'))->toContain('bin/mcp-tools');
 });
 
+it('docs impact maps Reverb app commands to the websocket reference', function (string $action): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/cli/websocket.mdx', "---\ntitle: Websocket\n---\nReverb apps\n");
+    $path = 'apps/cli/app/Commands/WebSocketAppCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class WebSocketAppCommand { protected \$signature = 'websocket:app:{$action}'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/websocket.mdx');
+})->with(['create', 'list', 'show', 'destroy']);
+
 it('docs impact rejects unknown CLI families instead of guessing an owner', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/cli/app/Commands/UnknownCommand.php';

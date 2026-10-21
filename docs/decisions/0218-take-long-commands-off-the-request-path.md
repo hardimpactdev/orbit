@@ -44,6 +44,7 @@ A command becomes an operation when it changes a Node, a Cluster, an Instance, a
 | `node:role:relocate` | `node_role.relocate` | `node`, the destination | 191 s | Two convergences and a 31-second DNS wait |
 | `metrics:exporter:enable`, `metrics:exporter:disable` | `metrics_exporter.enable`, `metrics_exporter.disable` | `node`, the exporter Node | 65 s | Fleet Metrics reconcile: 120 s per command, 300 s per download |
 | `analytics:update` | `analytics.update` | `node`, the analytics Node | Never run; `node:role:add` of `analytics` took 148 s | Role convergence with an image pull |
+| `websocket:app:create`, `websocket:app:destroy` | `websocket_app.create`, `websocket_app.destroy` | `node`, the websocket Node | [Reverb apps](/reference/websocket-apps#the-reverb-server) | Role convergence |
 | `cluster:router:set`, `cluster:router:unset` | `cluster_router.set`, `cluster_router.unset` | `cluster` | 101 s for 6 Routes | Grows with the Routes of the Cluster |
 | `cluster:node:add`, `cluster:node:remove` | `cluster_node.add`, `cluster_node.remove` | `cluster` | 1 s without Routes | Grows with the Routes of the Node |
 | `cluster:update` with `state` or `tld` | `cluster.update` | `cluster` | 49 s, failed | Grows with the Routes of the Cluster; Cluster 4 has 39 |
@@ -73,7 +74,7 @@ Each kind caps its run with one `CommandDeadline::within()` call, as `instance.d
 - `instance.create`, `instance.register` with `--setup`, and `instance.destroy` add the total of their setup or teardown list, at most 540 seconds. Today the list gets only what the rest of the command leaves of the request.
 - `instance.clone` adds its database copy timeout of 600 seconds.
 - `instance_dependencies.update` uses the whole 1,600-second operation deadline, because its two package steps have 600 seconds each.
-- `instance.rollback` keeps the 900 seconds that it has as an operation since [#1301](https://github.com/nckrtl/orbit/pull/1301).
+- `instance.rollback` keeps the 900 seconds that it has as an operation since [#1301](https://github.com/hardimpactdev/orbit/pull/1301).
 
 ### Commands that move elsewhere
 
@@ -160,7 +161,7 @@ Role claims follow the same rule. A claim that an add or remove takes under the 
 
 #### The deployment history
 
-A pull request of its own replaces `instance_deployments`. The `instance.rollback` operation of ADR 0209, which it waits for, landed in [#1301](https://github.com/nckrtl/orbit/pull/1301). Deploy and rollback write their rows through `OperationDeploymentHistory`, which goes away with the table.
+A pull request of its own replaces `instance_deployments`. The `instance.rollback` operation of ADR 0209, which it waits for, landed in [#1301](https://github.com/hardimpactdev/orbit/pull/1301). Deploy and rollback write their rows through `OperationDeploymentHistory`, which goes away with the table.
 
 - **What the events hold.** The `events` JSON of a deployment holds phase markers, which match the step names, and the output of the run: in order, tagged `stdout` or `stderr`, with a truncation marker, and with failure warnings kept past the 128 KiB cap. It has no timestamps. Today's 8 KiB step tail loses the head of long steps, such as the 33 to 37 KiB of `composer install`, and the stream tags. The step log below keeps both. Only the free label of an output event, such as `checkout`, is dropped.
 - **Result.** `instance.deploy` and `instance.rollback` carry the release, branch, commit, and selected release in `result`. A pinned commit stays in `input`. `result.deployment_id` goes away.

@@ -16,7 +16,7 @@ Principle: [Agents operate, humans steer](/mission#principles). Runners become c
 
 ## Context
 
-Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runners. GitHub lists five runners for `nckrtl/orbit`:
+Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runners. GitHub lists five runners for `hardimpactdev/orbit`:
 
 | Runner | Node | Labels | State |
 | --- | --- | --- | --- |
@@ -25,7 +25,7 @@ Orbit's own CI already runs on Orbit Nodes, but Orbit does not manage those runn
 | `ci-shark-1` | Shark | `self-hosted`, `Linux`, `X64`, `orbit-shard` | Offline, its container stopped |
 
 - Sabre has no role. Its runners run on the host as `github-runner`. A `github-runner-egress` systemd unit loads an nftables rule, made by hand, that limits their egress. The runner user has no sudo, so a job cannot use it to bypass that rule and act as Sabre toward the Gateway. The implementation loop describes [the runner setup](/reference/implementation-loop#self-hosted-gateway-runner).
-- Beast and Shark are `app-dev` Nodes. Their runners run in unprivileged Incus containers in the project `orbit-ci`, with a `runner` user that has no `sudo`. [`tools/ci-runners/setup.sh`](https://github.com/nckrtl/orbit/blob/main/tools/ci-runners/setup.sh) builds them by hand. Both Nodes list `orbit-ci/*` in `task_vms.operator_owned`, so the task VM stray report ignores those containers. The implementation loop describes [those runners](/reference/implementation-loop#self-hosted-shard-runners).
+- Beast and Shark are `app-dev` Nodes. Their runners run in unprivileged Incus containers in the project `orbit-ci`, with a `runner` user that has no `sudo`. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) builds them by hand. Both Nodes list `orbit-ci/*` in `task_vms.operator_owned`, so the task VM stray report ignores those containers. The implementation loop describes [those runners](/reference/implementation-loop#self-hosted-shard-runners).
 
 Doctor sees none of this state, registration tokens pass through an operator's shell, and removal is a manual recipe.
 
@@ -43,7 +43,7 @@ The Gateway owns the role, every CI runner record, and every registration. The p
 
 The role installs Incus when it is missing and creates the Incus project `orbit-ci`, the bridge `orbitci0`, the ACL `orbit-ci-egress`, the restricted default profile, and the `ufw route allow in on orbitci0` rule, as `setup.sh host` does today. The ACL rejects every private, CGNAT, loopback, link-local, multicast, and reserved IPv4 range, and all IPv6. The project's resources belong to the role, so the task VM stray report and Doctor treat `orbit-ci` on a `ci-runner` Node as owned, without an `operator_owned` entry.
 
-Convergence uses the role baseline, as every role does today. When [ADR 0211](https://github.com/nckrtl/orbit/pull/1251) is built, its migration moves this baseline to remote programs with the rest.
+Convergence uses the role baseline, as every role does today. When [ADR 0211](https://github.com/hardimpactdev/orbit/pull/1251) is built, its migration moves this baseline to remote programs with the rest.
 
 ### CI runner records
 

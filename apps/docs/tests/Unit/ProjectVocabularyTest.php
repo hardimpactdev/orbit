@@ -111,3 +111,28 @@ it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename 
         vocabularyRemove($root);
     }
 });
+
+it('allows the Reverb app identifier outside its domain directories', function (string $relative): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, $relative, "app_id\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(0, $process->getOutput());
+
+        vocabularyWrite($root, $relative, "app_id\nApp instance\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toContain('App instance');
+    } finally {
+        vocabularyRemove($root);
+    }
+})->with([
+    'model' => 'apps/gateway/app/Models/WebSocketApp.php',
+    'migration' => 'apps/gateway/database/migrations/2026_12_07_000000_create_websocket_apps.php',
+    'generated web schema' => 'apps/web/src/api/schema.d.ts',
+    'app reference' => 'docs/reference/websocket-apps.md',
+]);

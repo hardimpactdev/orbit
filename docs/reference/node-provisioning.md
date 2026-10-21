@@ -270,7 +270,7 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 | Binary | `/usr/local/bin/orbit-<version>`, `root:root` mode `0755` |
 | Link | `/usr/local/bin/orbit`, a link to the binary. `orbit self-update` switches it with one rename and keeps the previous release |
 | Profile | `/root/.orbit/config.json`, `root:root` mode `0600`: the active profile `gateway` with the URL `https://<Gateway WireGuard address>` and the root certificate `/etc/orbit/agent/ca.pem`, which the agent converge writes |
-| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
+| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
@@ -372,6 +372,8 @@ A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 | Caddy | The `.deb` of a pinned [Caddy release](https://github.com/caddyserver/caddy/releases) on GitHub | None |
 
 For PHP, the Gateway sends each pin's URL, version, and SHA-256 digest to the Node with [`php.install-build`](/reference/compute-drivers#install-the-php-build). The Node downloads only over HTTPS, from Orbit's mirror first, and refuses a file whose digest, package name, version, or architecture differs. Orbit adds no PHP apt source. The installer deletes the Sury source that earlier Orbit releases wrote and refuses any other PHP apt source, such as `ppa:ondrej/php`. When every package is at its recipe version, it downloads nothing.
+
+The installer also repairs the [managed PHP settings](/reference/compute-drivers#install-the-php-build) when the packages already match. A settings-only repair validates every active FPM master, including dedicated production masters, and gracefully reloads those that pass. Instance steps defer and log invalid masters while keeping the INI and continuing with the other masters. Recipe convergence instead fails and restores the previous settings. The log also warns when masters are left running without a restart or reload because they may still use the previous build or settings.
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 

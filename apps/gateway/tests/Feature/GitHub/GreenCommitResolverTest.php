@@ -28,14 +28,14 @@ function green_fake(array $checks = [], string $comparison = 'ahead', ?array $co
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
 
         return match (true) {
-            $path === '/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            $path === '/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
             $path === '/app/installations/9/access_tokens' => Http::response(['token' => match ($request->data()['permissions']) {
                 ['contents' => 'read'] => 'ghs_contents',
                 ['checks' => 'read'] => 'ghs_checks',
             }], 201),
-            $path === '/repos/nckrtl/orbit/commits' => Http::response($commits ?? GreenCommitFixtures::commits()),
-            preg_match('#\A/repos/nckrtl/orbit/commits/([0-9a-f]{40})/check-runs\z#', $path, $match) === 1 => Http::response($checks[$match[1]] ?? GreenCommitFixtures::requiredChecks($match[1])),
-            preg_match('#\A/repos/nckrtl/orbit/compare/([0-9a-f]{40})\.\.\.[0-9a-f]{40}\z#', $path, $match) === 1 => Http::response(array_replace_recursive(GreenCommitFixtures::comparison($comparison), ['base_commit' => ['sha' => $match[1]]]
+            $path === '/repos/hardimpactdev/orbit/commits' => Http::response($commits ?? GreenCommitFixtures::commits()),
+            preg_match('#\A/repos/hardimpactdev/orbit/commits/([0-9a-f]{40})/check-runs\z#', $path, $match) === 1 => Http::response($checks[$match[1]] ?? GreenCommitFixtures::requiredChecks($match[1])),
+            preg_match('#\A/repos/hardimpactdev/orbit/compare/([0-9a-f]{40})\.\.\.[0-9a-f]{40}\z#', $path, $match) === 1 => Http::response(array_replace_recursive(GreenCommitFixtures::comparison($comparison), ['base_commit' => ['sha' => $match[1]]]
                     + ($comparison === 'ahead' && $alignMergeBase ? ['merge_base_commit' => ['sha' => $match[1]]] : []))),
         };
     });
@@ -45,7 +45,7 @@ function green_fake(array $checks = [], string $comparison = 'ahead', ?array $co
 function green_resolve(string $deployed, array $failed = [], string $branch = 'main', string $check = 'Required checks'): ?GreenCommit
 {
     return app(GreenCommitResolver::class)->resolve(
-        GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git'), $branch, $check, $deployed, $failed,
+        GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git'), $branch, $check, $deployed, $failed,
     );
 }
 
@@ -69,7 +69,7 @@ describe('GreenCommitResolver', function (): void {
         expect($green?->sha)->toBe($this->tip)
             ->and($green?->checkRun->name)->toBe('Required checks')
             ->and($green?->checkRun->headSha)->toBe($this->tip)
-            ->and($green?->checkRun->url)->toStartWith('https://github.com/nckrtl/orbit/actions/runs/');
+            ->and($green?->checkRun->url)->toStartWith('https://github.com/hardimpactdev/orbit/actions/runs/');
         Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/access_tokens')
             && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'read']]);
         Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/access_tokens')
@@ -238,16 +238,16 @@ describe('GreenCommitResolver', function (): void {
     });
 
     it('fails when the Gateway GitHub App is not installed on the repository', function (): void {
-        Http::fake(['https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['message' => 'Not Found'], 404)]);
+        Http::fake(['https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['message' => 'Not Found'], 404)]);
 
-        expect(fn () => green_resolve(str_repeat('e', 40)))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not installed on nckrtl/orbit.');
+        expect(fn () => green_resolve(str_repeat('e', 40)))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not installed on hardimpactdev/orbit.');
     });
 });
 
 describe('GreenCommitInspector', function (): void {
     function green_inspect(string $deployed, array $failed = []): GreenCommitInspection
     {
-        return app(GreenCommitInspector::class)->inspect(GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git'), 'main', 'Required checks', $deployed, $failed);
+        return app(GreenCommitInspector::class)->inspect(GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git'), 'main', 'Required checks', $deployed, $failed);
     }
 
     it('reports the head and its own check from the same walk', function (string $state, RequiredCheckState $expected): void {

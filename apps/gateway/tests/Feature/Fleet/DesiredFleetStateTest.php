@@ -73,8 +73,8 @@ describe(DesiredFleetState::class, function (): void {
         $published = false;
         Http::fake(static function (Request $request) use (&$published) {
             return match ((string) parse_url($request->url(), PHP_URL_PATH)) {
-                '/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0' => $published ? Http::response(cli_release_fixture_json('tag-ref.json')) : Http::response(['message' => 'Not Found'], 404),
-                '/repos/nckrtl/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
+                '/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => $published ? Http::response(cli_release_fixture_json('tag-ref.json')) : Http::response(['message' => 'Not Found'], 404),
+                '/repos/hardimpactdev/orbit/releases/tags/cli-v0.4681.0' => Http::response(cli_release_fixture_json('release.json')),
                 default => Http::response(cli_release_fixture('SHA256SUMS')),
             };
         });
@@ -153,7 +153,7 @@ describe(DesiredFleetState::class, function (): void {
                 $this->published[4683] = str_repeat('d', 40);
             } else {
                 $this->published[4683] = $this->commit;
-                $this->responses['/repos/nckrtl/orbit/releases/tags/cli-v0.4683.0'] = Http::response(['tag_name' => 'cli-v0.4683.0', 'draft' => true, 'assets' => []]);
+                $this->responses['/repos/hardimpactdev/orbit/releases/tags/cli-v0.4683.0'] = Http::response(['tag_name' => 'cli-v0.4683.0', 'draft' => true, 'assets' => []]);
             }
 
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
@@ -182,8 +182,8 @@ describe(DesiredFleetState::class, function (): void {
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
             expect($this->state->current()->cli->version)->toBe('0.4681.0');
 
-            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
-            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->responses['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->responses['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0'] = Http::response(['message' => 'Server Error'], 500);
             $this->travel(DesiredFleetState::FallbackSeconds + 1)->seconds();
             $sent = count(Http::recorded());
 
@@ -192,7 +192,7 @@ describe(DesiredFleetState::class, function (): void {
         });
 
         it('stops the search and names no release while GitHub cannot answer for an ancestor', function (): void {
-            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4682.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->responses['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4682.0'] = Http::response(['message' => 'Server Error'], 500);
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
 
             expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'pending', 'version' => '0.4683.0']);
@@ -215,7 +215,7 @@ describe(DesiredFleetState::class, function (): void {
         });
 
         it('never falls back while GitHub cannot answer for the commit itself', function (): void {
-            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->responses['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
 
             expect($this->state->current()->cli->toArray()['reason'])->toBe('github_unavailable');
@@ -235,8 +235,8 @@ describe(DesiredFleetState::class, function (): void {
     it('reads a stored state from before releases named their commit', function (): void {
         $stored = DesiredFleetStateData::fromArray([
             'commit' => CLI_RELEASE_FIXTURE_COMMIT,
-            'cli' => ['status' => 'available', 'reason' => null, 'version' => '0.4681.0', 'tag' => 'cli-v0.4681.0', 'checksums_url' => 'https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS', 'assets' => [
-                ['platform' => 'linux-x86_64', 'name' => 'orbit-0.4681.0-linux-x86_64', 'url' => 'https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64', 'sha256' => str_repeat('c', 64)],
+            'cli' => ['status' => 'available', 'reason' => null, 'version' => '0.4681.0', 'tag' => 'cli-v0.4681.0', 'checksums_url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS', 'assets' => [
+                ['platform' => 'linux-x86_64', 'name' => 'orbit-0.4681.0-linux-x86_64', 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64', 'sha256' => str_repeat('c', 64)],
             ]],
             'agent' => ['version' => NodeAgentFootprint::Version, 'assets' => []],
         ]);

@@ -553,7 +553,7 @@ it('removes the orbit workspace clone on cancel and on complete', function (stri
     }
     $group->status = $operation === 'complete' ? TaskGroupStatus::Settling : TaskGroupStatus::Running;
     if ($operation === 'complete') {
-        $group->pr_url = 'https://github.com/nckrtl/orbit/pull/120';
+        $group->pr_url = 'https://github.com/hardimpactdev/orbit/pull/120';
     }
     $group->save();
     bind_checkout_remover();

@@ -286,7 +286,7 @@ The Gateway pins a released agent version and its architecture checksums. It sto
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
 | Agent secret | `/etc/orbit/agent/secret` |
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
-| Download | `https://github.com/nckrtl/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
+| Download | `https://github.com/hardimpactdev/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
 
 The Node downloads the asset to a candidate file, checks the checksum, and moves it into place. A mismatch deletes the candidate and fails with `agent.checksum_mismatch`. When the installed binary already matches, the download is skipped. The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed.
 
@@ -374,7 +374,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Checks
 
-Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal user. The dev profile optimizes `regex` and `regex-automata` so the shared redaction fixtures run without the cost of unoptimized matching. The inputs, redaction rules, and assertions stay the same; these overrides do not change the release profile. [Live logs](/reference/live-logs#stream-tests) describes which stream tests use a paused clock and which retain real processes and observation intervals.
+Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal user. The dev profile optimizes `regex` and `regex-automata` so the shared redaction fixtures run without the cost of unoptimized matching. Cargo's test profile inherits these package overrides. The inputs, redaction rules, and assertions stay the same; these overrides do not change the release profile. [Live logs](/reference/live-logs#stream-tests) describes which stream tests use a paused clock and which retain real processes and observation intervals.
 
 ## Releases
 
@@ -383,7 +383,7 @@ A tag named `agent-v{version}` releases the agent. Tags are created by hand; mer
 The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
 
 ```bash
-gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
+gh api repos/hardimpactdev/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
 ```
 
 | Asset | Contents |

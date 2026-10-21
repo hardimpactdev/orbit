@@ -20,7 +20,7 @@ While a subtask is open, Orbit also watches a pull request on `task-{id}`. It st
 
 A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything for review, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
 
-The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
+The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
@@ -266,7 +266,7 @@ The base run stops after 600 seconds, and a timed-out run counts as failing on t
 
 Task create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` is the JSON boolean `true` or `false`, and `paths` is a list of strings. Any other value is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
-The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
+The Orbit Project's [task policy skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
 
 ### Confirm deliverables
 
@@ -393,7 +393,7 @@ Filing a task clears that occurrence history after the brief is built. Hits whil
 
 ### Suppression
 
-The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
+The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
 
 | Key | Match |
 | --- | --- |
@@ -1002,7 +1002,7 @@ After a handoff check passes and its deliverables verify, Orbit:
 3. Pushes the commit once to Orbit's handoff branch `task-{id}-handoff`. The task VM records the push, so a later tick does not push it again.
 4. Reads the check runs and check suites of exactly that commit. It judges the merge check by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 
-The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, four Gateway shards, and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
+The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, [capacity-sized Gateway shards](/reference/implementation-loop#gateway-shards), and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
 
 The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed handoff commit never reaches the task's pull request, nor an outside author's branch. A conflict with the base is not a handoff concern: the task's pull request, opened after the last approval, merges against the latest base through the [merge gate](#merge-on-green).
 
@@ -1491,7 +1491,7 @@ Cancel and the cancelled-task sweep push the latest approved commit only when a 
 
 ### Incoming pull requests
 
-`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=nckrtl/orbit:1234567`. Unset or empty reviews no incoming pull request.
+`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=hardimpactdev/orbit:1234567`. Unset or empty reviews no incoming pull request.
 
 At most once a minute, each `tasks:tick` lists the open pull requests of every review-and-merge Project, at most three pages of 100. A pull request is eligible when all of these hold:
 
@@ -1805,7 +1805,7 @@ The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the works
 
 ### The full suite runs in CI at each handoff
 
-On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite as four shards, and its `Required checks` finish in about five minutes.
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite in [one shard per shared runner](/reference/implementation-loop#gateway-shards).
 
 The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
 

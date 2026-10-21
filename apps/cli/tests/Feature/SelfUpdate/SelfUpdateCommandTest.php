@@ -183,7 +183,7 @@ describe('self-update CLI step', function (): void {
 
         expect(self_update_step(run_self_update(), 'cli')['outcome'])->toBe('updated')
             ->and(self_update_commands($this)[0])->toBe('curl cli-v0.4681.0/SHA256SUMS')
-            ->and(end($this->processes[0]))->toBe('https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS');
+            ->and(end($this->processes[0]))->toBe('https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS');
     });
 
     it('changes nothing when the Gateway checksum and the release SHA256SUMS disagree', function (): void {

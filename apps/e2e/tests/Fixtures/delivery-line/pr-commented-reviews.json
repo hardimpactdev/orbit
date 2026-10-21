@@ -25,15 +25,15 @@
     },
     "body": "Pass on 869557fe5a88a217773e0a661019d8acbeaeeb61. GitHub rejected an approval because this account opened the pull request, so this is a submitted review on that commit, not an issue comment.\n\nbug-repro does not fetch. It exits main_stale when local origin/main or main differs from git ls-remote origin main. The planted grep is gone. deploy-verify --help and the certificate unreachable path both name SSL_CERT_FILE. Tests cover those two. Required checks succeeded on this head. macOS arm64 on mini and Mintlify were skipped.\n\nNot a miss: bug-repro was not run against a live failing command. No current command on main still fails, and the script refuses a stale main instead of fetching.",
     "state": "COMMENTED",
-    "html_url": "https://github.com/nckrtl/orbit/pull/946#pullrequestreview-5407909532",
-    "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/946",
+    "html_url": "https://github.com/hardimpactdev/orbit/pull/946#pullrequestreview-5407909532",
+    "pull_request_url": "https://api.github.com/repos/hardimpactdev/orbit/pulls/946",
     "author_association": "OWNER",
     "_links": {
       "html": {
-        "href": "https://github.com/nckrtl/orbit/pull/946#pullrequestreview-5407909532"
+        "href": "https://github.com/hardimpactdev/orbit/pull/946#pullrequestreview-5407909532"
       },
       "pull_request": {
-        "href": "https://api.github.com/repos/nckrtl/orbit/pulls/946"
+        "href": "https://api.github.com/repos/hardimpactdev/orbit/pulls/946"
       }
     },
     "submitted_at": "2026-10-04T19:59:14Z",

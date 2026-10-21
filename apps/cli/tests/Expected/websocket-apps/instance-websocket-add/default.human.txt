@@ -1,0 +1,27 @@
+Adding WebSocket app...
+
+┌  Add WebSocket app
+│
+├  ● Added WebSocket app
+│
+└  Added WebSocket app.
+
+
+┌  WebSocket app [hauzer] added to Instance [1].
+│
+├  Instance ID     1
+│
+├  Name            hauzer
+│
+├  Keys            BROADCAST_CONNECTION, REVERB_APP_ID, REVERB_APP_KEY, REVERB_APP_SECRET, REVERB_HOST, REVERB_PORT, REVERB_SCHEME
+│
+├  Operation       attach
+│
+├  Changed         true
+│
+├  Stored keys     7
+│
+├  Workload file   unchanged
+│
+└  Request ID      0198e15c-bf97-7c23-8f1f-61b8fe67a844
+
