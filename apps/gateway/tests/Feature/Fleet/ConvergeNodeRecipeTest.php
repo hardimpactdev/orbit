@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\ConvergeNodeRecipeAction;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Nodes\RoleName;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -189,6 +190,26 @@ it('applies the VPN FPM policy in both preflight and installation', function (ar
     'VPN and websocket CLI' => [[RoleName::Vpn, RoleName::WebSocket], 'disabled'],
     'VPN and Gateway FPM' => [[RoleName::Vpn, RoleName::Gateway], 'all'],
     'VPN and application FPM' => [[RoleName::Vpn, RoleName::AppProd], 'all'],
+]);
+
+it('publishes private DNS after applying PHP only on a VPN Node', function (RoleName $role, string $outcome): void {
+    $node = FleetFixtures::node('recipe-php-dns', [$role]);
+    recipeSsh();
+    $php = new FakePhpBuildRunner(['apply' => [$outcome, ['changed' => ['php8.5-cli']]]]);
+    app()->instance(RemoteProgramRunner::class, $php);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $dns = Mockery::mock(PrivateDnsManager::class);
+    $dns->shouldReceive('converge')->times($role === RoleName::Vpn && $outcome === 'applied' ? 1 : 0)
+        ->withNoArgs()->andReturnUsing(function () use ($php): void {
+            expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply']);
+        });
+    app()->instance(PrivateDnsManager::class, $dns);
+
+    app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load());
+})->with([
+    'changed VPN runtime' => [RoleName::Vpn, 'applied'],
+    'unchanged VPN runtime' => [RoleName::Vpn, 'current'],
+    'changed application runtime' => [RoleName::AppProd, 'applied'],
 ]);
 
 it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', function (): void {

@@ -99,9 +99,11 @@ Convergence also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/li
 
 ### Release and sockets
 
-Every publication self-tests the installed release with the installed PHP before any service changes, even when the release is unchanged. Every listener start or restart, including rollback, requires a passing self-test. A listener whose process executable differs from the installed PHP binary, including a deleted executable after a package update, is stale and restarts behind its socket after validation. The PHP build installer applies the same self-test and socket-preserving restart when it changes PHP on a running listener Node. Failed self-tests retain the running listener and report the failure.
+Every publication self-tests the installed release with the installed PHP before any service changes, even when the release is unchanged. Every listener start or restart, including rollback, requires a passing self-test. A listener whose process executable differs from the installed PHP binary, including a deleted executable after a package update, is stale and restarts behind its socket after validation.
 
-If an attempted restart fails, the installer restores PHP, self-tests the restored release, and recovers the listener behind its socket. Failed recovery reports `rollback_failed`.
+After the PHP installer reports `applied` on an active VPN Node, recipe and VPN role convergence call this publication path. The VPN Node remains active while role reconvergence temporarily claims its assignment as provisioning. Publication owns listener activation, including socket ownership and catalog confirmation. Failed self-tests retain the running listener and report the failure.
+
+If activation fails, publication restores the previous records, catalog, and units, reloads systemd, and restarts dnsmasq. It self-tests the previous listener release before attempting to enable or restart it. A failed listener self-test does not skip the systemd reload or dnsmasq restart.
 
 The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the `vpn` Node. It lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. So a Gateway deploy that changes the listener code produces a new id, and the next publication installs it. The publication keeps the previous release for rollback and removes older ones.
 

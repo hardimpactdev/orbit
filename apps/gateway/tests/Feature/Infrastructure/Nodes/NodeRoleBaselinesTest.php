@@ -332,9 +332,15 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         ->toThrow(NodeRoleValidationException::class, 'The VPN role cannot be removed.');
 });
 
-it('installs and verifies the recipe PHP runtime before completing VPN convergence', function (string $outcome, ?RoleName $fpmRole): void {
+it('installs and verifies the recipe PHP runtime before completing VPN convergence', function (string $outcome, ?RoleName $fpmRole, bool $active): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-php');
+    if ($active) {
+        $assignment->update(['status' => LifecycleStatus::Active]);
+        $assignment->claimConvergence();
+    } else {
+        $node->update(['status' => LifecycleStatus::Provisioning]);
+    }
     if ($fpmRole !== null) {
         $node->roles()->create(['role' => $fpmRole, 'status' => LifecycleStatus::Active]);
         $node->unsetRelation('roles');
@@ -358,12 +364,19 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
         return true;
     })->andReturn(new ProgramResult($outcome, [], 'PHP build verified'));
     app()->instance(RemoteProgramRunner::class, $runner);
-    $baseline = new VpnRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_ssh($events), baseline_keys(), baseline_known_hosts(), baseline_firewall($events), baseline_account_resolver());
+    $dns = Mockery::mock(PrivateDnsManager::class);
+    $dns->shouldReceive('converge')->times($active && $outcome === 'applied' ? 1 : 0)->withNoArgs()
+        ->andReturnUsing(function () use (&$events): void {
+            $events[] = 'dns:publish';
+        });
+    $baseline = new VpnRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_ssh($events), baseline_keys(), baseline_known_hosts(), baseline_firewall($events), baseline_account_resolver(), dns: $dns);
 
     $baseline->converge($node, $assignment);
 
-    expect($events)->toBe(['ssh:vpn', 'php:verify', 'firewall:converge:vpn']);
-})->with(['applied', 'current'])->with([null, RoleName::Gateway, RoleName::AppDev, RoleName::AppProd]);
+    expect($events)->toBe($active && $outcome === 'applied'
+        ? ['ssh:vpn', 'php:verify', 'firewall:converge:vpn', 'dns:publish']
+        : ['ssh:vpn', 'php:verify', 'firewall:converge:vpn']);
+})->with(['applied', 'current'])->with([null, RoleName::Gateway, RoleName::AppDev, RoleName::AppProd])->with([true, false]);
 
 it('verifies VPN PHP before Gateway publication regardless of requested role order', function (bool $installFails): void {
     $events = [];

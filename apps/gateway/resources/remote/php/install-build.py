@@ -1,6 +1,6 @@
 # Program: php.install-build
 # Uses: lib/program.py lib/artifacts.py
-# Outcomes: planned current applied platform_unsupported conflicting_source extra_packages unowned_extensions download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid listener_invalid rolled_back rollback_failed
+# Outcomes: planned current applied platform_unsupported conflicting_source extra_packages unowned_extensions download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid rolled_back rollback_failed
 # Timeout: 900
 # Input: {"mode": "plan" or "apply", "versions": {"8.5": {"packages": [{"name", "version", "architecture", "url",
 #   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "opentelemetry": bool, "extras": "refuse", "keep", or "purge",
@@ -9,7 +9,7 @@
 # Result: planned: {"pending": [...], "repair": [...], "extras": [...], "unowned": [...]}. current or applied:
 #   {"changed": [...], "repaired": [...],
 #   "purged": [...], "disabled": [...],
-#   "restarted": [...], "deferred": [...], "stale_masters": [...], "fpm_disabled": bool, "listener_restarted": bool}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
+#   "restarted": [...], "deferred": [...], "stale_masters": [...], "fpm_disabled": bool}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
 #   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
 #   swap adds "restored": true once the previous build is back and checked; otherwise it ends with rollback_failed.
 # The one installer of the recipe's PHP build (ADR 0216). Recipe convergence, the PHP step of an Instance, the task VM
@@ -566,50 +566,6 @@ def disable_fpm(host, versions):
     return changed
 
 
-def listener_uses_installed_php(host):
-    pid = host.run(['systemctl', 'show', '-p', 'MainPID', '--value', 'orbit-private-dns.service'], check=False).stdout.strip()
-    return pid.isdigit() and int(pid) > 0 and host.ok(
-        ['test', str(host.path(f'proc/{pid}/exe')), '-ef', str(host.path('usr/bin/php8.5'))], privileged=True)
-
-
-def activate_listener(host, release, activation=None):
-    """Self-test before activation or recovery, keeping the socket open (ADR 0149)."""
-    unit = 'orbit-private-dns.service'
-
-    def refuse(reason):
-        raise Outcome('listener_invalid', {'unit': unit, 'reason': reason})
-
-    root = host.path('var/lib/orbit/private-dns/releases')
-    if Path(release).parent != root or not re.fullmatch(r'[a-f0-9]{16}', Path(release).name):
-        refuse('the listener does not use an installed private DNS release')
-    if not host.ok(['systemctl', 'is-active', '--quiet', 'orbit-private-dns.socket']):
-        refuse('the listener socket is not active; no restart attempted')
-    try:
-        valid = host.ok([str(host.path('usr/bin/php8.5')), str(Path(release) / 'serve.php'), '--self-test'], privileged=True)
-    except OSError:
-        valid = False
-    if not valid:
-        refuse('the installed listener PHP self-test failed; no restart attempted')
-    if activation is not None:
-        activation['release'] = release
-    if not host.ok(['systemctl', 'restart', unit], privileged=True) \
-            or not host.ok(['systemctl', 'is-active', '--quiet', unit]) or not listener_uses_installed_php(host):
-        refuse('the listener did not start with the installed PHP behind its socket')
-    return True
-
-
-def refresh_listener(host, changed, activation):
-    """Move a running listener onto changed PHP, or replace its stale executable even on a current build."""
-    unit = 'orbit-private-dns.service'
-    if not host.path(f'etc/systemd/system/{unit}').is_file() \
-            or not host.ok(['systemctl', 'is-active', '--quiet', unit]):
-        return False
-    if not changed and listener_uses_installed_php(host):
-        return False
-    release = host.run(['systemctl', 'show', '-p', 'WorkingDirectory', '--value', unit], check=False).stdout.strip()
-    return activate_listener(host, release, activation)
-
-
 def main(payload):
     host = Host(payload)
     release = payload.get('release')
@@ -661,7 +617,6 @@ def main(payload):
     added = sorted(name for name in pending if name not in packages)
     moved = []
     previous_ini = {}
-    listener_activation = {}
 
     def roll_back(reason, restarted, reloaded):
         """Put the previous build back and check it. Returns True only when every package is at its old version."""
@@ -696,13 +651,6 @@ def main(payload):
             for unit in units:
                 ok = host.ok(['systemctl', action, unit], privileged=True) and ok
                 ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
-        if listener_activation and ok:
-            try:
-                activate_listener(host, listener_activation['release'])
-            except (Outcome, RuntimeError, OSError) as error:
-                detail = error.data['reason'] if isinstance(error, Outcome) else str(error)
-                log('Private DNS listener recovery failed: ' + detail)
-                ok = False
         return ok
 
     def fail(outcome, data, reason, restarted, reloaded=()):
@@ -765,13 +713,9 @@ def main(payload):
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
                      f'{unit}: {reason}', restarted, reloaded)
-    try:
-        listener_restarted = '8.5' in versions and refresh_listener(host, changed, listener_activation)
-    except Outcome as refused:
-        fail(refused.outcome, refused.data, refused.outcome, restarted, reloaded)
-    changed = changed or fpm_disabled or listener_restarted
+    changed = changed or fpm_disabled
     result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'reloaded': reloaded, 'deferred': deferred,
-              'fpm_disabled': payload['fpm'] == 'disabled', 'listener_restarted': listener_restarted,
+              'fpm_disabled': fpm_disabled,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
 

@@ -452,19 +452,20 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 else
                     rm -f -- "\$socket_managed"
                 fi
-                if [ "\$had_unit" = 1 ]; then
-                    self_test_listener "\$previous_listener_dir" || return 1
-                fi
                 systemctl daemon-reload || true
                 systemctl restart dnsmasq || true
                 if [ "\$had_socket" = 0 ]; then
                     systemctl stop {$unitName} || true
                     systemctl disable --now {$socketName} || true
                     if [ "\$had_unit" = 1 ]; then
-                        systemctl enable --now {$unitName} || true
+                        if self_test_listener "\$previous_listener_dir"; then
+                            systemctl enable --now {$unitName} || true
+                        fi
                     fi
                 elif [ "\$had_unit" = 1 ]; then
-                    systemctl restart {$unitName} || true
+                    if self_test_listener "\$previous_listener_dir"; then
+                        systemctl restart {$unitName} || true
+                    fi
                 fi
             }
             if [ "\$records_changed" = 0 ] && [ "\$catalog_changed" = 0 ] && [ "\$vpn_changed" = 0 ] && [ "\$unit_changed" = 0 ] && [ "\$socket_changed" = 0 ] && [ "\$release_installed" = 0 ]; then

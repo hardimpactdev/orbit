@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
+use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -16,7 +18,7 @@ use RuntimeException;
 /** Fixed recipe operations over the same pinned SSH transport as fleet convergence. */
 final readonly class NodeRecipeProgram
 {
-    public function __construct(private NodeShell $shell, private PhpBuildInstaller $php) {}
+    public function __construct(private NodeShell $shell, private PhpBuildInstaller $php, private PrivateDnsManager $dns) {}
 
     /** @return array<string, ToolPin> */
     public function tools(Node $node, MachineRecipe $recipe): array
@@ -134,6 +136,10 @@ final readonly class NodeRecipeProgram
         $names = static fn (mixed $list): array => is_array($list) ? array_values(array_filter($list, is_string(...))) : [];
         $report['changed_packages'] = array_values(array_unique([...$names($report['changed_packages'] ?? null), ...$names($result->data['changed'] ?? null)]));
         $report['php'] = $result->data;
+
+        if ($result->outcome === 'applied' && $node->roles()->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active)->exists()) {
+            $this->dns->converge();
+        }
 
         return $report;
     }

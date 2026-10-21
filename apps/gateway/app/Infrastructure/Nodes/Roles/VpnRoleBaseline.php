@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -11,6 +12,7 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -33,6 +35,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
         private ManagedUserAccountResolver $accounts,
         private ?PhpBuildInstaller $php = null,
         private RecipeLoader $recipes = new RecipeLoader,
+        private ?PrivateDnsManager $dns = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -97,6 +100,11 @@ final readonly class VpnRoleBaseline implements RoleBaseline
         Log::info('Private DNS PHP build verified.', ['node_id' => $node->id, 'outcome' => $installed->outcome]);
 
         $this->firewall->converge($node, RoleName::Vpn, $node->user);
+
+        // Role convergence claims the assignment as provisioning while its VPN Node stays active.
+        if ($installed->outcome === 'applied' && $node->status === LifecycleStatus::Active) {
+            ($this->dns ?? app(PrivateDnsManager::class))->converge();
+        }
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): never

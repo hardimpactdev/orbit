@@ -79,22 +79,16 @@ FAKES = {
                  'disable) [ -f "$STATE/fail-disable" ] && exit 1; touch "$STATE/disabled-${@: -1}"; '
                  'rm -f "$STATE/active-${@: -1}";; '
                  'stop) rm -f "$STATE/active-$2";; '
-                 'restart|reload) if [ "$2" = orbit-private-dns.service ]; then '
-                 'if [ -f "$STATE/fail-listener-restart" ]; then rm -f "$STATE/active-$2"; '
-                 '[ -f "$STATE/break-rollback-self-test" ] && touch "$STATE/listener-invalid"; exit 1; fi; '
-                 'ln -sfn "$ROOT/usr/bin/php8.5" "$ROOT/proc/4242/exe"; fi; '
+                 'restart|reload) '
                  '[ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
                  'list-units) for f in "$STATE"/active-orbit-*; do [ -f "$f" ] && echo "${f##*/active-} loaded active running"; done;; '
-                 'show) if [ "${@: -1}" = orbit-private-dns.service ]; then case "$3" in '
-                 'MainPID) echo 4242;; WorkingDirectory) cat "$STATE/listener-release";; esac; exit 0; fi; '
+                 'show) '
                  'echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/${@: -1}/php-fpm.conf }";; '
                  'esac',
 }
 # The CLI prints the modules of the links in its conf.d plus core; PHP-FPM does the same for its own conf.d.
 PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { configuration="${3%/*}"; master="${configuration##*/}"; '
        '[ -f "$STATE/fpm-invalid" ] || [ -f "$STATE/fpm-invalid-$master" ] && exit 78; exit 0; }\n'
-       'if [ "${2:-}" = --self-test ]; then echo "listener self-test" >> "$STATE/calls"; '
-       '[ -f "$STATE/listener-invalid" ] && { echo "listener PHP lacks sockets" >&2; exit 78; }; exit 0; fi\n'
        'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/20-*.ini; do [ -e "$f" ] || [ -L "$f" ] '
        '|| continue; n="${f##*/20-}"; echo "${n%.ini}"; done; cat "$STATE/extra-modules" 2>/dev/null; true\n')
 
@@ -177,21 +171,6 @@ class InstallBuildTest(unittest.TestCase):
     def cached(self):
         return sorted(path.name for path in (self.root / 'var/cache/orbit/php-packages').glob('*.deb'))
 
-    def listener(self, stale=False):
-        units = self.root / 'etc/systemd/system'
-        units.mkdir(parents=True, exist_ok=True)
-        (units / 'orbit-private-dns.service').write_text('[Service]\n')
-        release = self.root / 'var/lib/orbit/private-dns/releases/0123456789abcdef'
-        release.mkdir(parents=True, exist_ok=True)
-        (release / 'serve.php').write_text('<?php')
-        (self.state / 'listener-release').write_text(str(release))
-        for unit in ('orbit-private-dns.service', 'orbit-private-dns.socket'):
-            (self.state / f'active-{unit}').touch()
-        proc = self.root / 'proc/4242'
-        proc.mkdir(parents=True, exist_ok=True)
-        (proc / 'exe').unlink(missing_ok=True)
-        (proc / 'exe').symlink_to('/usr/bin/php8.5 (deleted)' if stale else self.root / 'usr/bin/php8.5')
-
     def test_disables_and_stops_unused_fpm_on_first_install_and_current_build(self):
         for current in (False, True):
             with self.subTest(current=current):
@@ -204,10 +183,14 @@ class InstallBuildTest(unittest.TestCase):
                 outcome, data = self.run_program(fpm='disabled')
 
                 self.assertIn(outcome, ('current', 'applied'), data)
+                self.assertTrue(data['fpm_disabled'])
                 self.assertIn('systemctl disable --now php8.5-fpm.service', self.calls())
                 self.assertFalse((self.state / 'active-php8.5-fpm.service').exists())
                 self.assertTrue((self.state / 'disabled-php8.5-fpm.service').exists())
                 self.assertFalse([c for c in self.calls() if c.startswith(('systemctl restart', 'systemctl reload'))])
+                unchanged, data = self.run_program(fpm='disabled')
+                self.assertEqual(unchanged, 'current', data)
+                self.assertFalse(data['fpm_disabled'])
 
     def test_vpn_cli_install_selects_the_inactive_fpm_policy(self):
         repository = Path(__file__).resolve().parents[4]
@@ -242,101 +225,6 @@ class InstallBuildTest(unittest.TestCase):
 
         self.assertEqual(outcome, 'fpm_invalid', data)
         self.assertIn('disabled and inactive', data['reason'])
-
-    def test_refreshes_a_running_listener_after_a_php_change_behind_its_socket(self):
-        self.listener()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'applied', data)
-        self.assertTrue(data['listener_restarted'])
-        calls = self.calls()
-        self.assertLess(calls.index('listener self-test'), calls.index('systemctl restart orbit-private-dns.service'))
-        self.assertNotIn('systemctl stop orbit-private-dns.socket', calls)
-        self.assertNotIn('systemctl restart orbit-private-dns.socket', calls)
-
-    def test_refreshes_a_deleted_listener_executable_even_when_php_is_current(self):
-        self.run_program(fpm='disabled')
-        self.listener(stale=True)
-        (self.state / 'calls').unlink()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'applied', data)
-        self.assertTrue(data['listener_restarted'])
-        self.assertTrue((self.root / 'proc/4242/exe').samefile(self.root / 'usr/bin/php8.5'))
-        self.assertEqual(self.run_program(fpm='disabled')[0], 'current')
-        self.assertEqual(self.calls().count('systemctl restart orbit-private-dns.service'), 1)
-
-    def test_never_restarts_a_listener_when_its_self_test_fails(self):
-        self.listener(stale=True)
-        (self.state / 'listener-invalid').touch()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'listener_invalid', data)
-        self.assertIn('self-test', data['reason'])
-        self.assertIn('listener self-test', self.calls())
-        self.assertNotIn('systemctl restart orbit-private-dns.service', self.calls())
-        self.assertTrue((self.state / 'active-orbit-private-dns.service').exists())
-
-    def test_refuses_a_listener_restart_without_its_active_socket(self):
-        self.listener(stale=True)
-        (self.state / 'active-orbit-private-dns.socket').unlink()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'listener_invalid', data)
-        self.assertIn('socket', data['reason'])
-        self.assertNotIn('systemctl restart orbit-private-dns.service', self.calls())
-
-    def test_recovers_the_listener_after_restoring_php_when_the_new_build_cannot_start_it(self):
-        for name in self.pins:
-            self.install(name, '8.5.11-1')
-        self.listener()
-        (self.state / 'breaks-8.5.12-1').touch()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual((outcome, data.get('restored')), ('listener_invalid', True), data)
-        for name in self.pins:
-            self.assertEqual((self.state / 'installed' / name).read_text().strip(), '8.5.11-1')
-        self.assertTrue((self.state / 'active-orbit-private-dns.service').exists())
-        self.assertTrue((self.root / 'proc/4242/exe').samefile(self.root / 'usr/bin/php8.5'))
-        calls = self.calls()
-        self.assertEqual(calls.count('systemctl restart orbit-private-dns.service'), 2)
-        self.assertEqual(calls.count('listener self-test'), 2)
-        for index, call in enumerate(calls):
-            if call == 'systemctl restart orbit-private-dns.service':
-                self.assertEqual(calls[index - 1], 'listener self-test')
-        self.assertNotIn('systemctl restart orbit-private-dns.socket', calls)
-        self.assertNotIn('systemctl stop orbit-private-dns.socket', calls)
-
-    def test_reports_failed_rollback_when_the_restored_listener_still_cannot_start(self):
-        for name in self.pins:
-            self.install(name, '8.5.11-1')
-        self.listener()
-        (self.state / 'fail-listener-restart').touch()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'rollback_failed', data)
-        self.assertNotIn('restored', data)
-        self.assertFalse((self.state / 'active-orbit-private-dns.service').exists())
-        self.assertEqual(self.calls().count('systemctl restart orbit-private-dns.service'), 2)
-
-    def test_never_restarts_on_rollback_when_the_restored_listener_self_test_fails(self):
-        for name in self.pins:
-            self.install(name, '8.5.11-1')
-        self.listener()
-        (self.state / 'fail-listener-restart').touch()
-        (self.state / 'break-rollback-self-test').touch()
-
-        outcome, data = self.run_program(fpm='disabled')
-
-        self.assertEqual(outcome, 'rollback_failed', data)
-        self.assertEqual(self.calls().count('listener self-test'), 2)
-        self.assertEqual(self.calls().count('systemctl restart orbit-private-dns.service'), 1)
 
     def test_installs_the_pinned_files_without_removal_and_keeps_every_file(self):
         outcome, data = self.run_program()
