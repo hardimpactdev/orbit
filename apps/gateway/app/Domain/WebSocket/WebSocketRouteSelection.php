@@ -26,7 +26,7 @@ final readonly class WebSocketRouteSelection
         }
 
         $route = Route::query()->whereNull('web_root')
-            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))->first();
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))->orderBy('id')->first();
         if (! $instance->placedOnAppProd() || $instance->source_is_laravel !== true
             || ! $route instanceof Route || ! $route->isApp() || $route->status !== RouteStatus::Active
             || $route->target_set_intent !== null

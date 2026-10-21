@@ -61,6 +61,9 @@ final readonly class DevelopmentCaddyConfigRenderer
     /**
      * Reserve Pusher's prefixes on this app domain. Reverb verifies signatures; Caddy binds both
      * protocols to this attachment's public identifiers. No secret enters the Node configuration.
+     * Match the decoded, uncleaned path: path/path_regexp clean dot segments before matching,
+     * while reverse_proxy forwards them. The path matcher also ignores case.
+     * Caddy 2.11.7 does not advertise RFC 8441; revisit GET/Upgrade if a later version enables it.
      */
     private function websocketHandler(DevelopmentSite $site): string
     {
@@ -85,7 +88,7 @@ final readonly class DevelopmentCaddyConfigRenderer
             route {
                 @orbit_reverb_socket {
                     method GET
-                    path /app/{$key}
+                    vars {http.request.uri.path} /app/{$key}
                     header_regexp Connection (?i)(^|,)\\s*upgrade\\s*(,|$)
                     header_regexp Upgrade (?i)^websocket$
                 }
@@ -94,16 +97,18 @@ final readonly class DevelopmentCaddyConfigRenderer
                 }
                 @orbit_reverb_publish {
                     method POST
-                    path_regexp ^/apps/{$id}/(events|batch_events|users/[^/]+/terminate_connections)$
-                    query auth_key={$key} auth_signature=* auth_timestamp=* auth_version=1.0
+                    vars_regexp {http.request.uri.path} ^/apps/{$id}/(events|batch_events|users/[^/]+/terminate_connections)$
+                    vars {http.request.uri.query.auth_key} {$key}
+                    query auth_signature=* auth_timestamp=* auth_version=1.0
                 }
                 handle @orbit_reverb_publish {
                     {$proxy}
                 }
                 @orbit_reverb_read {
                     method GET
-                    path_regexp ^/apps/{$id}/(connections|channels|channels/[^/]+|channels/[^/]+/users)$
-                    query auth_key={$key} auth_signature=* auth_timestamp=* auth_version=1.0
+                    vars_regexp {http.request.uri.path} ^/apps/{$id}/(connections|channels|channels/[^/]+|channels/[^/]+/users)$
+                    vars {http.request.uri.query.auth_key} {$key}
+                    query auth_signature=* auth_timestamp=* auth_version=1.0
                 }
                 handle @orbit_reverb_read {
                     {$proxy}

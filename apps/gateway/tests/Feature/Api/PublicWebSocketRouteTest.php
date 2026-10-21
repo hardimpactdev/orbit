@@ -17,6 +17,7 @@ use App\Domain\Problems\ProblemSource;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteInspector;
+use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Models\Cluster;
@@ -87,6 +88,26 @@ it('publishes the existing app Route and preserves its host on repeat attachment
         ->and($instance->environmentValues()->where('env_key', 'REVERB_APP_SECRET')->sole()->env_value)->toBe($app->secret)
         ->and($instance->environmentValues()->where('env_key', 'REVERB_HOST')->sole()->env_value)->toBe('mealou.app')
         ->and(Route::query()->count())->toBe(1);
+});
+
+it('selects the lowest Route ID while a replacement also targets the Instance', function (): void {
+    [, $instance, $route, $app] = public_reverb_fixture();
+    $alias = $route->replicate();
+    $alias->domain = 'www.mealou.app';
+    $alias->status = 'pending';
+    $alias->replaces_route_id = $route->id;
+    $alias->save();
+    $alias->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+
+    // Simulate a database returning aliases first unless selection sets an explicit order.
+    $scopes = Route::getAllGlobalScopes();
+    Route::addGlobalScope('aliases-first', static fn ($query) => $query->orderByDesc('id'));
+    try {
+        $selected = app(WebSocketRouteSelection::class)->select($instance, $app, true);
+        expect($selected?->id)->toBe($route->id);
+    } finally {
+        Route::setAllGlobalScopes($scopes);
+    }
 });
 
 it('withdraws the Pusher handler when detached and retains the app Route', function (): void {
