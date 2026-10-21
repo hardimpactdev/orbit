@@ -1,7 +1,7 @@
-# Orbit @orbit/ci-caches: import only the recorded code baseline's ref received from the Gateway mirror.
+# Orbit @orbit/ci-caches: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
 # Missing or invalid refs leave checks cold. Required tooling and cache writes remain setup failures.
 set -eu
-if [ ! -f bin/ci-cache-ref ] || [ ! -x bin/tia-cache ]; then
+if [ ! -f bin/ci-cache-ref ]; then
     echo 'CI cache import tooling is missing from this checkout.' >&2
     exit 1
 fi

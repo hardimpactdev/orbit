@@ -668,6 +668,7 @@
             "concepts": [
                 "Gateway",
                 "Instance",
+                "Process",
                 "Role"
             ],
             "governing_adrs": []
@@ -3001,9 +3002,12 @@
             ],
             "concepts": [
                 "Access grant",
+                "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
                 "Route"

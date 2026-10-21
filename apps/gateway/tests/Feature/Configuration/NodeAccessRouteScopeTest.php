@@ -7,6 +7,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\RequireNodeAgentSecret;
+use App\Http\Middleware\RequireWebSocketRuntimeSecret;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
@@ -14,7 +15,7 @@ it('declares node access scope on every active-peer API route', function (): voi
     // The agent routes need the agent secret instead. Any active peer reads the desired fleet state (ADR 0202),
     // because every managed Node updates itself from it, with or without access to the Gateway. Every
     // active Node may use the Conn layer (`conn:` routes), which has no grants yet.
-    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state'];
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state', 'websocket:registry:snapshot', 'websocket:runtime:boot', 'websocket:runtime:report'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -306,7 +307,10 @@ it('declares node access scope on every active-peer API route', function (): voi
         'websocket:app:create' => ServingNode::Gateway,
         'websocket:app:destroy' => ServingNode::Gateway,
         'websocket:app:list' => ServingNode::Gateway,
+        'websocket:app:rotate' => ServingNode::Gateway,
         'websocket:app:show' => ServingNode::Gateway,
+        'websocket:operation:show' => ServingNode::Gateway,
+        'websocket:sync' => ServingNode::Gateway,
     ];
 
     expect($actualScopes)->toBe($expectedScopes);
@@ -388,6 +392,12 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             expect($middleware)
                 ->not->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
+
+            continue;
+        }
+
+        if (in_array($route->getName(), ['websocket:registry:snapshot', 'websocket:runtime:boot', 'websocket:runtime:report'], strict: true)) {
+            expect($middleware)->toContain(RequireActiveWireGuardPeer::class, RequireWebSocketRuntimeSecret::class)->not->toContain(RequireNodeAccess::class);
 
             continue;
         }

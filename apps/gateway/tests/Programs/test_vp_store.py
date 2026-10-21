@@ -77,6 +77,31 @@ class VpStoreTest(unittest.TestCase):
             self.assertGreaterEqual(time.monotonic() - start, 0.2)
         self.assertFalse((self.home / 'js_runtime').exists())
 
+    def test_deploy_lock_is_recipe_compatible_under_a_group_writable_umask(self):
+        node = archive({'node-v24.22.0-linux-x64/bin/node': '#!/bin/sh\nexit 0\n'})
+        npm = archive({'package/package.json': '{"name":"npm","version":"11.12.0","bin":{"npm":"bin/npm-cli.js"}}',
+                       'package/bin/npm-cli.js': '#!/usr/bin/env node\n'})
+        # Supply verified fixture archives at the download boundary of the actual program.
+        replace = {"data, source, integrity = node_archive(payload['node_version'])":
+                   'data, source, integrity = ' + repr((node, 'node-v24.22.0-linux-x64', 'verified-node')),
+                   'data, integrity = manager_archive(payload)': 'data, integrity = ' + repr((npm, 'verified-npm'))}
+        previous = os.umask(0o002)
+        try:
+            self.assertEqual(result('tools.install-vp-environment', self.payload, replace=replace)[0], 'installed')
+        finally:
+            os.umask(previous)
+        lock = self.home / '.orbit-store.lock'
+        self.assertEqual(lock.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(result('tools.inspect-vp-store', {'environments': [self.payload]}), ('inspected', {'installed': [True]}))
+
+    def test_install_and_cleanup_refuse_a_symlinked_store_lock(self):
+        outside = self.home / 'unrelated'
+        outside.write_text('keep')
+        (self.home / '.orbit-store.lock').symlink_to(outside)
+        self.assertEqual(result('tools.install-vp-environment', self.payload), ('failed', {}))
+        self.assertEqual(result('tools.prune-vp-store', {'store': str(self.home), 'references': []}), ('failed', {}))
+        self.assertEqual(outside.read_text(), 'keep')
+
     def test_waiting_installer_rechecks_after_lock_and_does_not_download_twice(self):
         from harness import REMOTE
         with (self.home / '.orbit-store.lock').open('w') as lock:

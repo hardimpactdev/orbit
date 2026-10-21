@@ -291,7 +291,7 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
         }
         if (str_contains($request->url(), '/sessions/implementer-thread')) {
             return Http::response([
-                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+                'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
                 'session' => ['id' => 'implementer-thread'],
                 'state' => 'failed', 'error' => TaskScheduler::PiServerRestartError, 'turnId' => 'turn-key-1', 'entries' => [],
             ]);

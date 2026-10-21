@@ -476,7 +476,7 @@ it('complete ended holds stale transitions and start or send boundaries during i
     });
     $stale = $task->fresh(['parent']);
     $queued = $todo->fresh(['parent']);
-    $observed = new TaskThreadObservation($thread->id, $role, 'done', true, null, null, null, null, false, null, null);
+    $observed = new TaskThreadObservation($thread->id, $role, 'done', true, null, null, false, null, null);
     $driver->duringInterrupt = static function () use ($stale, $queued, $observed, $status): void {
         $scheduler = app(TaskScheduler::class);
         $scheduler->settleImplementer($stale);

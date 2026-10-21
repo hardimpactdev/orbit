@@ -16,7 +16,7 @@ The web app and `realtime:tail` need the Gateway to push events. The Gateway pub
 
 ## Cause
 
-Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process. It is a plain Laravel app with no Orbit code. The Gateway installs and runs it as the `websocket` role, the same way the `metrics` role runs Prometheus and Grafana.
+Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process. Its Laravel application contains the integration with Orbit for rolling app changes. The Gateway installs and runs it as the `websocket` role, the same way the `metrics` role runs Prometheus and Grafana.
 
 ## Solution
 
@@ -32,17 +32,21 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 
 1. It installs the role packages: `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml`. `php-curl` and `php-xml` let `composer install` pass its platform check on a fresh Ubuntu 26.04 Node.
 2. It generates a Laravel `APP_KEY` for the Reverb server the first time, and stores it encrypted as a setting of that Node. It also creates the Gateway's own [Reverb app](/reference/websocket-apps), `gateway`, when it is missing. Later converges reuse both.
-3. It checks out `https://github.com/hardimpactdev/orbit-reverb.git` at `main` into `/opt/orbit/websocket` as the managed user and runs `composer install --no-dev`. Before fetching, it creates a missing `origin` or updates an existing one to `ORBIT_WEBSOCKET_REPOSITORY`, or that default URL when the variable is unset.
-4. It writes the app's `.env` with mode `0600`. `REVERB_APPS` lists every [Reverb app](/reference/websocket-apps#the-reverb-server).
-5. It installs `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. Each converge restarts Reverb, so it loads the current code and every app, and clients reconnect.
+3. It checks out `https://github.com/hardimpactdev/orbit-reverb.git` at the immutable commit pinned by the Gateway release into a separate release under `/opt/orbit/websocket.releases` and runs `composer install --no-dev` as the managed user. It validates that release before stopping Reverb and switching `/opt/orbit/websocket` to it.
+4. It writes the app's `.env` with mode `0600`. It contains restricted registry credentials, with no static app list.
+5. It installs `orbit-websocket.service`, which runs `php artisan orbit:reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. Each converge restarts Reverb, so it loads the current code, fetches the fresh registry, and clients reconnect. App changes use the registry API without convergence.
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
 7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 
-Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. The converge stops the runtime again only when it created the role assignment. An existing assignment keeps Reverb running and reports the failure. That covers `--converge-existing`, a retry after a failed converge, `websocket:app:create`/`destroy`, and a relocate target. A failed rollback reports `websocket.rollback_failed`.
+Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. The converge stops the runtime again only when it created the role assignment. A preparation failure leaves the existing process running. An activation failure reports an error and requires forward recovery with a compatible release. Orbit does not automatically start a static app list that could contain revoked credentials. That covers `--converge-existing`, a retry after a failed converge, and a relocate target. A failed rollback reports `websocket.rollback_failed`.
 
-`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
+`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. The server ref belongs to the Gateway release and has no environment override. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
-The Gateway reads the connection from the active role assignment. It needs no broadcast setting in its `.env`.
+The Gateway reads the connection from published Reverb sites whose required process has reported `serving` after loading a snapshot in the current registry history. The reserved `gateway` app exists before a process can boot, so that confirmation proves the process loaded its credentials. A role in `provisioning`, `failed`, or `removing` still supplies realtime while such a process serves it. A private DNS publication failure therefore leaves `realtime:show`, channel authorization, and broadcasts configured.
+
+A later unrelated app revision does not invalidate the confirmed Gateway app. Reverb reports every 5 seconds. The Gateway accepts a serving report for less than 60 seconds, allowing brief report delays while withdrawing a dead or hung process after one minute. App operations retain their stricter 15-second report window for their own revision.
+
+A new process boot clears its confirmation, and a verified shutdown or offline abandonment withdraws it. This includes a new assignment that stops Reverb while rolling back a failed publication. If that stop fails, its serving confirmation stays available. A process with no recent serving report, an unpublished site, and an inactive Node supply no realtime connection. The Gateway needs no broadcast setting in its `.env`.
 
 ### Move the role
 
@@ -54,11 +58,11 @@ Relocate copies the server's `APP_KEY` to the target when the target has none, a
 
 ### Remove the role
 
-`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the server's `APP_KEY`. `--purge-data` also deletes the checkout. With `--offline`, the Gateway removes only the DNS record and the `APP_KEY`. The apps stay, so a new role serves them with the same keys.
+`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the server's `APP_KEY`. `--purge-data` also deletes the checkout. With `--offline --force`, after confirming the Node is dead or isolated from clients, the Gateway withdraws its publication and credentials and abandons its runtime identities. It cannot stop the remote process. See [dead websocket Nodes](/reference/websocket-apps#remove-a-dead-websocket-node) before returning that machine to service. Ordinary removal keeps unconfirmed runtimes required. The apps stay, so a new role serves them with the same keys.
 
 ## Limits
 
-This covers one Reverb server behind one `websocket` assignment. That server serves several [Reverb apps](/reference/websocket-apps). It does not cover several Reverb Nodes, Redis-backed scaling, or rotating an app secret without a reconnect.
+This covers one Reverb server behind one `websocket` assignment. That server serves several [Reverb apps](/reference/websocket-apps). Production starts with one process. Apply confirmation accounts for every serving process. App rotation closes only that app’s sockets. Package upgrades still need an announced reconnect window.
 
 ## Verification
 

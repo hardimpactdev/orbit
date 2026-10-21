@@ -127,6 +127,10 @@ Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` prefe
 
 Vite+ caches and running processes are separate: update project pins, deploy retained releases, and restart affected services before retiring old cached runtimes.
 
+Recipe Node uses the same [immutable store layout](/reference/tools#project-environments-in-the-vite-store) as deploy prerequisites. A matching real runtime stays in place on convergence. A link into the former recipe directory or a runtime without the recipe reference is reported as needing verified installation even when its Node version is current. Convergence calls the store publisher as the enrolled account. It migrates all former recipe links to real directories with normalized modes, keeps their old targets for running processes, and records a reference that protects only the current runtime from deployment cleanup.
+
+Older migrated versions remain adopted content. A link is briefly absent between unlink and directory rename; avoid process restarts during migration. Recipe installation refuses unrelated links or differing real content without deleting them.
+
 On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
 The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.

@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $name
  * @property string $app_id
  * @property string $key
+ * @property int $credential_generation
  * @property string $secret
  * @property-read Collection<int, WebSocketAppTarget> $targets
  */
@@ -36,6 +37,7 @@ final class WebSocketApp extends Model
         'app_id',
         'key',
         'secret',
+        'credential_generation',
     ];
 
     /** @var list<string> */
@@ -76,6 +78,7 @@ final class WebSocketApp extends Model
     {
         return [
             'secret' => 'encrypted',
+            'credential_generation' => 'integer',
         ];
     }
 }

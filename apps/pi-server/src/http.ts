@@ -80,7 +80,17 @@ export function createPiServer(options: HttpOptions): Server {
         const id = parts[1] ?? "";
         const action = parts.slice(2).join("/");
         if (method === "GET" && action === "") {
-            sendJson(response, 200, await registry.read(id, cursor(url.searchParams)));
+            sendJson(
+                response,
+                200,
+                url.searchParams.get("view") === "state"
+                    ? await registry.observe(id)
+                    : await registry.read(
+                          id,
+                          cursor(url.searchParams),
+                          byteBudget(url.searchParams),
+                      ),
+            );
             return;
         }
         if (method === "POST" && action === "messages") {
@@ -98,7 +108,13 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
         if (method === "GET" && action === "stream") {
-            await stream(id, cursor(url.searchParams), request, response);
+            await stream(
+                id,
+                cursor(url.searchParams),
+                byteBudget(url.searchParams),
+                request,
+                response,
+            );
             return;
         }
 
@@ -108,6 +124,7 @@ export function createPiServer(options: HttpOptions): Server {
     async function stream(
         id: string,
         after: StreamCursor | undefined,
+        maxBytes: number | undefined,
         request: IncomingMessage,
         response: ServerResponse,
     ): Promise<void> {
@@ -120,6 +137,7 @@ export function createPiServer(options: HttpOptions): Server {
             id,
             (event) => (open ? write(event) : buffered.push(event)),
             after,
+            maxBytes,
         );
 
         response.writeHead(200, {
@@ -148,6 +166,23 @@ function cursor(params: URLSearchParams): StreamCursor | undefined {
     }
 
     return { run, sequence: Number(after) };
+}
+
+/** The caller owns the budget; reserve enough space for state and a truncation marker. */
+function byteBudget(params: URLSearchParams): number | undefined {
+    const value = params.get("max_bytes");
+    if (value === null) {
+        return undefined;
+    }
+    const bytes = Number(value);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(bytes) || bytes < 4096) {
+        throw new PiServerError(
+            422,
+            "validation.failed",
+            "The max_bytes field must be an integer of at least 4096.",
+        );
+    }
+    return bytes;
 }
 
 function authorized(header: string | undefined, token: string): boolean {

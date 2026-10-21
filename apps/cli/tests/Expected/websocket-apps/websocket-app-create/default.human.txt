@@ -2,22 +2,24 @@ Creating WebSocket app...
 
 ┌  Create WebSocket app
 │
-├  ● Created WebSocket app
+├  ● Saved WebSocket app change
 │
-└  Created WebSocket app.
+└  Saved WebSocket app change.
 
 
-┌  WebSocket app [hauzer] created.
+┌  WebSocket change saved; runtime application is pending.
 │
-├  ID             2
+├  App                hauzer
 │
-├  Name           hauzer
+├  Operation ID       33333333-3333-4333-8333-333333333333
 │
-├  App ID         hauzerappid000000001
+├  Desired revision   2
 │
-├  Key            hauzerappkey00000001
+├  State              pending
 │
-├  Instance IDs   —
+├  Instance rollout   —
 │
-└  Request ID     0198e15c-bf97-7c23-8f1f-61b8fe67a844
+├  Next step          orbit websocket:sync
+│
+└  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
 

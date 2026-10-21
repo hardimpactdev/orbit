@@ -333,7 +333,7 @@ it('retries the stored Pi resume key when the send throws before Pi accepts it',
         }
 
         return Http::response([
-            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
             'session' => ['id' => 'implementer-thread'],
             'state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'turn-key-1', 'entries' => [],
         ]);
@@ -452,13 +452,13 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
 
             return Http::response(['duplicate' => false], 202);
         }
-        if (preg_match('#/sessions/([^/]+)$#', $request->url(), $match) !== 1) {
+        if (preg_match('#/sessions/([^/]+)$#', parse_url($request->url(), PHP_URL_PATH), $match) !== 1) {
             return Http::response([], 404);
         }
         $snap = $match[1] === 'reviewer-thread' ? $review : $implementer;
 
         return Http::response([
-            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
             'session' => ['id' => $match[1]],
             'state' => $snap->state, 'error' => $snap->error, 'turnId' => $snap->turnId, 'entries' => [],
         ]);
@@ -573,7 +573,7 @@ it('keeps a Pi resume counted when the server accepts the key and both responses
         }
 
         return Http::response([
-            'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+            'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
             'session' => ['id' => 'implementer-thread'],
             'state' => $state->state, 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
         ]);

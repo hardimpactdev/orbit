@@ -1176,7 +1176,7 @@ Configure the Project like this:
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, a fresh workspace gets the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
+A task VM has no main cache store, so without the `@orbit/ci-caches` step Pint and PHPStan start cold in every workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
 
 The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches seeded from the read-only host cache.
 

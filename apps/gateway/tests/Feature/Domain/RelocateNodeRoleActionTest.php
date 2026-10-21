@@ -265,8 +265,10 @@ describe(RelocateNodeRoleAction::class, function (): void {
 
         $moved = app(WebSocketCredentialManager::class)->ensure($target);
 
-        expect($moved->apps)
-            ->toEqual($credentials->apps)
+        expect($moved->processId)
+            ->not->toBe($credentials->processId)
+            ->and($moved->registryToken)
+            ->not->toBe($credentials->registryToken)
             ->and($moved->laravelAppKey)
             ->toBe($credentials->laravelAppKey)
             ->and(Setting::query()->where('scope_type', 'node')->where('scope_id', $source->id)->count())

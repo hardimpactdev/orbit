@@ -100,9 +100,9 @@ Build the feature and its tests against the documented behavior. Keep the in-pro
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
-Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) for PR checks and task-loop selection. Tests that start PHP still declare `pest()->group('subprocess')` for affected runs on main.
+Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop) for PR checks and task-loop selection. Tests that start PHP still declare `pest()->group('subprocess')`.
 
-A push to `main` runs the tests affected since the commit of the newest `main` graph and records that graph for the pushed commit. It runs the full suite with `--tia --fresh` when that graph is unusable, or when a change is one that TIA cannot link to tests, such as a script, a data file, or a file outside the project. An affected run also runs the architecture tests, and the `subprocess` group when the change reaches the project. A nightly run and a manual dispatch always run the full suite.
+Every CI run on `main`, a push, the nightly run and a manual dispatch, runs every project's full suite as a pull request does, with the Gateway suite in stock Pest shards. CI selects no tests and records no TIA graph.
 
 The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs the full suites of each task handoff on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
 

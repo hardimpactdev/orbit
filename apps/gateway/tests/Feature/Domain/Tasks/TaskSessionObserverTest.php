@@ -138,8 +138,6 @@ it('marks an idle implementer observation with the last turn text', function ():
         ->not->toContain('non-task-thread')
         ->and($implementer?->idle)->toBeTrue()
         ->and($implementer?->sessState)->toBe('idle')
-        ->and($implementer?->lastAssistantText)->toBe('I finished the models and stopped.')
-        ->and($implementer?->lastUserText)->toBe('Implement the models.')
         ->and($implementer?->pendingApprovalId)->toBeNull()
         ->and($implementer?->pendingUserInputId)->toBeNull()
         ->and($implementer?->hasNewCommitsSinceThreadStart)->toBeTrue()

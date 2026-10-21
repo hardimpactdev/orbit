@@ -11,19 +11,27 @@ namespace App\Infrastructure\WebSocket;
  */
 final readonly class WebSocketCaddySiteRenderer
 {
-    public function render(int $port): string
+    public function render(int $port, ?string $gatewayAddress = null): string
     {
         $marker = WebSocketFootprint::CaddyFragmentMarker;
         $host = WebSocketFootprint::Hostname;
         $certificate = WebSocketFootprint::CertificateCurrentDirectory;
         $bind = WebSocketFootprint::CaddyBindPlaceholder;
 
+        $control = "handle /internal/* {\n        respond 403\n    }";
+        if (is_string($gatewayAddress) && filter_var($gatewayAddress, FILTER_VALIDATE_IP) !== false) {
+            $control = "handle /internal/* {\n        @gateway remote_ip {$gatewayAddress}\n        handle @gateway {\n            reverse_proxy 127.0.0.1:{$port}\n        }\n        respond 403\n    }";
+        }
+
         return <<<CADDY
             {$marker}
             {$host} {
                 bind {$bind}
                 tls {$certificate}/reverb.pem {$certificate}/reverb.key
-                reverse_proxy 127.0.0.1:{$port}
+                {$control}
+                handle {
+                    reverse_proxy 127.0.0.1:{$port}
+                }
             }
 
             CADDY;

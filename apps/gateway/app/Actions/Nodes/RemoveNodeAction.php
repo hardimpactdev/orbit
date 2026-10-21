@@ -29,12 +29,14 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\WebSocketRuntime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -57,6 +59,7 @@ final readonly class RemoveNodeAction
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private WebSocketRegistry $registry = new WebSocketRegistry,
     ) {}
 
     /**
@@ -112,6 +115,12 @@ final readonly class RemoveNodeAction
             });
         } elseif ($offline) {
             $shed = $this->shedRoles($node, $force, $deleted);
+        }
+        if ($shed !== null) {
+            $this->registry->abandonNode($node->id);
+        }
+        if (WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
+            throw new ResourceOperationException('websocket.runtime_shutdown_required', 'Stop every Reverb process first, or confirm an unreachable Node with --offline --force.', 409);
         }
         $this->guardRemoval($node);
 
@@ -323,6 +332,7 @@ final readonly class RemoveNodeAction
                 // Completed image builds are history of this host; never discard a running build here.
                 TaskVmImageBuild::query()->where('host_node_id', $node->id)
                     ->whereIn('state', [TaskVmImageBuildState::Succeeded, TaskVmImageBuildState::Failed])->delete();
+                WebSocketRuntime::query()->where('node_id', $node->id)->where('required', false)->delete();
                 $node->delete();
             });
         } catch (Throwable $exception) {

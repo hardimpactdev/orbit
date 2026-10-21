@@ -5,9 +5,9 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-it('shares real Pest results across worktrees and isolates cache maintenance', function (): void {
+it('seeds checkouts from the main cache store and runs the candidate gate', function (): void {
     $repository = dirname(__DIR__, 5);
-    // Three vendor trees exceed /tmp's inode budget during parallel gates. Keep this fixture on the worktree filesystem.
+    // The candidate gate fixtures copy vendor trees, which exceed /tmp's inode budget. Keep this fixture on the worktree filesystem.
     // Do not use an ignored directory: Finder's ancestor ignore rules affect nested worktree fingerprints.
     $temporary = $repository.'/orbit_tia_'.bin2hex(random_bytes(8));
     $files = new Filesystem;

@@ -7,12 +7,11 @@ namespace App\Http\Requests\WebSocket;
 use App\Http\Requests\DatabaseConnections\DatabaseConnectionFieldRules;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\WebSocketApp;
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
-final class StoreWebSocketAppRequest extends FormRequest
+final class StoreWebSocketAppRequest extends WebSocketChangeRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array
@@ -24,7 +23,6 @@ final class StoreWebSocketAppRequest extends FormRequest
                 'max:63',
                 'regex:'.DatabaseConnectionFieldRules::SLUG_PATTERN,
                 Rule::notIn([WebSocketApp::GatewayName]),
-                Rule::unique('websocket_apps', 'name'),
             ],
         ];
     }

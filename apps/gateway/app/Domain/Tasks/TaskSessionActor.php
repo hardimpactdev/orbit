@@ -59,12 +59,7 @@ final readonly class TaskSessionActor
         if ($implementer->sessState === AgentThreadState::Working->value || $implementer->sessState === AgentThreadState::AskingForInput->value) {
             throw new AgentDriverException('The implementer cannot start a follow-up turn in this state.');
         }
-        $message = 'Continue the current brief. Do not expand scope.';
-        if ($decision->action === TaskSessionNextAction::RelayReviewToImplementer) {
-            $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-            $message = "Relay from the reviewer. Continue the current brief. Do not expand scope.\n\n".($reviewer->lastAssistantText ?? $reviewer->lastUserText ?? 'The reviewer asked you to continue.');
-        }
-        $this->drivers->get($thread->driver)->send($thread, $message);
+        $this->drivers->get($thread->driver)->send($thread, 'Continue the current brief. Do not expand scope.');
     }
 
     public function relayAnswer(Task $group, TaskThreadObservation $observed, string $summary, ?string $key = null): void

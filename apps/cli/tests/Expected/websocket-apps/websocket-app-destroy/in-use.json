@@ -1,1 +1,1 @@
-{"error":{"code":"websocket.app_in_use","message":"WebSocket app [hauzer] is still on an Instance. Remove it from each Instance first.","request_id":null}}
+{"error":{"code":"websocket.app_in_use","message":"Remove the app from each Instance first.","request_id":null}}
