@@ -114,6 +114,8 @@ The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job cont
 
 Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/hardimpactdev/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.
 
+The managed PHP build supports amd64 only. CI installs and verifies the same amd64 pins as Nodes and task VM images. `bin/php-build` refuses PHP on arm64 with `PHP is not available for arm64`; the bump and artifact mirror use only the PHP architectures declared in the recipe.
+
 On a GitHub-hosted runner the action runs these steps:
 
 1. It restores `/var/cache/orbit/php-packages` from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.

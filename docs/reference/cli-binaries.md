@@ -138,14 +138,14 @@ The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, build
 | Target | Build runner | Run runner | Builder | Artifact | File |
 | --- | --- | --- | --- | --- | --- |
 | Linux x86_64 | `ubuntu-26.04` | The same | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
-| Linux arm64 | `ubuntu-26.04-arm` | The same | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
+| Linux arm64 | `ubuntu-26.04` | `ubuntu-26.04-arm` | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
 | macOS Apple silicon | `ubuntu-26.04` | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
 Composer installs in the build workflow receive the read-only job token through `COMPOSER_AUTH`, including the production install inside the binary builder. The release verifier downloads `SHA256SUMS` through the authenticated GitHub CLI.
 
-The `Build` jobs build every target on Linux. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
+The `Build` jobs build every target on Linux amd64. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
 
-Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
+The Linux x86_64 build job runs its own binary. The `Run linux-arm64` and `Run macos-arm64` jobs download their artifacts on hosted native runners and run them. These jobs need no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally
 
@@ -205,7 +205,7 @@ A client that verified a checksum must get the same file later, so a published r
 
 ### Build on Linux, run on each platform
 
-PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. A Linux runner therefore builds the macOS binary too. What a native runner adds is the proof that the binary starts on its platform. Linux arm64 builds on its own runner, so one job builds and runs it.
+PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. An amd64 Linux runner therefore builds the Linux arm64 and macOS binaries too. Managed recipe PHP supports amd64 only; the arm64 CLI binary still carries its own static PHP. Native runners prove that each binary starts on its platform without installing recipe PHP.
 
 The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
 

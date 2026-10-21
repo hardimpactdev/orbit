@@ -14,6 +14,8 @@ covers:
 
 Orbit installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins, from Sury packages, and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
 
+Managed PHP supports amd64 only. PHP installation on arm64 fails with `PHP is not available for arm64`; Orbit never substitutes packages from another architecture.
+
 ## Select the PHP version
 
 The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.

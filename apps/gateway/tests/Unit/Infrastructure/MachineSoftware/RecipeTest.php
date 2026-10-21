@@ -148,9 +148,8 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->profile('app-dev'))->toContain('php-common', 'php8.4-igbinary', 'php8.5-igbinary');
         foreach (['php-common', 'php8.4-igbinary', 'php8.5-igbinary'] as $name) {
             expect($recipe->tools[$name]->source)->toBe('artifact');
-            foreach (['amd64', 'arm64'] as $architecture) {
-                expect($recipe->tools[$name]->artifacts[$architecture]->location)->toStartWith('https://packages.sury.org/php/');
-            }
+            expect(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64'])
+                ->and($recipe->tools[$name]->artifacts['amd64']->location)->toStartWith('https://packages.sury.org/php/');
         }
         expect($recipe->tools['php-common']->version)->toStartWith('2:');
     });
@@ -450,11 +449,20 @@ describe('machine recipe structure and identity', function (): void {
         }
     });
 
-    it('rejects unknown profiles and Pi on arm64', function (): void {
+    it('rejects unknown profiles and PHP profiles on arm64 while keeping other profiles available', function (): void {
         $recipe = new RecipeLoader()->load();
         expect(fn () => $recipe->profile('typo'))->toThrow(InvalidArgumentException::class, 'Unknown role/profile')
-            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'requires tool [pi]')
-            ->and($recipe->profile('app-dev', 'arm64'))->toContain('caddy');
+            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
+            ->and(fn () => $recipe->profile('app-dev', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
+            ->and($recipe->profile('operator', 'arm64'))->toContain('git')
+            ->and($recipe->supportedArchitectures('app-dev'))->toBe(['amd64']);
+    });
+
+    it('rejects an arm64 artifact in the PHP package set', function (): void {
+        $document = machine_recipe_document();
+        $document['tools']['php8.5-common']['artifacts']['arm64'] = $document['tools']['php8.5-common']['artifacts']['amd64'];
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, 'PHP supports amd64 only');
     });
 });
 
@@ -658,7 +666,7 @@ describe('machine recipe command', function (): void {
 
     it('refuses unknown roles and unsupported Pi architecture', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'typo'])->expectsOutputToContain('Unknown role/profile')->assertFailed();
-        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('requires tool [pi]')->assertFailed();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('PHP is not available for arm64')->assertFailed();
     });
 
     it('validates the whole recipe even when only operator tools are displayed', function (): void {
