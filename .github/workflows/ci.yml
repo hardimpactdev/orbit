@@ -6,7 +6,7 @@ on:
   # (docs/reference/tasks.md#handoff-ci). No pull request has such a branch as head.
   push:
     branches: [main, 'task-*-handoff']
-  # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
+  # A nightly run on main tests every project in full, as a manual dispatch does.
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -26,18 +26,17 @@ env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
   # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
   # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
-  # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
-  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
+  # request or a handoff push, and every job treats both alike. Steps read these values; a change run differs only
+  # in its cache keys and change bases, never in which tests run. No job's `if` or `runs-on` reads them.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
-    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
-    # on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
+    # This Gateway job checks quality on any orbit-shard runner while the Gateway shards run its tests, on every event.
+    # Fork PRs never run on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -52,9 +51,6 @@ jobs:
             directory: apps/e2e
           - name: PHP SDK
             directory: packages/php-sdk
-
-    env:
-      ORBIT_TIA_DIRECTORY: .orbit-tia
 
     defaults:
       run:
@@ -186,7 +182,7 @@ jobs:
         uses: ./.github/actions/no-sudo
 
       - name: Verify Gateway shard coverage
-        if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
+        if: matrix.project.directory == 'apps/gateway'
         run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
@@ -209,8 +205,9 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
-      - name: Run full PR test suite
-        if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
+      # The Gateway shards run the Gateway suite.
+      - name: Run full test suite
+        if: matrix.project.directory != 'apps/gateway'
         run: vendor/bin/pest --parallel --no-tia --compact
 
       # An unknown event base validates the recipe too.
@@ -225,12 +222,6 @@ jobs:
             php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
           fi
 
-      # Full mode records the graph without using it to select tests, on every event but a change run.
-      # Gateway's phpunit.xml excludes privileged; a CLI exclusion would disable TIA recording.
-      - name: Run full test suite and refresh Pest TIA graph
-        if: env.CHANGE_RUN != 'true'
-        run: vendor/bin/pest --parallel --tia --fresh --compact
-
       - name: Run redaction cases without PCRE JIT
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
@@ -238,66 +229,9 @@ jobs:
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
         run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
 
-      # A full run records this commit in the graph.
-      # Stage the same-run exports for the cache-ref publisher and the background main cache store.
-      - name: Export main caches
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          PROJECT: ${{ matrix.project.directory }}
-        run: |
-          python3 - <<'PY'
-          import hashlib, json, os, shutil, subprocess
-          from pathlib import Path
-          graph = Path('.orbit-tia/graph.json')
-          data = json.loads(graph.read_text())
-          baseline = data['baselines']['main']
-          if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
-              raise SystemExit('The main graph must describe this tested commit.')
-          tested = {result['file'] for result in baseline['results'].values()}
-          if set(data['edges']) - tested:
-              raise SystemExit('The main graph must have a result for every linked test file.')
-          quality = {}
-          Path('.orbit-tia/quality').mkdir(exist_ok=True)
-          for tool, source in (('pint', 'vendor/pint.cache'), ('phpstan', 'vendor/phpstan/cache/resultCache.php')):
-              if Path(source).is_file() and Path(source).stat().st_size:
-                  shutil.copyfile(source, f'.orbit-tia/quality/{tool}')
-                  quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
-          files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
-          manifest = {
-              'schema': 2,
-              'project': os.environ['PROJECT'],
-              'commit': os.environ['GITHUB_SHA'],
-              'run_id': os.environ['GITHUB_RUN_ID'],
-              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'configurations': {tool: hashlib.sha256(Path(config).read_bytes()).hexdigest()
-                                 for tool, config in (('pint', 'pint.json'), ('phpstan', 'phpstan.neon')) if tool in quality},
-              'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
-              'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
-              'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
-                                    check=True, capture_output=True, text=True).stdout,
-              'quality': quality,
-          }
-          Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-          PY
-
-      - name: Publish main caches
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
-          path: |
-            ${{ matrix.project.directory }}/.orbit-tia/graph.json
-            ${{ matrix.project.directory }}/.orbit-tia/manifest.json
-            ${{ matrix.project.directory }}/.orbit-tia/quality/
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 14
-
-  # Change runs use the static stock shard matrix below as the only source of the shard count. Main keeps one recording run for a complete TIA graph.
+  # Every run uses the static stock shard matrix below as the only source of the shard count.
   gateway-shards:
     name: Gateway shards
-    # env.CHANGE_RUN, spelled out.
-    if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
@@ -743,27 +677,6 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
-  publish-ci-cache:
-    name: Publish CI cache ref
-    needs: [required]
-    # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
-    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-    runs-on: ubuntu-26.04
-    permissions:
-      actions: read
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: sandbox-tia-*-${{ github.sha }}
-          path: ${{ runner.temp }}/ci-cache-exports
-      - name: Publish immutable tested-SHA ref and prune old cache refs
-        run: python3 bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"
-
   required:
     name: Required checks
     if: always()
@@ -782,10 +695,4 @@ jobs:
           AGENT_RESULT: ${{ needs.agent.result }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
         run: |
-          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
-            if [ "$CHANGE_RUN" = true ]; then
-              test "$GATEWAY_SHARDS_RESULT" = success
-            else
-              test "$GATEWAY_SHARDS_RESULT" = skipped
-            fi
-          }
+          test "$PROJECT_RESULT" = success && test "$GATEWAY_SHARDS_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success

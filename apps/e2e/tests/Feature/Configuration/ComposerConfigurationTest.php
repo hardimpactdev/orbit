@@ -159,7 +159,7 @@ describe('Composer configuration', function (): void {
             ->toContain('--tia')
             ->not->toContain('incus-live');
         expect(file_get_contents(base_path('../../.github/workflows/ci.yml')))
-            ->toContain('coverage: pcov', '--tia')
+            ->toContain('coverage: pcov')
             ->not->toContain('incus-live');
         expect(file_get_contents(base_path('../../.github/pull_request_template.md')))->not->toContain('bin/e2e-live');
 
@@ -180,34 +180,18 @@ describe('Composer configuration', function (): void {
         }
     });
 
-    it('publishes SHA-bound cache refs after required main checks despite skipped PR-only dependencies', function (): void {
+    it('publishes no TIA graphs or cache refs, so no CI job writes repository contents', function (): void {
+        $source = (string) file_get_contents(base_path('../../.github/workflows/ci.yml'));
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
-        $publisher = $workflow['jobs']['publish-ci-cache'];
-        expect($publisher['needs'])->toBe(['required'])
-            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
-            ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
-            ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
-            ->and($publisher['steps'][1]['with']['pattern'])->toBe('sandbox-tia-*-${{ github.sha }}')
-            ->and($publisher['steps'][1]['with']['path'])->toBe('${{ runner.temp }}/ci-cache-exports')
-            ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"');
         $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
-        expect($projectSteps['Export main caches']['if'])
-            ->toBe("success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
-        expect($projectSteps['Publish main caches']['uses'])->toStartWith('actions/upload-artifact@');
-        expect($projectSteps['Publish main caches'])->toMatchArray([
-            'if' => $projectSteps['Export main caches']['if'],
-            'with' => [
-                'name' => 'sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}',
-                'path' => "\${{ matrix.project.directory }}/.orbit-tia/graph.json\n\${{ matrix.project.directory }}/.orbit-tia/manifest.json\n\${{ matrix.project.directory }}/.orbit-tia/quality/\n",
-                'include-hidden-files' => true,
-                'if-no-files-found' => 'error',
-                'retention-days' => 14,
-            ],
-        ]);
-        foreach ($workflow['jobs'] as $name => $job) {
-            if ($name !== 'publish-ci-cache') {
-                expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');
-            }
+
+        expect($workflow['jobs'])->not->toHaveKey('publish-ci-cache')
+            ->and($projectSteps)->not->toHaveKeys(['Export main caches', 'Publish main caches']);
+        foreach (['sandbox-tia', 'ci-cache-ref', '.orbit-tia', 'ORBIT_TIA_DIRECTORY', '--fresh', '--tia --', 'Pest TIA graph'] as $needle) {
+            expect($source)->not->toContain($needle);
+        }
+        foreach ($workflow['jobs'] as $job) {
+            expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');
         }
     });
 
@@ -276,37 +260,25 @@ SH);
         expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
         // bin/check-processes sizes the quality tools from the runner's own CPU and memory limits.
         expect($steps['Run project quality checks'])->toBe(['name' => 'Run project quality checks', 'run' => 'composer check']);
-        // Every non-Gateway Composer suite runs in full on change runs: pull requests and task-*-handoff pushes.
-        expect($steps['Run full PR test suite'])
+        // Every non-Gateway Composer suite runs in full on every event; the Gateway shards run the Gateway suite.
+        expect($steps['Run full test suite'])
             ->toMatchArray([
-                'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
+                'if' => "matrix.project.directory != 'apps/gateway'",
                 'run' => 'vendor/bin/pest --parallel --no-tia --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
-        expect($steps['Run full test suite and refresh Pest TIA graph'])->toMatchArray([
-            'if' => "env.CHANGE_RUN != 'true'",
-            'run' => 'vendor/bin/pest --parallel --tia --fresh --compact',
-        ]);
-        $order = array_flip(array_keys($steps));
-        expect($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Export main caches']);
-        expect($steps['Export main caches']['run'])->toContain(
-            "baseline.get('sha') != os.environ['GITHUB_SHA']",
-            "set(data['edges']) - tested",
-        );
         expect($steps)->not->toHaveKeys([
             'Choose the main test selection', 'Run tests affected since the main graph',
             'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
         ]);
-        // Change-run quality checks share the orbit-shard pool; a full run keeps Sabre for its six-worker recording run.
-        expect($project['runs-on'])->toContain(
-            "(!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('[\"self-hosted\", \"sabre\"]')",
-            "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
-            "|| 'ubuntu-26.04' }}",
+        // The Gateway quality checks share the orbit-shard pool with the shards on every event; no run reserves Sabre.
+        expect($project['runs-on'])->toBe(
+            "\${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"orbit-shard\"]') || 'ubuntu-26.04' }}",
         );
     });
 
-    it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {
+    it('tests pull requests on the merge ref and records no Pest TIA graph', function (): void {
         $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
 
         expect($workflow)
@@ -314,11 +286,9 @@ SH);
             ->toContain('fetch-depth: 0')
             ->toContain('ref: ${{ github.sha }}')
             ->toContain('repository: ${{ github.repository }}')
-            ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
             ->toContain('actions/cache/restore@')
             ->toContain('actions/cache/save@')
             ->toContain('coverage: pcov')
-            ->toContain('vendor/bin/pest --parallel --tia --fresh --compact')
             ->toContain("github.event_name == 'pull_request'")
             ->not->toContain('bin/ci-tia', 'Restore Pest TIA graph')
             ->not->toContain('bin/tia-cache')
@@ -382,7 +352,7 @@ SH);
         expect(strpos($workflow, 'Run project quality checks'))
             ->toBeLessThan(strpos($workflow, 'Save PHPStan result cache'));
         expect(strpos($workflow, 'Save PHPStan result cache'))
-            ->toBeLessThan(strpos($workflow, 'Run full test suite and refresh Pest TIA graph'));
+            ->toBeLessThan(strpos($workflow, 'name: Run full test suite'));
     });
 
     it('saves the project caches only from runs outside change runs', function (): void {
@@ -396,7 +366,7 @@ SH);
         }
     });
 
-    it('requires the full Gateway suite in shards on every pull request and task-*-handoff push', function (): void {
+    it('requires the full Gateway suite in shards on every event', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $jobs = $workflow['jobs'];
         $shardCount = count($jobs['gateway-shards']['strategy']['matrix']['shard']);
@@ -406,9 +376,8 @@ SH);
         expect($shardCount)->toBeGreaterThan(1);
         expect($jobs)->not->toHaveKey('gateway-plan');
         expect($jobs['project'])->not->toHaveKey('needs');
-        expect($jobs['gateway-shards'])->not->toHaveKey('needs')
+        expect($jobs['gateway-shards'])->not->toHaveKeys(['needs', 'if'])
             ->toMatchArray([
-                'if' => "github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')",
                 'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, $shardCount)]],
             ]);
         expect($jobs['gateway-shards']['runs-on'])
@@ -416,7 +385,7 @@ SH);
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
             ->toBe('vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
-            'if' => "matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'",
+            'if' => "matrix.project.directory == 'apps/gateway'",
             'run' => '../../bin/check-pest-shards',
         ]);
         expect($shardSteps['Keep exception arguments in traces']['run'])
@@ -430,7 +399,7 @@ SH);
             }
         }
 
-        // Required checks refuses failed, cancelled or skipped full-suite shards.
+        // Required checks refuses failed, cancelled or skipped full-suite shards, whatever the event.
         expect($jobs['required']['needs'])->toContain('gateway-shards')
             ->and($jobs['required']['steps'][0]['env'])->toMatchArray([
                 'GATEWAY_SHARDS_RESULT' => '${{ needs.gateway-shards.result }}',
@@ -438,7 +407,7 @@ SH);
         $required = $jobs['required']['steps'][0]['run'];
         $verdict = function (array $results) use ($required): bool {
             $process = new Process(['bash', '-ec', $required], null, $results + [
-                'CHANGE_RUN' => 'true', 'PROJECT_RESULT' => 'success',
+                'PROJECT_RESULT' => 'success',
                 'PRIVILEGED_RESULT' => 'success', 'API_REFERENCE_RESULT' => 'success', 'WEB_RESULT' => 'success',
                 'PI_SERVER_RESULT' => 'success', 'AGENT_RESULT' => 'success', 'DESKTOP_RESULT' => 'success',
                 'REMOTE_PROGRAMS_RESULT' => 'success',
@@ -450,9 +419,8 @@ SH);
         foreach (['failure', 'cancelled', 'skipped'] as $result) {
             expect($verdict(['GATEWAY_SHARDS_RESULT' => $result]))->toBeFalse();
         }
-        // A push to main, a scheduled run, and a manual run test the Gateway in the project job instead.
-        expect($verdict(['CHANGE_RUN' => 'false', 'GATEWAY_SHARDS_RESULT' => 'skipped']))->toBeTrue()
-            ->and($jobs['required']['steps'][0]['env'])->not->toHaveKey('CHANGE_RUN');
+        expect($jobs['required']['steps'][0]['env'])->not->toHaveKey('CHANGE_RUN')
+            ->and($required)->not->toContain('CHANGE_RUN');
 
     });
 
@@ -565,18 +533,23 @@ it('builds the agent and desktop app on a handoff push only when it changes them
         ->toContain('echo "'.$output.'=true"');
 })->with([['agent', 'agent'], ['desktop', 'desktop']]);
 
-it('defines a handoff push and a change run once, and spells out the change run only where GitHub reads no env', function (): void {
+it('defines a handoff push and a change run once, and lets no job choose its runner or tests by them', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $handoff = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')";
     $change = "github.event_name == 'pull_request' || ".$handoff;
 
-    // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Steps read env; a
-    // job's `if` and `runs-on` cannot, so the shards job and the project job's runner choice spell out the change run.
+    // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Only steps read
+    // them, for cache keys and change bases: every event runs the same jobs on the same runners.
     expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
         ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
-        ->and($workflow['jobs']['gateway-shards']['if'])->toBe($change)
-        ->and($workflow['jobs']['project']['runs-on'])->toContain('!('.$change.')')
-        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(4);
+        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(2);
+    foreach ($workflow['jobs'] as $name => $job) {
+        $decision = (string) ($job['if'] ?? '').(is_string($job['runs-on']) ? $job['runs-on'] : '');
+        // One needle per call: a negated toContain passes when any one of several needles is absent.
+        foreach (['refs/heads/task-', 'CHANGE_RUN', 'HANDOFF_PUSH'] as $needle) {
+            expect($decision)->not->toContain($needle);
+        }
+    }
 });
 
 it('keeps a running main push, only the newest waiting one, and every full run', function (): void {

@@ -27,6 +27,8 @@ CI_JOBS = {
     'apps/gateway': ('Gateway', 'Gateway privileged'),
     'apps/e2e': ('E2E',), 'packages/php-sdk': ('PHP SDK',),
 }
+# Matrix jobs named by prefix, such as `Gateway shards (3)`, test the project too.
+CI_JOB_PREFIXES = {'apps/gateway': ('Gateway shards (',)}
 CI_WORKFLOW = 'ci.yml'
 CI_EVENTS = ('push', 'schedule', 'workflow_dispatch')
 CI_RUNS = 30
@@ -707,7 +709,9 @@ def ci_jobs(common, repository, run_id):
 def job_result(jobs, project):
     """Return success, failure, or None when the run did not finish the project's jobs."""
     names = CI_JOBS[project]
-    found = {job['name']: job.get('conclusion') for job in jobs if job.get('name') in names}
+    prefixes = CI_JOB_PREFIXES.get(project, ())
+    found = {job['name']: job.get('conclusion') for job in jobs
+             if job.get('name') in names or str(job.get('name', '')).startswith(prefixes)}
     failed = sorted(name for name, conclusion in found.items() if conclusion in ('failure', 'timed_out'))
     if failed:
         return 'failure', failed

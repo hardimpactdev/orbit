@@ -182,14 +182,16 @@ test "$SUDO_WORKS" = 1 && test ! -f "$DENIED"
 
 
 class GatewaySelectionTest(unittest.TestCase):
-    def test_full_recording_uses_the_default_xml_exclusion_to_keep_tia_enabled(self):
+    def test_only_the_shards_run_the_ordinary_gateway_suite(self):
         configuration = ET.parse(HELPER.parent.parent / 'apps/gateway/phpunit.xml')
         self.assertIn('privileged', [group.text for group in configuration.findall('./groups/exclude/group')])
         workflow = read_yaml('.github/workflows/ci.yml')
-        command = next(step['run'] for step in workflow['jobs']['project']['steps']
-                       if step.get('name') == 'Run full test suite and refresh Pest TIA graph')
-        self.assertIn('--tia', command.split())
-        self.assertFalse(any(option.startswith(('--group', '--exclude-group')) for option in command.split()))
+        suite = next(step for step in workflow['jobs']['project']['steps'] if step.get('name') == 'Run full test suite')
+        self.assertEqual("matrix.project.directory != 'apps/gateway'", suite['if'])
+        shard = next(step['run'] for step in workflow['jobs']['gateway-shards']['steps']
+                     if step.get('name') == 'Run Gateway shard ${{ matrix.shard }}')
+        self.assertIn('--exclude-group=privileged', shard.split())
+        self.assertNotIn('if', workflow['jobs']['gateway-shards'])
 
 
 if __name__ == '__main__':

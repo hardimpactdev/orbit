@@ -15,11 +15,10 @@ it('checks Docs quality and the full suite once in the project matrix on the imm
     expect(array_filter(array_keys($workflow['jobs']), fn (string $name): bool => str_contains($name, 'docs')))->toBeEmpty();
     expect($steps['Check out repository']['with']['ref'])->toBe('${{ github.sha }}');
     expect($steps['Run project quality checks']['run'])->toBe('composer check');
-    expect($steps['Run full PR test suite'])->toMatchArray([
-        'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
-    ])->and($steps['Run full PR test suite']['run'])->toContain('--no-tia');
-    expect($steps['Run full test suite and refresh Pest TIA graph']['if'])->toBe("env.CHANGE_RUN != 'true'");
-    expect($steps['Run full test suite and refresh Pest TIA graph']['run'])->toContain('--tia --fresh');
+    expect($steps['Run full test suite'])->toMatchArray([
+        'if' => "matrix.project.directory != 'apps/gateway'",
+    ])->and($steps['Run full test suite']['run'])->toContain('--no-tia');
+    expect(array_filter($job['steps'], fn (array $step): bool => str_contains($step['run'] ?? '', 'vendor/bin/pest --parallel')))->toHaveCount(1);
     expect(array_filter($job['steps'], fn (array $step): bool => ($step['run'] ?? '') === 'composer check'))->toHaveCount(1);
 });
 
@@ -35,7 +34,6 @@ it('requires the project matrix including Docs to succeed on every event', funct
     $environment = array_fill_keys(array_keys($step['env']), 'success');
     $environment['CHANGE_RUN'] = $changeRun ? 'true' : 'false';
     $environment['PROJECT_RESULT'] = $result;
-    $environment['GATEWAY_SHARDS_RESULT'] = $changeRun ? 'success' : 'skipped';
     $process = new Process(['bash', '-e', '-c', $step['run']], env: $environment);
     $process->run();
 
@@ -75,9 +73,7 @@ it('provisions Gateway runtime and web dependencies before the Docs merge proof 
     ]);
     expect(array_search('Set up Bun for package cache and generated merge tests', $names, true))
         ->toBeLessThan(array_search('Install generated merge proof dependencies', $names, true));
-    foreach (['Run full PR test suite', 'Run full test suite and refresh Pest TIA graph'] as $name) {
-        expect($names)->toContain($name);
-        expect(array_search('Install generated merge proof dependencies', $names, true))
-            ->toBeLessThan(array_search($name, $names, true));
-    }
+    expect($names)->toContain('Run full test suite');
+    expect(array_search('Install generated merge proof dependencies', $names, true))
+        ->toBeLessThan(array_search('Run full test suite', $names, true));
 });

@@ -20,7 +20,7 @@ EXPRESSION);
     // A handoff push's event base is the previous handoff, so it compares with where its branch left main instead.
     expect($workflow['env'])->toHaveKey('HANDOFF_PUSH')
         ->and($step['run'])->toContain('if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi');
-    expect(array_search('Verify Ubuntu recipe pins against the named snapshot', array_keys($steps), true))->toBeLessThan(array_search('Run full test suite and refresh Pest TIA graph', array_keys($steps), true));
+    expect(array_search('Verify Ubuntu recipe pins against the named snapshot', array_keys($steps), true))->toBeLessThan(array_search('Run redaction cases without PCRE JIT', array_keys($steps), true));
     expect($workflow['jobs']['required']['needs'])->toContain('project');
 
     $root = sys_get_temp_dir().'/recipe-ci-'.bin2hex(random_bytes(6));

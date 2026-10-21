@@ -44,7 +44,6 @@ it('defaults workflows to read-only tokens and grants writes only to named publi
     }
 
     expect($writers)->toBe([
-        'ci.yml:publish-ci-cache' => ['actions' => 'read', 'contents' => 'write'],
         'git-build-watch.yml:publish' => ['issues' => 'write'],
         'orbit-agent-release.yml:publish' => ['contents' => 'write'],
         'orbit-cli-release.yml:publish' => ['contents' => 'write'],
