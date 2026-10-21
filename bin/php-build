@@ -38,8 +38,8 @@ SURY_KEY_SHA256 = 'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9
 CODENAMES = {'26.04': 'resolute'}
 COMPOSER_VERSION = '2.10.3'
 COMPOSER_SHA256 = '7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6'
-FIX = ('Fix the host: on a GitHub-hosted runner the PHP action installs the build; on Sabre run '
-       '`php artisan node:converge-recipe sabre --profile=ci-runner` on the Gateway; in a shard container run '
+FIX = ('Fix the host: on a GitHub-hosted runner the PHP action installs the build; on a CI host run '
+       '`php artisan node:converge-recipe NODE` on the Gateway; in a shard container run '
        '`tools/ci-runners/setup.sh container NAME` on its host; elsewhere run `sudo bin/php-build install --profile=PROFILE`.')
 
 

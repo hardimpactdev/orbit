@@ -457,3 +457,20 @@ final readonly class RoleInspectorKnownHosts implements KnownHostsStore
 
     public function put(string $host, int $port, HostKey $key): void {}
 }
+
+it('observes CI host projection with the read-only program action', function (string $output, bool $matches): void {
+    $assignment = role_inspector_assignment(RoleName::CiRunner);
+    $ssh = new RoleInspectorSshExecutor([
+        role_inspector_result("1\n"), role_inspector_result("1\n"),
+        role_inspector_result("Status: active\n[ 1] Anywhere ALLOW FWD Anywhere on orbitci0 # orbit-ci-runners\n[ 2] Anywhere (v6) ALLOW FWD Anywhere (v6) on orbitci0 # orbit-ci-runners\n"),
+        role_inspector_result($output),
+    ]);
+
+    $state = role_state_inspector($ssh)->inspect($assignment);
+
+    expect($state->ciRunnerHostMatches)->toBe($matches)
+        ->and($state->firewallProjectionMatches)->toBeTrue()
+        ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
+        ->and($ssh->calls[1]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
+        ->and($ssh->calls[3]['command']->arguments)->toBe(['sudo', 'bash', '-seu', '--', '--ci-runner', 'inspect']);
+})->with([["1\n", true], ["0\n", false]]);

@@ -155,6 +155,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::Analytics => $this->analytics ?? app(AnalyticsRoleBaseline::class),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
+            RoleName::CiRunner => app(CiRunnerRoleBaseline::class),
             RoleName::Ingress => $this->ingress ?? app(IngressRoleBaseline::class),
         };
     }

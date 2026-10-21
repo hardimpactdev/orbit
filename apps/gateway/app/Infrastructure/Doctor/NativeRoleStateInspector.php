@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
+use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -109,6 +110,9 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                     ? $this->caddyVersion($connection)
                     : null,
                 $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
+                $role->role === RoleName::CiRunner
+                    ? $this->booleanResult($this->ssh->execute($connection, CiRunnerHostProgram::command('inspect')))
+                    : null,
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;

@@ -265,6 +265,8 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.
 
+A Node with an active `ci-runner` role participates in [fleet rollout group 2](/reference/gateway-recovery#rollout-set-and-order). A recorded recipe profile does not add a roleless Node to the rollout.
+
 [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) pins the Ubuntu snapshot and role tools separately. It holds the same Node update lock as `self-update`, so the two operations cannot replace software at the same time. Recipe convergence verifies the Node with the fleet verifier before recording its recipe identity.
 
 [Update and recover a Gateway: Limits](/reference/gateway-recovery#limits) lists what is not built yet.

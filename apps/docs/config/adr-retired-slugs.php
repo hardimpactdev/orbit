@@ -6,6 +6,7 @@ declare(strict_types=1);
 // Add each exact slug when adding a row to docs/decisions/overview.mdx.
 // Multiple retired paths may share a number; the live ADR is tracked separately.
 return [
+    '0213' => ['0213-run-ci-runners-through-a-ci-runner-role'],
     '0001' => ['0001-tool-management'],
     '0002' => ['0002-candidate-deployment-proof-boundary'],
     '0003' => ['0003-singleton-metrics-role'],

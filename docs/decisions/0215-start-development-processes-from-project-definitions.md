@@ -14,7 +14,7 @@ In progress.
 
 Principle: [One way, one name](/mission#principles). A Project declares the Processes of its Instances in one concept, the Process definition, and one action copies it for both environments. It also fits the boundary that each Project defines its own way of working: application commands, such as a database migration, stay in the Project's setup steps. No principle exception is proposed.
 
-This record changes the reference pages only when it is built. The implementation group's first subtask writes them, as for [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), so `main` never describes unbuilt behavior.
+This record changes the reference pages only when it is built. The implementation group's first subtask writes them, as for [ADR 0213](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration), so `main` never describes unbuilt behavior.
 
 ## Context
 

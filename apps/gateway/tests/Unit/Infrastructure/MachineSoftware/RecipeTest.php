@@ -218,7 +218,7 @@ describe('machine recipe structure and identity', function (): void {
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,
-            'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'ci-runner' => [...$common, 'incus', 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -230,7 +230,7 @@ describe('machine recipe structure and identity', function (): void {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
-                if ($role !== 'base') {
+                if ($role !== 'base' && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
                     expect($recipe->profile($role))->not->toContain($package);
                 }
             }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
+use App\Domain\Nodes\RoleName;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use JsonException;
@@ -143,12 +144,12 @@ final readonly class RecipeLoader
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
-        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', NodeRecipeProgram::CiRunnerProfile];
+        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', RoleName::CiRunner->value];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
         $this->require(array_diff($phpSets['opentelemetry'], ['app-dev']) === [], 'php.opentelemetry: only the app-dev profile may load OpenTelemetry.');
         // Purging PHP packages outside the recipe is for machines that run only CI jobs, never for a site's Node.
-        $this->require(array_diff($phpSets['purge_extras'], [NodeRecipeProgram::CiRunnerProfile]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
+        $this->require(array_diff($phpSets['purge_extras'], [RoleName::CiRunner->value]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
         $profiles = [];
         $used = $common;
         $usedPhp = [];

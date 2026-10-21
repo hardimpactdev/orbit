@@ -49,6 +49,7 @@ use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
+use App\Infrastructure\Nodes\Roles\CiRunnerRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
@@ -713,7 +714,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(8);
+    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()));
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(
             $firewall,
@@ -750,6 +751,11 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         analytics: analytics_role_baseline(),
     );
 
+    app()->instance(CiRunnerRoleBaseline::class, new CiRunnerRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory, baseline_account_resolver(),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_firewall($events),
+    ));
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
 
@@ -772,6 +778,9 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-prod',
         'ssh:database',
         'ssh:websocket',
+        'ssh:ci-runner',
+        'ssh:--ci-runner',
+        'firewall:converge:ci-runner',
     );
 });
 
@@ -982,6 +991,11 @@ it('checks the remote operating system before every role convergence', function 
         analytics: analytics_role_baseline(),
     );
 
+    app()->instance(CiRunnerRoleBaseline::class, new CiRunnerRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory, baseline_account_resolver(),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_firewall($events),
+    ));
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
         if ($role === RoleName::Gateway) {
@@ -1019,6 +1033,10 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:websocket',
         'ssh:orbit',
         'guard:unknown',
+        'guard:unknown',
+        'ssh:ci-runner',
+        'ssh:--ci-runner',
+        'firewall:converge:ci-runner',
     ]);
 });
 
