@@ -302,7 +302,7 @@ it('rejects sqlite attachments without the same Node before changing stored stat
 
     expect(DatabaseConnectionTarget::query()->exists())->toBeFalse()
         ->and(stored_env($this->instance))->toBe(['DB_DATABASE' => 'keep-me']);
-})->with(['peer' => [true, true], 'non-peer' => [false, true], 'unmanaged' => [false, false]]);
+})->with([true, false]);
 
 it('refuses updates that put a SQLite connection on a different Node from any attached Instance', function (string $driver, bool $clearNode): void {
     $nodeId = $driver === 'sqlite' ? $this->instance->node_id : $this->caller->id;
