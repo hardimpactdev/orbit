@@ -173,7 +173,7 @@ Root `composer check` runs `bin/review-check`. It runs `composer validate --stri
 
 The five projects share one tooling baseline: the same Composer script names and commands, the same `composer check` steps, and PHPStan level 9. `bin/tooling-baseline` fails when a project drifts from it, or when Pint skips a folder that Rector or PHPStan checks. CI and `bin/review-check` run it. To change a project's tooling on purpose, change the baseline in the same pull request and give the reason for any difference.
 
-`composer rector` clears Rector's cache before every run, so changes in a parent class cannot hide findings in an unchanged child. The warm-cache regression enables only the property-override rule that exposes this defect, not every PHP migration rule; it still runs the real command twice against the same cache and checks the unchanged child's finding.
+`composer rector` clears Rector's cache before every run, so changes in a parent class cannot hide findings in an unchanged child. The regression checks in its test body that the Composer command includes an exact `--clear-cache` argument. The shared tooling baseline keeps that command identical across all five projects. The test does not start Rector or move any part of its proof into a class-level hook.
 
 CI and a plain `composer check` reanalyse all configured Rector paths. The review gate runs Pint on the changed files. It runs Rector on the changed files and the files that depend on them. The [feature delivery reference](/reference/implementation-loop#changed-file-quality-checks) lists the rules. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
 
