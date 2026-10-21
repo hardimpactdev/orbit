@@ -78,6 +78,16 @@ describe('machine recipe structure and identity', function (): void {
         }
     });
 
+    it('owns the private DNS listener PHP build in the VPN recipe identity', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $withoutRuntime = machine_recipe_document();
+        $withoutRuntime['roles']['vpn'] = array_values(array_diff($withoutRuntime['roles']['vpn'], ['php:8.5']));
+
+        expect($recipe->profile('vpn'))->toContain(...$recipe->php('8.5')->packagesFor(false))
+            ->and($recipe->php('8.5')->cliExtensions())->toContain('sockets', 'pcntl')
+            ->and(machine_recipe_decode($withoutRuntime)->identity)->not->toBe($recipe->identity);
+    });
+
     it('refuses an incomplete or foreign Git build', function (Closure $change, string $error): void {
         $document = machine_recipe_document();
         $change($document);
@@ -215,6 +225,7 @@ describe('machine recipe structure and identity', function (): void {
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', ...$php85],
+            'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,

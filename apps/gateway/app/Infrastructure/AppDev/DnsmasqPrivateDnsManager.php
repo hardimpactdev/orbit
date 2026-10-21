@@ -20,6 +20,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
@@ -137,6 +138,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             BASH);
 
         if (! $result->succeeded()) {
+            // Role exceptions suppress process output. Keep this publication's diagnostics before wrapping.
+            Log::warning('Private DNS publication failed.', [
+                'node_id' => $remote?->id,
+                'exit_code' => $result->exitCode,
+                'duration_ms' => $result->durationMs,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'output_truncated' => $result->truncated,
+            ]);
+
             throw new RuntimeConvergenceException(
                 step: 'private-dns',
                 errorCode: 'app-dev.dns_config_failed',

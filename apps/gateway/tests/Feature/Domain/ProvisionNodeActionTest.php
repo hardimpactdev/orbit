@@ -1270,9 +1270,9 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe([
                 'before:orbit:provisioning:orbit:provisioning',
                 'apt:nckrtl:provisioning:orbit:provisioning',
+                'role:vpn:nckrtl:provisioning:orbit:provisioning',
                 'role:app-dev:nckrtl:provisioning:orbit:provisioning',
                 'apt:nckrtl:provisioning:orbit:provisioning',
-                'role:vpn:nckrtl:provisioning:orbit:provisioning',
                 'after:nckrtl:provisioning:orbit:provisioning',
             ])
             ->and($node->user)

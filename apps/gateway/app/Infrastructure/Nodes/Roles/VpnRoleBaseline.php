@@ -10,12 +10,17 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
+use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
+use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Support\Facades\Log;
 
 final readonly class VpnRoleBaseline implements RoleBaseline
 {
@@ -26,6 +31,8 @@ final readonly class VpnRoleBaseline implements RoleBaseline
         private KnownHostsStore $knownHosts,
         private NodeRoleFirewallManager $firewall,
         private ManagedUserAccountResolver $accounts,
+        private ?PhpBuildInstaller $php = null,
+        private RecipeLoader $recipes = new RecipeLoader,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -63,6 +70,31 @@ final readonly class VpnRoleBaseline implements RoleBaseline
                 $result,
             );
         }
+
+        $recipe = $this->recipes->load();
+        $tools = array_intersect_key($recipe->tools, array_flip($recipe->profile(RoleName::Vpn->value)));
+        $versions = NodeRecipeProgram::phpVersions($recipe, $tools);
+        $profiles = [...$node->roles->map(static fn (NodeRole $role): string => $role->role->value)->all(), RoleName::Vpn->value];
+        try {
+            $installed = ($this->php ?? app(PhpBuildInstaller::class))->run(
+                $node, $recipe, $versions, 'apply',
+                pcov: array_intersect($profiles, $recipe->phpPolicy->pcovProfiles) !== [],
+                extras: 'keep', fpm: 'all',
+                opentelemetry: array_intersect($profiles, $recipe->phpPolicy->opentelemetryProfiles) !== [],
+            );
+        } catch (RemoteProgramFailed $exception) {
+            throw new NodeRoleOperationException(
+                'private-dns-php', 'node_role.convergence_failed', 'vpn.php_install_failed',
+                $exception->getMessage(), previous: $exception,
+            );
+        }
+        if (! in_array($installed->outcome, PhpBuildInstaller::Succeeded, true)) {
+            throw new NodeRoleOperationException(
+                'private-dns-php', 'node_role.convergence_failed', 'vpn.php_install_failed',
+                'Private DNS PHP installation failed: '.PhpBuildInstaller::describe($installed),
+            );
+        }
+        Log::info('Private DNS PHP build verified.', ['node_id' => $node->id, 'outcome' => $installed->outcome]);
 
         $this->firewall->converge($node, RoleName::Vpn, $node->user);
     }

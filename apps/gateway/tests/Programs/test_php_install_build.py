@@ -877,6 +877,23 @@ class InstallBuildTest(unittest.TestCase):
         self.assertNotIn('systemctl restart php8.5-fpm.service', self.calls())
         self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.11-1' for name in self.pins))
 
+    def test_package_updates_restart_all_active_colocated_masters(self):
+        for name in self.pins:
+            self.install(name, '8.5.11-1')
+        masters = ['php8.5-fpm.service', 'orbit-gateway-php8.5-fpm.service']
+        for master in masters:
+            (self.state / f'active-{master}').touch()
+
+        outcome, data = self.run_program(fpm='all')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
+        self.assertEqual(data['restarted'], masters)
+        self.assertEqual(data['stale_masters'], [])
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl restart {master}'), 1)
+        self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
+
     def test_places_pcov_only_where_asked_and_never_in_php_fpm(self):
         (self.root / 'etc/php/8.5/fpm/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')
 

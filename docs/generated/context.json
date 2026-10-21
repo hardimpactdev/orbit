@@ -2648,6 +2648,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Extension",

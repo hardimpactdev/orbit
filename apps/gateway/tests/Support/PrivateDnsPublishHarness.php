@@ -184,7 +184,7 @@ final class PrivateDnsPublishHarness
         );
     }
 
-    public function listenerManager(): DnsmasqPrivateDnsManager
+    public function listenerManager(?string $phpBinary = null): DnsmasqPrivateDnsManager
     {
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
@@ -199,7 +199,7 @@ final class PrivateDnsPublishHarness
             executablePath: $this->root.'/bin',
             activateListener: true,
             listenAddress: '10.44.0.1',
-            phpBinary: PHP_BINARY,
+            phpBinary: $phpBinary ?? PHP_BINARY,
             unitDirectory: $this->root.'/etc/systemd/system',
         );
     }

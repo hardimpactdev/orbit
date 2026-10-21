@@ -101,6 +101,8 @@ Convergence also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/li
 
 The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the `vpn` Node. It lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. So a Gateway deploy that changes the listener code produces a new id, and the next publication installs it. The publication keeps the previous release for rollback and removes older ones.
 
+The `vpn` recipe profile owns `php:8.5`, including the listener’s CLI runtime and its `sockets` and `pcntl` modules. VPN role convergence installs and verifies that build before the role completes its prerequisites. When provisioning requests VPN with other roles, VPN converges first so publishing roles have their listener runtime. Package changes validate and restart all active colocated PHP 8.5 FPM masters; a failed validation or restart fails installation and rolls it back. Recipe convergence verifies the same build on the VPN Node; an unmanaged PHP installation is not a listener prerequisite.
+
 Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication installs the release again and restarts the listener on it.
 
 `orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener. On `SIGTERM` the listener finishes the query in hand and exits. The unit gives it 5 seconds.
@@ -124,7 +126,7 @@ Every publication checks that confirmation while the listener runs.
 | The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
 | The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
 
-A failed start or restart restores the previous units, DNS files, and services.
+A failed start or restart restores the previous units, DNS files, and services. A failed publication logs the target Node, exit code, duration, stdout, stderr, and whether the output was truncated before a role operation wraps the error. Read the Gateway log for `Private DNS publication failed.` when an activity reports `app-dev.dns_config_failed`.
 
 ### Publication target
 
