@@ -470,7 +470,7 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
             $tools['curl']['refusal'] = 'origin:curl:'.$reason;
         }
 
-        return ScriptedSshExecutor::ok(json_encode([...$tools, '_actions' => ['repair_ubuntu_sources', 'retire_git_source', 'pin_git']], JSON_THROW_ON_ERROR));
+        return ScriptedSshExecutor::ok(json_encode([...$tools, '_actions' => ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links']], JSON_THROW_ON_ERROR));
     });
 
     $exit = Artisan::call('node:converge-recipe', ['node' => $node->name, '--dry-run' => true]);
@@ -478,7 +478,7 @@ it('shows a source repair and an unsupported newer Ubuntu build as planned actio
 
     expect($exit)->toBe(0)
         ->and($result['applied'])->toBeFalse()
-        ->and($result['plan']['actions'])->toBe(['repair_ubuntu_sources', 'retire_git_source', 'pin_git'])
+        ->and($result['plan']['actions'])->toBe(['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links'])
         ->and($result['plan']['tools']['curl'])->toMatchArray(['status' => 'unsupported_newer', 'changed' => false, 'refusal' => 'origin:curl'.($reason === null ? '' : ':'.$reason)])
         ->and($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
     expect(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, ' apply ')))->toBe([]);

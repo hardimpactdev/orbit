@@ -97,9 +97,9 @@ A program that reads a private repository receives the [Git read environment](/r
 
 - shellcheck checks each Bash file.
 - ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
-- pytest runs the `unittest` cases in `apps/gateway/tests/Programs` with four pytest-xdist workers and `--dist=loadfile`.
+- pytest runs the `unittest` cases in `apps/gateway/tests/Programs` with pytest-xdist (`-n auto --dist=load`). The worker count follows the available CPUs.
 
-Each file stays on one worker, so its `setUpClass` fixture is built once. The tests run programs with the same assembly and bootstrap against temporary directories. In a virtual environment, install Ruff at the version above and the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt`. Use `python3 -m unittest discover -s apps/gateway/tests/Programs` for serial diagnosis.
+Tests are scheduled individually so a long file cannot leave the other workers idle. Each worker builds its own `setUpClass` fixtures in temporary directories. The tests run programs with the same assembly and bootstrap against temporary directories. In a virtual environment, install Ruff at the version above and the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt`. Use `python3 -m unittest discover -s apps/gateway/tests/Programs` for serial diagnosis.
 
 The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
 
