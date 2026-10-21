@@ -647,7 +647,7 @@ describe("read and bash tools", () => {
         }).toThrow(/not saved: .*\nCommand aborted$/);
         const timeout = await run(
             bash,
-            { command: "cat large.txt; sleep 30", timeout: 0.1 },
+            { command: "cat large.txt; sleep 30", timeout: 1 },
             "timeout-save",
         );
 
@@ -657,7 +657,7 @@ describe("read and bash tools", () => {
         expect(failed.text).not.toContain("SECRET");
         expect(timeout.isError).toBe(true);
         expect(timeout.text).toContain("not saved:");
-        expect(timeout.text.endsWith("Command timed out after 0.1 seconds")).toBe(true);
+        expect(timeout.text.endsWith("Command timed out after 1 seconds")).toBe(true);
         expect(timeout.text).not.toContain("Exit code:");
         expect(timeout.text).not.toContain("SECRET");
     });
@@ -684,12 +684,12 @@ describe("read and bash tools", () => {
         await abortSettled;
         const timeout = await run(
             bash,
-            { command: "cat large.txt; sleep 30", timeout: 0.1 },
+            { command: "cat large.txt; sleep 30", timeout: 1 },
             "timeout-1",
         );
 
         expect(timeout.isError).toBe(true);
-        expect(timeout.text.endsWith("Command timed out after 0.1 seconds")).toBe(true);
+        expect(timeout.text.endsWith("Command timed out after 1 seconds")).toBe(true);
         expect(timeout.text).not.toContain("Exit code:");
         const files = outputFiles(cwd);
         expect(files).toHaveLength(2);

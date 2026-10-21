@@ -185,11 +185,13 @@ Exit 0 means `"ok": true`. Exit 1 means the command ran and failed. Exit 2 means
 
 The command tests call the same `execute` dispatcher as the CLI to check argument and route errors in-process. Real CLI cases still check JSON output, exit codes, a successful screenshot, a screenshot-write failure, and explicit stop.
 
-The page-operation tests start one real Bun daemon and demo server in shared setup, so an individual case can also run alone. Page operations, demo isolation, and explicit stop share that session. Idle shutdown runs in a separate test file with its own real session and a 300 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
+The page-operation tests start one real Bun daemon and demo server in shared setup, opening a task in Chromium and taking the first phone screenshot in WebKit. The tests assert on those results instead of loading the same pages again. Page operations, demo isolation, and explicit stop share that session, with both engines already running even when a case runs alone. Idle shutdown runs in a separate test file with its own real session and a 300 ms idle override; the default remains 5 minutes. Both exit paths check that the daemon and its children disappear and that a later click reports `no-page`.
 
 ### Scheduling and dependencies
 
-Vitest uses its default parallel scheduling without a worker cap or project ordering. Each daemon integration file owns its temporary home and server, so the files can run alongside each other and the browser-test provider. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
+Vitest uses its default parallel scheduling without a worker cap within each test stage. `bun run test` runs the unit/verification stage before the browser-app stage, matching CI and avoiding competing browser workloads on smaller machines. Each daemon integration file owns its temporary home and server, so the verification files can run alongside each other.
+
+Safe-area and origin-confinement checks live in a separate verification file because they need browsers but no daemon or demo server. They share one browser per engine with fresh contexts, rather than holding up the daemon lifecycle tests. The WebSocket confinement assertion observes the browser's close or error event. A timeout is a failure, not evidence of interception.
 
 The CLI parses commands, validates maps, and dispatches socket requests without loading Playwright or Vite. Only the daemon loads those libraries, so repeated commands do not initialize them again. [CI](/reference/implementation-loop#ci) installs both engines and their system libraries on the hosted runner. It reports Node and verification tests separately from browser tests.
 
@@ -197,7 +199,7 @@ The CLI parses commands, validates maps, and dispatches socket requests without 
 
 PNG generation, first-use state, and viewport dimensions are checked for both phone and desktop on both engines. Repeated screenshots also check reuse with WebKit on a phone and Chromium on desktop. Real control clicks check the active page for each pairing.
 
-WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. The confinement test uses the same Playwright API for both engines, but request aborts and fulfilled responses pass through different browser-protocol backends. It checks that neither engine contacts a disallowed host, including through redirects or a WebSocket. Both engines remain installed and covered; CI installs only the headless shell for Chromium, not the unused full browser.
+WebKit remains required for its distinct request, redirect, and WebSocket interception, safe-area layout, and per-engine active-page state. The confinement test uses the same Playwright API for both engines, but request aborts and fulfilled responses pass through different browser-protocol backends. It checks that neither engine contacts a disallowed host, including through redirects or a WebSocket. Both engines remain installed and covered; CI installs only the headless shell for Chromium, not the unused full browser. This avoids an unused download, but hosted measurements showed no install-time saving.
 
 ## Limits
 
