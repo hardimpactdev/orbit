@@ -37,6 +37,8 @@ use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -48,7 +50,9 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
+use App\Infrastructure\Nodes\Roles\CiRunnerRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
@@ -62,6 +66,7 @@ use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -713,7 +718,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(8);
+    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()));
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(
             $firewall,
@@ -748,8 +753,8 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
+        ciRunner: ci_role_baseline($events),
     );
-
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
 
@@ -772,6 +777,9 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-prod',
         'ssh:database',
         'ssh:websocket',
+        'ssh:ci-runner',
+        'program:ci-runners.host',
+        'firewall:converge:ci-runner',
     );
 });
 
@@ -980,8 +988,8 @@ it('checks the remote operating system before every role convergence', function 
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
+        ciRunner: ci_role_baseline($events),
     );
-
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
         if ($role === RoleName::Gateway) {
@@ -1019,6 +1027,10 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:websocket',
         'ssh:orbit',
         'guard:unknown',
+        'guard:unknown',
+        'ssh:ci-runner',
+        'program:ci-runners.host',
+        'firewall:converge:ci-runner',
     ]);
 });
 
@@ -1613,3 +1625,19 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
     // Outside a deferral, each change reconciles again.
     $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
 });
+
+function ci_role_baseline(array &$events): CiRunnerRoleBaseline
+{
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->andReturnUsing(function ($node, $program, $input) use (&$events): ProgramResult {
+        expect($program->name)->toBe('ci-runners.host');
+        expect($input)->toBe(['action' => 'converge']);
+        $events[] = 'program:ci-runners.host';
+
+        return new ProgramResult('converged', [], '');
+    });
+
+    return new CiRunnerRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_account_resolver(),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_firewall($events), new CiRunnerHostProgram($runner, new RemoteProgramCatalog));
+}

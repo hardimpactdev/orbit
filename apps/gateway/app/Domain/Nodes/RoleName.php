@@ -16,4 +16,5 @@ enum RoleName: string
     case Database = 'database';
     case WebSocket = 'websocket';
     case Analytics = 'analytics';
+    case CiRunner = 'ci-runner';
 }

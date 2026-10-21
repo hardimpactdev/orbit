@@ -20,6 +20,7 @@ final readonly class RoleRegistry
             RoleName::Database,
             RoleName::WebSocket,
             RoleName::Analytics,
+            RoleName::CiRunner,
         ];
     }
 
@@ -100,6 +101,14 @@ final readonly class RoleRegistry
                 assignableDuringProvisioning: true,
                 mutable: true,
                 relocatable: true,
+            ),
+            RoleName::CiRunner => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                relocatable: false,
+                conflicts: [RoleName::Gateway, RoleName::Vpn],
             ),
             RoleName::Analytics => new RoleDefinition(
                 name: $role,

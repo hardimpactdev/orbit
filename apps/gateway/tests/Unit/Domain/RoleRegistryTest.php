@@ -22,6 +22,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::Database,
                 RoleName::WebSocket,
                 RoleName::Analytics,
+                RoleName::CiRunner,
             ])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
@@ -189,4 +190,19 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::Analytics, RoleName::WebSocket))
             ->toBeFalse();
     });
+});
+
+it('gives CI-only hosts the generic mutable role lifecycle without provisioning or relocation', function (): void {
+    $registry = new RoleRegistry;
+    $definition = $registry->definition(RoleName::CiRunner);
+    expect($definition->singleton)->toBeFalse()
+        ->and($definition->mutable)->toBeTrue()
+        ->and($definition->assignableDuringProvisioning)->toBeFalse()
+        ->and($definition->relocatable)->toBeFalse();
+    foreach ([RoleName::Gateway, RoleName::Vpn] as $anchor) {
+        expect($registry->conflicts(RoleName::CiRunner, $anchor))->toBeTrue()
+            ->and($registry->conflicts($anchor, RoleName::CiRunner))->toBeTrue();
+    }
+    expect($registry->conflicts(RoleName::CiRunner, RoleName::AppDev))->toBeFalse()
+        ->and($registry->conflicts(RoleName::CiRunner, RoleName::Database))->toBeFalse();
 });

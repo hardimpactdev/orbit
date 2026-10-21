@@ -1746,3 +1746,33 @@ final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe
         return $this->degradation;
     }
 }
+
+it('adds and reconverges ci-runner through normal role lifecycle and returns workload intent', function (): void {
+    $target = node_roles_api_node('ci-only-target');
+    $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'ci-runner'])->assertCreated();
+    $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'ci-runner', 'converge_existing' => true])->assertOk();
+
+    expect($target->roles()->sole()->role)->toBe(RoleName::CiRunner)
+        ->and($target->roles()->sole()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->roleLifecycle->converged)->toBe(['ci-runner', 'ci-runner']);
+    $this->getJson("/api/v1/nodes/{$target->id}")->assertOk()->assertJsonPath('data.roles', ['ci-runner']);
+});
+
+it('refuses ci-runner on trust-anchor Nodes in either assignment order', function (string $first, string $second): void {
+    $target = node_roles_api_node('ci-conflict-target');
+    $target->roles()->create(['role' => $first, 'status' => LifecycleStatus::Active]);
+
+    $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => $second])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+    expect($this->roleLifecycle->converged)->toBe([]);
+})->with([['gateway', 'ci-runner'], ['vpn', 'ci-runner'], ['ci-runner', 'gateway']]);
+
+it('adds ci-runner beside Beast app and database roles without replacing them', function (): void {
+    $target = node_roles_api_node('beast-ci-target');
+    foreach ([RoleName::AppDev, RoleName::Database] as $role) {
+        $target->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+
+    $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'ci-runner'])->assertCreated();
+    expect($target->roles()->pluck('role')->map->value->sort()->values()->all())->toBe(['app-dev', 'ci-runner', 'database']);
+});

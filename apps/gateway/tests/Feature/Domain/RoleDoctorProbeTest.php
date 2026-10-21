@@ -958,3 +958,18 @@ it('does not recover role incidents outside the selected collection group', func
 
     expect($row->refresh()->evidence)->not->toHaveKey('resolved_at');
 });
+
+it('reports CI host projection drift on the ci-runner assignment', function (): void {
+    $node = role_probe_node('ci-host');
+    $role = role_probe_assignment($node, RoleName::CiRunner);
+    $calls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($calls, new RoleInspectionData(true, true, true, ciRunnerHostMatches: false)),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('role.ci_runner_host_mismatch')
+        ->and($report->issues[0]->resourceId)->toBe($role->id);
+});

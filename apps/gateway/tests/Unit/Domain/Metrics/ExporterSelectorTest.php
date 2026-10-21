@@ -68,3 +68,10 @@ describe(ExporterSelector::class, function (): void {
         'metrics default' => [null, true],
     ]);
 });
+
+it('scrapes a CI-only Node by role default while honoring explicit exporter disable', function (): void {
+    $selector = new ExporterSelector;
+    expect($selector->select([RoleName::CiRunner], true)->selected)->toBeTrue()
+        ->and($selector->select([RoleName::CiRunner], true)->reason)->toBe(ExporterSelectionReason::RoleDefault)
+        ->and($selector->select([RoleName::CiRunner], true, ExporterPreference::Disabled)->selected)->toBeFalse();
+});
