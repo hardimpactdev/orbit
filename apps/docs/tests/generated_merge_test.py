@@ -1,5 +1,4 @@
-"""Marker branch artifacts; real generators, Git drivers and two-parent merges."""
-import argparse
+"""External quality proof: real generators, Git drivers and two-parent merges."""
 import importlib.machinery
 import importlib.util
 import json
@@ -7,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -115,19 +115,9 @@ return [App\Providers\AppServiceProvider::class, HardImpact\Librarian\LibrarianS
         for project in ('apps/docs', 'apps/gateway'):
             run(cls.tree / project, 'composer', 'dump-autoload', '--no-dev',
                 '--no-scripts', '--no-plugins', '--optimize')
-        # Build the locked CLI, not any schema output. Each timed driver still
-        # starts a cold Bun process; independent freshness uses the original CLI.
-        modules = cls.tree / 'apps/web/node_modules'
-        modules.unlink()
-        (modules / '.bin').mkdir(parents=True)
-        package = modules / 'openapi-typescript'
-        (package / 'bin').mkdir(parents=True)
-        shutil.copy2(ROOT / 'apps/web/node_modules/openapi-typescript/package.json', package / 'package.json')
-        run(cls.tree, 'bun', 'build', '--minify', '--target=bun',
-            str(ROOT / 'apps/web/node_modules/openapi-typescript/bin/cli.js'),
-            '--outfile', str(package / 'bin/cli.js'))
-        (modules / '.bin/openapi-typescript').symlink_to('../openapi-typescript/bin/cli.js')
-        # Keep all private web dependencies out of the source fixture's index.
+        # Use the installed, locked web CLI unchanged in both merge callbacks
+        # and independent freshness checks. dependencies() links it read-only.
+        # A node_modules symlink is not covered by the directory ignore rule.
         with (cls.tree / '.git/info/exclude').open('a') as excluded:
             excluded.write('\n/apps/web/node_modules\n')
         TOOL.install(cls.tree)
@@ -173,7 +163,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         cls.base = git(cls.tree, 'rev-parse', 'HEAD')
         git(cls.tree, 'update-ref', 'refs/remotes/origin/main', cls.base)
         # Branch commits and expected trees are immutable source inputs. Build
-        # them once; the timed tests still exercise conflicts and cold drivers.
+        # them once; each case still exercises conflicts and cold drivers.
         fixture = cls('test_base_openapi_freshness')
         scenarios = {}
         for kind in ('adr', 'endpoint'):
@@ -202,8 +192,8 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
 
     def check(self, gate):
         tree = self.tree
-        # Each test runs one independent, cold freshness gate. ParaTest owns
-        # CPU allocation, not a nested pool of generator subprocesses.
+        # Each case runs one independent, cold freshness gate. The quality
+        # check runs cases sequentially without a nested generator pool.
         before = {path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS}
         env = dict(os.environ, ORBIT_DOCS_ROOT=str(tree / 'docs'),
                    APP_CONFIG_CACHE=str(tree / 'private-config.php'))
@@ -213,7 +203,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             'mcp': ['bin/mcp-tools', '--check'],
             'lint': ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
             'navigation': ['bin/docs-nav'],
-            'web_types': ['bun', '--bun', str(ROOT / 'apps/web/node_modules/.bin/openapi-typescript'),
+            'web_types': ['bun', '--bun', str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
                           str(tree / 'docs/openapi.json'), '-o', str(schema)],
         }
         command = commands[gate]
@@ -375,6 +365,11 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
     def test_reversed_endpoint_previews(self):
         self.preview_order('endpoint', reverse=True)
 
+    def test_original_web_cli(self):
+        cli = 'apps/web/node_modules/.bin/openapi-typescript'
+        self.assertEqual((self.tree / cli).resolve(), (ROOT / cli).resolve(),
+                         'merge callbacks and freshness checks must use the original installed CLI')
+
     def test_runtime_only_autoloaders(self):
         for project, provider in (('apps/docs', 'AppServiceProvider'),
                                   ('apps/gateway', 'ExtensionServiceProvider')):
@@ -500,15 +495,17 @@ for kind in ('base', 'adr', 'endpoint'):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument('--prepare-fixture', type=Path)
-    mode.add_argument('--fixture', type=Path)
-    arguments, tests = parser.parse_known_args()
-    if arguments.prepare_fixture is not None:
-        if tests:
-            parser.error('fixture preparation does not accept test selections')
-        GeneratedMergeTest.prepare_fixture(arguments.prepare_fixture)
-    else:
-        GeneratedMergeTest.fixture = arguments.fixture
-        unittest.main(argv=[__file__, *tests])
+    # This entire end-to-end proof belongs to composer check, not Pest. Keep
+    # preparation, all cases and the snapshot guards in one disposable run.
+    with tempfile.TemporaryDirectory(prefix='orbit-generated-merge-') as scratch:
+        snapshot = Path(scratch) / 'snapshot'
+        GeneratedMergeTest.prepare_fixture(snapshot)
+        GeneratedMergeTest.fixture = snapshot
+        result = unittest.main(exit=False).result
+        if (snapshot / '.git/orbit/generated-merge').exists():
+            raise AssertionError('source snapshot acquired a generated-merge cache')
+        if list(snapshot.glob('apps/*/bootstrap/cache/*.php')):
+            raise AssertionError('source snapshot acquired generated bootstrap cache files')
+        if git(snapshot, 'status', '--porcelain', '--untracked-files=all'):
+            raise AssertionError('source snapshot was modified')
+        sys.exit(not result.wasSuccessful())

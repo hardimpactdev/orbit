@@ -81,10 +81,16 @@ const TOOLING_BASELINE_PROJECTS = [
         'rector' => ['app', 'bootstrap/app.php', 'bootstrap/providers.php', 'config', 'tests'],
         'phpstan' => ['app', 'config', '../../tools/phpstan'],
         'pint' => ['app', 'bootstrap', 'config', 'tests'],
-        'scripts' => [],
+        'scripts' => [
+            'merge:check' => [
+                'python3 -S tests/generated_merge_test.py',
+                'The Docs project runs the real generated-merge tools outside Pest.',
+            ],
+        ],
         'check' => [
             '@docs:lint' => 'The Docs project owns the documentation lint.',
             '@fixtures:check' => 'The Docs project owns the API fixtures.',
+            '@merge:check' => 'The Docs project owns the generated-merge end-to-end proof.',
         ],
     ],
     'apps/e2e' => [

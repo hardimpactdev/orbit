@@ -150,9 +150,13 @@ Full suites include architecture tests and tests that start PHP subprocesses. CI
 
 CLI and Docs limit each test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
 
-Generated-merge Python cases run as separate Pest unit tests, without an unused parent Laravel boot. Each case copies a clean source-only Git snapshot into a fresh private repository and runs real generators cold, keeping both merge orders, generated-file conflicts, cache assertions, and independent freshness checks. Snapshot preparation runs no generator and shares no mutable Git state or merge cache between cases. It builds the locked web CLI with stock Bun; independent freshness checks still use the original installed CLI.
+The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
 
-The merge driver and its test runner start Python without loading site packages. They import modules only for the requested mode. This reduces repeated cold startup. The fixture uses Composer's runtime-only autoloaders, so generator subprocesses do not load Pest, PHPUnit or other development tools. Its Composer files remain private; installed packages stay read-only. Both orders must equal the same recorded generator output and complete source tree. Separate read-only cases rebuild the base and combined fixtures to check every recorded byte. The fixture contains only the source corpus these proofs need, not unrelated applications or tests; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
+The check prepares independent branch commits and expected combined trees from current source files and recorded outputs, then gives each case a fresh private repository. Cold generators still prove both merge orders, generated-file conflicts, cache assertions, and independent freshness. Merge callbacks and freshness checks both use the original installed, locked web CLI through Bun, without a bundled or minified replacement.
+
+The merge driver and the runner for this check start Python without loading site packages. The driver imports modules only for the requested mode. This reduces repeated cold startup. The fixture uses Composer's runtime-only autoloaders, so generator subprocesses do not load Pest, PHPUnit or other development tools. Its Composer files remain private; installed packages stay read-only.
+
+Both orders must equal the same recorded generator output and complete source tree. Separate read-only cases rebuild the base and combined fixtures to check every recorded byte. The fixture contains only the source corpus these proofs need, not unrelated applications or tests; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
 The real animation composition proof retains seven outer ticks across admission and resume at the production 300 ms cadence. The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
 
@@ -303,18 +307,18 @@ In an Orbit task, run the tests that cover the change in each changed project di
 | Command | Result |
 | --- | --- |
 | `vendor/bin/pest --compact PATH` or `--filter=NAME` | Runs the tests that cover a change |
-| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the test suite. |
+| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the full Pest suite. |
 | `composer test` | Runs the project's full suite in parallel processes |
 | `composer format` | Applies Pint's Laravel preset |
 | `composer analyse` | Runs PHPStan. The applications use Larastan. |
 
-In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
+In `apps/docs`, `composer check` also runs the documentation lint, the API fixture check, and the external generated-merge proof. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
 
 Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file, in place of `pestphp/pest`. Orbit configures none of its test-impact features. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
 
-Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. The generated-merge driver runs its commands in sequence, and each independent freshness gate has its own test case. ParaTest owns CPU allocation; nested generator pools would compete with the other cases under the unchanged two-second per-test limit.
+Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. Every Pest case remains subject to the two-second limit. The external generated-merge proof runs sequentially in the quality step, separate from ParaTest; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
