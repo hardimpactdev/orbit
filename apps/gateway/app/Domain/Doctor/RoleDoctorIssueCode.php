@@ -22,6 +22,7 @@ enum RoleDoctorIssueCode: string implements DoctorIssueCode
     case VpnProjectionMismatch = 'role.vpn_projection_mismatch';
     case DnsProjectionMismatch = 'role.dns_projection_mismatch';
     case PrivateDnsRouteMismatch = 'role.private_dns_route_mismatch';
+    case CiRunnerHostMismatch = 'role.ci_runner_host_mismatch';
     case InspectionFailed = 'role.inspection_failed';
     case NodeUnreachable = 'role.node_unreachable';
 

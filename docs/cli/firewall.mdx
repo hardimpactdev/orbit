@@ -21,6 +21,8 @@ The Gateway applies each rule over SSH, verifies it in the UFW status output, an
 | [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
 | [`firewall:remove`](#orbit-firewallremove) | Remove one named rule. |
 
+The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it; the Incus ACL enforces the runner egress boundary.
+
 ## Read the managed and live rules
 
 The Gateway serves three read-only lists. The CLI has no command for them. The web app's Node page and the MCP tools use them.

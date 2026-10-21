@@ -1,5 +1,8 @@
 """php.install-build against a fake Node: dpkg, apt, systemctl, and PHP are shell fakes over a temporary root."""
 import hashlib
+import importlib.machinery
+import importlib.util
+import json
 import os
 import shutil
 import socket
@@ -71,9 +74,16 @@ FAKES = {
     'phpdismod': 'echo "phpdismod $*" >> "$STATE/calls"; rm -f "$ROOT/etc/php/$2/$4/conf.d/20-$5.ini"',
     'systemctl': 'echo "systemctl $*" >> "$STATE/calls"; case "$1" in '
                  'is-active) [ -f "$STATE/active-$3" ];; '
-                 'restart|reload) [ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
+                 'is-enabled) if [ -f "$STATE/masked-$2" ]; then echo masked; exit 1; '
+                 'elif [ -f "$STATE/disabled-$2" ]; then echo disabled; exit 1; else echo enabled; fi;; '
+                 'disable) [ -f "$STATE/fail-disable" ] && exit 1; touch "$STATE/disabled-${@: -1}"; '
+                 'rm -f "$STATE/active-${@: -1}";; '
+                 'stop) rm -f "$STATE/active-$2";; '
+                 'restart|reload) '
+                 '[ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
                  'list-units) for f in "$STATE"/active-orbit-*; do [ -f "$f" ] && echo "${f##*/active-} loaded active running"; done;; '
-                 'show) echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/${@: -1}/php-fpm.conf }";; '
+                 'show) '
+                 'echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/${@: -1}/php-fpm.conf }";; '
                  'esac',
 }
 # The CLI prints the modules of the links in its conf.d plus core; PHP-FPM does the same for its own conf.d.
@@ -160,6 +170,61 @@ class InstallBuildTest(unittest.TestCase):
 
     def cached(self):
         return sorted(path.name for path in (self.root / 'var/cache/orbit/php-packages').glob('*.deb'))
+
+    def test_disables_and_stops_unused_fpm_on_first_install_and_current_build(self):
+        for current in (False, True):
+            with self.subTest(current=current):
+                if current:
+                    self.assertEqual(self.run_program(fpm='disabled')[0], 'current')
+                (self.state / 'active-php8.5-fpm.service').touch()
+                (self.state / 'disabled-php8.5-fpm.service').unlink(missing_ok=True)
+                (self.state / 'calls').unlink(missing_ok=True)
+
+                outcome, data = self.run_program(fpm='disabled')
+
+                self.assertIn(outcome, ('current', 'applied'), data)
+                self.assertTrue(data['fpm_disabled'])
+                self.assertIn('systemctl disable --now php8.5-fpm.service', self.calls())
+                self.assertFalse((self.state / 'active-php8.5-fpm.service').exists())
+                self.assertTrue((self.state / 'disabled-php8.5-fpm.service').exists())
+                self.assertFalse([c for c in self.calls() if c.startswith(('systemctl restart', 'systemctl reload'))])
+                unchanged, data = self.run_program(fpm='disabled')
+                self.assertEqual(unchanged, 'current', data)
+                self.assertFalse(data['fpm_disabled'])
+
+    def test_vpn_cli_install_selects_the_inactive_fpm_policy(self):
+        repository = Path(__file__).resolve().parents[4]
+        loader = importlib.machinery.SourceFileLoader('vpn_php_build', str(repository / 'bin/php-build'))
+        cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(cli)
+        recipe = json.loads((repository / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+
+        payload = cli.installer_input(recipe, ['8.5'], profile='vpn')
+
+        self.assertEqual(payload['fpm'], 'disabled')
+        self.assertFalse(payload['pcov'])
+        self.assertFalse(payload['opentelemetry'])
+        self.assertTrue({'sockets', 'pcntl'}.issubset(payload['versions']['8.5']['extensions']))
+
+    def test_preserves_an_existing_fpm_mask(self):
+        (self.state / 'masked-php8.5-fpm.service').touch()
+        (self.state / 'fail-disable').touch()
+        (self.state / 'active-php8.5-fpm.service').touch()
+
+        outcome, data = self.run_program(fpm='disabled')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertTrue((self.state / 'masked-php8.5-fpm.service').exists())
+        self.assertFalse((self.state / 'active-php8.5-fpm.service').exists())
+        self.assertFalse([c for c in self.calls() if c.startswith(('systemctl unmask', 'systemctl enable'))])
+
+    def test_fails_when_unused_fpm_cannot_be_disabled(self):
+        (self.state / 'fail-disable').touch()
+
+        outcome, data = self.run_program(fpm='disabled')
+
+        self.assertEqual(outcome, 'fpm_invalid', data)
+        self.assertIn('disabled and inactive', data['reason'])
 
     def test_installs_the_pinned_files_without_removal_and_keeps_every_file(self):
         outcome, data = self.run_program()
@@ -876,6 +941,23 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(outcome, 'fpm_invalid')
         self.assertNotIn('systemctl restart php8.5-fpm.service', self.calls())
         self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.11-1' for name in self.pins))
+
+    def test_package_updates_restart_all_active_colocated_masters(self):
+        for name in self.pins:
+            self.install(name, '8.5.11-1')
+        masters = ['php8.5-fpm.service', 'orbit-gateway-php8.5-fpm.service']
+        for master in masters:
+            (self.state / f'active-{master}').touch()
+
+        outcome, data = self.run_program(fpm='all')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
+        self.assertEqual(data['restarted'], masters)
+        self.assertEqual(data['stale_masters'], [])
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl restart {master}'), 1)
+        self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
 
     def test_places_pcov_only_where_asked_and_never_in_php_fpm(self):
         (self.root / 'etc/php/8.5/fpm/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')

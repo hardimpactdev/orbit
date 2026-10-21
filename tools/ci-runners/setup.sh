@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Orbit CI shard runners in unprivileged Incus containers. See "Self-hosted shard runners" in
 # docs/reference/implementation-loop.md.
-# Run on the host as a member of incus-admin with sudo. Every step is idempotent.
+# First add the ci-runner role through Orbit; it owns the host project, profile, network and firewall.
+# Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
-#   tools/ci-runners/setup.sh host SUBNET            # 10.253.1.1/24 on Beast, 10.253.2.1/24 on Shark
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-beast-2, ci-shark-1
+#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-4, ci-sabre-3
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
@@ -20,83 +20,19 @@ set -euo pipefail
 
 REPOSITORY=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT=orbit-ci
-NETWORK=orbitci0
-ACL=orbit-ci-egress
-POOL=default
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/hardimpactdev
-LABELS=self-hosted,Linux,X64,orbit-shard
+# The labels every hardimpactdev shard runner carries. A ci-sabre-* container also gets `sabre`.
+LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
 # signal/ptrace to container processes whose label is stacked (profile//&...). This lets the container signal its own
 # stacked processes only; they stay confined by the container profile. Nesting stays off. Set per instance, because a
 # profile key is also checked against the project's VM low-level restriction.
 APPARMOR="signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,"
-
-host() {
-  local subnet=$1
-
-  incus project show "$PROJECT" >/dev/null 2>&1 || incus project create "$PROJECT" \
-    -c features.images=true -c features.profiles=true -c features.storage.volumes=true \
-    -c features.storage.buckets=true -c features.networks=false
-  # restricted=true keeps containers unprivileged, blocks nesting and host disk devices, and limits the project to its
-  # bridge. Container low-level keys stay allowed only for the raw.apparmor line set at launch (see APPARMOR).
-  incus project set "$PROJECT" restricted=true restricted.networks.access="$NETWORK" \
-    restricted.containers.nesting=block restricted.containers.privilege=unprivileged \
-    restricted.virtual-machines.lowlevel=block restricted.containers.lowlevel=allow limits.virtual-machines=0
-
-  # Egress: public IPv4 only. Every private, CGNAT, link-local, multicast and reserved range is rejected, which covers
-  # the host LAN, WireGuard 10.44.0.0/24, docker and task bridges, and the bridge gateway (Incus accepts DNS/DHCP to
-  # the gateway before the ACL runs). IPv6 has no allow rule, so the default reject applies to all of it.
-  incus network acl show "$ACL" >/dev/null 2>&1 || incus network acl create "$ACL"
-  incus network acl edit "$ACL" <<'YAML'
-description: Orbit CI runner boundary
-egress:
-- action: reject
-  destination: 0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3
-  state: enabled
-- action: reject
-  destination: ::/0
-  state: enabled
-- action: allow
-  destination: 0.0.0.0/0
-  state: enabled
-ingress: []
-config: {}
-YAML
-
-  incus network show "$NETWORK" >/dev/null 2>&1 || incus network create "$NETWORK" --type=bridge \
-    ipv4.address="$subnet" ipv4.nat=true ipv6.address=none
-  incus network set "$NETWORK" ipv4.address="$subnet" ipv4.nat=true ipv6.address=none \
-    security.acls="$ACL" security.acls.default.egress.action=reject security.acls.default.ingress.action=reject
-
-  # ufw's routed policy is deny; the bridge needs the same forward allowance the task bridges have (orbittask+).
-  sudo ufw status | grep -q "on $NETWORK .*# orbit-ci-runners" ||
-    sudo ufw route allow in on "$NETWORK" comment orbit-ci-runners >/dev/null
-
-  incus profile edit default --project "$PROJECT" <<YAML
-description: Orbit CI shard runner
-config:
-  boot.autostart: "true"
-  limits.cpu: "6"
-  limits.memory: 12GiB
-  limits.processes: "8192"
-  security.nesting: "false"
-  security.privileged: "false"
-devices:
-  eth0:
-    name: eth0
-    network: $NETWORK
-    type: nic
-  root:
-    path: /
-    pool: $POOL
-    type: disk
-YAML
-}
 
 in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 
@@ -115,11 +51,14 @@ container() {
   # gets the script, the recipe, and the whole remote program tree in the repository layout that bin/php-build reads.
   local tree=/root/orbit-php-build
   in_ct "$name" rm -rf "$tree"
-  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/apps/gateway/resources/machine-software"
+  in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
     "$name$tree/apps/gateway/resources/machine-software/recipe.json" --project "$PROJECT"
   incus file push --recursive "$REPOSITORY/apps/gateway/resources/remote" "$name$tree/apps/gateway/resources/" --project "$PROJECT"
+  incus file push "$REPOSITORY/tools/ci-runners/javascript.py" "$name$tree/tools/ci-runners/javascript.py" --project "$PROJECT"
+  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/vite-plus-package-lock.json" \
+    "$name$tree/apps/gateway/resources/machine-software/vite-plus-package-lock.json" --project "$PROJECT"
   # A recursive push keeps the host's owners; root runs this code, so root owns it.
   in_ct "$name" chown -R root:root "$tree"
 
@@ -140,7 +79,7 @@ apt-get update -qq
 # hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
-  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+  acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
 # A shard container runs only CI jobs, so it purges PHP packages and sources outside the recipe.
 python3 /root/orbit-php-build/bin/php-build install --profile=ci-runner --purge-extras --no-composer >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
@@ -162,6 +101,17 @@ id runner >/dev/null 2>&1 || useradd -m -U -s /bin/bash runner
 rm -f /etc/sudoers.d/runner /etc/sudoers.d/90-incus
 install -d -o runner -g runner /home/runner/work
 
+# Install and verify recipe Node, then retire duplicate APT ownership with a dependency check.
+python3 /root/orbit-php-build/tools/ci-runners/javascript.py
+# Verify the launcher from a directory that runner can traverse, against the recipe.
+expected_node_version=$(python3 -c 'import json,sys; print("v" + json.load(open(sys.argv[1]))["tools"]["node"]["version"])' /root/orbit-php-build/apps/gateway/resources/machine-software/recipe.json)
+actual_node_version=$(cd / && sudo -u runner -H /usr/local/bin/node --version)
+if [ "$actual_node_version" != "$expected_node_version" ]; then
+  echo "Runner Node version does not match the recipe: expected $expected_node_version, got $actual_node_version" >&2
+  exit 1
+fi
+printf '%s\n' "$actual_node_version"
+
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
   echo "${RUNNER_SHA256}  /tmp/runner.tgz" | sha256sum -c - >/dev/null
@@ -173,7 +123,8 @@ SH
 }
 
 register() {
-  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}}
+  local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
+  case $name in ci-sabre-*) labels=$labels,sabre ;; esac
   if ! in_ct "$name" test -f /home/runner/actions-runner/.runner; then
     [ -n "$token" ] || { echo 'register needs TOKEN or ORBIT_RUNNER_TOKEN' >&2; exit 2; }
     in_ct "$name" chown -R runner:runner /home/runner/actions-runner
@@ -185,7 +136,7 @@ register() {
     printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
       sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --runnergroup Default --work /home/runner/work --replace' \
-      config "$REPO_URL" "$name" "$LABELS" >/dev/null
+      config "$REPO_URL" "$name" "$labels" >/dev/null
   fi
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }
@@ -211,6 +162,6 @@ verify() {
 }
 
 case "${1:-}" in
-  host | container | register | verify) "$@" ;;
+  container | register | verify) "$@" ;;
   *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac

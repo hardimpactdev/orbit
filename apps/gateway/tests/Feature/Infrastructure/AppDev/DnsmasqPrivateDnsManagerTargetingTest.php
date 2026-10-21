@@ -20,6 +20,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Illuminate\Support\Facades\Log;
 
 it('publishes private DNS on the VPN node when gateway and vpn are split', function (): void {
     $vpn = dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
@@ -133,6 +134,7 @@ it('fails SSH publication without falling back to the local process runner', fun
     }
     $processes = new DnsTargetProcessRunner;
     $ssh = new DnsTargetSshExecutor(succeed: false);
+    Log::spy();
 
     expect(fn () => dns_target_manager($processes, $ssh)->converge())
         ->toThrow(function (RuntimeConvergenceException $exception): void {
@@ -142,6 +144,11 @@ it('fails SSH publication without falling back to the local process runner', fun
         })
         ->and($processes->calls)
         ->toBe(0);
+
+    Log::shouldHaveReceived('warning')->once()->with('Private DNS publication failed.', [
+        'node_id' => $vpn->id, 'exit_code' => 1, 'duration_ms' => 1,
+        'stdout' => 'remote validation output', 'stderr' => 'dnsmasq failed', 'output_truncated' => false,
+    ]);
 })->with(['shared Node' => true, 'split Nodes' => false]);
 
 function dns_target_manager(ProcessRunner $processes, SshExecutor $ssh): DnsmasqPrivateDnsManager
@@ -212,7 +219,7 @@ final class DnsTargetSshExecutor implements SshExecutor
         $this->users[] = $connection->user;
         $this->commands[] = $command;
 
-        return new CommandResult($this->succeed ? 0 : 1, '', $this->succeed ? '' : 'dnsmasq failed', 1, false);
+        return new CommandResult($this->succeed ? 0 : 1, $this->succeed ? '' : 'remote validation output', $this->succeed ? '' : 'dnsmasq failed', 1, false);
     }
 }
 

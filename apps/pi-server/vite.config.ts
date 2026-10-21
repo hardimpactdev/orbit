@@ -2,6 +2,8 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
     test: {
+        fileParallelism: true,
+        maxWorkers: "100%",
         include: ["tests/**/*.test.ts"],
         environment: "node",
         testTimeout: 20_000,

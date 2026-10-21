@@ -71,11 +71,11 @@ A path without a file returns the release's `index.html`, and the app's router s
 
 `/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
-The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
+The app connects to Reverb at the URL that `GET /api/v1/realtime` returns. Its pusher-js client reconnects after a Reverb restart and authorizes and subscribes to each channel again, including Node presence channels. Each presence subscription rebuilds its member list; the next agent event restores the Node's online state.
 
 ## Node and Instance lists
 
-The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. On the dashboard, these are the Nodes with roles pane and the roleless Nodes pane. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
+The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. A Node with only `ci-runner` has CPU, memory, and disk meters through the same exporter and workload table. On the dashboard, these are the Nodes with roles pane and the roleless Nodes pane. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
 
 ## Node detail pages
 

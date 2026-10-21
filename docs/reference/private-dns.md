@@ -99,7 +99,17 @@ Convergence also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/li
 
 ### Release and sockets
 
+Every publication self-tests the installed release with the installed PHP before any service changes, even when the release is unchanged. Every listener start or restart, including rollback, requires a passing self-test. A listener whose process executable differs from the installed PHP binary, including a deleted executable after a package update, is stale and restarts behind its socket after validation.
+
+After the PHP installer reports `applied` on an active VPN Node, recipe and VPN role convergence call this publication path. The VPN Node remains active while role reconvergence temporarily claims its assignment as provisioning. Publication owns listener activation, including socket ownership and catalog confirmation. Failed self-tests retain the running listener and report the failure.
+
+If activation fails, publication restores the previous records, catalog, and units, reloads systemd, and restarts dnsmasq. It self-tests the previous listener release before attempting to enable or restart it. A failed listener self-test does not skip the systemd reload or dnsmasq restart.
+
 The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the `vpn` Node. It lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. So a Gateway deploy that changes the listener code produces a new id, and the next publication installs it. The publication keeps the previous release for rollback and removes older ones.
+
+The `vpn` recipe profile owns `php:8.5`, including the listener’s CLI runtime and its `sockets` and `pcntl` modules. VPN role convergence installs and verifies that build before the role completes its prerequisites. When provisioning requests VPN with other roles, VPN converges first so publishing roles have their listener runtime.
+
+VPN-only Nodes keep shared PHP-FPM disabled and inactive and preserve an existing mask. On a Node with Gateway or application roles, package changes validate and restart all active colocated PHP 8.5 FPM masters; a failed validation or restart fails installation and rolls it back. Recipe convergence verifies the same build on the VPN Node; an unmanaged PHP installation is not a listener prerequisite.
 
 Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication installs the release again and restarts the listener on it.
 
@@ -124,7 +134,7 @@ Every publication checks that confirmation while the listener runs.
 | The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
 | The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
 
-A failed start or restart restores the previous units, DNS files, and services.
+A failed start or restart restores the previous units, DNS files, and services. A failed publication logs the target Node, exit code, duration, stdout, stderr, and whether the output was truncated before a role operation wraps the error. Read the Gateway log for `Private DNS publication failed.` when an activity reports `app-dev.dns_config_failed`.
 
 ### Publication target
 

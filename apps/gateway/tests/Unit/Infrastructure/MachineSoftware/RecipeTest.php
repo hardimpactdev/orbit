@@ -19,6 +19,7 @@ use App\Infrastructure\TaskVms\TaskVmCloudInit;
 use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -78,6 +79,16 @@ describe('machine recipe structure and identity', function (): void {
         }
     });
 
+    it('owns the private DNS listener PHP build in the VPN recipe identity', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $withoutRuntime = machine_recipe_document();
+        $withoutRuntime['roles']['vpn'] = array_values(array_diff($withoutRuntime['roles']['vpn'], ['php:8.5']));
+
+        expect($recipe->profile('vpn'))->toContain(...$recipe->php('8.5')->packagesFor(false))
+            ->and($recipe->php('8.5')->cliExtensions())->toContain('sockets', 'pcntl')
+            ->and(machine_recipe_decode($withoutRuntime)->identity)->not->toBe($recipe->identity);
+    });
+
     it('refuses an incomplete or foreign Git build', function (Closure $change, string $error): void {
         $document = machine_recipe_document();
         $change($document);
@@ -133,7 +144,7 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
             ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
-            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.3')
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.4')
             ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
             ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
             ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
@@ -214,11 +225,12 @@ describe('machine recipe structure and identity', function (): void {
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,
-            'gateway' => [...$common, 'caddy', ...$php85],
+            'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
+            'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,
-            'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'ci-runner' => [...$common, 'incus', 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -230,7 +242,7 @@ describe('machine recipe structure and identity', function (): void {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
-                if ($role !== 'base') {
+                if ($role !== 'base' && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
                     expect($recipe->profile($role))->not->toContain($package);
                 }
             }
@@ -243,13 +255,12 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
     });
 
-    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+    it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
         $policy = new RecipeLoader()->load()->phpPolicy;
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
             ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
-            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
             ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror');
     });
 
@@ -324,9 +335,9 @@ describe('machine recipe structure and identity', function (): void {
         'an undeclared CI version' => [function (&$d): void {
             $d['php']['ci'] = '8.3';
         }, 'php.ci: [8.3] is not a declared PHP version'],
-        'purging on a site profile' => [function (&$d): void {
-            $d['php']['purge_extras'][] = 'app-prod';
-        }, 'only the ci-runner profile may purge PHP packages'],
+        'the removed purge policy' => [function (&$d): void {
+            $d['php']['purge_extras'] = ['ci-runner'];
+        }, 'expected exactly fields ci, shared, rollback, pcov, opentelemetry, versions'],
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],
@@ -470,6 +481,34 @@ describe('recipe availability and artifact integrity', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
     });
+
+    it('keeps artifact retries separate and moves to the next URL immediately after connection failures', function (int $status, int $attempts): void {
+        Sleep::fake();
+        $url = 'https://origin.example/git_1.0.deb';
+        $digest = hash('sha256', 'exact bytes');
+        $mirror = 'https://mirror.example/git_'.$digest.'.deb';
+        Http::fake(function ($request, array $options) use ($url, $status) {
+            expect($options['timeout'])->toBe(600)
+                ->and($options['connect_timeout'])->toBe(15)
+                ->and($options['curl'] ?? [])->toBe([]);
+
+            if ($request->url() === $url) {
+                return Http::response('exact bytes');
+            }
+
+            return $status === 0 ? Http::failedConnection() : Http::response('', $status);
+        });
+        $pin = new ToolPin('artifact', '1.0', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], ['git' => $pin], [], '{}', artifactMirror: 'https://mirror.example');
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused');
+
+        Http::assertSentCount($attempts + 1);
+        expect(Http::recorded()->filter(fn ($pair) => $pair[0]->url() === $mirror))->toHaveCount($attempts);
+        Sleep::assertSleptTimes($attempts - 1);
+        if ($attempts > 1) {
+            Sleep::assertSequence([Sleep::for(500)->milliseconds(), Sleep::for(500)->milliseconds()]);
+        }
+    })->with([[0, 1], [501, 1], [503, 3]]);
 
     it('verifies Git from the durable mirror and falls back to the PPA when absent', function (bool $present): void {
         $url = 'https://ppa.example/git_2.55.0_amd64.deb';

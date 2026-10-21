@@ -72,6 +72,8 @@ Use this checklist when core adds a place for extensions to contribute:
 - Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
 - Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
 
+The `ci-runner` role is a core Node role. Its host boundary uses the existing role baseline and firewall catalog. It introduces no extension contribution or plug-in point.
+
 ## Plug-in points
 
 Core defines an interface for each place where an extension can add behavior. The provider tags its implementation with the interface name:

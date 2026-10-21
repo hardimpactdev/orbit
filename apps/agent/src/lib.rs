@@ -376,7 +376,7 @@ pub fn iso_now() -> String {
 /// The attempt number for the retry after a connection ended. `joined_for` is how long the session
 /// stayed joined, or `None` when it never joined. Only a session that stayed joined for
 /// `HEALTHY_SESSION` starts the backoff again, so a session that fails right after each join keeps
-/// backing off. The first retry waits `retry_delay(1)`, about 2 seconds.
+/// backing off. The first retry waits `retry_delay(1)`, between 1 and 2 seconds.
 pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u32 {
     if joined_for.is_some_and(|duration| duration >= HEALTHY_SESSION) {
         1
@@ -402,9 +402,13 @@ pub fn runs_in_service_unit(cgroup: &str) -> bool {
 }
 
 pub fn retry_delay(attempt: u32) -> std::time::Duration {
+    retry_delay_with(attempt, &mut rand::thread_rng())
+}
+
+fn retry_delay_with(attempt: u32, rng: &mut impl Rng) -> std::time::Duration {
     let base = 1_u64.checked_shl(attempt.min(5)).unwrap_or(30).min(30);
-    let jitter = rand::thread_rng().gen_range(0..=base / 4);
-    std::time::Duration::from_secs((base + jitter).min(30))
+    // Equal jitter spreads the fleet even at the 30-second cap.
+    std::time::Duration::from_millis(rng.gen_range(base * 500..=base * 1000))
 }
 pub fn tls_config(
 ) -> Result<std::sync::Arc<rustls::ClientConfig>, Box<dyn std::error::Error + Send + Sync>> {
@@ -480,6 +484,10 @@ impl Liveness {
     pub fn message(&mut self, now: tokio::time::Instant) {
         self.last_message = now;
         self.ping_sent = None;
+    }
+    pub fn deadline(&self) -> tokio::time::Instant {
+        self.ping_sent
+            .map_or(self.last_message + PING_AFTER, |sent| sent + PONG_TIMEOUT)
     }
     pub fn check(&mut self, now: tokio::time::Instant) -> LivenessCheck {
         match self.ping_sent {
@@ -561,12 +569,28 @@ mod tests {
         for _ in 0..10 {
             attempt = next_attempt(attempt, Some(std::time::Duration::from_secs(1)));
         }
-        assert!(retry_delay(attempt) >= std::time::Duration::from_secs(30));
+        assert!(retry_delay(attempt) >= std::time::Duration::from_secs(15));
         assert!(
             retry_delay(next_attempt(attempt, Some(HEALTHY_SESSION)))
                 < std::time::Duration::from_secs(3)
         );
     }
+    #[test]
+    fn retry_jitter_remains_bounded_and_spread_at_the_cap() {
+        use rand::{rngs::StdRng, SeedableRng};
+        let mut rng = StdRng::seed_from_u64(42);
+        for attempt in [1, 2, 3, 4, 5, 100, u32::MAX] {
+            let ceiling = std::time::Duration::from_secs((1_u64 << attempt.min(5)).min(30));
+            let samples: Vec<_> = (0..32)
+                .map(|_| retry_delay_with(attempt, &mut rng))
+                .collect();
+            assert!(samples
+                .iter()
+                .all(|delay| *delay >= ceiling / 2 && *delay <= ceiling));
+            assert!(samples.iter().any(|delay| *delay != samples[0]));
+        }
+    }
+
     #[test]
     fn liveness_pings_after_a_quiet_spell_and_gives_up_without_an_answer() {
         let start = tokio::time::Instant::now();

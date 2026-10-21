@@ -3,7 +3,7 @@ title: "Update and recover a Gateway"
 description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, receive release alerts, and follow the fleet rollout."
 covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
-  - apps/gateway/config/{app,logging}.php
+  - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/app/Domain/Gateway/GatewayCacheStore.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
@@ -23,6 +23,16 @@ The Gateway logs an exception at `ERROR` when its response status is 500 or high
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
 
 Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
+
+### Disk retention
+
+Gateway release unit convergence also installs a journald drop-in and a logrotate rule for the plain `storage/logs/laravel.log`. That file can remain from an earlier logging configuration or grow while `LOG_CHANNEL=single` is selected. Logrotate checks it hourly, rotates it daily or above 32 MiB, compresses old copies, and keeps seven copies. Its timer does not catch up missed runs at activation. It uses `copytruncate` so existing writers continue without a service restart; a small amount of output can be lost during the copy. Daily Laravel files keep their own rotation policy.
+
+`config/retention.php` sets these limits. `ORBIT_JOURNAL_MAX_MB` defaults to 256 MiB, `ORBIT_JOURNAL_KEEP_FREE_MB` to 1024 MiB, `ORBIT_JOURNAL_DAYS` to seven days, and `ORBIT_JOURNAL_RUNTIME_MAX_MB` to 64 MiB. Journald reads the drop-in at its next start; convergence does not restart it or vacuum existing journals. `ORBIT_LOG_ROTATE_MB` and `ORBIT_LOG_ROTATE_KEEP` set the plain log's threshold and archive count. These are rotation limits, not a hard disk quota: an active journal and log output between hourly checks can exceed them.
+
+The scheduler runs Laravel's `queue:prune-failed` daily. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The existing daily batch prune uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours. Neither command vacuums SQLite or changes application data.
+
+Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or protected staged recovery copies. The staged copy remains protected until an operator explicitly retires it, as [finalization](#finalization) describes.
 
 Gateway web setup lets Caddy read the regular files and directories under the checkout's `public` directory, also files restored with restrictive permissions. It does not follow symlinks there or change the permissions of other source files. The Gateway `.env` stays at mode `0600`. In the [release layout](#release-layout), each release gets this access when it is prepared.
 
@@ -313,7 +323,7 @@ Tables with an inaccessible intrinsic rowid (all three names `rowid`, `_rowid_` 
 
 Before every deploy switch, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
 
-- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 5), and always the one the pause marker names.
+- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 3), and always the one the pause marker names.
 - The release migrates with `migrate --isolated`, so a second migration waits for a running one.
 - A snapshot needs room for the database and its WAL plus the free-space floor. Prepare keeps that room too, so a release refuses with `gateway.release_disk_low` before it builds anything.
 - A failed snapshot changes nothing, and the commit is tried again later.
@@ -905,7 +915,7 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 | Group | Roles |
 | --- | --- |
 | 1 | `app-dev` |
-| 2 | `metrics`, `analytics` |
+| 2 | `ci-runner`, `metrics`, `analytics` |
 | 3 | `database`, `websocket`, `vpn`, `router` |
 | 4 | `app-prod`, `ingress` |
 
