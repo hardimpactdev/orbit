@@ -141,7 +141,6 @@ it('rejects idempotency key reuse for a different mutation', function (): void {
     expect(WebSocketApp::query()->count())->toBe(1);
 });
 
-
 it('returns the latest safe process error and clears it after recovery or a new boot', function (): void {
     $operation = app(ChangeWebSocketRegistryAction::class)->execute('sync', null, $this->gateway->id, 'diagnostics');
     $base = '/api/v1/websocket-registry/processes/'.$this->runtime->id;
