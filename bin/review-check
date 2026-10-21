@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Run the quality checks and affected tests on one candidate: a commit, or a working tree with uncommitted changes."""
+"""Run the fast quality checks on one candidate: a commit, or a working tree with uncommitted changes.
+
+The gate runs no test suite. CI runs the full suites on the handoff commit and on the final head."""
 import json
 import os
 import re
@@ -18,40 +20,12 @@ _budget = runpy.run_path(str(Path(__file__).resolve().parent.parent / "tools/che
 ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBudget", "lane_count", "lane_weight"))
 
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
-PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
 WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
-PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
-                      ('bun', 'run', 'test'), ('bun', 'run', 'build'))
-AFFECTED = ('composer', 'test:affected')
-ARCHITECTURE_TESTS = {
-    'apps/cli': ('tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php'),
-    'apps/gateway': (
-        'tests/Unit/Architecture',
-        'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
-        'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
-    ),
-    'apps/e2e': (
-        'tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
-        'tests/Feature/Configuration/ComposerConfigurationTest.php',
-        'tests/Feature/Configuration/SubprocessTestGroupTest.php',
-        'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php',
-    ),
-    'packages/php-sdk': (
-        'tests/Unit/SuccessRequestIdBoundaryTest.php',
-        'tests/Unit/RepositoryGuidanceTest.php',
-        'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
-        'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
-    ),
-}
-# Paths outside a project that its architecture tests read, so a change there runs them too.
-ARCHITECTURE_TRIGGERS = {
-    'apps/cli': ('docs/cli/', 'bin/orbit-build-cli-binary', 'bin/orbit-version', '.github/workflows/', 'bin/review-check'),
-    # Configuration and test-group contracts scan all five projects and repository tooling.
-    'apps/e2e': ('',),
-}
+PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'), ('bun', 'run', 'build'))
 # Include generated outputs as well as source inputs, so hand edits cannot bypass freshness checks.
 API_ARTIFACT_TRIGGERS = (
     'apps/gateway/', 'apps/cli/', 'packages/php-sdk/', 'bin/docs-openapi', 'bin/mcp-tools',
@@ -68,19 +42,9 @@ REMOTE_PROGRAM_TRIGGERS = ('apps/gateway/resources/', 'apps/gateway/tests/Progra
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
 REPORT_RETENTION_SECONDS = 24 * 60 * 60
-NO_SELECTION = 'No affected tests found'
-FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
-              '--fail-on-empty-test-suite', '--compact', '--colors=never')
 # Keep the web and Gateway checks in one lane. The repository's bin/docs-openapi --check also boots
 # Laravel in apps/gateway.
 SHARED_LANES = {'apps/web': 'apps/gateway', 'repository': 'apps/gateway'}
-
-
-# The whole-suite fallback runs in parallel: in one process the Gateway suite takes about 30 minutes. The lane fills in
-# its process count when the command starts.
-LANE_PROCESSES = '--processes=LANE'
-PARALLEL_FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', LANE_PROCESSES, '--no-tia',
-                       '--fail-on-empty-test-suite', '--compact', '--colors=never')
 
 
 def check_processes(root):
@@ -133,56 +97,6 @@ def candidate_paths(root, head, committed):
     return None, []
 
 
-def task_test_base(root, head):
-    """Every Project handoff, including the last, may narrow tests; CI checks the full branch."""
-    value = os.environ.get('ORBIT_TASK_CHECK_BASE')
-    if not value or os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
-        return None
-    if not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', value):
-        raise RuntimeError('The task test base must be a full commit SHA.')
-    try:
-        kind = git(root, 'cat-file', '-t', value)
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError('The task test base does not exist.') from error
-    if kind != 'commit' or subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', value, head],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
-        raise RuntimeError('The task test base is not an ancestor of the candidate.')
-    return value
-
-
-def paths_since(root, base, head, committed):
-    if committed:
-        return git(root, 'diff', '--name-only', base, head).splitlines()
-    return git(root, 'diff', '--name-only', base, working_tree(root)).splitlines()
-
-
-def handoff_cache(root):
-    return Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit-handoff-tia'
-
-
-def publish_handoff_cache(root, directory, tree, test_base=None):
-    """Publish one complete entry per tree and retain only the active start and published trees."""
-    cached = handoff_cache(root)
-    cached.mkdir(parents=True, exist_ok=True)
-    entry = cached / tree
-    if not entry.exists():
-        with tempfile.TemporaryDirectory(prefix='.pending-', dir=cached) as temporary:
-            staged = Path(temporary) / tree
-            staged.mkdir()
-            for project in PHP_PROJECTS:
-                source = directory / 'tia' / project.replace('/', '-')
-                if (source / 'graph.json').is_file():
-                    shutil.copytree(source, staged / project)
-            staged.rename(entry)
-    protected = {tree}
-    if test_base is not None:
-        protected.add(git(root, 'rev-parse', test_base + '^{tree}'))
-    for path in cached.iterdir():
-        if (re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', path.name)
-                and path.is_dir() and path.name not in protected):
-            shutil.rmtree(path)
-
-
 def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
@@ -226,40 +140,9 @@ def command_log_name(command):
     return '-'.join(command).replace('/', '-').replace(':', '-')
 
 
-def changed_php_tests(paths):
-    """Return changed Pest test files among the selected PHP projects."""
-    return [path for path in paths if path.endswith('Test.php') and '/tests/' in path]
-
-
 def changed_php_test_sources(paths):
     """Return every changed PHP source under a selected project's tests directory."""
     return [path for path in paths if path.endswith('.php') and '/tests/' in path]
-
-
-def project_tia_directory(root, project):
-    """Resolve the directory used by the project's Pest bootstrap."""
-    configured = os.environ.get('ORBIT_TIA_DIRECTORY')
-    if configured:
-        directory = Path(configured)
-        return directory if directory.is_absolute() else (root / project / directory).resolve()
-    return root / project / '.orbit-tia'
-
-
-def prepare_tia_directory(root, project, destination, test_base=None):
-    """Pair a commit only with a passed cache graph for its tree; otherwise use the graph base."""
-    source = project_tia_directory(root, project)
-    selector = 'graph'
-    if test_base is not None:
-        tree = git(root, 'rev-parse', test_base + '^{tree}')
-        candidate = handoff_cache(root) / tree / project
-        if (candidate / 'graph.json').is_file():
-            source = candidate
-            selector = test_base
-    destination.mkdir(parents=True, exist_ok=True)
-    if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
-        shutil.copytree(source, destination, dirs_exist_ok=True)
-    (destination / 'affected.json').unlink(missing_ok=True)
-    return selector
 
 
 def prune_reports(checks):
@@ -307,30 +190,6 @@ def report_directory(reports):
                 raise
 
 
-def selected_test_files(tia_directory):
-    """Return current-run selected tests only when TIA wrote valid evidence."""
-    artifact = tia_directory / 'affected.json'
-    if not artifact.is_file():
-        return set(), False
-    try:
-        selected = json.loads(artifact.read_text())
-    except (OSError, json.JSONDecodeError):
-        return set(), False
-    if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
-        return set(), False
-    return {item.removeprefix('./') for item in selected}, True
-
-
-def selection_warning(project, command, exit_code, log, paths):
-    """Describe an affected-test step that selected nothing for a project the candidate changes."""
-    touched = [path for path in paths if path.startswith(project + '/')]
-    if command != AFFECTED or exit_code != 0 or not touched or NO_SELECTION not in log.read_text(errors='replace'):
-        return None
-    return {'project': project, 'command': list(command), 'log': str(log), 'paths': touched,
-            'message': f'composer test:affected selected no tests although the candidate changes '
-                       f'{len(touched)} path(s) under {project}/'}
-
-
 def main():
     root = Path(__file__).resolve().parent.parent
     processes = check_processes(root)
@@ -344,11 +203,9 @@ def main():
     # mask::--- and disables the named entries of that ACL. 0750 keeps them readable; other stays closed.
     directory.chmod(0o750)
     base, paths = candidate_paths(root, head, committed)
-    test_base = task_test_base(root, head)
-    test_paths = paths_since(root, test_base, head, committed) if test_base else paths
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
-              'worktree': str(root), 'base': base, 'test_base': test_base or base, 'changed_paths': paths, 'started_at': time.time(),
-              'checks': [], 'warnings': [], 'passed': False}
+              'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
+              'checks': [], 'passed': False}
     if base is not None:
         log = directory / 'docs-impact-gate.log'
         started = time.monotonic()
@@ -382,14 +239,14 @@ def main():
               f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
-    # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
+    # Seed absent quality caches first, so a fresh clone does not run every check cold.
     # A cache miss or a missing seeding script only makes the checks slower.
-    for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
-        if (root / seed[0]).is_file():
-            started = time.monotonic()
-            seeded = subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
-            print(f'[cache] {" ".join(seed)}: {"passed" if seeded.returncode == 0 else "cache miss"} '
-                  f'({time.monotonic() - started:.3f}s)', flush=True)
+    seed = ['bin/worktree-cache', '--worktree', str(root)]
+    if (root / seed[0]).is_file():
+        started = time.monotonic()
+        seeded = subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
+        print(f'[cache] {" ".join(seed)}: {"passed" if seeded.returncode == 0 else "cache miss"} '
+              f'({time.monotonic() - started:.3f}s)', flush=True)
     # Pint and Rector check only the files the candidate changes; CI and plain runs check every file.
     # ORBIT_CHECK_SCOPE=full in the environment makes the gate check every file too.
     quality_scope = {} if 'ORBIT_CHECK_SCOPE' in os.environ else {
@@ -400,82 +257,37 @@ def main():
     # The heaviest lane starts first, so it never waits for a free lane.
     groups.sort(key=lambda entries: -weights[lane_key(entries)])
     budget = ProcessBudget(processes, weights)
-    lane_warnings = []
     lock = threading.Lock()
 
     def say(message):
         with lock:
             print(message, flush=True)
 
-    def run_entry(lane, order, project, project_commands):
-        commands_run = []
-        commands = list(project_commands)
-        triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
-        if project_commands == PHP_COMMANDS and any(path.startswith(triggers) for path in paths):
-            commands.extend(('vendor/bin/pest', architecture_path)
-                            for architecture_path in ARCHITECTURE_TESTS.get(project, ()))
-        index = 0
-        while index < len(commands):
-            command = commands[index]
-            index += 1
+    def run_entry(lane, order, project, commands):
+        for position, command in enumerate(commands):
             lane_processes = budget.acquire(lane)
-            command = tuple(f'--processes={lane_processes}' if part == LANE_PROCESSES else part for part in command)
             log = directory / (project.replace('/', '-') + '-' + command_log_name(command) + '.log')
             started = time.monotonic()
             command_environment = {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0',
                                    'ORBIT_CHECK_PROCESSES': str(lane_processes)}
             if project in PHP_PROJECTS and command == ('composer', 'check'):
                 command_environment.update(quality_scope)
-            executed_command = command
-            run_tia_directory = None
-            if command == AFFECTED:
-                run_tia_directory = directory / 'tia' / project.replace('/', '-')
-                selector = prepare_tia_directory(root, project, run_tia_directory, test_base)
-                executed_command = (*command, '--', f'--tia-base={selector}')
-                command_environment['ORBIT_TIA_DIRECTORY'] = str(run_tia_directory)
             with log.open('w') as output:
                 try:
-                    result = subprocess.run(executed_command, cwd=root if project == 'repository' else root / project, stdout=output, stderr=subprocess.STDOUT,
+                    result = subprocess.run(command, cwd=root if project == 'repository' else root / project, stdout=output, stderr=subprocess.STDOUT,
                                             env=command_environment)
                 except FileNotFoundError as error:
                     missing = error.filename or command[0]
                     output.write(f'{missing}: required tool not found\n')
                     result = subprocess.CompletedProcess(command, 127)
             budget.release(lane)
-            if len(command) > 1 and command[1] == '--list-tests' and result.returncode == 0:
-                if not re.search(r'^\s*-\s+\S+', log.read_text(errors='replace'), re.MULTILINE):
-                    result = subprocess.CompletedProcess(command, 1)
-                    with log.open('a') as output:
-                        output.write('Pest did not discover any tests in the changed file.\n')
-            check = {'project': project, 'command': list(executed_command), 'exit_code': result.returncode,
+            check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
-            warning = selection_warning(project, command, result.returncode, log, test_paths)
-            if warning is not None:
-                check['warning'] = warning['message']
-                with lock:
-                    lane_warnings.append((order, len(commands_run), warning))
             with lock:
-                lane_checks.append((order, len(commands_run), check))
-                commands_run.append(command)
-            say(f'[{project}] {" ".join(executed_command)}: {"passed" if result.returncode == 0 else "FAILED"} ({check["seconds"]:.3f}s; {log})')
-            if warning is not None:
-                say(f'[{project}] WARNING: {warning["message"]} ({log})')
+                lane_checks.append((order, position, check))
+            say(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({check["seconds"]:.3f}s; {log})')
             if result.returncode:
                 say(log.read_text())
-            if command == AFFECTED and result.returncode == 0:
-                selected_tests, has_current_evidence = selected_test_files(run_tia_directory)
-                check['selected_test_files'] = sorted(selected_tests)
-                check['selection_evidence_current'] = has_current_evidence
-                check['selection_artifact'] = str(run_tia_directory / 'affected.json')
-                if warning is not None:
-                    commands.append(PARALLEL_FULL_SUITE)
-                for test in changed_php_tests(test_paths):
-                    if not test.startswith(project + '/'):
-                        continue
-                    relative = test[len(project) + 1:]
-                    if (root / test).is_file() and relative not in selected_tests:
-                        commands.extend((('vendor/bin/pest', '--list-tests', relative),
-                                         (*FULL_SUITE, relative)))
 
     def run_lane(entries):
         lane = lane_key(entries)
@@ -491,18 +303,12 @@ def main():
             future.result()
     # Lanes finish in any order; the receipt lists the checks in the order the gate selected them.
     report['checks'].extend(check for *_order, check in sorted(lane_checks, key=lambda item: item[:2]))
-    report['warnings'].extend(warning for *_order, warning in sorted(lane_warnings, key=lambda item: item[:2]))
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
     report['passed'] = report['unchanged'] and bool(report['checks']) and all(
         check['exit_code'] == 0 for check in report['checks'])
-    if report['passed']:
-        publish_handoff_cache(root, directory, tree, test_base)
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')
-    if report['warnings']:
-        print(f'Selection warnings: {len(report["warnings"])}; the receipt records the full suite with --no-tia for those projects.',
-              flush=True)
     candidate = head if committed else f'{head} with uncommitted changes (tree {tree})'
     print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {candidate}; receipt: {path}', flush=True)
     if not report['unchanged']:

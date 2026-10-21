@@ -198,18 +198,27 @@ describe("callBoostSearchDocs", () => {
         );
         expect(Date.now() - started).toBeLessThan(5_000);
         const pid = received(app)[0].pid;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        expect(isRunning(pid)).toBe(false);
+        await expect.poll(() => isRunning(pid), { interval: 5 }).toBe(false);
     });
 
     it("stops Boost when the turn is aborted", async () => {
         const app = laravelApp(workspace(), { mode: "hang" });
         const controller = new AbortController();
-        setTimeout(() => controller.abort(), 200);
-
-        await expect(call(app, { signal: controller.signal })).rejects.toThrow(
+        const cancelled = expect(call(app, { signal: controller.signal })).rejects.toThrow(
             "The documentation search was cancelled.",
         );
+        try {
+            await expect
+                .poll(() => received(app).some((message) => message.method === "initialize"), {
+                    interval: 5,
+                })
+                .toBe(true);
+        } finally {
+            controller.abort();
+        }
+        await cancelled;
+        const pid = received(app)[0].pid;
+        await expect.poll(() => isRunning(pid), { interval: 5 }).toBe(false);
     });
 
     it("reports the output when Boost exits before it answers", async () => {

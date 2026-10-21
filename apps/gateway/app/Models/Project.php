@@ -123,6 +123,15 @@ final class Project extends Model
             && $this->source_access === ProjectSourceAccess::GitHubApp;
     }
 
+    /**
+     * The merge check that each task handoff must pass in CI on its push ([Handoff CI](/reference/tasks#handoff-ci)),
+     * or null. Only a review-and-merge Project runs handoff CI, because Orbit owns that Project's CI.
+     */
+    public function handoffCheckName(): ?string
+    {
+        return $this->reviewsAndMerges() ? $this->mergeCheckName() : null;
+    }
+
     public function mergeCheckName(): ?string
     {
         $name = $this->merge_check;

@@ -6,6 +6,7 @@ use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskReviewReadStatus;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\Project;
 use App\Models\Task;
@@ -36,16 +37,18 @@ function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): T
 function watcher_fake_health(array $pullRequest, array $checkRuns = [], int $checksTokenStatus = 201, int $checkRunsStatus = 200, int $pullRequestStatus = 200): void
 {
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => static fn (Request $request) => match (true) {
-            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch'], 201),
-            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks'], 201),
+            $request->data()['permissions'] !== ['checks' => 'read'] => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
+            $checksTokenStatus === 201 => Http::response(['token' => 'ghs_checks', 'permissions' => ['actions' => 'read']], 201),
             default => Http::response(['message' => 'The permissions requested are not granted to this installation.'], $checksTokenStatus),
         },
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'], ...$pullRequest,
         ], $pullRequestStatus),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => count($checkRuns), 'check_runs' => $checkRuns], $checkRunsStatus),
     ]);
 }
@@ -86,7 +89,7 @@ beforeEach(function (): void {
 });
 
 describe('trusted review observations', function (): void {
-    it('distinguishes absent trust from invalid trust without reading GitHub', function (mixed $trust, TaskReviewReadStatus $expected): void {
+    it('distinguishes absent trust from invalid trust without reading GitHub', function (string $trust, TaskReviewReadStatus $expected): void {
         config(['orbit.tasks.github_reviewers' => $trust]);
         $group = watcher_group();
 
@@ -95,16 +98,15 @@ describe('trusted review observations', function (): void {
         expect($observation->status)->toBe($expected);
         Http::assertNothingSent();
     })->with([
-        'default empty' => [[], TaskReviewReadStatus::Disabled],
-        'unrelated repository' => [['other/orbit' => [42]], TaskReviewReadStatus::Disabled],
-        'revoked' => [['acme/orbit' => []], TaskReviewReadStatus::Disabled],
-        'invalid entry' => [['acme/orbit' => [42, 'admin']], TaskReviewReadStatus::InvalidTrust],
-        'unreadable config' => [null, TaskReviewReadStatus::InvalidTrust],
+        'default empty' => ['', TaskReviewReadStatus::Disabled],
+        'unrelated repository' => ['other/orbit:42', TaskReviewReadStatus::Disabled],
+        'invalid entry' => ['acme/orbit:42,admin', TaskReviewReadStatus::InvalidTrust],
+        'no account' => ['acme/orbit:', TaskReviewReadStatus::InvalidTrust],
     ]);
 
     it('distinguishes complete empty reads from remote or malformed failures and never caches errors', function (array $rows, int $status, TaskReviewReadStatus $expected): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews($rows, status: $status);
         $watcher = app(TaskPullRequestReviewWatcher::class);
         $group = watcher_group();
@@ -124,7 +126,7 @@ describe('trusted review observations', function (): void {
 
     it('keeps an approval informational after comments and a pending review with null head and time', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         watcher_fake_reviews([
             watcher_review(['state' => 'APPROVED']),
             watcher_review(['id' => 102, 'state' => 'COMMENTED', 'submitted_at' => '2026-09-03T22:13:41Z']),
@@ -144,7 +146,7 @@ describe('trusted review observations', function (): void {
     it('caches bounded lists for no more than sixty seconds but not PR state', function (): void {
         $this->freezeTime();
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews([watcher_review()]);
         $group = watcher_group();
         $watcher = app(TaskPullRequestReviewWatcher::class);
@@ -165,7 +167,7 @@ describe('trusted review observations', function (): void {
         Cache::purge('file');
         try {
             GitHubTestSupport::storeApp();
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+            config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
             $source = watcher_fake_reviews([watcher_review()]);
             $group = watcher_group();
             $watcher = app(TaskPullRequestReviewWatcher::class);
@@ -191,13 +193,13 @@ describe('trusted review observations', function (): void {
 
     it('invalidates cached selection on head or trust changes and makes closed PR requests ineligible', function (string $change): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $source = watcher_fake_reviews([watcher_review()]);
         $group = watcher_group();
         $watcher = app(TaskPullRequestReviewWatcher::class);
         expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
         if ($change === 'trust') {
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [7]]]);
+            config(['orbit.tasks.github_reviewers' => 'acme/orbit:7']);
         }
         $source->reviews = [];
         $source->head = $change === 'head' ? str_repeat('a', 40) : null;
@@ -208,7 +210,7 @@ describe('trusted review observations', function (): void {
 
     it('isolates cached observations by repository and PR number', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42], 'other/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42;other/orbit:42']);
         watcher_fake_reviews([watcher_review()]);
         Http::fake([
             'https://api.github.com/repos/acme/orbit/pulls/43' => Http::response(['merged' => false, 'state' => 'open', 'head' => ['sha' => GitHubTestSupport::review()['commit_id']]]),
@@ -231,7 +233,7 @@ describe('trusted review observations', function (): void {
 
     it('revalidates unchanged sources with uncached PR list review and comment reads', function (): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $comment = GitHubTestSupport::comment();
         watcher_fake_reviews([watcher_review()], comments: [$comment, array_replace($comment, ['id' => 1])]);
         $group = watcher_group();
@@ -252,7 +254,7 @@ describe('trusted review observations', function (): void {
 
     it('rejects changed candidates and distinguishes read failures during final revalidation', function (string $change, TaskReviewReadStatus $expected): void {
         GitHubTestSupport::storeApp();
-        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        config(['orbit.tasks.github_reviewers' => 'acme/orbit:42']);
         $review = watcher_review();
         $comment = GitHubTestSupport::comment();
         $source = watcher_fake_reviews([$review], comments: [$comment]);
@@ -272,7 +274,7 @@ describe('trusted review observations', function (): void {
         } elseif ($change === 'new decision') {
             $rows[] = watcher_review(['id' => 102, 'state' => 'DISMISSED']);
         } elseif ($change === 'trust') {
-            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => []]]);
+            config(['orbit.tasks.github_reviewers' => '']);
         } elseif ($change === 'removed') {
             $rows = [];
         }
@@ -593,12 +595,14 @@ it('starts a new pending clock when the check run id changes and clears one that
     ];
     $success = ['id' => 1, 'name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/1'];
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response([
             'merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean',
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
         ]),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [$pending(1)]])
             ->push(['total_count' => 1, 'check_runs' => [$success]])
@@ -626,11 +630,13 @@ describe('bounded pending clocks', function (): void {
         $this->freezeTime();
         $pending = ['id' => 11, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null];
         Http::fake([
-            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
             'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
                 ->push(['state' => 'open', 'head' => ['sha' => 'old-head']])
                 ->push(['state' => 'open', 'head' => ['sha' => 'new-head']]),
+            'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+            'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
             'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [$pending]]),
         ]);
         $watcher = app(HttpTaskPullRequestWatcher::class);
@@ -675,17 +681,33 @@ describe('malformed watcher cache values', function (): void {
         Http::assertSentCount(3);
     })->with(['unknown outcome' => ['invalid'], 'wrong scalar type' => [false], 'wrong container type' => [[]]]);
 
-    it('reads incomplete check arrays safely and reloads a non-array cache value', function (mixed $value): void {
+    it('reads GitHub again when the shared check-run cache holds a value it did not write', function (mixed $value): void {
         GitHubTestSupport::storeApp();
-        watcher_fake_health([]);
-        Cache::put('tasks:pull-request-checks:v3:acme/orbit#42@abc123', $value, 60);
+        watcher_fake_health([], [
+            ['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
+        ]);
+        $group = watcher_group();
+        $before = Cache::getStore()->all();
+        app(GitHubTaskPullRequestMerger::class)->commitChecks($group, 'abc123');
+        $written = array_diff_key(Cache::getStore()->all(), $before);
+        expect($written)->toHaveCount(1);
+        Cache::put(array_key_first($written), $value, 60);
 
-        $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+        $health = app(HttpTaskPullRequestWatcher::class)->health($group);
 
         expect($health?->state)->toBe('open')
-            ->and($health?->problems)->toBe([])
-            ->and($health?->checksPending)->toBeFalse();
-    })->with(['missing both lists' => [[]], 'missing failed list' => [['pending' => []]], 'missing pending list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
+            ->and($health?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.']);
+        expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/check-runs')))->toHaveCount(2);
+    })->with([
+        'a run without a name' => [['runs' => [['conclusion' => 'failure']], 'suites' => [], 'pull_request_suites' => []]],
+        'runs are not a list' => [['runs' => ['failed' => []], 'suites' => [], 'pull_request_suites' => []]],
+        'wrong container type' => ['invalid'],
+        'missing pull request suites' => [['runs' => [], 'suites' => []]],
+        'null pull request suites' => [['runs' => [], 'suites' => [], 'pull_request_suites' => null]],
+        'pull request suites have the wrong container type' => [['runs' => [], 'suites' => [], 'pull_request_suites' => 'invalid']],
+        'pull request suites are not a list' => [['runs' => [], 'suites' => [], 'pull_request_suites' => ['suite' => 5]]],
+        'pull request suite id is not an integer' => [['runs' => [], 'suites' => [], 'pull_request_suites' => [5, '6']]],
+    ]);
 });
 
 it('preserves failed check evidence through cached health reads', function (): void {

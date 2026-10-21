@@ -20,12 +20,14 @@ final readonly class OperationDispatcher
     }
 
     /**
-     * The jobs on the `operations` queue that wait or run, as the queue driver counts them: Redis counts its waiting,
-     * delayed, and reserved jobs, and the database driver every row of the queue.
+     * Jobs that still wait for a worker, including delayed jobs. A reservation alone does not prove its handler runs;
+     * the operation's attempt lease owns that fact.
      */
-    public function jobs(): int
+    public function waitingJobs(): int
     {
-        return Queue::connection(GatewayQueue::Connection)->size(GatewayQueue::Operations->value);
+        $queue = Queue::connection(GatewayQueue::Connection);
+
+        return $queue->pendingSize(GatewayQueue::Operations->value) + $queue->delayedSize(GatewayQueue::Operations->value);
     }
 
     public function dispatch(Operation $operation): void

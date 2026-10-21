@@ -211,7 +211,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
         {
             $this->messages[] = $message;
             $checks = app(TaskCheckRunner::class);
@@ -292,7 +292,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 it('preserves unresolved review assistance while CI and conflict fixes activate and continue', function (bool $conflict): void {
     mock(TaskPullRequestUpdater::class)->shouldReceive('updateBranch')->andReturn(TaskBranchUpdate::Conflict);
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     $source->candidateStatus = TaskReviewReadStatus::Unreadable;
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
@@ -330,7 +330,7 @@ it('preserves unresolved review assistance while CI and conflict fixes activate 
 
 it('starts one feedback fixup after a workspace retry and preserves its consumption through restart', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
@@ -351,7 +351,7 @@ it('starts one feedback fixup after a workspace retry and preserves its consumpt
 
 it('recovers a crash after feedback activation without consuming or appending again', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
@@ -370,7 +370,7 @@ it('recovers a crash after feedback activation without consuming or appending ag
 
 it('retains consumption but skips feedback spawning when the PR closes after append', function (): void {
     $group = tick_settling_group();
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(
@@ -391,7 +391,7 @@ it('publishes a consumed feedback fixup once to the same PR and requires fresh e
     ], last: true);
     $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'task_check' => null]);
     $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
-    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    config(['orbit.tasks.github_reviewers' => 'acme/orbit:42,7']);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
     app()->instance(TaskPullRequestReviewWatcher::class, $source);
     $candidate = $source->reviewCandidate($group, 101)->candidate;
@@ -438,13 +438,15 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $clean = ['merged' => false, 'state' => 'open', 'mergeable' => true, 'mergeable_state' => 'clean', 'head' => ['sha' => 'def456'], 'base' => ['ref' => 'main']];
     Http::preventStrayRequests();
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => 'merge conflict between base and head'], 422),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
             ->push($conflict)->push($conflict)
             ->push([...$clean, 'mergeable_state' => 'unstable'])
             ->push($clean),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
             ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
@@ -916,7 +918,7 @@ it('includes another Apps check summary without requesting an Actions log', func
     expect(Task::query()->where('fixup_problem', 'check:Security scan')->sole()->brief)
         ->toContain('This is the CI evidence', 'Dependency issue', 'Update the dependency. TOKEN=[REDACTED]')
         ->not->toContain('ci-secret-value');
-    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/'));
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/jobs/'));
 });
 
 it('does not read job logs when the check fixup cap is spent', function (): void {
@@ -930,7 +932,7 @@ it('does not read job logs when the check fixup cap is spent', function (): void
     app(TaskScheduler::class)->tick();
 
     expect(Task::query()->where('fixup_problem', 'check:Remote programs')->count())->toBe(2);
-    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/'));
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/actions/jobs/'));
 });
 
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
@@ -1556,9 +1558,11 @@ it('waits for the checks on a new head to complete before the next fixup', funct
     $failed = ['name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/10'];
     Http::preventStrayRequests();
     Http::fake([
-        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
-        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/installation' => static fn () => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => static fn () => Http::response(['token' => 'ghs_watch', 'permissions' => ['actions' => 'read']], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_open_pull(['head' => ['sha' => 'def456']])),
+        'https://api.github.com/repos/acme/orbit/actions/runs*' => static fn () => Http::response(['total_count' => 0, 'workflow_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-suites*' => Http::response(['total_count' => 0, 'check_suites' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
             ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
             ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),

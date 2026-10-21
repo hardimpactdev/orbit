@@ -66,6 +66,8 @@ use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
+use App\Http\Controllers\Api\WebSocketAppAttachmentsController;
+use App\Http\Controllers\Api\WebSocketAppsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
@@ -460,6 +462,18 @@ Route::prefix('v1')->group(function (): void {
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('instance:database:remove');
+        Route::put(
+            'instances/{instance}/websocket-apps/{websocket_app}',
+            [WebSocketAppAttachmentsController::class, 'store'],
+        )
+            ->where('websocket_app', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('instance:websocket:add');
+        Route::delete(
+            'instances/{instance}/websocket-apps/{websocket_app}',
+            [WebSocketAppAttachmentsController::class, 'destroy'],
+        )
+            ->where('websocket_app', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('instance:websocket:remove');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
         Route::post('routes', [RoutesController::class, 'store'])->name('route:create');
         Route::get('routes/{route}', [RoutesController::class, 'show'])
@@ -564,6 +578,16 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('database-servers/{database_server}', [DatabaseServersController::class, 'destroy'])
             ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:server:destroy');
+        Route::get('websocket-apps', [WebSocketAppsController::class, 'index'])
+            ->name('websocket:app:list');
+        Route::post('websocket-apps', [WebSocketAppsController::class, 'store'])
+            ->name('websocket:app:create');
+        Route::get('websocket-apps/{websocket_app}', [WebSocketAppsController::class, 'show'])
+            ->where('websocket_app', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('websocket:app:show');
+        Route::delete('websocket-apps/{websocket_app}', [WebSocketAppsController::class, 'destroy'])
+            ->where('websocket_app', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('websocket:app:destroy');
         Route::get('tool-inventory', [ToolInventoryController::class, 'scan'])
             ->name('tool:scan');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])

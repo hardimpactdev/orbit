@@ -306,6 +306,17 @@ abstract class GatewayCommand extends Command
         return $value;
     }
 
+    protected function requiredStringOption(string $option, string $label, string $errorCode): ?string
+    {
+        $value = $this->stringOption($option);
+
+        if ($value === null) {
+            $this->renderGatewayFailure($errorCode, "{$label} is required.");
+        }
+
+        return $value;
+    }
+
     protected function stringOption(string $option): ?string
     {
         $value = $this->option($option);

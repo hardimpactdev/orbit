@@ -23,6 +23,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
@@ -73,7 +74,7 @@ describe('gateway:release:adopt', function (): void {
             ->and(fileperms($storage.'/logs/laravel.log') & 0o777)->toBe(0o640)
             ->and(trim($this->fixture->git($kept, 'status', '--porcelain', '--untracked-files=no')))->toBe('')
             ->and(trim($this->fixture->git($layout->repositoryPath(), 'rev-parse', 'refs/orbit/pre-adopt')))->toBe($this->sha)
-            ->and(trim($this->fixture->git($layout->repositoryPath(), 'remote', 'get-url', 'origin')))->toBe('https://github.com/nckrtl/orbit.git')
+            ->and(trim($this->fixture->git($layout->repositoryPath(), 'remote', 'get-url', 'origin')))->toBe('https://github.com/hardimpactdev/orbit.git')
             // Phase 1 prepares the release with its web build; phase 2 reuses that release and installs the web build again only when it is missing.
             ->and($this->steps->installed)->toBe([$this->id, $this->id])
             // Phase 1 changes the layout with identical code and checks that it serves; phase 2 is a deploy.
@@ -382,7 +383,7 @@ function adoption(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, fleet: $fleet),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep'), fleet: $fleet),
         $recorder,
         $guard,
         new GatewayReleaseRetry,

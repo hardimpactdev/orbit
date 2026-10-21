@@ -1,3 +1,4 @@
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +32,10 @@ it("publishes and reloads streamed task-VM provider failures using the deployed 
                 },
             },
         }),
+    );
+    const inMemory = SettingsManager.inMemory.bind(SettingsManager);
+    vi.spyOn(SettingsManager, "inMemory").mockImplementation((settings) =>
+        inMemory({ ...settings, retry: { enabled: false } }),
     );
     harness = await startHarness({
         root,
@@ -89,10 +94,10 @@ it("publishes and reloads streamed task-VM provider failures using the deployed 
     );
     expect(snapshot.providerError).toBe("server_error");
     expect(snapshot.error).toBe("server_error: Servers overloaded");
-    expect(providerFetch).toHaveBeenCalled();
+    expect(providerFetch).toHaveBeenCalledTimes(1);
     harness = await h.restart();
     const reloaded = (await harness.request("GET", "/sessions/task-vm-error")).body;
     expect(reloaded.state).toBe("failed");
     expect(reloaded.providerError).toBe("server_error");
     expect(reloaded.turnId).toBe("k1");
-}, 30_000);
+});

@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+  # A push to task-*-handoff is Orbit's handoff commit, which CI tests as it tests a pull request
+  # (docs/reference/tasks.md#handoff-ci). No pull request has such a branch as head.
   push:
-    branches: [main]
+    branches: [main, 'task-*-handoff']
   # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
   schedule:
     - cron: '17 3 * * *'
@@ -12,29 +14,30 @@ on:
 permissions:
   contents: read
 
-# A pull request keeps only its newest run. Pushes to main share one group: a running main run always
-# finishes, and a newer push replaces only the waiting one, so after a burst of merges the newest commit
-# is tested next. Its tests cover changes since the last tested main graph. Scheduled and
-# manual runs get a group per commit, so a push never cancels a full run.
+# Scheduled and manual runs get a group per ref and commit, so a push never cancels a full run. Every other run groups
+# by its ref. Main keeps its running run: a newer push replaces only the waiting one, so after a burst of merges the
+# newest commit is tested next, and every main run tests every project in full. Any other ref, a pull request's merge
+# ref or a handoff branch, keeps only its newest run, so neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
+  # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
+  # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
+  # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
+  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
+  HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
   project:
     name: ${{ matrix.project.name }}
-    # The main test selection reads the newest full runs on main.
-    permissions:
-      actions: read
-      contents: read
-    # The Gateway suite uses one Sabre runner when ORBIT_SABRE_RUNNER is true. Affected main runs also
-    # run its subprocess group on a hosted runner; full suites already include that group.
-    # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre. A pull request
-    # also runs three additional Gateway shards, each on its own orbit-shard runner.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
+    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
+    # on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,15 +48,10 @@ jobs:
             directory: apps/docs
           - name: Gateway
             directory: apps/gateway
-            part: tests
           - name: E2E
             directory: apps/e2e
-            part: tests
           - name: PHP SDK
             directory: packages/php-sdk
-        # PR full suites include subprocess tests. Only non-PR runs need separate subprocess jobs.
-        # Appending these entries keeps each primary project's cache artifact job index unchanged.
-        include: ${{ fromJSON(github.event_name != 'pull_request' && '[{"project":{"name":"Gateway subprocess","directory":"apps/gateway","part":"subprocess"}},{"project":{"name":"E2E subprocess","directory":"apps/e2e","part":"subprocess"}}]' || '[]') }}
 
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
@@ -64,20 +62,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          # A pull request runs full suites on its merge ref, the tree that would land on main.
-          ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
+          persist-credentials: false
+          ref: ${{ github.sha }}
           repository: ${{ github.repository }}
-
-      # The checkout above names the branch, and a later push can move it before this job starts. A running main run
-      # is never cancelled, so it must test exactly its own commit: its Required checks result releases that commit.
-      - name: Pin the run's commit
-        if: github.event_name != 'pull_request'
-        working-directory: .
-        run: git reset --hard "$GITHUB_SHA"
 
       # The recipe's exact PHP build (ADR 0216). A hosted runner installs it; Sabre only verifies it, because a job never
       # installs software on a self-hosted runner.
@@ -86,18 +76,32 @@ jobs:
         with:
           coverage: pcov
 
-      # Sabre's own node shim lives in a home directory the runner user cannot read. GitHub-hosted runners ship Node.
+      # Pin the project runtime on hosted runners and self-hosted shards alike.
       - name: Set up Node
-        if: runner.environment == 'self-hosted'
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Set up Bun for package cache and generated merge tests
+        id: bun
         if: matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs'
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
+
+      - name: Restore Bun downloads
+        if: (matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs') && (github.ref != 'refs/heads/main' || github.event_name == 'pull_request')
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
+
+      - name: Cache Bun downloads on main
+        if: (matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs') && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
 
       - name: Set up Homebrew
         if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
@@ -125,251 +129,118 @@ jobs:
         if: matrix.project.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
-      # The Docs merge proof regenerates Gateway OpenAPI and web types in disposable clones.
+      # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
       - name: Install generated merge proof dependencies
         if: matrix.project.directory == 'apps/docs'
         working-directory: .
         run: |
-          (cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)
+          (cd apps/gateway && cp .env.example .env && composer install --no-dev --no-interaction --prefer-dist)
           (cd apps/web && bun install --frozen-lockfile)
 
       - name: Install all project dependencies for E2E integration tests
         if: matrix.project.directory == 'apps/e2e'
         working-directory: .
-        run: bin/bootstrap --skip-checks
+        run: bin/bootstrap --dependencies-only
 
       - name: Validate Composer metadata
-        if: matrix.project.part != 'subprocess'
         run: composer validate --strict
 
-      # A pull request restores quality caches only from main and saves none.
+      # A change run restores quality caches only from main and saves none.
       - name: Compute PHPStan result cache prefix
-        if: matrix.project.part != 'subprocess'
         id: orbit-phpstan-key
         working-directory: .
         run: |
           printf 'prefix=%s\n' "orbit-phpstan-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/phpstan.neon', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore PHPStan result cache
-        if: matrix.project.part != 'subprocess'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            ${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}
 
       - name: Compute Pint cache prefix
-        if: matrix.project.part != 'subprocess'
         id: orbit-lint-key
         working-directory: .
         run: |
           printf 'prefix=%s\n' "orbit-lint-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/pint.json', matrix.project.directory), format('{0}/rector.php', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore Pint cache
-        if: matrix.project.part != 'subprocess'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            ${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
+            ${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}
+
+      # docs/reference/implementation-loop.md: runner policy, not PATH, is the sudo boundary.
+      - name: Require no sudo for ordinary Gateway tests
+        id: gateway-no-sudo
+        if: matrix.project.directory == 'apps/gateway'
+        uses: ./.github/actions/no-sudo
+
+      - name: Verify Gateway shard coverage
+        if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
+        run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
-        if: matrix.project.part != 'subprocess'
-        env:
-          ORBIT_CHECK_PROCESSES: ${{ runner.environment == 'self-hosted' && 6 || 4 }}
         run: composer check
 
       - name: Check classification fakes
-        if: matrix.project.part != 'subprocess'
         run: php ../../bin/check-classification-fakes tests
 
       - name: Save PHPStan result cache
-        if: success() && matrix.project.part != 'subprocess' && github.event_name != 'pull_request'
-        uses: actions/cache/save@v6
+        if: success() && env.CHANGE_RUN != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Save Pint cache
-        if: success() && matrix.project.part != 'subprocess' && github.event_name != 'pull_request'
-        uses: actions/cache/save@v6
+        if: success() && env.CHANGE_RUN != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
-      - name: Compute Pest TIA cache prefix
-        if: github.event_name != 'pull_request'
-        id: orbit-tia-key
-        working-directory: .
-        run: |
-          printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.project.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.project.directory), format('{0}/tests/Pest.php', matrix.project.directory), format('{0}/phpunit.xml', matrix.project.directory), format('{0}/phpunit.xml.dist', matrix.project.directory)) }}" >> "$GITHUB_OUTPUT"
-
-      # Each main run restores a main graph for its selection and publishes a refreshed graph after passing.
-      - name: Restore Pest TIA graph
-        if: github.event_name != 'pull_request'
-        id: orbit-tia-restore
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ matrix.project.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) }}
-            ${{ format('orbit-tia-php8.5-{0}-', matrix.project.directory) }}
-
-      # The Gateway plan job lists the Gateway tests of a pull request at the same time as this job's quality checks.
-      # This job reads the plan when it needs it, so the other projects do not wait for the plan. A partial re-run
-      # copies the finished plan job and its artifact, so it reads the same plan. API errors are retried for a minute.
-      - name: Read the Gateway test plan
-        id: gateway-plan
-        if: matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          errors=0
-          for _ in $(seq 120); do
-            if ! job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
-              --jq '.jobs[] | select(.name == "Gateway plan") | "\(.status) \(.conclusion)"'); then
-              errors=$((errors + 1))
-              if [ "$errors" -ge 12 ]; then
-                echo '::error::The Actions API did not answer 12 times in a row.'
-                exit 1
-              fi
-              sleep 5
-              continue
-            fi
-            errors=0
-            read -r status conclusion <<< "$job" || true
-            if [ "$status" = completed ]; then
-              if [ "$conclusion" != success ]; then
-                echo "::error::The Gateway plan job ended with $conclusion."
-                exit 1
-              fi
-              for attempt in 1 2 3; do
-                rm -rf "$RUNNER_TEMP/gateway-plan"
-                gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n gateway-plan -D "$RUNNER_TEMP/gateway-plan" && break
-                [ "$attempt" = 3 ] && exit 1
-                sleep 5
-              done
-              plan="$RUNNER_TEMP/gateway-plan/gateway-plan.json"
-              if [ "$(jq -r .commit "$plan")" != "$(git rev-parse HEAD)" ]; then
-                echo "::error::The Gateway plan describes $(jq -r .commit "$plan"), not $(git rev-parse HEAD): refs/pull/N/merge moved since the plan ran. Re-run all jobs, not only the failed ones."
-                exit 1
-              fi
-              printf 'filter=%s\n' "$(jq -r '.filters[0]' "$plan")" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo '::error::The Gateway plan job did not finish within 10 minutes.'
-          exit 1
-
       - name: Run full PR test suite
-        if: matrix.project.part != 'subprocess' && matrix.project.directory != 'apps/gateway' && github.event_name == 'pull_request'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
+        if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
+        run: vendor/bin/pest --parallel --no-tia --compact
 
-      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it. The plan leaves out
-      # the privileged group, which the Gateway privileged job runs.
-      - name: Run Gateway shard 1
-        if: matrix.project.part != 'subprocess' && matrix.project.directory == 'apps/gateway' && github.event_name == 'pull_request'
-        env:
-          FILTER: ${{ steps.gateway-plan.outputs.filter }}
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --exclude-group=privileged --compact --filter "$FILTER"
-
-      # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
-      # that graph is unusable, the changes include files that Pest cannot link to tests, or the newest nightly or manual
-      # run failed. Those runs are always full.
-      - name: Choose the main test selection
-        id: orbit-tia-plan
-        if: github.event_name != 'pull_request'
-        env:
-          EVENT: ${{ github.event_name }}
-          GITHUB_TOKEN: ${{ github.token }}
-          PREFIX: ${{ steps.orbit-tia-key.outputs.prefix }}
-          RESTORED_KEY: ${{ steps.orbit-tia-restore.outputs.cache-matched-key }}
-        run: ../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"
-
-      # Use the shared selection base. An unknown base validates the recipe, as a full test selection does.
+      # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot
-        if: matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')
         env:
-          RECIPE_BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+          RECIPE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then RECIPE_BASE=$(git merge-base origin/main HEAD); fi
           if [ -z "$RECIPE_BASE" ] || ! git diff --quiet "$RECIPE_BASE" HEAD -- resources/machine-software/recipe.json; then
             php artisan orbit:machine-recipe --validate-ubuntu --json --no-interaction
           fi
 
-      - name: Run tests affected since the main graph
-        if: matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
-        shell: bash
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"
-
+      # Full mode records the graph without using it to select tests, on every event but a change run.
+      # Gateway's phpunit.xml excludes privileged; a CLI exclusion would disable TIA recording.
       - name: Run full test suite and refresh Pest TIA graph
-        if: matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
+        if: env.CHANGE_RUN != 'true'
+        run: vendor/bin/pest --parallel --tia --fresh --compact
 
       - name: Run redaction cases without PCRE JIT
-        if: always() && matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess'
+        if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT" --no-tia
 
-      # TIA does not link these contracts to the files they read, so every affected run also runs them.
-      - name: Run architecture tests
-        if: always() && matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
-        env:
-          PROJECT: ${{ matrix.project.directory }}
-        run: |
-          case "$PROJECT" in
-            apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
-            apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/Value/TopologyNodeCatalogTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php tests/Feature/Configuration/DocsMergeRefWorkflowTest.php' ;;
-            packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
-            *) exit 0 ;;
-          esac
-          for architecture_test in $architecture_tests; do
-            vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
-          done
-
-      # TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
-      # them when a change since the commit of the restored main graph reaches the project.
-      # Gateway and E2E run them in their subprocess jobs; a full run in the tests job runs them with the whole suite.
-      - name: Choose whether to run subprocess tests
-        id: orbit-subprocess
-        if: always() && matrix.project.part != 'tests' && steps.orbit-tia-plan.outputs.mode == 'affected'
-        env:
-          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
-        run: ../../bin/ci-tia subprocess --base "$BASE"
-
-      # The PHP SDK has no subprocess tests. Every other project's group must find tests.
-      - name: Run subprocess tests
-        if: always() && matrix.project.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --compact${{ matrix.project.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}
-
-      - name: Require the Pest TIA graph to describe this commit
-        if: matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
-          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
-        run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
-
-      - name: Save Pest TIA graph
-        if: success() && matrix.project.part != 'subprocess' && github.event_name != 'pull_request'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ matrix.project.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      # A full run records this commit in the graph, and the step that requires it records it after an affected run.
+      # A full run records this commit in the graph.
       # Stage the same-run exports for the cache-ref publisher and the background main cache store.
       - name: Export main caches
-        if: success() && matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           PROJECT: ${{ matrix.project.directory }}
         run: |
@@ -381,6 +252,9 @@ jobs:
           baseline = data['baselines']['main']
           if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
               raise SystemExit('The main graph must describe this tested commit.')
+          tested = {result['file'] for result in baseline['results'].values()}
+          if set(data['edges']) - tested:
+              raise SystemExit('The main graph must have a result for every linked test file.')
           quality = {}
           Path('.orbit-tia/quality').mkdir(exist_ok=True)
           for tool, source in (('pint', 'vendor/pint.cache'), ('phpstan', 'vendor/phpstan/cache/resultCache.php')):
@@ -406,8 +280,8 @@ jobs:
           PY
 
       - name: Publish main caches
-        if: success() && matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v7
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
           path: |
@@ -418,93 +292,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # PRs always split the full Gateway suite. Main keeps one recording job for a complete TIA graph.
-  gateway-plan:
-    name: Gateway plan
-    if: github.event_name == 'pull_request'
-    # A hosted runner keeps every Sabre runner for tests. Pest's graph fingerprint holds only the PHP minor version.
-    runs-on: ubuntu-26.04
-    outputs:
-      commit: ${{ steps.plan.outputs.commit }}
-      matrix: ${{ steps.plan.outputs.matrix }}
-    env:
-      ORBIT_TIA_DIRECTORY: .orbit-tia
-    defaults:
-      run:
-        working-directory: apps/gateway
-    steps:
-      # The Gateway job checks out the same merge ref and refuses a plan for another commit.
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: ${{ github.ref }}
-          repository: ${{ github.repository }}
-
-      # The plan lists full suites; it does not record coverage.
-      - name: Set up PHP
-        uses: ./.github/actions/php
-        with:
-          coverage: none
-
-      - name: Install dependencies
-        run: |
-          cp .env.example .env
-          composer install --no-interaction --prefer-dist
-
-      - name: Compute Pest TIA cache prefix
-        id: orbit-tia-key
-        working-directory: .
-        run: |
-          printf 'prefix=%s\n' "orbit-tia-php8.5-apps/gateway-${{ hashFiles('apps/gateway/composer.lock', 'apps/gateway/tests/Pest.php', 'apps/gateway/phpunit.xml', 'apps/gateway/phpunit.xml.dist') }}" >> "$GITHUB_OUTPUT"
-
-      # Graph results supply class timings only; they never select the tests of a pull request.
-      - name: Restore Pest TIA graph
-        uses: actions/cache/restore@v6
-        with:
-          path: apps/gateway/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) }}
-            ${{ steps.orbit-tia-key.outputs.prefix }}-main-
-
-      - name: Plan full Gateway shards
-        id: plan
-        run: ../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"
-
-      # One name for every attempt: a partial re-run copies this job and reads its artifact, and a full re-run replaces
-      # it. GitHub allows re-runs for 30 days.
-      - name: Publish the Gateway test plan
-        uses: actions/upload-artifact@v7
-        with:
-          name: gateway-plan
-          path: ${{ runner.temp }}/gateway-plan.json
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
-
+  # Change runs use the static stock shard matrix below as the only source of the shard count. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
-    needs: gateway-plan
-    if: github.event_name == 'pull_request'
-    # The orbit-shard runner containers on Beast and Shark serve this repository's pull requests under the same
-    # condition as the Gateway job on Sabre. A fork's pull request uses a hosted runner.
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
+    # env.CHANGE_RUN, spelled out.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
+    # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.gateway-plan.outputs.matrix) }}
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: apps/gateway
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ needs.gateway-plan.outputs.commit }}
+          ref: ${{ github.sha }}
 
       # A shard container only verifies the recipe build; tools/ci-runners/setup.sh installs it.
       - name: Set up PHP
@@ -513,13 +321,12 @@ jobs:
           coverage: pcov
 
       - name: Set up Node
-        if: runner.environment == 'self-hosted'
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Set up Bun for package cache tests
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
 
@@ -554,73 +361,45 @@ jobs:
           cp .env.example .env
           composer install --no-interaction --prefer-dist
 
-      - name: Download the Gateway test plan
-        uses: actions/download-artifact@v8
-        with:
-          name: gateway-plan
-          path: ${{ runner.temp }}/gateway-plan
+      - name: Require no sudo for ordinary Gateway tests
+        uses: ./.github/actions/no-sudo
 
-      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it. Each orbit-shard runner
-      # shares its host, so a shard runs at most 4 Pest processes, as on a hosted runner. The runner user has no sudo,
-      # so the shard never runs the privileged group.
+      # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       - name: Run Gateway shard ${{ matrix.shard }}
-        env:
-          SHARD: ${{ matrix.shard }}
-        run: |
-          plan="$RUNNER_TEMP/gateway-plan/gateway-plan.json"
-          test "$(jq -r .commit "$plan")" = "$(git rev-parse HEAD)"
-          filter=$(jq -r --argjson shard "$SHARD" '.filters[$shard - 1]' "$plan")
-          vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --compact --filter "$filter"
+        run: vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     name: Gateway privileged
-    # A GitHub-hosted runner gives every run a fresh machine with passwordless sudo and leaves Sabre to the Gateway suite.
+    # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: apps/gateway
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
           coverage: none
-      - uses: actions/setup-node@v7
-        if: runner.environment == 'self-hosted'
-        with:
-          node-version: '24'
-      - uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c
-        if: runner.environment == 'github-hosted'
-      - name: Install hosted runner prerequisites
-        if: runner.environment == 'github-hosted'
+      # The tests need ACL tools and the caddy Unix identity, not the Caddy binary or a package manager.
+      - name: Install privileged test prerequisites
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
-          brew install caddy openssl@3
-          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
       - name: Install Gateway dependencies
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
-      # ORBIT_TEST_DOCKER runs the Valkey Database server tests against a real valkey/valkey:8.1 in Docker.
-      - name: Pull the current Valkey test image
-        run: |
-          docker pull valkey/valkey:8.1
-          docker run --rm valkey/valkey:8.1 valkey-server --version
-      - name: Run every privileged test
+      # Valkey tests pull their image on the first real docker run.
+      - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
-      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
-      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
-      - name: Remove root-owned files from the workspace
-        if: always() && runner.environment == 'self-hosted'
-        working-directory: ${{ github.workspace }}
-        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
+        run: vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
@@ -628,28 +407,31 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Refuse Gateway script growth
-        env:
-          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
-        run: |
-          python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
-          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
           coverage: none
-      - name: Install shellcheck and ruff
+      - name: Install shellcheck and Python test tools
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck
           python3 -m venv "$RUNNER_TEMP/ruff"
-          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+      - name: Refuse Gateway script growth
+        env:
+          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
+        run: |
+          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
+          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
         run: |
@@ -660,60 +442,16 @@ jobs:
           ORBIT_TEST_DOCKER: '1'
         run: bin/remote-programs-check
 
-  docs-merge-ref:
-    name: Docs (merge ref)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04
-
-    defaults:
-      run:
-        working-directory: apps/docs
-
-    steps:
-      - name: Check out PR merge ref
-        id: merge-checkout
-        continue-on-error: true
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository }}
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Require PR merge ref
-        if: steps.merge-checkout.outcome != 'success'
-        working-directory: .
-        run: |
-          echo '::error title=Docs merge ref unavailable::Cannot check the PR merge result (the PR may conflict with main); not checking the PR head.'
-          exit 1
-
-      - name: Log merge commit
-        working-directory: .
-        run: git show --no-patch --format=fuller HEAD
-
-      - name: Set up PHP
-        uses: ./.github/actions/php
-        with:
-          coverage: none
-
-      - name: Prepare application environment
-        run: cp .env.example .env
-
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-
-      - name: Run Docs quality checks
-        env:
-          ORBIT_CHECK_PROCESSES: 4
-        run: composer check
-
   api-reference:
     name: API reference
     runs-on: ubuntu-26.04
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
 
       # The recipe's exact PHP build (ADR 0216), with PCOV loaded and disabled.
       - name: Set up PHP
@@ -754,12 +492,35 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        id: bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
+
+      - name: Restore Bun downloads
+        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
+
+      - name: Cache Bun downloads on main
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -771,10 +532,13 @@ jobs:
         run: bun run check
 
       - name: Install the test browsers
-        run: bunx playwright install --with-deps chromium webkit
+        run: bunx playwright install --with-deps --only-shell chromium webkit
 
-      - name: Run tests
-        run: bun run test
+      - name: Run unit and verification tests
+        run: bun run test:unit
+
+      - name: Run browser tests
+        run: bun run test:browser
 
       # Open pages compare their build with version.json, so the published build must hold it beside index.html.
       - name: Build
@@ -784,7 +548,7 @@ jobs:
       # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
       - name: Publish web build
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
           path: apps/web/dist
@@ -802,12 +566,35 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        id: bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
+
+      - name: Restore Bun downloads
+        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
+
+      - name: Cache Bun downloads on main
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -829,32 +616,36 @@ jobs:
         working-directory: apps/agent
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
-      # A pull request that changes neither the agent nor this workflow cannot change the agent build.
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
+      # A change run that changes neither the agent nor this workflow cannot change the agent build.
       # Pushes to main and manual runs always build it.
       - name: Detect agent changes
         id: changes
         working-directory: .
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
+          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
+          base=HEAD^1
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
             echo "agent=true" >> "$GITHUB_OUTPUT"
           else
             echo "agent=false" >> "$GITHUB_OUTPUT"
-            echo "The pull request does not change apps/agent or ci.yml; skipping the agent build."
+            echo "The change does not touch apps/agent or ci.yml; skipping the agent build."
           fi
       - name: Install Rust toolchain
         if: steps.changes.outputs.agent == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
           components: clippy,rustfmt
       - name: Restore Rust caches
         if: steps.changes.outputs.agent == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/agent
       - name: Install cross compiler
@@ -878,12 +669,18 @@ jobs:
 
       # Keep this after the builds so a version bump can prove its binaries before tagging.
       # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      - name: Install Python test tools
+        working-directory: .
+        run: |
+          python3 -m venv "$RUNNER_TEMP/agent-tests"
+          "$RUNNER_TEMP/agent-tests/bin/pip" install --quiet -r apps/gateway/tests/Programs/requirements.txt
+          echo "$RUNNER_TEMP/agent-tests/bin" >> "$GITHUB_PATH"
       - name: Check agent release delivery
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m unittest discover -s tools -p 'test_check_agent_release.py'
+          pytest -n auto --dist=load -q tools/test_check_agent_release.py
           python3 tools/check_agent_release.py
 
   desktop:
@@ -894,28 +691,50 @@ jobs:
         working-directory: apps/desktop
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
-      # A pull request that changes neither the desktop app nor this workflow cannot change its build.
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
+          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
+      # A change run that changes neither the desktop app nor this workflow cannot change its build.
       # Pushes to main and manual runs always check it.
       - name: Detect desktop changes
         id: changes
         working-directory: .
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
+          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
+          base=HEAD^1
+          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
+          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
-            echo "The pull request does not change apps/desktop or ci.yml; skipping the desktop checks."
+            echo "The change does not touch apps/desktop or ci.yml; skipping the desktop checks."
           fi
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
       - name: Set up Bun
+        id: bun
         if: steps.changes.outputs.desktop == 'true'
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
+      - name: Restore Bun downloads
+        if: steps.changes.outputs.desktop == 'true' && (github.ref != 'refs/heads/main' || github.event_name == 'pull_request')
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
+      - name: Cache Bun downloads on main
+        if: steps.changes.outputs.desktop == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - name: Install dependencies
         if: steps.changes.outputs.desktop == 'true'
         run: bun install --frozen-lockfile
@@ -926,12 +745,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
       - name: Install Rust toolchain
         if: steps.changes.outputs.desktop == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy,rustfmt
       - name: Restore Rust caches
         if: steps.changes.outputs.desktop == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
       - name: Check formatting
@@ -947,16 +766,17 @@ jobs:
     name: Publish CI cache ref
     needs: [required]
     # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
-    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     permissions:
       actions: read
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: sandbox-tia-*-${{ github.sha }}
           path: ${{ runner.temp }}/ci-cache-exports
@@ -966,15 +786,12 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, gateway-plan, gateway-shards, privileged, remote-programs, docs-merge-ref, api-reference, web, pi-server, agent, desktop]
+    needs: [project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:
-          EVENT: ${{ github.event_name }}
-          DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
-          GATEWAY_PLAN_RESULT: ${{ needs.gateway-plan.result }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           REMOTE_PROGRAMS_RESULT: ${{ needs.remote-programs.result }}
@@ -985,9 +802,9 @@ jobs:
           DESKTOP_RESULT: ${{ needs.desktop.result }}
         run: |
           test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
-            if [ "$EVENT" = pull_request ]; then
-              test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && test "$GATEWAY_SHARDS_RESULT" = success
+            if [ "$CHANGE_RUN" = true ]; then
+              test "$GATEWAY_SHARDS_RESULT" = success
             else
-              test "$DOCS_MERGE_REF_RESULT" = skipped && test "$GATEWAY_PLAN_RESULT" = skipped && test "$GATEWAY_SHARDS_RESULT" = skipped
+              test "$GATEWAY_SHARDS_RESULT" = skipped
             fi
           }

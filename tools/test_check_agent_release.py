@@ -1,4 +1,6 @@
 import copy
+import json
+from pathlib import Path
 import unittest
 
 from check_agent_release import validate_pin, validate_release
@@ -6,15 +8,15 @@ from check_agent_release import validate_pin, validate_release
 
 class AgentReleaseTest(unittest.TestCase):
     def setUp(self):
-        self.version = "0.4.3"
+        self.version = "0.4.4"
         self.pin = {"source": "artifact", "version": self.version, "artifacts": {}}
-        self.release = {"tag_name": "agent-v0.4.3", "draft": False, "prerelease": False,
+        self.release = {"tag_name": "agent-v0.4.4", "draft": False, "prerelease": False,
                         "assets": [{"name": "SHA256SUMS"}]}
         self.sums = ""
         for architecture, target, digest in [("amd64", "x86_64", "a" * 64), ("arm64", "aarch64", "b" * 64)]:
             name = f"orbit-agent-{self.version}-linux-{target}"
             self.pin["artifacts"][architecture] = {
-                "url": f"https://github.com/nckrtl/orbit/releases/download/agent-v{self.version}/{name}",
+                "url": f"https://github.com/hardimpactdev/orbit/releases/download/agent-v{self.version}/{name}",
                 "sha256": digest,
             }
             self.release["assets"].append({"name": name})
@@ -23,6 +25,22 @@ class AgentReleaseTest(unittest.TestCase):
     def test_accepts_complete_published_pin(self):
         validate_pin(self.version, self.pin)
         validate_release(self.version, self.pin, self.release, self.sums)
+
+    def test_accepts_the_unchanged_recipe_pins(self):
+        root = Path(__file__).resolve().parents[1]
+        recipe = json.loads((root / "apps/gateway/resources/machine-software/recipe.json").read_text())
+        validate_pin(self.version, recipe["tools"]["orbit-agent"])
+
+    def test_rejects_changed_release_paths_and_non_github_urls(self):
+        original = self.pin["artifacts"]["amd64"]["url"]
+        for url in [original.replace("https:", "http:"), original.replace("github.com", "example.com"),
+                    original.replace("agent-v0.4.4", "agent-v0.4.3"), original + "?asset=1",
+                    original + "#asset", original.replace("github.com", "user@github.com")]:
+            with self.subTest(url=url):
+                pin = copy.deepcopy(self.pin)
+                pin["artifacts"]["amd64"]["url"] = url
+                with self.assertRaises(ValueError):
+                    validate_pin(self.version, pin)
 
     def test_rejects_the_1305_delivery_gap(self):
         self.pin["version"] = "0.4.2"

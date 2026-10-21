@@ -6,7 +6,7 @@ namespace App\Domain\Projects;
 
 final readonly class ProjectTypeClassifier
 {
-    public const string OrbitRepositoryIdentity = 'github.com/nckrtl/orbit';
+    public const string OrbitRepositoryIdentity = 'github.com/hardimpactdev/orbit';
 
     /**
      * @param  array{

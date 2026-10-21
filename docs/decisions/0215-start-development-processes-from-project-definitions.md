@@ -32,7 +32,7 @@ These facts constrain the design:
 - A [transfer](/reference/instance-transfer) keeps the Instance's Process records and moves them to the destination.
 - Instance removal already removes every Process of the Instance.
 - Production copies are independent of their definitions on purpose. [Definitions on the Project, copies on the Instance](/reference/processes-and-schedules#definitions-on-the-project-copies-on-the-instance) rejects live inheritance.
-- [ADR 0209](https://github.com/nckrtl/orbit/pull/1250), in review, turns long operations into durable operations with named, resumable steps. Instance create moves to that model in a pull request of its own.
+- [ADR 0209](https://github.com/hardimpactdev/orbit/pull/1250), in review, turns long operations into durable operations with named, resumable steps. Instance create moves to that model in a pull request of its own.
 
 ## Decision
 
@@ -126,6 +126,6 @@ The hand-made development Processes that duplicate a definition are replaced onc
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary) (the Tasks call stays in the extension); ADR 0209 in [#1250](https://github.com/nckrtl/orbit/pull/1250) (the stage becomes a step of the create operation)
+- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary) (the Tasks call stays in the extension); ADR 0209 in [#1250](https://github.com/hardimpactdev/orbit/pull/1250) (the stage becomes a step of the create operation)
 - Detail: sections that the implementation group writes: "Development copies" in the processes reference, and "Development Processes" in the instance setup reference
 - Verify: Gateway feature tests for definition validation, each setup path, the three outcomes, reruns, task workspaces, and removal; CLI tests for `--for=development --preset`; an Incus run that creates a Mealou-like Laravel Instance and reaches its Vite asset through the Route.

@@ -4,37 +4,25 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckProcess;
-use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskDeliverableVerifier;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManagerException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskUnitProgram;
-use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -51,89 +39,7 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
-pest()->group('privileged');
-
-function check_runner_checkout(string $check): string
-{
-    $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
-    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
-    file_put_contents($checkout.'/composer.json', json_encode(['scripts' => ['check' => $check]], JSON_THROW_ON_ERROR));
-    file_put_contents($checkout.'/.gitignore', "ignored/\n");
-    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start'], $checkout))->mustRun();
-    file_put_contents($checkout.'/uncommitted.php', "<?php\n");
-
-    return $checkout;
-}
-
-/** @param  array<string, mixed>  $group */
-function check_runner_instance(string $checkout, array $group = []): Instance
-{
-    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
-    $node = Node::query()->create(['name' => 'check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit']);
-
-    return test_ready_task_workspace($project, $node, ['name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8'], $group);
-}
-
-function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
-{
-    if ($transport instanceof LocalShellSshExecutor) {
-        $transport->environment['HOME'] = test()->directory.'/home';
-    }
-    $vp = new VpToolManager(
-        new RemoteToolCommandRunner(
-            $probe ?? new class($vpHome) implements SshExecutor
-            {
-                public function __construct(private string $home) {}
-
-                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-                {
-                    return new CommandResult(0, $this->home."/bin/vp\n", '', 1, false);
-                }
-            },
-            app(SshKeyProvider::class),
-            app(KnownHostsStore::class),
-        ),
-        new SemverVersionNormalizer,
-    );
-
-    return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
-        $transport,
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/home/orbit/.orbit/ssh/id_ed25519';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 AAAA';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/home/orbit/.orbit/ssh/known_hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    )), $vp, app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
-}
-
-function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
-{
-    for ($attempt = 0; $attempt < 150; $attempt++) {
-        $reading = $runner->read($instance, $process);
-        if ($reading->state !== 'running') {
-            return $reading;
-        }
-        usleep(100_000);
-    }
-
-    throw new RuntimeException('The check did not finish.');
-}
+require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
 
 /**
  * Run the real `check status` with a stubbed process lookup. The lookup answers whether the check is alive,
@@ -345,9 +251,7 @@ describe('TaskGitHardening', function (): void {
 });
 
 beforeEach(function (): void {
-    // Each test owns one directory, so a concurrent run on the same machine keeps its checkouts.
-    $this->directory = sys_get_temp_dir().'/orbit-task-check-'.bin2hex(random_bytes(6));
-    File::ensureDirectoryExists($this->directory.'/home');
+    $this->directory = check_runner_directory();
 });
 
 afterEach(function (): void {
@@ -1260,20 +1164,6 @@ it('restores the builtin TIA baseline after dependency setup before a task check
     expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });
 
-it('passes the handoff test base only to a scoped project check', function (bool $scoped, bool $tree): void {
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $base = trim((new Process(['git', 'rev-parse', $tree ? 'HEAD^{tree}' : 'HEAD'], $checkout))->mustRun()->getOutput());
-    $command = $scoped ? 'test "$ORBIT_TASK_CHECK_BASE" = '.escapeshellarg($base) : 'test -z "${ORBIT_TASK_CHECK_BASE+set}"';
-    $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
-
-    $process = $runner->start($instance, $command, deliverables: $deliverables);
-    $reading = check_runner_wait($runner, $instance, $process);
-
-    expect($reading->exitCode)->toBe(0);
-})->with(['scoped commit' => [true, false], 'scoped tree' => [true, true], 'unscoped' => [false, false]]);
-
 describe('ssr port', function (): void {
     it('starts the check of a workspace with its allocated ssr port and never the held 13719', function (): void {
         $node = Node::query()->create(['name' => 'shared-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.161', 'wireguard_ip' => '10.44.0.161', 'user' => 'orbit']);
@@ -1330,7 +1220,7 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         {
             $this->commands[] = $command;
 
-            return new LocalShellSshExecutor()->execute($connection, $command);
+            return check_runner_shell(new LocalShellSshExecutor)->execute($connection, $command);
         }
     };
     $runner = check_runner($transport);
@@ -1539,44 +1429,6 @@ it('reads both merge parents and the parent tree for historical mutation proof',
         ->and($snapshot->secondParent)->toBe($second)->and($snapshot->commitTree)->toBe($snapshot->tree);
 });
 
-it('recovers an exact managed run and never exposes a result before descendants stop', function (): void {
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $runId = bin2hex(random_bytes(16));
-    $barrier = $this->directory.'/descendant-barrier';
-    $ready = $this->directory.'/descendant-ready';
-    if (! mkdir($barrier)) {
-        throw new RuntimeException('Could not create the observable barrier.');
-    }
-    $child = 'touch '.escapeshellarg($ready).'; while test -d '.escapeshellarg($barrier).'; do read -r -t 0.02 ignored || true; done; printf descendant > late.txt';
-    $process = null;
-    try {
-        $process = $runner->start($instance, 'bash -c '.escapeshellarg($child).' >/dev/null 2>&1 &', runId: $runId);
-        $recovered = $runner->recoverStart($instance, $runId);
-        expect($recovered?->pid)->toBe($process->pid)->and($recovered?->started)->toBe($process->started);
-        $deadline = microtime(true) + 10;
-        while ((! file_exists($ready) || ! file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json')) && microtime(true) < $deadline) {
-            clearstatcache();
-        }
-        expect(file_exists($ready))->toBeTrue()
-            ->and(file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json'))->toBeTrue()
-            ->and($runner->read($instance, $process)->state)->toBe('running');
-        rmdir($barrier);
-        $reading = check_runner_wait($runner, $instance, $process);
-        expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
-            ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
-            ->and($reading->changedPaths)->toContain('late.txt')
-            ->and($reading->causalityUncertain)->toBeTrue();
-    } finally {
-        if (is_dir($barrier)) {
-            rmdir($barrier);
-        }
-        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
-        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
-    }
-});
-
 it('tombstones a missing managed start and refuses a delayed original without executing it', function (): void {
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
@@ -1586,103 +1438,6 @@ it('tombstones a missing managed start and refuses a delayed original without ex
     expect(fn () => $runner->start($instance, 'touch late-start', runId: $runId))->toThrow(TaskCheckException::class);
     expect(file_exists($checkout.'/late-start'))->toBeFalse()
         ->and($runner->recoverStart($instance, $runId))->toBeNull();
-});
-
-it('keeps finished managed results bound to their run when a newer check completes', function (): void {
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $runIds = [bin2hex(random_bytes(16)), bin2hex(random_bytes(16))];
-    try {
-        $first = $runner->start($instance, 'true', runId: $runIds[0]);
-        $original = check_runner_wait($runner, $instance, $first);
-        expect($original->state)->toBe('finished')->and($original->exitCode)->toBe(0);
-        $second = $runner->start($instance, 'printf newer > second-run.txt; exit 7', runId: $runIds[1]);
-        $newer = check_runner_wait($runner, $instance, $second);
-        $repeated = $runner->read($instance, $first);
-        expect($newer->state)->toBe('finished')->and($newer->exitCode)->toBe(7)
-            ->and($repeated->state)->toBe('finished')->and($repeated->exitCode)->toBe(0)
-            ->and($repeated->treeAfter)->toBe($original->treeAfter)
-            ->and($repeated->changedPaths)->toBe($original->changedPaths)
-            ->and($runner->read($instance, $second)->treeAfter)->toBe($newer->treeAfter);
-    } finally {
-        foreach ($runIds as $runId) {
-            (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
-            (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
-        }
-    }
-});
-
-it('records a failed uncertain outcome after a managed check terminates without a result', function (bool $cancel): void {
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $runId = bin2hex(random_bytes(16));
-    $ready = $checkout.'/command-ready';
-    try {
-        $process = $runner->start($instance, 'touch command-ready; exec sleep 60', runId: $runId);
-        $deadline = microtime(true) + 10;
-        while (! file_exists($ready) && microtime(true) < $deadline) {
-            clearstatcache();
-            usleep(10_000);
-        }
-        expect(file_exists($ready))->toBeTrue();
-        if ($cancel) {
-            $runner->cancel($instance, $process);
-        } else {
-            (new Process(['sudo', '-n', 'systemctl', 'kill', '--signal=KILL', 'orbit-task-check-'.$runId.'.service']))->mustRun();
-        }
-
-        $reading = check_runner_wait($runner, $instance, $process);
-
-        expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
-            ->and($reading->failedStep)->toBe('check_error')->and($reading->causalityUncertain)->toBeTrue()
-            ->and($reading->changedPaths)->toContain('command-ready')
-            ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
-            ->and($reading->output)->toContain('without a result');
-        $repeated = $runner->read($instance, $process);
-        expect($repeated->exitCode)->toBe(1)->and($repeated->causalityUncertain)->toBeTrue()
-            ->and($repeated->treeAfter)->toBe($reading->treeAfter);
-    } finally {
-        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
-        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
-    }
-})->with(['cancel' => [true], 'killed supervisor and descendants' => [false]]);
-
-it('keeps a lost managed supervisor fenced until its surviving descendant terminates', function (): void {
-    $checkout = check_runner_checkout('true');
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $runId = bin2hex(random_bytes(16));
-    $barrier = $this->directory.'/missing-result-barrier';
-    $ready = $this->directory.'/missing-result-ready';
-    mkdir($barrier);
-    $command = 'touch '.escapeshellarg($ready).'; while test -d '.escapeshellarg($barrier).'; do read -r -t 0.02 ignored || true; done; printf late > descendant.txt';
-    try {
-        $process = $runner->start($instance, 'bash -c '.escapeshellarg($command), runId: $runId);
-        $deadline = microtime(true) + 10;
-        while (! file_exists($ready) && microtime(true) < $deadline) {
-            clearstatcache();
-            usleep(10_000);
-        }
-        expect(file_exists($ready))->toBeTrue();
-        (new Process(['kill', '-KILL', (string) $process->pid]))->mustRun();
-
-        expect($runner->read($instance, $process)->state)->toBe('running');
-        rmdir($barrier);
-        $reading = check_runner_wait($runner, $instance, $process);
-
-        expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
-            ->and($reading->causalityUncertain)->toBeTrue()
-            ->and($reading->changedPaths)->toContain('descendant.txt')
-            ->and(file_get_contents($checkout.'/descendant.txt'))->toBe('late');
-    } finally {
-        if (is_dir($barrier)) {
-            rmdir($barrier);
-        }
-        (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
-        (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
-    }
 });
 
 it('keeps secret-bearing output records intact until the shared builder runs at the real transport boundary', function (string $source, int $secretBytes, string $format): void {

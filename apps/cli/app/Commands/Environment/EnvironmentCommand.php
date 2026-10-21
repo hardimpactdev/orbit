@@ -12,18 +12,7 @@ abstract class EnvironmentCommand extends GatewayCommand
 {
     protected function instanceSelector(): ?string
     {
-        $selector = $this->option('instance');
-
-        if (! is_string($selector) || $selector === '') {
-            $this->renderGatewayFailure(
-                'env.instance_required',
-                'Instance ID or Route domain is required.',
-            );
-
-            return null;
-        }
-
-        return $selector;
+        return $this->requiredStringOption('instance', 'Instance ID or Route domain', 'env.instance_required');
     }
 
     protected function renderEnvironmentOperation(EnvironmentOperationResponse $response): int

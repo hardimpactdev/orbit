@@ -85,7 +85,7 @@ describe('task response fixtures', function (): void {
             'name' => 'Orbit',
             'code' => 'ORB',
             'slug' => 'orbit',
-            'repository_url' => 'git@github.com:nckrtl/orbit.git',
+            'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
             'default_branch' => 'main',
         ]);
     });
@@ -159,7 +159,7 @@ describe('task response fixtures', function (): void {
             'title' => 'Absorb Commander',
             'brief' => 'Run task groups on the Gateway.',
             'status' => TaskGroupStatus::Completed,
-            'pr_url' => 'https://github.com/nckrtl/orbit/pull/450',
+            'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/450',
             'tokens' => 182_400,
             'line_diff' => 1_240,
             'lines_added' => 1_010,
@@ -210,17 +210,17 @@ describe('task response fixtures', function (): void {
         $group = task_fixture_group($this->project);
         $group->update(['status' => TaskGroupStatus::Running]);
         Http::fake([
-            'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
             'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
-            'https://api.github.com/repos/nckrtl/orbit/pulls?*' => Http::response([
-                ['number' => 451, 'html_url' => 'https://github.com/nckrtl/orbit/pull/451', 'state' => 'open', 'merged_at' => null],
+            'https://api.github.com/repos/hardimpactdev/orbit/pulls?*' => Http::response([
+                ['number' => 451, 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/451', 'state' => 'open', 'merged_at' => null],
             ]),
         ]);
         app(WatchTaskBranchPullRequestAction::class)->execute($group);
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
             ->assertJsonPath('data.pr_url', null)
-            ->assertJsonPath('data.watched_pr_url', 'https://github.com/nckrtl/orbit/pull/451')
+            ->assertJsonPath('data.watched_pr_url', 'https://github.com/hardimpactdev/orbit/pull/451')
             ->assertJsonPath('data.watched_pr_number', 451)
             ->assertJsonPath('data.watched_pr_state', 'open'),
             'tasks/tasks-show/watched', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
@@ -228,10 +228,10 @@ describe('task response fixtures', function (): void {
     });
 
     it('records an incoming pull request under review and merge', function (): void {
-        $this->project->update(['repository_url' => 'https://github.com/nckrtl/orbit.git', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $this->project->update(['repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
         $group = Task::topLevel()->create([
-            'project_id' => $this->project->id, 'title' => 'Review #460: Throttle logins', 'brief' => 'Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.',
-            'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/nckrtl/orbit/pull/460', 'pr_branch' => 'cursor/login-throttle',
+            'project_id' => $this->project->id, 'title' => 'Review #460: Throttle logins', 'brief' => 'Orbit reviews pull request https://github.com/hardimpactdev/orbit/pull/460.',
+            'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/460', 'pr_branch' => 'cursor/login-throttle',
             'merge_status' => TaskMergeStatus::Waiting, 'merge_reason' => 'Check Required checks is still running on '.str_repeat('a', 40).'.',
         ]);
         $final = Task::query()->create([
@@ -263,7 +263,7 @@ describe('task response fixtures', function (): void {
         record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/cancel")->assertOk(), 'tasks/tasks-cancel/cancelled', CancelTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/cancel');
 
         $settling = task_fixture_group($this->project);
-        $settling->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/nckrtl/orbit/pull/612']);
+        $settling->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/612']);
         record_fixture($this->postJson("/api/v1/task-groups/{$settling->id}/complete")->assertOk(), 'tasks/tasks-complete/completed', CompleteTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/complete');
     });
 
@@ -272,14 +272,14 @@ describe('task response fixtures', function (): void {
         GitHubTestSupport::storeApp();
         $group = Task::topLevel()->create([
             'project_id' => $this->project->id, 'title' => 'Finish ended pull request', 'brief' => 'Cancel the remaining work.',
-            'status' => TaskGroupStatus::Running, 'watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544',
+            'status' => TaskGroupStatus::Running, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/544',
             'watched_pr_number' => 544, 'watched_pr_state' => 'merged',
         ]);
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Remaining work', 'brief' => 'No longer needed.', 'status' => TaskStatus::Todo]);
         Http::fake([
-            'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/repos/hardimpactdev/orbit/installation' => Http::response(['id' => 9]),
             'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_complete'], 201),
-            'https://api.github.com/repos/nckrtl/orbit/pulls/544' => Http::sequence()
+            'https://api.github.com/repos/hardimpactdev/orbit/pulls/544' => Http::sequence()
                 ->push(['state' => 'open', 'merged' => false])
                 ->push(['state' => 'closed', 'merged' => true, 'merged_at' => '2026-09-23T09:59:00Z']),
         ]);

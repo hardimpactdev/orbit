@@ -97,6 +97,11 @@ final readonly class CancelTaskGroupAction
                 throw $exception;
             }
         }
+        if ($instance === null && ! $claimInFlight && ! $attachedByClaim instanceof Instance) {
+            // No workspace is left, as on a repeated cancel, so this cancel finishes its removal. That deletes a
+            // handoff branch that an earlier cancel could not delete.
+            $this->workspace->finishRemoval($group);
+        }
 
         foreach ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->get() as $task) {
             $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
@@ -150,7 +155,7 @@ final readonly class CancelTaskGroupAction
     {
         try {
             $this->workspace->remove($group);
-            $this->workspace->clearFailure($group);
+            $this->workspace->finishRemoval($group);
         } catch (TaskPullRequestException $exception) {
             // A task VM's push runs in a queued job. Cancel fails until GitHub has the commit, so no approved work is lost.
             throw new ResourceOperationException(

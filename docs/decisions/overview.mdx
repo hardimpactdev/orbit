@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "Every architecture decision record behind Orbit, with its status and the records it extends or amends."
 ---
 
-The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) describes the steps.
+The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/hardimpactdev/orbit/blob/main/docs/decisions/README.md) describes the steps.
 
 Records lists the decisions in progress. Retired decisions lists every retired number and the page that now holds the decision.
 
@@ -258,3 +258,4 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
 | 0220 | Serialize task workspaces with one durable lease | [Tasks: Workspace lease](/reference/tasks#workspace-lease) |
 | 0222 | Give task VMs a cloned topology seed | [Compute drivers: The topology seed](/reference/compute-drivers#the-topology-seed); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0228 | Serve several Reverb apps on the websocket role | [Reverb apps: Why it works this way](/reference/websocket-apps#why-it-works-this-way); [Reverb apps: Deploy and recover](/reference/websocket-apps#deploy-and-recover) |

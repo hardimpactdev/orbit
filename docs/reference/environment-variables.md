@@ -42,7 +42,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check run that [automatic releases](/reference/gateway-recovery#automatic-releases) follow. They default to `main` and `Required checks`. The repository is the `origin` of the shared release repository. They are settings in the Gateway's own environment, not Instance keys.
 
-`ORBIT_CLI_RELEASE_REPOSITORY` is a setting in the Gateway's own environment, not an Instance key. It names the repository whose CLI releases make up the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it). The default is `https://github.com/nckrtl/orbit`. On the machine that runs `orbit self-update`, `ORBIT_SELF_UPDATE_RELEASES` replaces the release download location, `https://github.com/nckrtl/orbit/releases/download`, for a mirror you trust. The Gateway never sets it.
+`ORBIT_CLI_RELEASE_REPOSITORY` is a setting in the Gateway's own environment, not an Instance key. It names the repository whose CLI releases make up the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it). The default is `https://github.com/hardimpactdev/orbit`. On the machine that runs `orbit self-update`, `ORBIT_SELF_UPDATE_RELEASES` replaces the release download location, `https://github.com/hardimpactdev/orbit/releases/download`, for a mirror you trust. The Gateway never sets it.
 
 `ORBIT_FLEET_ROLLOUT` and `ORBIT_FLEET_ROLLOUT_ORDER` are settings in the Gateway's own environment, not Instance keys. They [turn the fleet rollout on](/reference/gateway-recovery#turn-it-on) and name the Nodes it visits first. The rollout is off by default. `ORBIT_CLI_RELEASE_STATIC_MANIFEST` is for tests only: it replaces Git history and GitHub with a local CLI release manifest on a disposable topology. Never set it on a real Gateway.
 
@@ -171,7 +171,7 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 `APP_ENV` and `APP_DEBUG` are ordinary stored keys. The Node role, not these keys, decides the release layout, the Unix user, and the PHP-FPM pool. So a change to `APP_ENV` never moves an Instance between layouts. When `APP_ENV` is absent or is the environment placeholder, Orbit reads it as `development` on `app-dev` and `production` on `app-prod`.
 
-A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration except `DB_*` keys and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
+A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration except `DB_*` keys and the keys of its [Reverb app](/reference/websocket-apps#add-an-app-on-an-instance), and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
 
 When the clone seeds a SQLite snapshot, it registers an owned connection on the target Node, attaches it under `DB`, and synchronizes `DB_CONNECTION=sqlite` and `DB_DATABASE=<production_home>/database.sqlite` into the production `.env`. This provisioning step uses the pending clone's placement and Route checks; public environment operations still require an active Instance. An identical retry reuses the connection and attachment. Without a SQLite snapshot, the clone has no candidate `DB_*` values. Other application settings, such as `QUEUE_CONNECTION`, copy unchanged.
 
@@ -180,6 +180,7 @@ When the clone seeds a SQLite snapshot, it registers an owned connection on the 
 Other operations also change stored keys, and never the file itself:
 
 - [`instance:database:add` and `instance:database:remove`](/reference/database-connections#add-a-connection-on-an-instance) write or clear the keys of one database prefix.
+- [`instance:websocket:add` and `instance:websocket:remove`](/reference/websocket-apps#add-an-app-on-an-instance) write or clear the keys of one Reverb app.
 
 A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default deploys in its checkout, so synchronization writes the files it serves and a deployment does not synchronize.
 

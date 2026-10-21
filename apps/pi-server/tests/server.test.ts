@@ -12,8 +12,8 @@ afterEach(async () => {
     harness = undefined;
 });
 
-async function created(options: { tokensPerSecond?: number } = {}): Promise<Harness> {
-    harness = await startHarness(options);
+async function created(): Promise<Harness> {
+    harness = await startHarness();
     const response = await harness.request("POST", "/sessions", {
         id: "thread-1",
         cwd: harness.workspace,
@@ -244,11 +244,23 @@ describe("turns", () => {
     });
 
     it("refuses a new key while a turn is active and reports an interrupt as failed", async () => {
-        const h = await created({ tokensPerSecond: 5 });
+        const h = await created();
+        let onStart!: () => void;
+        const started = new Promise<void>((resolve) => {
+            onStart = resolve;
+        });
         h.faux.setResponses([
-            fauxAssistantMessage("a slow answer that keeps streaming for a while"),
+            async (_context, options) => {
+                // Keep the turn active until interrupt, without a token-rate timing window.
+                await new Promise<void>((resolve) => {
+                    options!.signal!.addEventListener("abort", () => resolve(), { once: true });
+                    onStart();
+                });
+                return fauxAssistantMessage("interrupted answer");
+            },
         ]);
         await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        await started;
 
         const busy = await h.request("POST", "/sessions/thread-1/messages", {
             key: "k2",

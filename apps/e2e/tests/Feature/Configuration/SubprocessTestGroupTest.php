@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Process\Process;
+
+pest()->group('subprocess');
+
 /*
  * Pest TIA records the code a test runs through PCOV in the test's own process. Code that a test runs in a PHP
- * subprocess is not linked to the test, so a change to that code does not select it. CI runs the `subprocess`
- * group on every affected run, and this contract keeps every such test in that group.
+ * subprocess is not linked to the test, so a change to that code does not select it. CI runs full suites,
+ * including the `subprocess` group; these contracts keep the limitation explicit and prove full-suite inclusion.
  */
 
 /** The projects whose Pest suites CI runs. */
@@ -104,8 +108,73 @@ it('puts every test that starts PHP in the subprocess group', function (string $
         }
     }
 
-    expect($untagged)->toBe([], 'Add `pest()->group(\'subprocess\');` to these tests, so CI runs them on every affected run.');
+    expect($untagged)->toBe([], 'Add `pest()->group(\'subprocess\');` to these tests, so the subprocess coverage boundary stays explicit.');
 })->with(SUBPROCESS_GROUP_PROJECTS);
+
+/** @return array{full: list<string>, subprocess: list<string>} */
+function subprocess_group_listing(string $project): array
+{
+    static $listings = [];
+    if (! isset($listings[$project])) {
+        $listing = temporaryPath('orbit-subprocess-list-').'.xml';
+        $process = new Process([
+            PHP_BINARY, '-d', 'pcov.enabled=0', 'vendor/bin/pest', '--no-tia', '--list-tests-xml', $listing,
+            '--colors=never', '--do-not-fail-on-empty-test-suite',
+        ], dirname(__DIR__, 5).'/'.$project);
+        $process->mustRun();
+        $xml = new SimpleXMLElement((string) file_get_contents($listing));
+        $xml->registerXPathNamespace('p', 'https://xml.phpunit.de/testSuite');
+        $listings[$project] = [
+            'full' => array_map(static fn (SimpleXMLElement $name): string => (string) $name, $xml->xpath('//p:testClass/@name') ?: []),
+            'subprocess' => array_values(array_unique(array_map(
+                static fn (SimpleXMLElement $id): string => explode('::', (string) $id)[0],
+                $xml->xpath('//p:group[@name="subprocess"]/p:test/@id') ?: [],
+            ))),
+        ];
+    }
+
+    return $listings[$project];
+}
+
+beforeAll(function (): void {
+    foreach (SUBPROCESS_GROUP_PROJECTS as $project) {
+        subprocess_group_listing($project);
+    }
+});
+
+it('includes every subprocess test class in the full suite without separate CI lanes', function (string $project, array $directories): void {
+    ['full' => $full, 'subprocess' => $subprocess] = subprocess_group_listing($project);
+    $suiteClasses = array_filter($full, static fn (string $class): bool => array_any(
+        $directories,
+        static fn (string $directory): bool => str_starts_with($class, 'P\\'.str_replace('/', '\\', ucfirst($directory))),
+    ));
+
+    expect($suiteClasses)->not->toBeEmpty();
+    if ($project !== 'packages/php-sdk') {
+        expect($subprocess)->not->toBeEmpty();
+    }
+    expect(array_values(array_diff($subprocess, $full)))->toBe([]);
+    foreach (subprocess_group_tests($project) as $path => $reason) {
+        if (array_any($directories, static fn (string $directory): bool => str_starts_with($path, $directory))) {
+            $class = 'P\\'.str_replace('/', '\\', ucfirst(substr($path, 0, -4)));
+            expect($full)->toContain($class);
+            expect($subprocess)->toContain($class);
+        }
+    }
+})->with(function (): array {
+    $datasets = [];
+    foreach (SUBPROCESS_GROUP_PROJECTS as $project) {
+        $root = dirname(__DIR__, 5).'/'.$project;
+        $config = new SimpleXMLElement((string) file_get_contents(is_file($root.'/phpunit.xml') ? $root.'/phpunit.xml' : $root.'/phpunit.xml.dist'));
+        foreach ($config->xpath('//testsuite') ?: [] as $suite) {
+            $name = (string) $suite['name'];
+            $directories = array_map(static fn (SimpleXMLElement $directory): string => trim(ltrim(trim((string) $directory), './'), '/').'/', $suite->xpath('directory') ?: []);
+            $datasets[$project.' '.$name] = [$project, $directories];
+        }
+    }
+
+    return $datasets;
+});
 
 it('detects PHP subprocesses started directly and through helpers', function (): void {
     expect(subprocess_group_reason('new Process([PHP_BINARY, base_path(\'artisan\')]);', []))->toBe('PHP_BINARY')

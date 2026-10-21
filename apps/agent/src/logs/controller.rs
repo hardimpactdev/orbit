@@ -297,6 +297,7 @@ pub async fn run_controller<L: ListSource>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logs::limits::BATCH_INTERVAL;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -304,6 +305,7 @@ mod tests {
     struct FakeList {
         body: Arc<Mutex<Result<Value, String>>>,
         fetches: Arc<AtomicUsize>,
+        fetched: Arc<tokio::sync::Notify>,
         delay: Duration,
     }
     impl Default for FakeList {
@@ -311,6 +313,7 @@ mod tests {
             Self {
                 body: Arc::new(Mutex::new(Err("unset".into()))),
                 fetches: Arc::default(),
+                fetched: Arc::default(),
                 delay: Duration::ZERO,
             }
         }
@@ -324,6 +327,7 @@ mod tests {
         async fn fetch(&self) -> Result<Value, String> {
             self.fetches.fetch_add(1, Ordering::SeqCst);
             tokio::time::sleep(self.delay).await;
+            self.fetched.notify_waiters();
             self.body.lock().unwrap().clone()
         }
     }
@@ -508,12 +512,23 @@ mod tests {
             .collect()
     }
 
-    async fn flush_after(hub: &LogHub, wait: Duration) -> Vec<ClientFrame> {
-        tokio::time::sleep(wait).await;
-        hub.flush("presence-node-logs.7", Instant::now()).unwrap()
+    /// Flush as the realtime connection does, stopping as soon as a frame arrives.
+    async fn next_frames(hub: &LogHub) -> Vec<ClientFrame> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut tick = tokio::time::interval(BATCH_INTERVAL);
+            loop {
+                tick.tick().await;
+                let frames = hub.flush("presence-node-logs.7", Instant::now()).unwrap();
+                if !frames.is_empty() {
+                    return frames;
+                }
+            }
+        })
+        .await
+        .expect("the stream produces a frame")
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn laravel_stream_end_to_end_redacts_and_ends_on_a_link() {
         use std::io::Write;
         let root = std::env::temp_dir().join(format!("orbit-agent-e2e-{}", rand::random::<u64>()));
@@ -527,14 +542,19 @@ mod tests {
             {"id": id(1), "lines": 5, "source": {"type": "laravel", "path": root.to_str().unwrap()}}
         ]})));
         let (hub, prompts) = LogHub::new();
+        let starts = Arc::new(AtomicUsize::new(0));
+        let started = starts.clone();
         tokio::spawn(run_controller(
             hub.clone(),
             prompts,
             fake.clone(),
-            spawn_stream,
+            move |spec, queue| {
+                started.fetch_add(1, Ordering::SeqCst);
+                spawn_stream(spec, queue)
+            },
         ));
         hub.prompt();
-        let frames = flush_after(&hub, Duration::from_millis(400)).await;
+        let frames = next_frames(&hub).await;
         assert_eq!(lines_of(&frames), ["old", "first DB_PASSWORD=[REDACTED]"]);
         assert_eq!(frames[0].data["sequence"], 1);
         assert_eq!(frames[0].data["stream"], id(1));
@@ -544,21 +564,25 @@ mod tests {
             .unwrap()
             .write_all(b"Authorization: Bearer abcdefgh12345\n")
             .unwrap();
-        let frames = flush_after(&hub, Duration::from_millis(700)).await;
+        let frames = next_frames(&hub).await;
         assert_eq!(lines_of(&frames), ["Authorization: [REDACTED]"]);
         assert_eq!(frames[0].data["sequence"], 2);
         // storage/logs becomes a link: the stream ends with source_unavailable.
         std::fs::rename(&logs, root.join("storage/real")).unwrap();
         std::os::unix::fs::symlink(root.join("storage/real"), &logs).unwrap();
-        let frames = flush_after(&hub, Duration::from_millis(4_500)).await;
+        let frames = next_frames(&hub).await;
         let end = frames.last().unwrap();
         assert_eq!(end.event, "client-log-end");
         assert_eq!(end.data["reason"], "source_unavailable");
         assert_eq!(hub.running(), 0);
         // The Gateway still lists it until it has processed the end; it is not started again.
+        let fetched = fake.fetched.notified();
         hub.prompt();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::timeout(Duration::from_secs(5), fetched)
+            .await
+            .expect("the controller processes the prompt");
         assert_eq!(hub.running(), 0);
+        assert_eq!(starts.load(Ordering::SeqCst), 1, "never started again");
         let _ = std::fs::remove_dir_all(&root);
     }
 

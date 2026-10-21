@@ -10,6 +10,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -33,7 +34,7 @@ it('generates credentials, then converges runtime before publication', function 
     ]);
 });
 
-it('rolls the runtime back when publication fails', function (): void {
+it('rolls a newly assigned runtime back when publication fails', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
     $events = [];
     $baseline = websocketBaseline($events, failure: 'publication:converge');
@@ -49,6 +50,31 @@ it('rolls the runtime back when publication fails', function (): void {
             'runtime:remove',
         ]);
 });
+
+it('keeps an existing runtime when publication fails after convergence is claimed', function (LifecycleStatus $status): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $assignment->update([
+        'status' => $status,
+        'failed_step' => $status === LifecycleStatus::Failed ? 'converge:baseline' : null,
+    ]);
+    $assignment = $assignment->fresh();
+    $assignment->claimConvergence();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: 'publication:converge');
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'publication:converge failed');
+
+    expect($events)->toBe([
+        'publication:check',
+        'credentials:ensure',
+        'runtime:converge',
+        'publication:converge',
+    ]);
+})->with([
+    'active role' => LifecycleStatus::Active,
+    'retry after failed converge' => LifecycleStatus::Failed,
+]);
 
 it('refuses a missing listen address before it touches a running Reverb', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
@@ -187,7 +213,7 @@ final class WebSocketBaselineRuntime implements WebSocketRuntimeLifecycle
         private bool $lockLost = false,
     ) {}
 
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $this->record('runtime:converge');
     }
@@ -265,11 +291,11 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         private bool $lockLost = false,
     ) {}
 
-    public function ensure(Node $node): WebSocketCredentials
+    public function ensure(Node $node): WebSocketServerCredentials
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('key'));
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), [new WebSocketCredentials('id', 'key', 'secret')]);
     }
 
     public function current(): ?WebSocketCredentials

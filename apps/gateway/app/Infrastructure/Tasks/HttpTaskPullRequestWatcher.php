@@ -6,7 +6,6 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubCheckRun;
-use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
@@ -18,6 +17,7 @@ use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskGitHubReviewObservations;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
+use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
@@ -31,6 +31,7 @@ use App\Models\Task;
 use DateTimeImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /**
@@ -38,14 +39,12 @@ use Throwable;
  */
 final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReviewWatcher, TaskPullRequestUpdater, TaskPullRequestWatcher
 {
-    private const int CHECKS_CACHE_SECONDS = 60;
-
     /** A run pending for longer than this is infrastructure. One pending for this long or less is not a result yet. */
     private const int PENDING_YOUNG_MINUTES = 60;
 
     private const int PENDING_CLOCK_SECONDS = 7 * 24 * 60 * 60;
 
-    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
+    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private TaskPullRequestMerger $merger) {}
 
     public function updateBranch(Task $group, string $headSha): TaskBranchUpdate
     {
@@ -91,7 +90,9 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     }
 
     /**
-     * Check runs need the separate `checks: read` token. Without it, only conflicts are reported.
+     * Check runs need the separate `checks: read` token. Without it, only conflicts are reported. The merger's shared
+     * read of the head commit ({@see TaskPullRequestMerger::checkRuns()}) also needs `actions: read` when uncached.
+     * A failed read, including workflow identities, makes health return null.
      * A rollup check is dropped while another failed check explains the failure. Cancelled runs, runs
      * that could not start, and runs pending for more than 60 minutes are infrastructure, kept apart
      * from genuine failures (ADR 0164).
@@ -120,12 +121,13 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                     mergedAt: $pullRequest->mergedAt,
                 );
             }
-            ['failed' => $failed, 'pending' => $pending] = $this->headChecks($repository, $number, $pullRequest);
+            $runs = $pullRequest->headSha === null ? [] : ($this->merger->checkRuns($group, $pullRequest->headSha) ?? []);
         } catch (Throwable) {
             return null;
         }
 
-        $failed = self::withoutExplainedRollups($failed);
+        $failed = TaskPullRequestCheck::failures($runs);
+        $pending = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->pending()));
         $young = false;
         $stale = [];
         if ($pullRequest->headSha !== null) {
@@ -145,7 +147,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         foreach ($stale as $run) {
             $problems[] = 'Check '.$run->name.' is still pending'.($run->url !== null ? ': '.$run->url : '').'.';
         }
-        $check = static fn (GitHubCheckRun $run): TaskPullRequestCheck => new TaskPullRequestCheck($run->name, $run->url, $run->id, $run->appSlug, $run->outputTitle, $run->outputSummary);
+        $check = TaskPullRequestCheck::fromRun(...);
         $infrastructure = array_values(array_map($check, array_filter($failed, static fn (GitHubCheckRun $run): bool => $run->infrastructure())));
         foreach ($stale as $run) {
             $infrastructure[] = $check($run);
@@ -192,7 +194,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return new TaskReviewObservation(TaskReviewReadStatus::Unreadable);
         }
         [$repository, $number] = $target;
-        $trust = TaskReviewTrust::fromConfig($repository, config('orbit.tasks.github_reviewers', []));
+        $trust = TaskReviewTrust::fromConfig($repository, Config::string('orbit.tasks.github_reviewers'));
         if (! $trust->valid || $trust->accountIds === []) {
             return new TaskReviewObservation(
                 $trust->valid ? TaskReviewReadStatus::Disabled : TaskReviewReadStatus::InvalidTrust,
@@ -346,135 +348,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         }
 
         return $result;
-    }
-
-    /**
-     * Drops rollup checks, such as `Required checks`, when another failed run explains the failure.
-     * A rollup that fails alone stays.
-     *
-     * @param  list<GitHubCheckRun>  $failed
-     * @return list<GitHubCheckRun>
-     */
-    private static function withoutExplainedRollups(array $failed): array
-    {
-        $rollup = static fn (GitHubCheckRun $run): bool => in_array($run->name, TaskPullRequestCheck::ROLLUP_NAMES, true);
-        $explained = array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run)) !== [];
-
-        return $explained ? array_values(array_filter($failed, static fn (GitHubCheckRun $run): bool => ! $rollup($run))) : $failed;
-    }
-
-    /**
-     * Failed and not-yet-completed check runs on the head commit, read at most once a minute per commit.
-     * The scheduler ticks every few seconds, and each read costs a checks token and a check-run list
-     * against the App's rate limit. Only names, conclusions, ids, start times, and URLs are cached, never
-     * a token. A new push has a new head, so it reads fresh. How long a run with no `started_at` has been
-     * pending is stored apart from this cache, so a later read does not move that time.
-     *
-     * @return array{failed: list<GitHubCheckRun>, pending: list<GitHubCheckRun>}
-     */
-    private function headChecks(GitHubRepository $repository, int $number, GitHubPullRequest $pullRequest): array
-    {
-        if ($pullRequest->headSha === null) {
-            return ['failed' => [], 'pending' => []];
-        }
-        $key = 'tasks:pull-request-checks:v4:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
-        $read = function () use ($repository, $pullRequest): ?array {
-            $token = $this->access->checksToken($repository);
-            if ($token === null) {
-                // A null cache value is a miss, so permission is checked again next tick.
-                return null;
-            }
-            $runs = $this->github->checkRuns($token, $repository, $pullRequest->headSha);
-
-            return [
-                'failed' => array_values(array_map(
-                    static fn (GitHubCheckRun $run): array => ['name' => $run->name, 'conclusion' => (string) $run->conclusion, 'url' => $run->url, 'id' => $run->id, 'app_slug' => $run->appSlug, 'output_title' => $run->outputTitle, 'output_summary' => $run->outputSummary],
-                    array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->failed()),
-                )),
-                'pending' => array_values(array_map(
-                    static fn (GitHubCheckRun $run): array => ['id' => $run->id, 'name' => $run->name, 'url' => $run->url, 'started_at' => $run->startedAt],
-                    array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->pending()),
-                )),
-            ];
-        };
-        $cached = Cache::remember($key, self::CHECKS_CACHE_SECONDS, $read);
-        if ($cached === null) {
-            return ['failed' => [], 'pending' => []];
-        }
-        $checks = $this->cachedHeadChecks($cached);
-        if ($checks !== null) {
-            return $checks;
-        }
-        Cache::forget($key);
-
-        return $this->cachedHeadChecks(Cache::remember($key, self::CHECKS_CACHE_SECONDS, $read)) ?? ['failed' => [], 'pending' => []];
-    }
-
-    /** @return array{failed: list<GitHubCheckRun>, pending: list<GitHubCheckRun>}|null */
-    private function cachedHeadChecks(mixed $cached): ?array
-    {
-        return is_array($cached) ? [
-            'failed' => $this->failedRuns($cached['failed'] ?? null),
-            'pending' => $this->pendingRuns($cached['pending'] ?? null),
-        ] : null;
-    }
-
-    /** @return list<GitHubCheckRun> */
-    private function failedRuns(mixed $runs): array
-    {
-        if (! is_array($runs) || ! array_is_list($runs)) {
-            return [];
-        }
-        $checks = [];
-        foreach ($runs as $run) {
-            if (! is_array($run)) {
-                continue;
-            }
-            $name = $run['name'] ?? null;
-            $conclusion = $run['conclusion'] ?? null;
-            $url = $run['url'] ?? null;
-            if (! is_string($name) || ! is_string($conclusion) || ($url !== null && ! is_string($url))) {
-                continue;
-            }
-            $checks[] = new GitHubCheckRun(
-                name: $name, conclusion: $conclusion, url: $url,
-                id: is_int($run['id'] ?? null) ? $run['id'] : null,
-                appSlug: is_string($run['app_slug'] ?? null) ? $run['app_slug'] : null,
-                outputTitle: is_string($run['output_title'] ?? null) ? $run['output_title'] : null,
-                outputSummary: is_string($run['output_summary'] ?? null) ? $run['output_summary'] : null,
-            );
-        }
-
-        return $checks;
-    }
-
-    /** @return list<GitHubCheckRun> */
-    private function pendingRuns(mixed $runs): array
-    {
-        if (! is_array($runs) || ! array_is_list($runs)) {
-            return [];
-        }
-        $checks = [];
-        foreach ($runs as $run) {
-            if (! is_array($run)) {
-                continue;
-            }
-            $id = $run['id'] ?? null;
-            $name = $run['name'] ?? null;
-            $url = $run['url'] ?? null;
-            $startedAt = $run['started_at'] ?? null;
-            if (
-                ($id !== null && ! is_int($id))
-                || ! is_string($name)
-                || ($url !== null && ! is_string($url))
-                || ($startedAt !== null && ! is_string($startedAt))
-            ) {
-                continue;
-            }
-            $checks[] = new GitHubCheckRun($name, null, $url, $id, $startedAt);
-        }
-
-        return $checks;
     }
 
     /**

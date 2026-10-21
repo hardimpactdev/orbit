@@ -423,7 +423,7 @@ final readonly class GatewayReleaseBuilder
     }
 
     /**
-     * Caches the release's configuration from the shared env file and `REVISION`, as the Gateway
+     * Caches the release's configuration from the shared env file, as the Gateway
      * runs with a cached configuration. A failure removes `REVISION` again, so the release stays
      * unprepared and the next prepare builds it again.
      */

@@ -1,0 +1,23 @@
+Destroying WebSocket app...
+
+┌  Destroy WebSocket app
+│
+├  ● Destroyed WebSocket app
+│
+└  Destroyed WebSocket app.
+
+
+┌  WebSocket app [hauzer] destroyed.
+│
+├  ID             2
+│
+├  Name           hauzer
+│
+├  App ID         hauzerappid000000001
+│
+├  Key            hauzerappkey00000001
+│
+├  Instance IDs   —
+│
+└  Request ID     0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

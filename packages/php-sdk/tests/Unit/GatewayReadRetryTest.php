@@ -10,6 +10,7 @@ use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\Response as PsrResponse;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Support\GatewayReadRetry;
 use Psr\Http\Message\RequestInterface;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -112,22 +113,61 @@ describe('Gateway read retry', function (): void {
     });
 
     it('gives the retry only the time left of the request timeout', function (): void {
-        $attempts = gateway_read_retry_attempts($connector = gateway_read_retry_connector(), [
-            gateway_read_retry_failure(NetworkException::class, 56, 'Recv failure: Connection reset by peer'),
+        $now = 100.0;
+        $connector = gateway_read_retry_connector();
+        $stack = $connector->sender()->getHandlerStack();
+        $stack->remove(GatewayReadRetry::NAME);
+        $stack->push(GatewayReadRetry::middleware(static function () use (&$now): float {
+            return $now;
+        }), GatewayReadRetry::NAME);
+        $attempts = gateway_read_retry_attempts($connector, [
+            static function (RequestInterface $request) use (&$now): PromiseInterface {
+                $now += 0.5;
+
+                return gateway_read_retry_failure(NetworkException::class, 56, 'Recv failure: Connection reset by peer')($request);
+            },
             gateway_read_retry_ok(),
         ]);
 
         $connector->send(gateway_read_retry_request(Method::GET));
 
         expect($attempts[0]['timeout'])->toBe(900)
-            ->and($attempts[1]['timeout'])->toBeFloat()->toBeLessThanOrEqual(899.75)->toBeGreaterThan(899.0);
+            ->and($attempts[1]['timeout'])->toBe(899.25);
     });
 
-    it('does not retry when the request timeout has no time left', function (): void {
-        $connector = new GatewayConnector('https://10.70.0.1', timeout: 1);
-        $attempts = gateway_read_retry_attempts($connector, [
+    it('accounts for elapsed time with the production default clock', function (): void {
+        $attempts = gateway_read_retry_attempts($connector = gateway_read_retry_connector(), [
             static function (RequestInterface $request): PromiseInterface {
-                usleep(800_000);
+                usleep(10000);
+
+                return gateway_read_retry_failure(NetworkException::class, 56, 'Recv failure: Connection reset by peer')($request);
+            },
+            gateway_read_retry_ok(),
+        ]);
+        $startedAt = hrtime(true);
+
+        $response = $connector->send(gateway_read_retry_request(Method::GET));
+        $elapsed = (hrtime(true) - $startedAt) / 1_000_000_000;
+
+        expect($response->status())->toBe(200)
+            ->and($attempts->count())->toBe(2)
+            ->and($attempts[0]['timeout'])->toBe(900)
+            ->and($attempts[1]['delay'])->toBe(250)
+            ->and($attempts[1]['timeout'])->toBeGreaterThanOrEqual(899.75 - $elapsed)
+            ->toBeLessThanOrEqual(899.74);
+    });
+
+    it('does not retry when the request timeout has no time left', function (float $elapsed): void {
+        $now = 100.0;
+        $connector = new GatewayConnector('https://10.70.0.1', timeout: 1);
+        $stack = $connector->sender()->getHandlerStack();
+        $stack->remove(GatewayReadRetry::NAME);
+        $stack->push(GatewayReadRetry::middleware(static function () use (&$now): float {
+            return $now;
+        }), GatewayReadRetry::NAME);
+        $attempts = gateway_read_retry_attempts($connector, [
+            static function (RequestInterface $request) use (&$now, $elapsed): PromiseInterface {
+                $now += $elapsed;
 
                 return gateway_read_retry_failure(NetworkException::class, 52, 'Empty reply from server')($request);
             },
@@ -136,7 +176,7 @@ describe('Gateway read retry', function (): void {
 
         expect(fn (): mixed => $connector->send(gateway_read_retry_request(Method::GET)))->toThrow(Exception::class)
             ->and($attempts->count())->toBe(1);
-    });
+    })->with([0.75, 0.8, 1.0]);
 
     it('retries a read at most once', function (): void {
         $attempts = gateway_read_retry_attempts($connector = gateway_read_retry_connector(), [

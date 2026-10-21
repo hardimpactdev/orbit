@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\Fleet\ShowFleetRolloutAction;
+use App\Console\Commands\FleetConvergeCommand;
+use App\Console\Commands\ResolveDesiredFleetStateCommand;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetConvergeUnits;
@@ -115,6 +117,14 @@ final class FleetServiceProvider extends ServiceProvider
                 enabled: Config::boolean('fleet.rollout'),
             ),
         );
+    }
+
+    public function boot(): void
+    {
+        $this->commands([
+            FleetConvergeCommand::class,
+            ResolveDesiredFleetStateCommand::class,
+        ]);
     }
 
     /** Test-only: a disposable topology names its CLI release in a local manifest ({@see StaticCliRelease}). */

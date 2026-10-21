@@ -7,9 +7,6 @@ use Symfony\Component\Yaml\Yaml;
 
 pest()->group('subprocess');
 
-/** Pest's process count in CI: 6 on the self-hosted Sabre runner, 4 on GitHub-hosted runners. */
-const CI_PEST_PROCESSES = '--processes=${{ runner.environment == \'self-hosted\' && 6 || 4 }}';
-
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
@@ -187,7 +184,7 @@ describe('Composer configuration', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $publisher = $workflow['jobs']['publish-ci-cache'];
         expect($publisher['needs'])->toBe(['required'])
-            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
+            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
             ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
             ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
             ->and($publisher['steps'][1]['with']['pattern'])->toBe('sandbox-tia-*-${{ github.sha }}')
@@ -195,10 +192,10 @@ describe('Composer configuration', function (): void {
             ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"');
         $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
         expect($projectSteps['Export main caches']['if'])
-            ->toBe("success() && matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
+            ->toBe("success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
+        expect($projectSteps['Publish main caches']['uses'])->toStartWith('actions/upload-artifact@');
         expect($projectSteps['Publish main caches'])->toMatchArray([
             'if' => $projectSteps['Export main caches']['if'],
-            'uses' => 'actions/upload-artifact@v7',
             'with' => [
                 'name' => 'sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}',
                 'path' => "\${{ matrix.project.directory }}/.orbit-tia/graph.json\n\${{ matrix.project.directory }}/.orbit-tia/manifest.json\n\${{ matrix.project.directory }}/.orbit-tia/quality/\n",
@@ -214,6 +211,57 @@ describe('Composer configuration', function (): void {
         }
     });
 
+    it('installs only dependencies without preparing development state', function (bool $optional): void {
+        $root = temporaryPath('orbit-bootstrap-dependencies-', 6);
+        mkdir($root.'/bin', 0700, true);
+        mkdir($root.'/tooling', 0700);
+        copy(base_path('../../bin/bootstrap'), $root.'/bin/bootstrap');
+        $log = $root.'/installs.log';
+        $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
+        foreach ($projects as $project) {
+            mkdir($root.'/'.$project, 0700, true);
+            file_put_contents($root.'/'.$project.'/.env.example', 'EXAMPLE=1');
+        }
+        foreach (['apps/web', 'apps/pi-server', 'apps/desktop/src-tauri', 'apps/agent'] as $project) {
+            mkdir($root.'/'.$project, 0700, true);
+        }
+        foreach (['composer', 'bun', 'cargo'] as $tool) {
+            file_put_contents($root.'/tooling/'.$tool, <<<'SH'
+#!/usr/bin/env bash
+printf '%s:%s:%s\n' "${PWD#"$FIXTURE_ROOT/"}" "${0##*/}" "$*" >> "$INSTALL_LOG"
+[[ "${1:-}" == install || "${1:-}" == fetch ]]
+SH);
+            chmod($root.'/tooling/'.$tool, 0700);
+        }
+        foreach (['generated-merge', 'worktree-cache', 'gateway-app-key', 'tia-cache'] as $helper) {
+            file_put_contents($root.'/bin/'.$helper, "#!/usr/bin/env sh\nexit 19\n");
+            chmod($root.'/bin/'.$helper, 0700);
+        }
+        $process = new Process(['bash', $root.'/bin/bootstrap', '--dependencies-only', ...($optional ? ['--with-bun', '--with-rust'] : [])], $root, [
+            'PATH' => $root.'/tooling:'.getenv('PATH'),
+            'FIXTURE_ROOT' => $root,
+            'INSTALL_LOG' => $log,
+            'ORBIT_HOME' => $root.'/home',
+        ]);
+        $process->mustRun();
+        $expected = array_map(static fn (string $project): string => $project.':composer:install --no-interaction --prefer-dist', $projects);
+        if ($optional) {
+            $expected = [...$expected,
+                'apps/web:bun:install --frozen-lockfile',
+                'apps/pi-server:bun:install --frozen-lockfile',
+                'apps/desktop:bun:install --frozen-lockfile',
+                'apps/agent:cargo:fetch --locked',
+                'apps/desktop/src-tauri:cargo:fetch --locked',
+            ];
+        }
+
+        expect(file($log, FILE_IGNORE_NEW_LINES))->toBe($expected);
+        foreach ($projects as $project) {
+            expect(file_get_contents($root.'/'.$project.'/.env'))->toBe('EXAMPLE=1');
+        }
+        expect(file_exists($root.'/home/gateway.app-key'))->toBeFalse();
+    })->with(['Composer only' => false, 'Bun and Rust too' => true]);
+
     it('installs E2E dependencies without running other projects checks in the E2E job', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $project = $workflow['jobs']['project'];
@@ -223,122 +271,39 @@ describe('Composer configuration', function (): void {
             ->toMatchArray([
                 'if' => "matrix.project.directory == 'apps/e2e'",
                 'working-directory' => '.',
-                'run' => 'bin/bootstrap --skip-checks',
+                'run' => 'bin/bootstrap --dependencies-only',
             ]);
         expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
-        expect($steps['Run project quality checks'])
-            ->toMatchArray([
-                'if' => "matrix.project.part != 'subprocess'",
-                'run' => 'composer check',
-                'env' => ['ORBIT_CHECK_PROCESSES' => '${{ runner.environment == \'self-hosted\' && 6 || 4 }}'],
-            ]);
-        // Every non-Gateway Composer suite runs in full on pull requests.
+        // bin/check-processes sizes the quality tools from the runner's own CPU and memory limits.
+        expect($steps['Run project quality checks'])->toBe(['name' => 'Run project quality checks', 'run' => 'composer check']);
+        // Every non-Gateway Composer suite runs in full on change runs: pull requests and task-*-handoff pushes.
         expect($steps['Run full PR test suite'])
             ->toMatchArray([
-                'if' => "matrix.project.part != 'subprocess' && matrix.project.directory != 'apps/gateway' && github.event_name == 'pull_request'",
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact',
+                'if' => "matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'",
+                'run' => 'vendor/bin/pest --parallel --no-tia --compact',
             ]);
-        // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
-        // graph's commit, and a nightly or manual run, or a change Pest cannot see, runs everything.
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
-            ->and($workflow['permissions'])->toBe(['contents' => 'read'])
-            ->and($project['permissions'])->toBe(['actions' => 'read', 'contents' => 'read']);
-        expect($steps['Choose the main test selection'])
-            ->toMatchArray([
-                'id' => 'orbit-tia-plan',
-                'if' => "github.event_name != 'pull_request'",
-                'run' => '../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"',
-            ])
-            ->and($steps['Choose the main test selection']['env'])->toBe([
-                'EVENT' => '${{ github.event_name }}',
-                // A failed nightly or manual run keeps pushes on the full suite, so the selection reads the Actions API.
-                'GITHUB_TOKEN' => '${{ github.token }}',
-                'PREFIX' => '${{ steps.orbit-tia-key.outputs.prefix }}',
-                'RESTORED_KEY' => '${{ steps.orbit-tia-restore.outputs.cache-matched-key }}',
-            ]);
-        expect($steps['Run tests affected since the main graph'])
-            ->toMatchArray([
-                'if' => "matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
-                // The bash shell sets pipefail, so a failing Pest run still fails the step.
-                'shell' => 'bash',
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"',
-            ]);
-        // The fresh TIA run executes every test, so one run is both the full-suite gate and the graph refresh.
-        expect($steps['Run full test suite and refresh Pest TIA graph'])
-            ->toMatchArray([
-                'if' => "matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'",
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
-            ]);
-        // The cache and the main cache artifact get the graph only when it describes the tested commit.
-        expect($steps['Require the Pest TIA graph to describe this commit'])
-            ->toMatchArray([
-                // A manual run on another branch records that branch's baseline, not main's.
-                'if' => "matrix.project.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
-                'run' => '../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"',
-                'env' => ['MODE' => '${{ steps.orbit-tia-plan.outputs.mode }}', 'BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
-            ]);
+            ->and($workflow['permissions'])->toBe(['contents' => 'read']);
+        expect($steps['Run full test suite and refresh Pest TIA graph'])->toMatchArray([
+            'if' => "env.CHANGE_RUN != 'true'",
+            'run' => 'vendor/bin/pest --parallel --tia --fresh --compact',
+        ]);
         $order = array_flip(array_keys($steps));
-        expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Choose the main test selection'])
-            ->and($order['Choose the main test selection'])->toBeLessThan($order['Run tests affected since the main graph'])
-            ->and($order['Run tests affected since the main graph'])->toBeLessThan($order['Run full test suite and refresh Pest TIA graph'])
-            ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Run architecture tests'])
-            ->and($order['Run architecture tests'])->toBeLessThan($order['Choose whether to run subprocess tests'])
-            ->and($order['Choose whether to run subprocess tests'])->toBeLessThan($order['Run subprocess tests'])
-            ->and($order['Run subprocess tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
-            ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
-            ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export main caches']);
-        expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
-        // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
-        expect($project['runs-on'])
-            ->toContain("matrix.project.directory == 'apps/gateway'")
-            // The subprocess job runs on a hosted runner, so a Gateway run takes one Sabre runner.
-            ->toContain("matrix.project.part != 'subprocess'")
-            ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
-            ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
-            ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
-            ->toContain("'ubuntu-26.04'");
-        // TIA does not link these contracts to the files they read, so pull requests and affected runs on main run them.
-        expect($steps['Run architecture tests'])
-            ->toMatchArray([
-                'if' => "always() && matrix.project.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
-            ])
-            ->and($steps['Run architecture tests']['run'])
-            ->toContain('tests/Feature/CommandSurfaceTest.php')
-            // TIA does not link workflow files to the tests that read them, so these contracts always run on pull requests.
-            ->toContain('tests/Feature/CliBinaryBuildContractTest.php')
-            ->toContain('tests/Feature/Configuration/ComposerConfigurationTest.php')
-            ->toContain('tests/Feature/Configuration/SubprocessTestGroupTest.php')
-            ->toContain('tests/Unit/Architecture')
-            ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
-            ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
-            ->toContain('tests/Unit/E2E/Value/TopologyNodeCatalogTest.php')
-            ->toContain('tests/Unit/SuccessRequestIdBoundaryTest.php')
-            ->toContain('tests/Unit/RepositoryGuidanceTest.php')
-            ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')
-            ->toContain('tests/Unit/Requests/Deployments/DeploymentRequestsTest.php')
-            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --compact "$architecture_test"');
-        expect($steps['Run architecture tests']['run'])->not->toContain('--tia');
-        // TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
-        // the whole group when a change reaches the project. A change that the project's tests never read skips it.
-        // Paratest takes one path per run, so one group run replaces a run per file.
-        expect($steps['Choose whether to run subprocess tests'])
-            ->toBe([
-                'name' => 'Choose whether to run subprocess tests',
-                'id' => 'orbit-subprocess',
-                'if' => "always() && matrix.project.part != 'tests' && steps.orbit-tia-plan.outputs.mode == 'affected'",
-                // An affected main run compares with the commit of the restored graph.
-                'env' => ['BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
-                'run' => '../../bin/ci-tia subprocess --base "$BASE"',
-            ]);
-        expect($steps['Run subprocess tests'])
-            ->toBe([
-                'name' => 'Run subprocess tests',
-                'if' => "always() && matrix.project.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'",
-                // Only the PHP SDK, which has no subprocess tests, may pass with an empty group. Another project with
-                // an empty group fails, so an exclusion cannot silently skip its subprocess tests.
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --compact'
-                    ."\${{ matrix.project.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}",
-            ]);
+        expect($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Export main caches']);
+        expect($steps['Export main caches']['run'])->toContain(
+            "baseline.get('sha') != os.environ['GITHUB_SHA']",
+            "set(data['edges']) - tested",
+        );
+        expect($steps)->not->toHaveKeys([
+            'Choose the main test selection', 'Run tests affected since the main graph',
+            'Run architecture tests', 'Choose whether to run subprocess tests', 'Run subprocess tests',
+        ]);
+        // Change-run quality checks share the orbit-shard pool; a full run keeps Sabre for its six-worker recording run.
+        expect($project['runs-on'])->toContain(
+            "(!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('[\"self-hosted\", \"sabre\"]')",
+            "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"orbit-shard\"]')",
+            "|| 'ubuntu-26.04' }}",
+        );
     });
 
     it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {
@@ -347,36 +312,22 @@ describe('Composer configuration', function (): void {
         expect($workflow)
             ->toBeString()
             ->toContain('fetch-depth: 0')
-            // The merge commit descends from the main graph's commit, so TIA can diff against it.
-            ->toContain("ref: \${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
+            ->toContain('ref: ${{ github.sha }}')
             ->toContain('repository: ${{ github.repository }}')
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
-            ->toContain('actions/cache/restore@v6')
-            ->toContain('actions/cache/save@v6')
-            ->toContain('path: ${{ matrix.project.directory }}/.orbit-tia')
-            ->toContain("format('{0}/composer.lock', matrix.project.directory)")
-            ->toContain("format('{0}/tests/Pest.php', matrix.project.directory)")
-            ->toContain("format('{0}/phpunit.xml', matrix.project.directory)")
-            ->toContain("format('{0}/phpunit.xml.dist', matrix.project.directory)")
-            ->toContain('orbit-tia-php8.5-${{ matrix.project.directory }}-')
-            // Each run on main saves its own graph, so a full run on an already tested commit still refreshes the cache.
-            ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
-            ->toContain("\${{ format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) }}")
-            ->toContain("\${{ format('orbit-tia-php8.5-{0}-', matrix.project.directory) }}")
+            ->toContain('actions/cache/restore@')
+            ->toContain('actions/cache/save@')
             ->toContain('coverage: pcov')
-            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
-            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
-            ->toContain('tests/Unit/Architecture')
+            ->toContain('vendor/bin/pest --parallel --tia --fresh --compact')
             ->toContain("github.event_name == 'pull_request'")
-            ->toContain('bin/ci-tia plan')
+            ->not->toContain('bin/ci-tia', 'Restore Pest TIA graph')
             ->not->toContain('bin/tia-cache')
             ->not->toContain('tia-baseline.yml')
             ->not->toContain('vendor/.orbit-guidance-tia');
 
-        expect(strpos($workflow, 'Restore Pest TIA graph'))
-            ->toBeLessThan(strpos($workflow, 'Run full PR test suite'));
-        expect(strpos($workflow, 'Run full PR test suite'))
-            ->toBeLessThan(strpos($workflow, 'Save Pest TIA graph'));
+        foreach (['Compute Pest TIA cache prefix', 'Save Pest TIA graph', 'orbit-tia-php'] as $deadCache) {
+            expect($workflow)->not->toContain($deadCache);
+        }
 
         $ignored = new Process(
             ['git', 'check-ignore', '-q', 'apps/cli/.orbit-tia/graph.json'],
@@ -397,9 +348,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/pint.json', matrix.project.directory)")
             ->toContain("format('{0}/rector.php', matrix.project.directory)")
             ->toContain('orbit-lint-php8.5-${{ matrix.project.directory }}-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}");
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('orbit-lint-php8.5-{0}-', matrix.project.directory) || '' }}");
 
         expect(strpos($workflow, 'Install dependencies'))
             ->toBeLessThan(strpos($workflow, 'Restore Pint cache'));
@@ -418,9 +369,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/composer.lock', matrix.project.directory)")
             ->toContain("format('{0}/phpstan.neon', matrix.project.directory)")
             ->toContain('orbit-phpstan-php8.5-${{ matrix.project.directory }}-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
-            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
+            ->toContain("\${{ env.CHANGE_RUN != 'true' && format('orbit-phpstan-php8.5-{0}-', matrix.project.directory) || '' }}")
             ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.project\.directory \}\}\/vendor\s*$/m');
 
@@ -431,100 +382,63 @@ describe('Composer configuration', function (): void {
         expect(strpos($workflow, 'Run project quality checks'))
             ->toBeLessThan(strpos($workflow, 'Save PHPStan result cache'));
         expect(strpos($workflow, 'Save PHPStan result cache'))
-            ->toBeLessThan(strpos($workflow, 'Restore Pest TIA graph'));
+            ->toBeLessThan(strpos($workflow, 'Run full test suite and refresh Pest TIA graph'));
     });
 
-    it('saves the project caches only from runs outside pull requests', function (): void {
+    it('saves the project caches only from runs outside change runs', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
 
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
-        foreach (['Save PHPStan result cache', 'Save Pint cache', 'Save Pest TIA graph'] as $name) {
-            expect($steps[$name]['if'])->toBe("success() && matrix.project.part != 'subprocess' && github.event_name != 'pull_request'");
+        foreach (['Save PHPStan result cache', 'Save Pint cache'] as $name) {
+            expect($steps[$name]['if'])->toBe("success() && env.CHANGE_RUN != 'true'");
         }
     });
 
-    it('requires the full Gateway suite in shards on every pull request', function (): void {
+    it('requires the full Gateway suite in shards on every pull request and task-*-handoff push', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $jobs = $workflow['jobs'];
-        $planSteps = array_column($jobs['gateway-plan']['steps'], null, 'name');
+        $shardCount = count($jobs['gateway-shards']['strategy']['matrix']['shard']);
         $shardSteps = array_column($jobs['gateway-shards']['steps'], null, 'name');
         $projectSteps = array_column($jobs['project']['steps'], null, 'name');
 
-        // Only pull requests plan shards. A run on main keeps one Gateway job, which writes the whole Pest TIA graph.
-        expect($jobs['gateway-plan']['if'])->toBe("github.event_name == 'pull_request'")
-            ->and($jobs['gateway-plan']['runs-on'])->toBe('ubuntu-26.04')
-            ->and($planSteps['Set up PHP']['with']['coverage'])->toBe('none')
-            ->and($planSteps['Plan full Gateway shards']['run'])
-            ->toBe('../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"')
-            // One artifact name for every attempt: a partial re-run copies the plan job, and a full re-run replaces it.
-            ->and($planSteps['Publish the Gateway test plan']['with'])
-            ->toMatchArray(['name' => 'gateway-plan', 'overwrite' => true, 'retention-days' => 30]);
-        // The plan checks out the same merge ref and restores the same main graph as the Gateway job of a pull request.
-        expect($planSteps['Check out repository']['with']['ref'])->toBe('${{ github.ref }}');
-        expect($planSteps['Restore Pest TIA graph']['with'])
+        expect($shardCount)->toBeGreaterThan(1);
+        expect($jobs)->not->toHaveKey('gateway-plan');
+        expect($jobs['project'])->not->toHaveKey('needs');
+        expect($jobs['gateway-shards'])->not->toHaveKey('needs')
             ->toMatchArray([
-                'path' => 'apps/gateway/.orbit-tia',
-                'restore-keys' => <<<'KEYS'
-${{ format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) }}
-${{ steps.orbit-tia-key.outputs.prefix }}-main-
-KEYS."\n",
+                'if' => "github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')",
+                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, $shardCount)]],
             ]);
-
-        expect($projectSteps['Restore Pest TIA graph']['if'])->toBe("github.event_name != 'pull_request'");
-
-        // Other projects run full suites without waiting for the Gateway plan.
-        expect($jobs['project'])->not->toHaveKey('needs')
-            ->and($projectSteps['Read the Gateway test plan']['if'])
-            ->toBe("matrix.project.directory == 'apps/gateway' && matrix.project.part != 'subprocess' && github.event_name == 'pull_request'")
-            ->and($projectSteps['Read the Gateway test plan']['run'])
-            ->toContain('select(.name == "Gateway plan")', '-n gateway-plan ', 'git rev-parse HEAD', 'Re-run all jobs')
-            // One failed API answer is retried; twelve in a row fail the job.
-            ->toContain('if ! job=$(gh api', '"$errors" -ge 12')
-            ->not->toContain('run_attempt');
-        expect($projectSteps['Run Gateway shard 1'])
-            ->toMatchArray([
-                'if' => "matrix.project.part != 'subprocess' && matrix.project.directory == 'apps/gateway' && github.event_name == 'pull_request'",
-                'env' => ['FILTER' => '${{ steps.gateway-plan.outputs.filter }}'],
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --exclude-group=privileged --compact --filter "$FILTER"',
-            ]);
-        $order = array_flip(array_keys($projectSteps));
-        expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Read the Gateway test plan'])
-            ->and($order['Read the Gateway test plan'])->toBeLessThan($order['Run full PR test suite'])
-            ->and($order['Run Gateway shard 1'])->toBeLessThan($order['Run architecture tests']);
-
-        // Every pull request runs the other full-suite shards on the commit the plan enumerated. They
-        // run on the orbit-shard runners under the Gateway job's own condition, with at most 4 Pest processes and
-        // without the privileged group, because the runner user has no sudo.
-        expect($jobs['gateway-shards'])
-            ->toMatchArray([
-                'needs' => 'gateway-plan',
-                'if' => "github.event_name == 'pull_request'",
-                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => '${{ fromJSON(needs.gateway-plan.outputs.matrix) }}']],
-            ])
-            ->and($jobs['gateway-shards']['runs-on'])
-            ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}')
-            ->and($shardSteps['Check out repository']['with']['ref'])->toBe('${{ needs.gateway-plan.outputs.commit }}')
-            ->and($shardSteps['Keep exception arguments in traces']['if'])->toBe("runner.environment == 'self-hosted'")
-            ->and($shardSteps['Keep exception arguments in traces']['run'])
-            ->toContain('zend.exception_ignore_args=0', 'PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php')
-            ->and($shardSteps['Download the Gateway test plan']['with']['name'])->toBe('gateway-plan')
-            ->and($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
-            ->toContain('test "$(jq -r .commit "$plan")" = "$(git rev-parse HEAD)"')
-            ->toContain('.filters[$shard - 1]')
-            ->toContain('vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --compact --filter "$filter"');
+        expect($jobs['gateway-shards']['runs-on'])
+            ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');
+        expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
+            ->toBe('vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
+        expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
+            'if' => "matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'",
+            'run' => '../../bin/check-pest-shards',
+        ]);
+        expect($shardSteps['Keep exception arguments in traces']['run'])
+            ->toContain('zend.exception_ignore_args=0', 'PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php');
+        foreach ($jobs as $job) {
+            foreach ($job['steps'] ?? [] as $step) {
+                if (str_starts_with($step['uses'] ?? '', 'actions/cache/')) {
+                    expect($step['with']['path'])->not->toContain('tests/.pest', 'shards.json');
+                }
+                expect($step['run'] ?? '')->not->toContain('--update-shards');
+            }
+        }
 
         // Required checks refuses failed, cancelled or skipped full-suite shards.
-        expect($jobs['required']['needs'])->toContain('gateway-plan', 'gateway-shards')
+        expect($jobs['required']['needs'])->toContain('gateway-shards')
             ->and($jobs['required']['steps'][0]['env'])->toMatchArray([
-                'GATEWAY_PLAN_RESULT' => '${{ needs.gateway-plan.result }}',
                 'GATEWAY_SHARDS_RESULT' => '${{ needs.gateway-shards.result }}',
             ]);
         $required = $jobs['required']['steps'][0]['run'];
         $verdict = function (array $results) use ($required): bool {
             $process = new Process(['bash', '-ec', $required], null, $results + [
-                'EVENT' => 'pull_request', 'DOCS_MERGE_REF_RESULT' => 'success', 'PROJECT_RESULT' => 'success',
+                'CHANGE_RUN' => 'true', 'PROJECT_RESULT' => 'success',
                 'PRIVILEGED_RESULT' => 'success', 'API_REFERENCE_RESULT' => 'success', 'WEB_RESULT' => 'success',
                 'PI_SERVER_RESULT' => 'success', 'AGENT_RESULT' => 'success', 'DESKTOP_RESULT' => 'success',
                 'REMOTE_PROGRAMS_RESULT' => 'success',
@@ -532,59 +446,23 @@ KEYS."\n",
 
             return $process->run() === 0;
         };
-        $plan = fn (string $result, string $shardsResult): array => [
-            'GATEWAY_PLAN_RESULT' => $result, 'GATEWAY_SHARDS_RESULT' => $shardsResult,
-        ];
-
-        expect($verdict($plan('success', 'success')))->toBeTrue()
-            ->and($verdict($plan('success', 'failure')))->toBeFalse()
-            ->and($verdict($plan('success', 'cancelled')))->toBeFalse()
-            ->and($verdict($plan('success', 'skipped')))->toBeFalse()
-            ->and($verdict($plan('failure', 'success')))->toBeFalse()
-            ->and($verdict(['EVENT' => 'push', 'DOCS_MERGE_REF_RESULT' => 'skipped'] + $plan('skipped', 'skipped')))->toBeTrue()
-            ->and($verdict(['EVENT' => 'push', 'DOCS_MERGE_REF_RESULT' => 'skipped'] + $plan('success', 'success')))->toBeFalse();
+        expect($verdict(['GATEWAY_SHARDS_RESULT' => 'success']))->toBeTrue();
+        foreach (['failure', 'cancelled', 'skipped'] as $result) {
+            expect($verdict(['GATEWAY_SHARDS_RESULT' => $result]))->toBeFalse();
+        }
+        // A push to main, a scheduled run, and a manual run test the Gateway in the project job instead.
+        expect($verdict(['CHANGE_RUN' => 'false', 'GATEWAY_SHARDS_RESULT' => 'skipped']))->toBeTrue()
+            ->and($jobs['required']['steps'][0]['env'])->not->toHaveKey('CHANGE_RUN');
 
     });
 
-    it('starts subprocess jobs only outside pull requests and preserves project cache indexes', function (): void {
+    it('keeps one project lane per suite and preserves main cache indexes', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $matrix = $workflow['jobs']['project']['strategy']['matrix'];
-        $steps = $workflow['jobs']['project']['steps'];
 
+        expect(array_keys($matrix))->toBe(['project']);
         expect(array_column($matrix['project'], 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK']);
-        // The expression appends subprocess jobs only outside PRs. The PR branch adds no jobs at all.
-        expect($matrix['include'])->toMatch("/^\\$\\{\\{ fromJSON\\(github\\.event_name != 'pull_request' && '([^']+)' \\|\\| '(\\[\\])'\\) \\}\\}$/");
-        preg_match("/&& '([^']+)' \\|\\| '([^']+)'/", $matrix['include'], $branches);
-        $main = [...$matrix['project'], ...array_column(json_decode($branches[1], true, flags: JSON_THROW_ON_ERROR), 'project')];
-        $pullRequest = [...$matrix['project'], ...json_decode($branches[2], true, flags: JSON_THROW_ON_ERROR)];
-
-        // New entries go last, so main's cache artifact indexes stay unchanged; PR suites own all subprocess tests.
-        expect(array_column($main, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK', 'Gateway subprocess', 'E2E subprocess'])
-            ->and(array_column($main, 'part', 'name'))->toBe([
-                'Gateway' => 'tests', 'E2E' => 'tests', 'Gateway subprocess' => 'subprocess', 'E2E subprocess' => 'subprocess',
-            ])
-            ->and(array_column($pullRequest, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK']);
-
-        // A subprocess job sets up the project, restores the graph, and reads the main selection, then runs only the
-        // subprocess group. It checks nothing else and saves or publishes nothing. A tests job never runs the group.
-        foreach ($steps as $step) {
-            $if = $step['if'] ?? '';
-            if (in_array($step['name'], ['Choose whether to run subprocess tests', 'Run subprocess tests'], true)) {
-                expect($if)->toContain("matrix.project.part != 'tests'");
-            } elseif (isset($step['run']) && str_contains($step['run'], 'vendor/bin/pest')
-                || str_starts_with($step['uses'] ?? '', 'actions/cache/save')
-                || str_starts_with($step['uses'] ?? '', 'actions/upload-artifact')
-                || in_array($step['name'], [
-                    'Validate Composer metadata', 'Compute PHPStan result cache prefix', 'Restore PHPStan result cache',
-                    'Compute Pint cache prefix', 'Restore Pint cache', 'Run project quality checks',
-                    'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
-                    'Read the Gateway test plan', 'Verify Ubuntu recipe pins against the named snapshot',
-                ], true)) {
-                expect($if)->toContain("matrix.project.part != 'subprocess'");
-            } else {
-                expect($if)->not->toContain('matrix.project.part');
-            }
-        }
+        expect(json_encode($matrix, JSON_THROW_ON_ERROR))->not->toContain('subprocess');
     });
 
     it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
@@ -646,42 +524,86 @@ it('requires the lint and direct tests of the Gateway remote programs in CI', fu
         ->and($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$REMOTE_PROGRAMS_RESULT" = success');
 });
 
-it('keeps privileged tests required in CI on a hosted runner', function (): void {
+it('keeps the whole privileged group required in one disposable CI job', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['privileged'];
     expect($job['runs-on'])->toBe('ubuntu-26.04');
-    $commands = array_column($job['steps'], 'run');
-    expect(implode("\n", $commands))->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite');
+    expect($job)->not->toHaveKey('strategy')->not->toHaveKey('if');
+    $commands = implode("\n", array_column($job['steps'], 'run'));
+    expect($commands)->toContain('vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never');
+    expect($commands)->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite')
+        ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
+});
+
+it('lets stock ParaTest use every available CPU in each CI test run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+
+    foreach ($workflow['jobs'] as $job) {
+        foreach ($job['steps'] ?? [] as $step) {
+            $command = $step['run'] ?? '';
+            if (str_contains($command, 'vendor/bin/pest --parallel')) {
+                expect($command)->not->toContain('--processes')
+                    ->not->toContain('--max-processes')
+                    ->not->toContain('ORBIT_CHECK_PROCESSES');
+            }
+        }
+    }
+});
+
+it('builds the agent and desktop app on a handoff push only when it changes them since main', function (string $job, string $output): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = $workflow['jobs'][$job]['steps'];
+    $detect = array_column($steps, null, 'id')['changes'];
+
+    // GitHub expressions treat 0 as false, so the depth is a string: a handoff push needs origin/main for the merge-base.
+    expect($steps[0]['with']['fetch-depth'])->toBe("\${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}")
+        ->and($detect)->not->toHaveKey('env')
+        ->and($detect['run'])->toContain('if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi')
+        ->toContain('if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD')
+        ->toContain('echo "'.$output.'=true"');
+})->with([['agent', 'agent'], ['desktop', 'desktop']]);
+
+it('defines a handoff push and a change run once, and spells out the change run only where GitHub reads no env', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $handoff = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')";
+    $change = "github.event_name == 'pull_request' || ".$handoff;
+
+    // A manual run or a push to another task-* branch is neither a handoff push nor a change run. Steps read env; a
+    // job's `if` and `runs-on` cannot, so the shards job and the project job's runner choice spell out the change run.
+    expect($workflow['env']['HANDOFF_PUSH'])->toBe('${{ '.$handoff.' }}')
+        ->and($workflow['env']['CHANGE_RUN'])->toBe('${{ '.$change.' }}')
+        ->and($workflow['jobs']['gateway-shards']['if'])->toBe($change)
+        ->and($workflow['jobs']['project']['runs-on'])->toContain('!('.$change.')')
+        ->and(substr_count((string) file_get_contents(base_path('../../.github/workflows/ci.yml')), 'refs/heads/task-'))->toBe(4);
 });
 
 it('keeps a running main push, only the newest waiting one, and every full run', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
 
-    // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run.
-    // Scheduled and manual full runs keep a group per commit, so a push never replaces one.
+    // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run. A pull
+    // request's merge ref and a handoff branch each keep only their newest run. Scheduled and manual full runs keep
+    // a group per ref and commit, so neither a push nor a manual run on another branch replaces one.
     expect($workflow['concurrency'])->toBe([
-        'group' => "ci-\${{ github.workflow }}-\${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}",
-        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' }}",
+        'group' => "ci-\${{ github.workflow }}-\${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) || github.ref }}",
+        'cancel-in-progress' => "\${{ github.ref != 'refs/heads/main' }}",
     ]);
-    expect($workflow['on']['push']['branches'])->toBe(['main']);
+    // A task-*-handoff push is a handoff commit; a newer one on the same branch cancels it, and never a main or pull request run.
+    expect($workflow['on']['push']['branches'])->toBe(['main', 'task-*-handoff']);
 });
 
-it('tests exactly the run commit on main even when the branch moved before the job started', function (): void {
+it('checks out the immutable event commit in every job including reruns', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
-    $steps = $workflow['jobs']['project']['steps'];
-    $names = array_column($steps, 'name');
-    $checkout = array_search('Check out repository', $names, true);
 
-    // The checkout names the branch, so a later push would otherwise be tested under this run's commit.
-    expect($steps[$checkout]['with']['ref'])->toBe("\${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
-        ->and($steps[$checkout + 1])->toBe([
-            'name' => "Pin the run's commit",
-            'if' => "github.event_name != 'pull_request'",
-            'working-directory' => '.',
-            'run' => 'git reset --hard "$GITHUB_SHA"',
-        ]);
+    foreach ($workflow['jobs'] as $name => $job) {
+        foreach ($job['steps'] ?? [] as $step) {
+            if (str_starts_with($step['uses'] ?? '', 'actions/checkout@')) {
+                expect($step['with']['ref'] ?? null)->toBe('${{ github.sha }}', $name);
+            }
+            expect($step['run'] ?? '')->not->toContain('git reset --hard', 'Re-run all jobs');
+        }
+    }
 });
 
 it('publishes the web build of each main push for the Gateway to install', function (): void {
@@ -689,10 +611,10 @@ it('publishes the web build of each main push for the Gateway to install', funct
     $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
     $names = array_keys($steps);
 
-    expect($steps['Publish web build'])->toBe([
+    expect($steps['Publish web build']['uses'])->toStartWith('actions/upload-artifact@');
+    expect($steps['Publish web build'])->toMatchArray([
         'name' => 'Publish web build',
         'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
-        'uses' => 'actions/upload-artifact@v7',
         'with' => [
             'name' => 'web-dist-${{ github.sha }}',
             'path' => 'apps/web/dist',
@@ -746,11 +668,11 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         }
     }
 
-    expect($phpBins)->toContain('orbit-build-cli-binary', 'dependency-audit', 'docs-nav', 'e2e-topology', 'ci-tia', 'docs-openapi')
+    expect($phpBins)->toContain('orbit-build-cli-binary', 'dependency-audit', 'docs-nav', 'e2e-topology', 'docs-openapi')
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
-        'ci.yml:project', 'ci.yml:gateway-plan', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
-        'ci.yml:docs-merge-ref', 'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+        'ci.yml:project', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
+        'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"')

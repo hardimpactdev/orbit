@@ -425,7 +425,7 @@ class RecipeGitTest(unittest.TestCase):
         loader.exec_module(module)
         seed = {'artifact_mirror': 'https://mirror.example', 'tools': {'git': self.tools['git']}}
         for error, calls in ((module.DownloadUnavailable('404'), 2), (module.BuildError('digest mismatch'), 1)):
-            with self.subTest(error=error), patch.object(module, 'download', side_effect=[error, None]) as download, patch('builtins.print'):
+            with self.subTest(error=str(error)), patch.object(module, 'download', side_effect=[error, None]) as download, patch('builtins.print'):
                 if calls == 1:
                     with self.assertRaises(module.BuildError):
                         module.mirror(seed, self.apt / 'mirror')

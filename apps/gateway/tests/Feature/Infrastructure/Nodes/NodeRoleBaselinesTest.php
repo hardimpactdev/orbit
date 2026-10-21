@@ -42,6 +42,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
@@ -1216,7 +1217,7 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
 {
     $credentials = Mockery::mock(WebSocketCredentialManager::class);
     $credentials->shouldReceive('ensure')->andReturn(
-        new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('k')),
+        new WebSocketServerCredentials('base64:'.base64_encode('k'), [new WebSocketCredentials('id', 'key', 'secret')]),
     );
     $credentials->shouldReceive('purge');
 

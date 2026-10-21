@@ -171,9 +171,10 @@ The agent bounds each step, so a peer that stops answering never holds it.
 | --- | --- |
 | A Gateway request | 10 seconds to connect, 30 seconds in total |
 | One join, from the connection to `pusher_internal:subscription_succeeded` | 30 seconds |
+| A WebSocket write or close | 10 seconds; a blocked write ends the session and starts a new connection |
 | A quiet connection | After 15 seconds without a message, the agent sends `pusher:ping`. Without an answer in 10 more seconds, it reconnects. |
 
-After a drop, the agent reconnects with a backoff from 2 to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
+After a reset, server close, or ping timeout, the agent reconnects with exponential backoff capped at 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
 
@@ -286,7 +287,7 @@ The Gateway pins a released agent version and its architecture checksums. It sto
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
 | Agent secret | `/etc/orbit/agent/secret` |
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
-| Download | `https://github.com/nckrtl/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
+| Download | `https://github.com/hardimpactdev/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
 
 The Node downloads the asset to a candidate file, checks the checksum, and moves it into place. A mismatch deletes the candidate and fails with `agent.checksum_mismatch`. When the installed binary already matches, the download is skipped. The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed.
 
@@ -372,12 +373,20 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 | `missing` | The subscriber has no complete snapshot from this agent. It asks for one within about 10 seconds of the agent's next event. | Check `journalctl -u orbit-agent` on the Node. |
 | `stale` | No agent event arrived in the last 15 seconds. | Check the Node's network and `journalctl -u orbit-agent`. |
 
+## Checks
+
+Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal user. The dev profile optimizes `regex` and `regex-automata` so the shared redaction fixtures run without the cost of unoptimized matching. Cargo's test profile inherits these package overrides. The inputs, redaction rules, and assertions stay the same; these overrides do not change the release profile. [Live logs](/reference/live-logs#stream-tests) describes which stream tests use a paused clock and which retain real processes and observation intervals.
+
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
+The Gateway pins agent `0.4.4`, which includes reconnect recovery after a reset, server close, missing pong, or blocked write. Complete the agent release, Gateway release, and fleet rollout before updating Reverb, so every agent can reconnect when the server restarts. Verify the Gateway Node separately because the fleet rollout excludes it.
+
+A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
+
+The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
 
 ```bash
-gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
+gh api repos/hardimpactdev/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
 ```
 
 | Asset | Contents |
@@ -386,13 +395,13 @@ gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={com
 | `orbit-agent-{version}-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `SHA256SUMS` | The checksums of both binaries |
 
-The job refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
+The workflow refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
 
 Before merging an agent version bump, wait for its Rust tests and both static builds to pass, have the agent changes reviewed, and create the tag at that reviewed commit. Wait for the release workflow to publish all three assets. Then update `tools.orbit-agent` in `apps/gateway/resources/machine-software/recipe.json`: the version, both architecture URLs, and both SHA-256 digests from `SHA256SUMS`.
 
 Update `NodeAgentFootprint::Version` and replace its single release manifest with the current digests; remove the old manifests. Provisioning and the desired fleet state read that pin, and the Gateway recipe tests check that both pins agree. Download both binaries and verify their digests, then run `php artisan orbit:machine-recipe --validate` from `apps/gateway`. Validation needs the Ubuntu archive keyring and the internal `pi` artifact in `ORBIT_HOME/sandbox-artifacts` (or the directory passed with `--artifact-directory`). Include the pin updates in the version bump pull request and have its final diff reviewed before merging. If review changes the published agent code, release a new version; never move a published tag.
 
-Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
+Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. Update the version, release tag, and rejected prior-tag URL in `tools/test_check_agent_release.py`, then run `python3 -m unittest discover -s tools -p test_check_agent_release.py` after completing the pins. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
 
 Every CI run checks that the Cargo version matches the recipe pin and a published stable release with both binaries and `SHA256SUMS`. It checks both recipe URLs and compares their SHA-256 pins with the published checksum file. Run `python3 tools/check_agent_release.py` from the repository root with Python 3.11 or newer and an authenticated GitHub CLI to check this delivery step locally. A version bump stays red until its release and recipe pin are complete.
 

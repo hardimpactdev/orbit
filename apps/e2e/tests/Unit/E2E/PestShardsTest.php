@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('selects affected tests on main only when Pest can see every change', function (): void {
+it('keeps ordinary stock Pest shards complete and enforces the no-sudo boundary', function (): void {
     $repository = dirname(__DIR__, 5);
     $process = new Process(
-        ['python3', dirname(__DIR__, 2).'/Fixtures/ci-tia-tests.py', $repository],
+        ['python3', '-I', dirname(__DIR__, 2).'/Fixtures/check-pest-shards-tests.py'],
         $repository,
         ['PYTHONDONTWRITEBYTECODE' => '1', 'GITHUB_OUTPUT' => false, 'ORBIT_TIA_DIRECTORY' => false],
     );

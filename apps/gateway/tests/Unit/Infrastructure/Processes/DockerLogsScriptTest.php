@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 it('returns standard output and standard error of a container in the order it wrote them', function (): void {
     $bin = sys_get_temp_dir().'/orbit-docker-logs-'.bin2hex(random_bytes(4));
@@ -19,7 +20,7 @@ it('returns standard output and standard error of a container in the order it wr
         SH);
     chmod($bin.'/docker', 0755);
 
-    $process = new Process(['sh', '-c', RemoteProcessRuntimeManager::DockerLogsScript, 'orbit-process-logs', '20', 'orbit-process-7-web'], env: ['PATH' => $bin.':/usr/bin:/bin']);
+    $process = new Process(['sh', '-c', RemoteProcessRuntimeManager::DockerLogsScript, 'orbit-process-logs', '20', 'orbit-process-7-web'], env: ['PATH' => TestToolchain::path($bin.':/usr/bin:/bin')]);
     $process->mustRun();
 
     expect($process->getOutput())->toBe("out one\nerr one\nout two\nerr two\n")

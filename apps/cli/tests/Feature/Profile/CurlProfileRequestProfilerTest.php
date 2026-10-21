@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
 
 pest()->group('subprocess');
@@ -12,10 +13,17 @@ describe(ProfileRequestProfiler::class, function (): void {
 
         config()->set('orbit.gateway.timeout', 1);
         app()->forgetInstance(ProfileRequestProfiler::class);
+        $setOption = Mockery::mock();
+        $setOption->shouldReceive('__invoke')->byDefault()->andReturnUsing(curl_setopt(...));
+        $setOption->shouldReceive('__invoke')
+            ->once()
+            ->with(Mockery::type(CurlHandle::class), CURLOPT_TIMEOUT, 30)
+            ->andReturnUsing(curl_setopt(...));
+        app()->when(CurlProfileRequestProfiler::class)->needs(Closure::class)
+            ->give(static fn (): Closure => $setOption->__invoke(...));
 
         try {
-            $profile = app(ProfileRequestProfiler::class)
-                ->profile("http://127.0.0.1:{$server['port']}/");
+            $profile = app(ProfileRequestProfiler::class)->profile("http://127.0.0.1:{$server['port']}/");
         } finally {
             stopSlowCurlProfileHttpTestServer($server);
         }
@@ -27,7 +35,7 @@ describe(ProfileRequestProfiler::class, function (): void {
             ->and($profile['error'])
             ->toBeNull()
             ->and($profile['timings']['total_ms'])
-            ->toBeGreaterThan(1000.0);
+            ->toBeGreaterThan(100.0);
     });
 
     it('performs one GET without following redirects and preserves response headers', function (): void {
@@ -130,7 +138,7 @@ function startSlowCurlProfileHttpTestServer(): array
             return;
         }
 
-        usleep(1_100_000);
+        usleep(150_000);
 
         header('Content-Type: text/plain');
 

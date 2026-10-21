@@ -442,12 +442,12 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         $group = task_fixture_send('tasks-show/watched', new ShowTaskGroupRequest(1));
         assert($group instanceof TaskGroupResponse);
 
-        expect($group->watchedPrUrl)->toBe('https://github.com/nckrtl/orbit/pull/451')
+        expect($group->watchedPrUrl)->toBe('https://github.com/hardimpactdev/orbit/pull/451')
             ->and($group->watchedPrNumber)->toBe(451)
             ->and($group->watchedPrState)->toBe('open')
             ->and($group->prUrl)->toBeNull()
             ->and($group->toArray())->toMatchArray([
-                'watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/451',
+                'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/451',
                 'watched_pr_number' => 451,
                 'watched_pr_state' => 'open',
                 'pr_url' => null,

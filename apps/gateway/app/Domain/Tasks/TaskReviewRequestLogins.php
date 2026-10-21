@@ -12,12 +12,8 @@ final readonly class TaskReviewRequestLogins
      *
      * @return list<string>
      */
-    public static function parseEnv(mixed $value): array
+    public static function parseEnv(string $value): array
     {
-        if (! is_string($value) || trim($value) === '') {
-            return [];
-        }
-
         $logins = [];
         $seen = [];
         foreach (explode(',', $value) as $login) {

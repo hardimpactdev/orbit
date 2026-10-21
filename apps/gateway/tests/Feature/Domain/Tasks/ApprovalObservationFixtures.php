@@ -47,7 +47,8 @@ final class ApprovalObservationFixtures
     public static function observation(array $reviews = [], string $head = 'abc123', array $accounts = [42, 7], GitHubPullRequestState $state = GitHubPullRequestState::Open, TaskReviewReadStatus $read = TaskReviewReadStatus::Complete, string $repository = 'acme/orbit', int $number = 42): TaskReviewObservation
     {
         $repo = GitHubRepository::fromOrigin('https://github.com/'.$repository.'.git');
-        $trust = TaskReviewTrust::fromConfig($repo, [$repository => $accounts]);
+        // The operator grants no account by leaving the repository out.
+        $trust = TaskReviewTrust::fromConfig($repo, $accounts === [] ? '' : $repository.':'.implode(',', $accounts));
         $pr = new GitHubPullRequest($state, true, 'clean', $head, 'main');
 
         return new TaskReviewObservation($read, $repo, $number, $trust, $pr,

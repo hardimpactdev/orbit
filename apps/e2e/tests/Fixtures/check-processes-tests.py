@@ -1,6 +1,7 @@
 """Exercise the shared worker budget with isolated Linux and macOS resource readings."""
 import importlib.machinery
 import importlib.util
+import json
 import os
 import socket
 from pathlib import Path
@@ -150,45 +151,137 @@ class CheckProcessesTest(unittest.TestCase):
                 helper.chmod(0o755)
                 worker = root / 'bin/pest-plain'
                 worker.write_text('''#!/usr/bin/env python3
-import os, socket, sys
-with socket.socket(socket.AF_UNIX) as client:
-    client.connect(os.environ['WORKER_SOCKET'])
-    share = next(argument.split('=')[1] for argument in sys.argv if argument.startswith('--processes='))
-    client.sendall((share + '\\n').encode())
-    client.recv(1)
+import fcntl, json, os, socket, sys
+share = int(next(argument.split('=')[1] for argument in sys.argv if argument.startswith('--processes=')))
+def account(delta):
+    with open(os.environ['WORKER_COUNTER'], 'r+') as counter:
+        fcntl.flock(counter, fcntl.LOCK_EX)
+        state = json.load(counter)
+        state['current'] += delta
+        state['peak'] = max(state['peak'], state['current'])
+        counter.seek(0)
+        json.dump(state, counter)
+        counter.truncate()
+account(share)
+try:
+    with socket.socket(socket.AF_UNIX) as client:
+        client.connect(os.environ['WORKER_SOCKET'])
+        client.sendall((str(share) + '\\n').encode())
+        client.recv(1)
+finally:
+    account(-share)
 ''')
                 worker.chmod(0o755)
+                counter = root / 'active-shares.json'
+                counter.write_text(json.dumps({'current': 0, 'peak': 0}))
                 with socket.socket(socket.AF_UNIX) as server:
                     server.bind(str(root / 'workers.sock'))
                     server.listen(10)
                     server.settimeout(10)
-                    environment = {**os.environ, 'WORKER_SOCKET': str(root / 'workers.sock')}
-                    with subprocess.Popen([str(root / 'bin/test')], env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+                    environment = {**os.environ, 'WORKER_SOCKET': str(root / 'workers.sock'), 'WORKER_COUNTER': str(counter)}
+                    # Hold the first allocation while later lanes register. Report a wave only
+                    # once every active lane has either acquired a share or really started waiting.
+                    driver = '''
+import concurrent.futures, os, runpy, socket, sys, threading
+runner = runpy.run_path(sys.argv[1])
+executor = concurrent.futures.ThreadPoolExecutor
+class ObservedCondition(threading.Condition):
+    def __init__(self, owner):
+        super().__init__()
+        self.owner = owner
+    def wait(self, timeout=None):
+        lane = self.owner.local.lane
+        self.owner.waiting.add(lane)
+        self.owner.report_wave()
+        try:
+            return super().wait(timeout)
+        finally:
+            self.owner.waiting.discard(lane)
+    def notify_all(self):
+        self.owner.waiting.clear()
+        return super().notify_all()
+class ObservedBudget(runner['ProcessBudget']):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.condition = ObservedCondition(self)
+        self.local = threading.local()
+        self.waiting = set()
+        self.first = None
+        self.first_acquired = threading.Event()
+        self.finished = self.wave_end = 0
+    def report_wave(self):
+        active = min(lanes, 5 - self.finished)
+        if self.finished != self.wave_end or len(self.running) != active:
+            return
+        if any(not self.held.get(lane) and lane not in self.waiting for lane in self.running):
+            return
+        granted = sum(bool(self.held.get(lane)) for lane in self.running)
+        if not granted:
+            return
+        self.wave_end = self.finished + granted
+        with socket.socket(socket.AF_UNIX) as client:
+            client.connect(os.environ['WORKER_SOCKET'])
+            client.sendall(('wave:' + str(granted)).encode())
+    def start(self, lane):
+        with self.condition:
+            if self.first is None:
+                self.first = lane
+        if lane != self.first and not self.first_acquired.wait(timeout=10):
+            raise TimeoutError('First lane did not acquire its share')
+        super().start(lane)
+    def acquire(self, lane):
+        self.local.lane = lane
+        granted = super().acquire(lane)
+        with self.condition:
+            self.first_acquired.set()
+            self.report_wave()
+        return granted
+    def finish(self, lane):
+        with self.condition:
+            super().finish(lane)
+            self.finished += 1
+            self.report_wave()
+def observed_executor(*args, **kwargs):
+    global lanes
+    lanes = kwargs['max_workers']
+    with socket.socket(socket.AF_UNIX) as client:
+        client.connect(os.environ['WORKER_SOCKET'])
+        client.sendall(str(lanes).encode())
+    return executor(*args, **kwargs)
+runner['main'].__globals__.update(ThreadPoolExecutor=observed_executor, ProcessBudget=ObservedBudget)
+sys.exit(runner['main']())
+'''
+                    with subprocess.Popen([sys.executable, '-c', driver, str(root / 'bin/test')], env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
                         completed = 0
                         peaks = []
+                        first_wave_shares = None
                         try:
+                            connection, _ = server.accept()
+                            with connection:
+                                lanes = int(connection.recv(64))
+                            self.assertEqual(lanes, {1: 1, 2: 1, 4: 3, 10: 5}[total])
                             while completed < 5:
                                 clients = []
                                 try:
-                                    client, _ = server.accept()
-                                    clients.append(client)
-                                    # Workers wait for the parent acknowledgement. Drain every concurrent start
-                                    # before releasing a wave. The timeout bounds observation, not worker duration.
-                                    server.settimeout(0.5)
-                                    while True:
-                                        try:
-                                            client, _ = server.accept()
+                                    expected = None
+                                    shares = []
+                                    while expected is None or len(clients) < expected:
+                                        client, _ = server.accept()
+                                        message = client.recv(64).decode()
+                                        if message.startswith('wave:'):
+                                            expected = int(message.split(':')[1])
+                                            client.close()
+                                        else:
                                             clients.append(client)
-                                        except socket.timeout:
-                                            break
-                                    shares = [int(client.recv(64)) for client in clients]
+                                            shares.append(int(message))
+                                    if first_wave_shares is None:
+                                        first_wave_shares = shares
                                     peaks.append(sum(shares))
                                     completed += len(clients)
                                 finally:
                                     for client in clients:
                                         client.sendall(b'x')
                                         client.close()
-                                    server.settimeout(10)
                             stdout, stderr = process.communicate(timeout=10)
                         except BaseException:
                             process.kill()
@@ -196,6 +289,11 @@ with socket.socket(socket.AF_UNIX) as client:
                     self.assertEqual(process.returncode, 0, stdout + stderr)
                     self.assertEqual(completed, 5)
                     self.assertLessEqual(max(peaks), total, peaks)
+                    self.assertEqual(first_wave_shares, [total])
+                    state = json.loads(counter.read_text())
+                    self.assertEqual(state['current'], 0)
+                    self.assertGreaterEqual(state['peak'], max(peaks))
+                    self.assertLessEqual(state['peak'], total, state)
 
     def test_root_test_runner_ignores_removed_test_process_alias(self):
         (self.root / 'bin').mkdir()

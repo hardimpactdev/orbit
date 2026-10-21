@@ -127,7 +127,7 @@ final class TestToolchain
             $directories[] = $php;
         }
 
-        return implode(PATH_SEPARATOR, $directories);
+        return NoSudo::path(implode(PATH_SEPARATOR, $directories));
     }
 
     /** Returns a Bash 4+ interpreter: `/bin/bash` on Linux, Homebrew Bash on macOS. */

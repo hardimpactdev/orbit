@@ -1,4 +1,5 @@
-"""Real generators and real two-parent merges; no mocked Git or output snapshots."""
+"""Marker branch artifacts; real generators, Git drivers and two-parent merges."""
+from contextlib import ExitStack
 import importlib.machinery
 import importlib.util
 import json
@@ -36,16 +37,59 @@ class GeneratedMergeTest(unittest.TestCase):
         git(ROOT, 'clone', '--quiet', '--shared', str(ROOT), str(cls.tree))
         for key, value in {'user.name': 'Merge test', 'user.email': 'merge@example.test',
                            'commit.gpgsign': 'false', 'core.hooksPath': '/dev/null',
-                           'gc.auto': '0'}.items():
+                           'gc.auto': '0', 'maintenance.auto': 'false'}.items():
             git(cls.tree, 'config', key, value)
         # Include the candidate driver even when the suite runs before commit.
         for path in ('.gitattributes', 'bin/generated-merge'):
             shutil.copy2(ROOT / path, cls.tree / path)
         TOOL.dependencies(cls.tree, ROOT)
         TOOL.install(cls.tree)
-        git(cls.tree, 'add', '.gitattributes', 'bin/generated-merge')
+        # Unrelated suites and apps are not generator inputs. Do not copy their
+        # thousands of files into every private merge checkout.
+        for path in ('apps/gateway/tests', 'apps/cli/tests', 'apps/docs/tests',
+                     'apps/e2e', 'apps/desktop', 'apps/agent', 'apps/pi-server',
+                     'apps/web/tests', 'apps/web/fixtures', 'packages/php-sdk/tests',
+                     'packages/php-sdk/fixtures', '.agents'):
+            shutil.rmtree(cls.tree / path)
+        git(cls.tree, 'add', '-u')
+        # Keep the real Gateway, CLI, SDK and all generators. The documentation
+        # corpus only needs the core pages and ADR table used by these merges;
+        # linting unrelated product guides belongs to `composer docs-lint`.
+        api_groups = [group for tab in json.loads((cls.tree / 'docs/docs.json').read_text())['navigation']['tabs']
+                      if tab['tab'] == 'API' for group in tab['groups'] if 'openapi' in group]
+        openapi = (cls.tree / 'docs/openapi.json').read_bytes()
+        shutil.rmtree(cls.tree / 'docs')
+        for folder in ('decisions', 'domains', 'solutions', 'generated'):
+            (cls.tree / 'docs' / folder).mkdir(parents=True)
+        for page in ('README', 'mission', 'architecture', 'tech-stack', 'concepts',
+                     'decisions/README', 'domains/README', 'solutions/README'):
+            (cls.tree / f'docs/{page}.md').write_text('# Documentation\n\nOrbit checks documentation.\n')
+        (cls.tree / 'docs/mission.md').write_text(
+            '# Mission\n\nOrbit checks documentation.\n\n## Principles\n\nAgents operate, humans steer.\n')
+        (cls.tree / 'docs/decisions/overview.mdx').write_text(
+            '# Decisions\n\n## Records\n\n| Record | Decision | Status |\n| --- | --- | --- |\n\n'
+            '## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n')
+        config = {'navigation': {'tabs': [
+            {'tab': 'Guides', 'groups': [
+                {'group': 'Overview', 'pages': ['mission', 'architecture', 'tech-stack', 'concepts']},
+                {'group': 'Records', 'pages': ['decisions/overview']},
+            ]},
+            {'tab': 'API', 'groups': api_groups},
+        ]}, 'redirects': []}
+        (cls.tree / 'docs/docs.json').write_text(json.dumps(config, indent=2) + '\n')
+        (cls.tree / 'docs/openapi.json').write_bytes(openapi)
+        (cls.tree / 'docs/generated/context.json').write_text(
+            json.dumps({'schema_version': 1, 'documents': []}, indent=4) + '\n')
+        for config in ('adr-legacy-allowlist', 'adr-retired-slugs', 'docs-covers-ratchet'):
+            (cls.tree / f'apps/docs/config/{config}.php').write_text('<?php return [];\n')
+        env = dict(os.environ, APP_CONFIG_CACHE=str(cls.tree / 'private-config.php'),
+                   ORBIT_DOCS_ROOT=str(cls.tree / 'docs'))
+        subprocess.run(['php', 'apps/docs/artisan', 'orbit:docs-index'], cwd=cls.tree,
+                       env=env, check=True, capture_output=True)
+        git(cls.tree, 'add', '-A', 'docs', 'apps/docs/config', '.gitattributes', 'bin/generated-merge')
         git(cls.tree, 'commit', '--quiet', '--allow-empty', '-m', 'fixture baseline')
         cls.base = git(cls.tree, 'rev-parse', 'HEAD')
+        git(cls.tree, 'update-ref', 'refs/remotes/origin/main', cls.base)
 
     @classmethod
     def tearDownClass(cls):
@@ -62,23 +106,41 @@ class GeneratedMergeTest(unittest.TestCase):
         git(self.tree, 'checkout', '--quiet', '--detach', commit)
         git(self.tree, 'clean', '-fd', '--', 'docs/decisions')
 
+    def mark_derived(self, label, paths):
+        # These files are outputs, not maintained merge inputs. Invalid marker
+        # bytes force a content conflict and cannot pass any freshness gate.
+        for path in paths:
+            (self.tree / path).write_bytes(f'not generated: {label}\n'.encode())
+
     def check(self):
         tree = self.tree
-        # Compare all six artifacts with a fresh build, not just JSON validity.
+        # Read-only gates independently rebuild their expected output. None
+        # consumes another gate's writes, so check the result concurrently.
         before = {path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS}
-        TOOL.regenerate(tree)
-        for path, contents in before.items():
-            self.assertTrue(contents == (tree / path).read_bytes(), f'{path} differs from a fresh build')
-        run(tree, 'bin/docs-openapi', '--check')
-        run(tree, 'bin/mcp-tools', '--check')
         env = dict(os.environ, ORBIT_DOCS_ROOT=str(tree / 'docs'),
                    APP_CONFIG_CACHE=str(tree / 'private-config.php'))
-        result = subprocess.run(['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
-                                cwd=tree, env=env, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        run(tree, 'bin/docs-nav')
+        schema = Path(self.scratch.name) / 'fresh-schema.d.ts'
+        commands = [
+            ['bin/docs-openapi', '--check'],
+            ['bin/mcp-tools', '--check'],
+            ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
+            ['bin/docs-nav'],
+            [str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+             str(tree / 'docs/openapi.json'), '-o', str(schema)],
+        ]
+        with ExitStack() as processes:
+            checks = [processes.enter_context(subprocess.Popen(
+                command, cwd=tree, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                for command in commands]
+            for command, process in zip(commands, checks):
+                stdout, stderr = process.communicate()
+                self.assertEqual(process.returncode, 0, f'{command}:\n{stdout}{stderr}')
+        self.assertEqual(before['apps/web/src/api/schema.d.ts'], schema.read_bytes(),
+                         'web types differ from a fresh build')
+        for path, contents in before.items():
+            self.assertTrue(contents == (tree / path).read_bytes(), f'{path} changed during freshness checks')
 
-    def merge_both_orders(self, first, second, conflicts):
+    def merge_both_orders(self, first, second, conflicts, cache_lookups=False):
         vanilla = subprocess.run(['git', '-c', 'merge.orbit-generated.driver=git merge-file %A %O %B',
                                   'merge-tree', '--write-tree', first, second],
                                  cwd=self.tree, text=True, capture_output=True)
@@ -86,18 +148,61 @@ class GeneratedMergeTest(unittest.TestCase):
         for path in conflicts:
             self.assertIn(f'CONFLICT (content): Merge conflict in {path}', vanilla.stdout)
         results = []
-        for current, other in ((first, second), (second, first)):
-            self.fresh(current)
-            preview = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', current, '--head', other],
-                                     cwd=self.tree, text=True, capture_output=True)
-            self.assertEqual(preview.returncode, 2, preview.stdout + preview.stderr)
-            self.assertIn('merge_conflict:', preview.stderr)
-            self.assertIn('local_driver_clean:', preview.stderr)
-            git(self.tree, 'merge', '--quiet', '--no-edit', '--no-ff', other)
-            self.assertEqual(git(self.tree, 'diff', '--name-only', '--diff-filter=U'), '')
-            self.check()
-            results.append({path: (self.tree / path).read_bytes() for path in TOOL.ARTIFACTS})
+        trees = []
+        orders = ((first, second), (second, first))
+        # Every command uses immutable SHAs and its own checkout. These are
+        # independent real integrations, not sequential setup for one another.
+        with tempfile.TemporaryDirectory(prefix='reverse-', dir=self.scratch.name) as directory, ExitStack() as processes:
+            reverse = Path(directory) / 'repo'
+            git(self.tree, 'clone', '--quiet', '--shared', '--no-checkout', str(self.tree), str(reverse))
+            for key in ('user.name', 'user.email', 'commit.gpgsign', 'core.hooksPath', 'gc.auto', 'maintenance.auto'):
+                git(reverse, 'config', key, git(self.tree, 'config', key))
+            TOOL.install(reverse)
+            git(reverse, 'checkout', '--quiet', '--detach', second)
+            self.fresh(first)
+            previews = [processes.enter_context(subprocess.Popen(
+                [str(ROOT / 'bin/docs-merge-check'), '--base', current, '--head', other],
+                cwd=self.tree, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                for current, other in orders]
+            env = dict(os.environ, ORBIT_GENERATED_MERGE_DEPENDENCIES=str(ROOT))
+            backward = processes.enter_context(subprocess.Popen(
+                ['git', 'merge', '--quiet', '--no-edit', '--no-ff', first], cwd=reverse,
+                env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+            cached = {}
+            if cache_lookups:
+                # Prime the real driver's cold cache once, then let the actual
+                # Git merge exercise its process-independent cache reads.
+                shutil.rmtree(self.tree / '.git/orbit/generated-merge', ignore_errors=True)
+                previous = Path.cwd()
+                try:
+                    os.chdir(self.tree)
+                    with mock.patch.object(TOOL, 'regenerate', wraps=TOOL.regenerate) as build:
+                        for path in TOOL.ARTIFACTS:
+                            output = Path(self.scratch.name) / 'artifact'
+                            TOOL.merge(['unused', str(output), 'unused', path, first, second])
+                            cached[path] = output.read_bytes()
+                        self.assertEqual(build.call_count, 1)
+                finally:
+                    os.chdir(previous)
+            forward = processes.enter_context(subprocess.Popen(
+                ['git', 'merge', '--quiet', '--no-edit', '--no-ff', second], cwd=self.tree,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+            for tree, merge, preview in zip((self.tree, reverse), (forward, backward), previews):
+                stdout, stderr = merge.communicate()
+                self.assertEqual(merge.returncode, 0, stdout + stderr)
+                self.assertEqual(git(tree, 'diff', '--name-only', '--diff-filter=U'), '')
+                stdout, stderr = preview.communicate()
+                self.assertEqual(preview.returncode, 2, stdout + stderr)
+                self.assertIn('merge_conflict:', stderr)
+                self.assertIn('local_driver_clean:', stderr)
+                results.append({path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS})
+                trees.append(git(tree, 'rev-parse', 'HEAD^{tree}'))
+            for path, contents in cached.items():
+                self.assertEqual(contents, (self.tree / path).read_bytes())
         self.assertTrue(results[0] == results[1], 'merge order changed generated output')
+        self.assertEqual(trees[0], trees[1], 'merge order changed maintained sources')
+        # Identical whole trees have identical lint and generation inputs.
+        self.check()
 
     def test_independent_adr_additions(self):
         commits = []
@@ -128,14 +233,14 @@ class GeneratedMergeTest(unittest.TestCase):
             # Append to the table, not to its following blank paragraph.
             text = text.replace('\n\n| [' + number, '\n| [' + number)
             overview.write_text(text)
-            TOOL.regenerate(self.tree)
+            self.mark_derived(number, [TOOL.ARTIFACTS[0]])
             commits.append(self.commit(f'add ADR {number}'))
         self.merge_both_orders(*commits, conflicts=TOOL.ARTIFACTS[:3])
 
     def test_independent_endpoint_changes(self):
         commits = []
-        # Separate route sources, adjacent new paths: ordinary text merging
-        # conflicts in the OpenAPI, API nav, web types, and MCP manifest.
+        # Separate route sources and maintained nav entries must survive;
+        # conflicting derived markers must be replaced, never text-unioned.
         for name, file, prefix in (('alpha', 'apps/gateway/routes/api.php', 'v1'),
                                    ('beta', 'apps/gateway/extensions/conn/routes/api.php', 'api/v1')):
             self.fresh(self.base)
@@ -144,25 +249,17 @@ class GeneratedMergeTest(unittest.TestCase):
                             f"Route::get('{prefix}/merge-fixture-{name}', "
                             "[\\App\\Http\\Controllers\\Api\\ActivitiesController::class, 'index'])"
                             f"->name('activity:merge-fixture-{name}');\n")
-            TOOL.regenerate(self.tree)
-            spec = json.loads((self.tree / 'docs/openapi.json').read_text())
-            self.assertTrue(f'/api/v1/merge-fixture-{name}' in spec['paths'], 'fixture endpoint is missing')
+            endpoint = f'/api/v1/merge-fixture-{name}'
+            config_path = self.tree / 'docs/docs.json'
+            config = json.loads(config_path.read_text())
+            groups = [group for tab in config['navigation']['tabs'] for group in tab.get('groups', [])]
+            next(group for group in groups if 'GET /api/v1/activities' in group.get('pages', []))['pages'].append(
+                f'GET {endpoint}')
+            config_path.write_text(json.dumps(config, indent=2) + '\n')
+            self.mark_derived(name, TOOL.ARTIFACTS[3:])
             commits.append(self.commit(f'add endpoint {name}'))
-        self.merge_both_orders(*commits, conflicts=[TOOL.ARTIFACTS[index] for index in (1, 3, 4, 5)])
-        # Exercise all six process-independent cache lookups with real builds.
-        # A clean cache must invoke the generators exactly once for this pair.
-        shutil.rmtree(self.tree / '.git/orbit/generated-merge', ignore_errors=True)
-        previous = Path.cwd()
-        try:
-            os.chdir(self.tree)
-            with mock.patch.object(TOOL, 'regenerate', wraps=TOOL.regenerate) as build:
-                for path in TOOL.ARTIFACTS:
-                    output = Path(self.scratch.name) / 'artifact'
-                    TOOL.merge(['unused', str(output), 'unused', path, *commits])
-                    self.assertEqual(output.read_bytes(), (self.tree / path).read_bytes())
-                self.assertEqual(build.call_count, 1)
-        finally:
-            os.chdir(previous)
+        self.merge_both_orders(*commits, conflicts=[TOOL.ARTIFACTS[index] for index in (1, 3, 4, 5)],
+                               cache_lookups=True)
 
     def test_changed_merged_locks_refuse_old_dependencies(self):
         for lock in ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock'):
@@ -208,19 +305,21 @@ class GeneratedMergeTest(unittest.TestCase):
             self.fresh(self.base)
             path = self.tree / 'apps/cli/app/Commands/Activities/ListActivitiesCommand.php'
             path.write_text(path.read_text().replace('List recent', f'List {value} recent'))
-            TOOL.regenerate(self.tree)
+            self.mark_derived(value, TOOL.ARTIFACTS[3:])
             commits.append(self.commit(f'conflicting source {value}'))
         self.fresh(commits[0])
-        preview = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', commits[0], '--head', commits[1]],
-                                 cwd=self.tree, text=True, capture_output=True)
-        self.assertEqual(preview.returncode, 2, preview.stdout + preview.stderr)
-        self.assertIn('merge_conflict:', preview.stderr)
-        self.assertIn('local_driver_failed:', preview.stderr)
-        result = subprocess.run(['git', 'merge', '--no-edit', commits[1]], cwd=self.tree,
-                                text=True, capture_output=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('apps/cli/app/Commands/Activities/ListActivitiesCommand.php',
-                      git(self.tree, 'diff', '--name-only', '--diff-filter=U'))
+        with subprocess.Popen(
+                [str(ROOT / 'bin/docs-merge-check'), '--base', commits[0], '--head', commits[1]],
+                cwd=self.tree, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as preview:
+            result = subprocess.run(['git', 'merge', '--no-edit', commits[1]], cwd=self.tree,
+                                    text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('apps/cli/app/Commands/Activities/ListActivitiesCommand.php',
+                          git(self.tree, 'diff', '--name-only', '--diff-filter=U'))
+            stdout, stderr = preview.communicate()
+            self.assertEqual(preview.returncode, 2, stdout + stderr)
+            self.assertIn('merge_conflict:', stderr)
+            self.assertIn('local_driver_failed:', stderr)
         git(self.tree, 'merge', '--abort')
 
 

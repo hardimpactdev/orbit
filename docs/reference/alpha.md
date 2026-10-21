@@ -33,7 +33,7 @@ Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference
 
 Bootstrap also installs the [merge driver for generated files](/contributor-guide#merging-generated-files). Contributors who merge branches need the Docs and Gateway Composer dependencies and the web dependencies (`--with-bun`); a source alpha trial does not need to merge branches.
 
-Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. Guidance checks run in parallel after all installs succeed.
+Composer installs run one project at a time because concurrent installs can corrupt their shared download cache. Composer still downloads packages concurrently within each install. Guidance checks run in parallel after all installs succeed. CI uses `--dependencies-only` when it needs only the installed projects: this stops before the merge driver, Gateway key, cache seeding, and guidance checks. A source alpha trial needs the normal bootstrap instead.
 
 ## Limits
 
@@ -67,6 +67,6 @@ These criteria are a checklist, not a release approval. A version string in a de
 
 ## Feedback
 
-Use [GitHub issues](https://github.com/nckrtl/orbit/issues) for bugs and questions. Include the source commit from `git rev-parse HEAD`, the CLI output of `orbit --version`, the Gateway version from `orbit gateway:status`, and the operating systems. Describe the command, the expected result, the observed result, and the steps to reproduce it.
+Use [GitHub issues](https://github.com/hardimpactdev/orbit/issues) for bugs and questions. Include the source commit from `git rev-parse HEAD`, the CLI output of `orbit --version`, the Gateway version from `orbit gateway:status`, and the operating systems. Describe the command, the expected result, the observed result, and the steps to reproduce it.
 
 Include stable error codes and request IDs when you have them. Check the output before you share it. Remove tokens, private keys, passwords, environment values, repository URLs that carry credentials, and personal data. Never attach the Gateway database or a state backup. The [contributor guide](/contributor-guide) explains the local checks.

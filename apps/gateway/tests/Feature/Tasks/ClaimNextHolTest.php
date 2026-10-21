@@ -789,7 +789,7 @@ describe('the abandoned workspace sweep', function (): void {
         $group->taskable()->associate($workspace);
         test_update_task($group, [
             'status' => TaskGroupStatus::Settling,
-            'pr_url' => 'https://github.com/nckrtl/orbit/pull/120',
+            'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/120',
             'assistance_requested' => true,
             'assistance_kind' => AssistanceKind::RemovalFailure,
             'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'disk full',
@@ -862,6 +862,13 @@ describe('the abandoned workspace sweep', function (): void {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
+            public function pushHandoff(Task $group, string $commit): void
+            {
+                throw new LogicException('This fake pushes no handoff.');
+            }
+
+            public function deleteHandoffBranch(Task $group): void {}
+
             public function push(Task $group, string $commit): void
             {
                 $this->commits[] = $commit;
@@ -894,6 +901,13 @@ describe('the abandoned workspace sweep', function (): void {
             {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
+
+            public function pushHandoff(Task $group, string $commit): void
+            {
+                throw new LogicException('This fake pushes no handoff.');
+            }
+
+            public function deleteHandoffBranch(Task $group): void {}
 
             public function push(Task $group, string $commit): void
             {
