@@ -65,13 +65,8 @@ final readonly class DatabaseServerLanPolicy
         if (! is_string($address) || ! self::ipv4($address)) {
             return false;
         }
-        foreach (['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] as $range) {
-            if (Ipv4Subnet::from($range)->contains($address)) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any(['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], fn ($range) => Ipv4Subnet::from($range)->contains($address));
     }
 
     public static function ipv4(?string $address): bool
