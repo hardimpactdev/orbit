@@ -5,8 +5,7 @@ covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
-  - apps/gateway/app/Http/Controllers/Api/DatabaseServersController.php
-  - apps/gateway/app/Http/Requests/DatabaseServers/**
+  - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
   - apps/gateway/app/Models/DatabaseServer.php
   - apps/gateway/app/Infrastructure/Firewall/{NativeDatabaseServerFirewall.php,database_server_firewall.py}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
@@ -330,7 +329,7 @@ The Valkey on `services` holds the Gateway queue and the collector's state, and 
 
 ### PostgreSQL shares the SQL server lifecycle
 
-PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisioning steps, connection and user actions. A separate manager would duplicate ownership and retry rules. PostgreSQL has its own statement renderer because its identifier and literal escaping differ from MySQL. SCRAM verifiers keep application passwords out of server SQL logs. The major-18 image restriction preserves the documented volume layout across the first-start container recreation.
+PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisioning steps, connection and user actions. A separate manager would duplicate ownership and retry rules. PostgreSQL has its own statement renderer because its identifier and literal escaping differ from MySQL. SCRAM verifiers keep application passwords out of server SQL logs. Restricting the image to PostgreSQL 18 preserves the documented volume layout when the first-start container is recreated.
 
 ### LAN access names its peers
 
