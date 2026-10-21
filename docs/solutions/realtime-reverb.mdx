@@ -31,14 +31,14 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 ### What the converge does
 
 1. It installs the role packages: `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml`. `php-curl` and `php-xml` let `composer install` pass its platform check on a fresh Ubuntu 26.04 Node.
-2. It generates a Reverb app ID, app key, app secret, and a Laravel `APP_KEY` the first time, and reuses them later. It stores them as settings of that Node. The secret and `APP_KEY` are encrypted.
+2. It generates a Laravel `APP_KEY` for the Reverb server the first time, and stores it encrypted as a setting of that Node. It also creates the Gateway's own [Reverb app](/reference/websocket-apps), `gateway`, when it is missing. Later converges reuse both.
 3. It checks out `https://github.com/nckrtl/orbit-reverb.git` at `main` into `/opt/orbit/websocket` as the managed user and runs `composer install --no-dev`.
-4. It writes the app's `.env` with mode `0600`.
-5. It installs and starts `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
+4. It writes the app's `.env` with mode `0600`. `REVERB_APPS` lists every [Reverb app](/reference/websocket-apps#the-reverb-server).
+5. It installs `orbit-websocket.service`, which runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. Each converge restarts Reverb, so it loads the current code and every app, and clients reconnect.
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
 7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 
-Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. When a step after the runtime fails, the converge stops the runtime again. A failed rollback reports `websocket.rollback_failed`.
+Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. The converge stops the runtime again only when it created the role assignment. An existing assignment keeps Reverb running and reports the failure. That covers `--converge-existing`, a retry after a failed converge, `websocket:app:create`/`destroy`, and a relocate target. A failed rollback reports `websocket.rollback_failed`.
 
 `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
@@ -50,15 +50,15 @@ The Gateway reads the connection from the active role assignment. It needs no br
 orbit node:role:relocate <node> websocket --force
 ```
 
-Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. Removing the role and adding it again would generate a new identity, and every client would need the new key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
+Relocate copies the server's `APP_KEY` to the target when the target has none, and never overwrites one. The apps are Gateway records, so they do not move. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
 
 ### Remove the role
 
-`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the stored credentials. `--purge-data` also deletes the checkout. With `--offline`, the Gateway removes only the DNS record and the credentials.
+`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the server's `APP_KEY`. `--purge-data` also deletes the checkout. With `--offline`, the Gateway removes only the DNS record and the `APP_KEY`. The apps stay, so a new role serves them with the same keys.
 
 ## Limits
 
-This covers one Reverb server behind one `websocket` assignment. It does not cover several Reverb Nodes, Redis-backed scaling, or rotating the Reverb secret without a reconnect.
+This covers one Reverb server behind one `websocket` assignment. That server serves several [Reverb apps](/reference/websocket-apps). It does not cover several Reverb Nodes, Redis-backed scaling, or rotating an app secret without a reconnect.
 
 ## Verification
 

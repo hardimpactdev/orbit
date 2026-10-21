@@ -12,6 +12,8 @@ covers:
 
 # Gateway response fixtures
 
+The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
+
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
 Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs.

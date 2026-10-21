@@ -1,0 +1,18 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\WebSocket\\DestroyWebSocketAppRequest",
+    "route": "DELETE /api/v1/websocket-apps/{websocket_app}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 2,
+            "name": "hauzer",
+            "app_id": "hauzerappid000000001",
+            "key": "hauzerappkey00000001",
+            "instance_ids": []
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

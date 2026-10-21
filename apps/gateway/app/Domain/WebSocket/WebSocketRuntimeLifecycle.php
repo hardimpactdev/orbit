@@ -9,7 +9,7 @@ use App\Models\NodeRole;
 
 interface WebSocketRuntimeLifecycle
 {
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void;
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void;
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void;
 

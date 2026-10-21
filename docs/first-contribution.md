@@ -4,6 +4,7 @@ sidebarTitle: "First contribution"
 description: "The steps a person follows to make a first change to Orbit, from a fresh clone to a merged pull request."
 covers:
   - .github/pull_request_template.md
+  - bin/project-vocabulary
 ---
 
 # Your first contribution
@@ -103,6 +104,8 @@ CI also runs checks from the repository root that no project check covers. They 
 | Any text, for old names that `bin/project-vocabulary` lists | `php bin/project-vocabulary` |
 
 The MCP tool manifest is generated from the API reference, so an API change can make both commands report drift. When either does, run `bin/docs-openapi` and then `bin/mcp-tools` without `--check`, and commit their output. The other checks name what to fix.
+
+The vocabulary checker permits GitHub and [Reverb app](/reference/websocket-apps) identifiers. They belong to those integrations. Orbit uses Project and Instance identifiers for its own records.
 
 ## 6. Open a pull request
 

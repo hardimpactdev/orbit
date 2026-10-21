@@ -10,38 +10,40 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Support\Str;
+use App\Models\WebSocketApp;
 
 final readonly class NativeWebSocketCredentialManager implements WebSocketCredentialManager
 {
-    private const int SecretLength = 40;
-
-    private const int IdentifierLength = 20;
-
     public function __construct(
         private SettingRepository $settings,
+        private WebSocketAppIssuer $apps = new WebSocketAppIssuer,
         private WebSocketDnsTarget $dnsTarget = new WebSocketDnsTarget,
     ) {}
 
-    public function ensure(Node $node): WebSocketCredentials
+    public function ensure(Node $node): WebSocketServerCredentials
     {
         $scope = $this->scope($node);
+        $laravelAppKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKeyLaravel)
+            ?? $this->generateLaravelAppKey($scope);
 
-        $appId = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppId);
-        $appKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKey);
-        $appSecret = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppSecret);
-        $laravelAppKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKeyLaravel);
+        if (! WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->exists()) {
+            $this->apps->issue(WebSocketApp::GatewayName);
+        }
 
-        $appId ??= $this->generate($scope, WebSocketFootprint::SettingKeyAppId, self::IdentifierLength, SettingValueProtection::Plain);
-        $appKey ??= $this->generate($scope, WebSocketFootprint::SettingKeyAppKey, self::IdentifierLength, SettingValueProtection::Plain);
-        $appSecret ??= $this->generate($scope, WebSocketFootprint::SettingKeyAppSecret, self::SecretLength, SettingValueProtection::Secret);
-        $laravelAppKey ??= $this->generateLaravelAppKey($scope);
-
-        return new WebSocketCredentials($appId, $appKey, $appSecret, $laravelAppKey);
+        return new WebSocketServerCredentials(
+            $laravelAppKey,
+            array_values(WebSocketApp::query()
+                ->orderBy('name')
+                ->get()
+                ->map(static fn (WebSocketApp $app): WebSocketCredentials => $app->credentials())
+                ->all()),
+        );
     }
 
     public function current(): ?WebSocketCredentials
@@ -58,23 +60,9 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         }
 
         $node = $assignments->sole()->node;
+        $app = WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->first();
 
-        if ($node->status !== LifecycleStatus::Active) {
-            return null;
-        }
-
-        $scope = $this->scope($node);
-        $appId = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppId);
-        $appKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKey);
-        $appSecret = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppSecret);
-        $laravelAppKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKeyLaravel);
-
-        if (
-            ! is_string($appId) || $appId === ''
-            || ! is_string($appKey) || $appKey === ''
-            || ! is_string($appSecret) || $appSecret === ''
-            || ! is_string($laravelAppKey) || $laravelAppKey === ''
-        ) {
+        if ($node->status !== LifecycleStatus::Active || ! $app instanceof WebSocketApp) {
             return null;
         }
 
@@ -87,10 +75,9 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         ));
 
         return new WebSocketCredentials(
-            $appId,
-            $appKey,
-            $appSecret,
-            $laravelAppKey,
+            $app->app_id,
+            $app->key,
+            $app->secret,
             $addresses[0] ?? null,
             $addresses,
         );
@@ -98,24 +85,7 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
 
     public function purge(Node $node): void
     {
-        $scope = $this->scope($node);
-
-        foreach ([
-            WebSocketFootprint::SettingKeyAppId,
-            WebSocketFootprint::SettingKeyAppKey,
-            WebSocketFootprint::SettingKeyAppSecret,
-            WebSocketFootprint::SettingKeyAppKeyLaravel,
-        ] as $key) {
-            $this->settings->delete($scope, $key);
-        }
-    }
-
-    private function generate(SettingScope $scope, string $key, int $length, SettingValueProtection $protection): string
-    {
-        $value = Str::random($length);
-        $this->settings->put($scope, $key, $value, $protection);
-
-        return $value;
+        $this->settings->delete($this->scope($node), WebSocketFootprint::SettingKeyAppKeyLaravel);
     }
 
     private function generateLaravelAppKey(SettingScope $scope): string

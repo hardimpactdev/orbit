@@ -1,0 +1,27 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\WebSocket\\AddInstanceWebSocketAppRequest",
+    "route": "PUT /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+    "status": 200,
+    "body": {
+        "data": {
+            "instance_id": 1,
+            "name": "hauzer",
+            "keys": [
+                "BROADCAST_CONNECTION",
+                "REVERB_APP_ID",
+                "REVERB_APP_KEY",
+                "REVERB_APP_SECRET",
+                "REVERB_HOST",
+                "REVERB_PORT",
+                "REVERB_SCHEME"
+            ],
+            "operation": "attach",
+            "changed": true,
+            "key_count": 7
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

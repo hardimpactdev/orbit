@@ -6,8 +6,10 @@ namespace App\Domain\Instances\Environment;
 
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 
@@ -253,8 +255,13 @@ final readonly class InstanceEnvironmentStore
                 return;
             }
 
+            // A production clone gets its own Reverb app through `instance:websocket:add`, never the candidate's.
+            $websocketKeys = WebSocketAppTarget::query()->where('instance_id', $source->instanceId)->exists()
+                ? WebSocketAppEnvProjection::Keys
+                : [];
+
             foreach ($this->storedValues($source->instanceId) as $key => $value) {
-                if (str_starts_with($key, 'DB_')) {
+                if (str_starts_with($key, 'DB_') || in_array($key, $websocketKeys, true)) {
                     continue;
                 }
 

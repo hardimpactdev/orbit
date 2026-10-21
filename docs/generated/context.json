@@ -340,6 +340,7 @@
                 "Activity",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node"
             ],
             "governing_adrs": []
@@ -654,6 +655,20 @@
             "concepts": [
                 "Extension",
                 "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket.mdx",
+            "title": "websocket",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -1356,6 +1371,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Pi server",
@@ -2965,6 +2981,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/websocket-apps.md",
+            "title": "Reverb apps",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/wireguard-endpoints.md",
             "title": "WireGuard endpoints",
             "kind": "reference",
@@ -3077,6 +3113,7 @@
                 "Gateway",
                 "Node",
                 "Node agent",
+                "Project",
                 "Role",
                 "Route"
             ],

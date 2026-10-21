@@ -4,47 +4,58 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Domain\WebSocket\WebSocketCredentials;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\Node;
 use App\Models\Setting;
+use App\Models\WebSocketApp;
+use Illuminate\Support\Facades\DB;
 
-it('generates credentials once and keeps them stable across converges', function (): void {
+it('creates the Gateway app and the server APP_KEY once and keeps them stable across converges', function (): void {
     $node = websocketCredentialsNode();
     $manager = app(WebSocketCredentialManager::class);
 
     $first = $manager->ensure($node);
     $second = $manager->ensure($node);
 
-    expect($second->appId)->toBe($first->appId)
-        ->and($second->appKey)->toBe($first->appKey)
-        ->and($second->appSecret)->toBe($first->appSecret)
-        ->and($second->laravelAppKey)->toBe($first->laravelAppKey)
-        ->and($first->appId)->not->toBe('')
+    expect($second)->toEqual($first)
+        ->and($first->apps)->toHaveCount(1)
+        ->and($first->apps[0]->appId)->toBe(WebSocketApp::query()->sole()->app_id)
+        ->and(WebSocketApp::query()->sole()->name)->toBe(WebSocketApp::GatewayName)
         ->and($first->laravelAppKey)->toStartWith('base64:');
 });
 
-it('never stores the secret or the generated APP_KEY unencrypted', function (): void {
+it('returns every app for the server, ordered by name', function (): void {
+    $node = websocketCredentialsNode();
+    $issuer = new WebSocketAppIssuer;
+    $hauzer = $issuer->issue('hauzer');
+    $conn = $issuer->issue('conn');
+
+    $apps = app(WebSocketCredentialManager::class)->ensure($node)->apps;
+
+    expect(array_map(static fn (WebSocketCredentials $app): string => $app->appId, $apps))->toBe([
+        $conn->app_id,
+        WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->sole()->app_id,
+        $hauzer->app_id,
+    ]);
+});
+
+it('never stores an app secret or the generated APP_KEY unencrypted', function (): void {
     $node = websocketCredentialsNode();
     $credentials = app(WebSocketCredentialManager::class)->ensure($node);
+    $setting = Setting::query()->where('scope_type', 'node')->where('scope_id', $node->id)->sole();
+    $raw = DB::table('websocket_apps')->sole();
 
-    $rows = Setting::query()->where('scope_type', 'node')->where('scope_id', $node->id)->get();
-
-    expect($rows)->toHaveCount(4);
-
-    foreach ($rows as $row) {
-        if (in_array($row->key, [
-            WebSocketFootprint::SettingKeyAppSecret,
-            WebSocketFootprint::SettingKeyAppKeyLaravel,
-        ], true)) {
-            expect($row->is_secret)->toBeTrue()
-                ->and($row->value)->not->toContain($credentials->appSecret)
-                ->and($row->value)->not->toContain($credentials->laravelAppKey);
-        }
-    }
+    expect($setting->key)->toBe(WebSocketFootprint::SettingKeyAppKeyLaravel)
+        ->and($setting->is_secret)->toBeTrue()
+        ->and($setting->value)->not->toContain($credentials->laravelAppKey)
+        ->and($raw->secret)->not->toBe($credentials->apps[0]->appSecret)
+        ->and(WebSocketApp::query()->sole()->toArray())->not->toHaveKey('secret');
 });
 
 it('returns null credentials when no websocket role is active', function (): void {
@@ -63,15 +74,14 @@ it('returns null credentials when more than one websocket role is active', funct
 it('reads the active assignment credentials through current()', function (): void {
     $node = websocketCredentialsNode();
     $manager = app(WebSocketCredentialManager::class);
-    $ensured = $manager->ensure($node);
+    $ensured = $manager->ensure($node)->apps[0];
 
     $current = $manager->current();
 
     expect($current)->not->toBeNull()
         ->and($current?->appId)->toBe($ensured->appId)
         ->and($current?->appKey)->toBe($ensured->appKey)
-        ->and($current?->appSecret)->toBe($ensured->appSecret)
-        ->and($current?->laravelAppKey)->toBe($ensured->laravelAppKey);
+        ->and($current?->appSecret)->toBe($ensured->appSecret);
 });
 
 it('points the Gateway realtime client at the Node that serves reverb.orbit during a move', function (): void {
@@ -112,14 +122,15 @@ it('points the Gateway realtime client at the Node that serves reverb.orbit duri
     expect($manager->current()?->addresses())->toBe(['10.44.0.90']);
 });
 
-it('purges every stored credential', function (): void {
+it('purges the server APP_KEY and keeps the apps', function (): void {
     $node = websocketCredentialsNode();
     $manager = app(WebSocketCredentialManager::class);
     $manager->ensure($node);
 
     $manager->purge($node);
 
-    expect(Setting::query()->where('scope_type', 'node')->where('scope_id', $node->id)->count())->toBe(0);
+    expect(Setting::query()->where('scope_type', 'node')->where('scope_id', $node->id)->count())->toBe(0)
+        ->and(WebSocketApp::query()->count())->toBe(1);
 });
 
 function websocketCredentialsNode(string $name = 'websocket-node', string $wireguardIp = '10.44.0.90'): Node

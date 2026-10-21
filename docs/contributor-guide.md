@@ -57,6 +57,8 @@ The start commit is the merge base with `origin/main`; repeat `--paths` for ever
 
 A person who contributes outside Orbit Tasks has no docs subtask. That person can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
 
+The impact checker maps each CLI family to `docs/cli/<family>.mdx`. Register a new family in `DocsImpact::CLI_FAMILIES` and add its reference page in the same change.
+
 At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
 
 A reviewer-confirmed waiver is a `page: reason` line in `.git/orbit/docs-unaffected/<branch>.txt`, named after the checked-out branch. Linked worktrees use the primary checkout's `.git`. The gate reads only the current branch's file, and a detached HEAD has none. The file is never committed, so a waiver never reaches `main` or another branch. The gate's log lists the waivers it accepted under `exceptions`, and the reviewer confirms each one. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.

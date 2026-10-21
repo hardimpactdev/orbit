@@ -26,6 +26,8 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
+use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
@@ -34,6 +36,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\WebSocketAppTarget;
 
 beforeEach(function (): void {
     $this->caller = clone_api_node('clone-api-caller');
@@ -268,6 +271,62 @@ it('returns the ordinary created Instance and records the target without SQLite 
         ->assertOk()
         ->assertJsonPath('data.warnings', []);
 })->with(['without SQLite' => false, 'with SQLite' => true]);
+
+it('leaves the candidate Reverb app off the production clone', function (): void {
+    $writer = new Orb198ApiEnvironmentWriter;
+    $hauzer = new WebSocketAppIssuer()->issue('hauzer');
+    WebSocketAppTarget::query()->create(['websocket_app_id' => $hauzer->id, 'instance_id' => $this->candidate->id]);
+
+    foreach (new WebSocketAppEnvProjection()->project($hauzer) as $key => $value) {
+        $this->candidate->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+
+    $this->candidate->environmentValues()->create(['env_key' => 'APP_NAME', 'env_value' => 'Hauzer']);
+    $this->destinationNode->update(['tld' => 'prod.orbit']);
+    $this->destinationNode->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $candidateRoute = Route::query()->create([
+        'project_id' => $this->candidate->project_id,
+        'node_id' => $this->candidateNode->id,
+        'domain' => 'candidate.clone-api.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $candidateRoute->targets()->create([
+        'instance_id' => $this->candidate->id,
+        'position' => 0,
+    ]);
+    $candidateRoute->update(['status' => RouteStatus::Active]);
+    app()->instance(InstanceCloneCandidateInspector::class, new Orb198ApiCandidateInspector);
+    app()->instance(InstanceEnvironmentOperationLock::class, new Orb198ApiEnvironmentLock);
+    app()->instance(AppDevSourceOperationLock::class, new Orb198ApiSourceLock);
+    app()->instance(ProductionInstanceSourceLifecycle::class, new Orb198ApiProductionSource);
+    app()->instance(InstanceOperationPreflight::class, new Orb198ApiEnvironmentPreflight);
+    app()->instance(InstanceEnvironmentWriter::class, $writer);
+    app()->instance(InstanceSqliteSeeder::class, new Orb198ApiSqliteSeeder);
+    app()->instance(ProductionRouteProjector::class, new Orb198ApiProductionProjection);
+    app()->instance(ProductionCloneRouteProjector::class, new Orb198ApiCloneProjection);
+    app()->instance(DevelopmentProjectionOperationLock::class, new Orb198ApiProjectionOwner);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->cloneUrl, [
+            'node_id' => $this->destinationNode->id,
+            'name' => 'target',
+            'preview_name' => 'shop.com',
+        ])
+        ->assertCreated();
+
+    $target = Instance::query()->where('name', 'target')->sole();
+
+    expect($target->environmentValues()->pluck('env_key')->all())->toContain('APP_NAME')
+        ->and($target->environmentValues()->whereIn('env_key', WebSocketAppEnvProjection::Keys)->exists())->toBeFalse()
+        ->and($writer->contents)->not->toContain($hauzer->secret)
+        ->and(WebSocketAppTarget::query()->pluck('instance_id')->all())->toBe([$this->candidate->id]);
+});
 
 it('returns an active Cluster-scoped clone with the production Node TLD', function (): void {
     $this->destinationNode->update(['tld' => 'prod.orbit']);
