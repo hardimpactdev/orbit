@@ -251,7 +251,7 @@ describe('machine recipe structure and identity', function (): void {
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
             ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
             ->and($policy->purgeProfiles)->toBe(['ci-runner'])
-            ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
+            ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror');
     });
 
     it('names one exact PHP build per version for every environment', function (): void {

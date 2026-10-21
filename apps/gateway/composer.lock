@@ -2908,12 +2908,12 @@
             "version": "0.1.5",
             "source": {
                 "type": "git",
-                "url": "https://github.com/nckrtl/horizon-new-dawn.git",
+                "url": "https://github.com/hardimpactdev/horizon-new-dawn.git",
                 "reference": "841bb7333cf24915764be3f45d0235a96677a661"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/horizon-new-dawn/zipball/841bb7333cf24915764be3f45d0235a96677a661",
+                "url": "https://api.github.com/repos/hardimpactdev/horizon-new-dawn/zipball/841bb7333cf24915764be3f45d0235a96677a661",
                 "reference": "841bb7333cf24915764be3f45d0235a96677a661",
                 "shasum": ""
             },
@@ -2962,7 +2962,7 @@
                 }
             ],
             "description": "A React and Inertia interface for Laravel Horizon.",
-            "homepage": "https://github.com/nckrtl/horizon-new-dawn",
+            "homepage": "https://github.com/hardimpactdev/horizon-new-dawn",
             "keywords": [
                 "dashboard",
                 "horizon",
@@ -2972,8 +2972,8 @@
                 "react"
             ],
             "support": {
-                "issues": "https://github.com/nckrtl/horizon-new-dawn/issues",
-                "source": "https://github.com/nckrtl/horizon-new-dawn"
+                "issues": "https://github.com/hardimpactdev/horizon-new-dawn/issues",
+                "source": "https://github.com/hardimpactdev/horizon-new-dawn"
             },
             "time": "2026-07-30T16:49:56+00:00"
         },
