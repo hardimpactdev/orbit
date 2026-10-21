@@ -283,6 +283,8 @@ it('prepares a separate release before stopping the running service', function (
     mkdir($directory.'/systemd', 0700);
     mkdir($directory.'/current', 0700);
     file_put_contents($directory.'/current/version', 'old');
+    mkdir($directory.'/current.releases/release.stale', 0700, true);
+    mkdir($directory.'/current.releases/previous.stale', 0700);
     $scripts = [
         'sudo' => <<<'SH'
             #!/bin/bash
@@ -307,7 +309,7 @@ it('prepares a separate release before stopping the running service', function (
             #!/bin/bash
             printf '%s\n' "$*" >> "$TEST_INSTALL_EVENTS"
             if [ "$1" = stop ]; then
-                test "$(cat "$TEST_INSTALL_CURRENT/version")" = old || exit 2
+                test "$(cat "$TEST_INSTALL_CURRENT/version")" = "$TEST_INSTALL_PREVIOUS" || exit 2
             fi
             if [ "$1" = restart ]; then
                 test "$(cat "$TEST_INSTALL_CURRENT/version")" = new || exit 3
@@ -335,20 +337,30 @@ it('prepares a separate release before stopping the running service', function (
     try {
         $process = new Process(['bash', '-seu', '--', 'test-user', 'test-group', $directory.'/current', 'test-repository', 'test-ref'], env: [
             'PATH' => $directory.'/bin:'.getenv('PATH'), 'TEST_INSTALL_EVENTS' => $directory.'/events',
-            'TEST_INSTALL_FAIL' => $buildFails ? '1' : '0', 'TEST_INSTALL_CURRENT' => $directory.'/current',
+            'TEST_INSTALL_PREVIOUS' => 'old', 'TEST_INSTALL_FAIL' => $buildFails ? '1' : '0', 'TEST_INSTALL_CURRENT' => $directory.'/current',
         ], input: $script);
         $process->run();
         $events = file_get_contents($directory.'/events');
         if ($buildFails) {
             expect($process->isSuccessful())->toBeFalse()->and($events)->toBe("build\n")
                 ->and(file_get_contents($directory.'/current/version'))->toBe('old')
-                ->and(glob($directory.'/current.releases/release.*'))->toBe([]);
+                ->and(glob($directory.'/current.releases/release.*'))->toBe([$directory.'/current.releases/release.stale'])
+                ->and(is_dir($directory.'/current.releases/previous.stale'))->toBeTrue();
         } else {
             expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
                 ->and(is_link($directory.'/current'))->toBeTrue()
                 ->and(file_get_contents($directory.'/current/version'))->toBe('new')
                 ->and($events)->toContain("build\ncat orbit-websocket.service\nstop orbit-websocket")
                 ->and(glob($directory.'/current.releases/previous.*/version'))->toHaveCount(1);
+            expect(glob($directory.'/current.releases/*'))->toHaveCount(2);
+            for ($install = 0; $install < 2; $install++) {
+                $previous = readlink($directory.'/current');
+                $process->setEnv([...$process->getEnv(), 'TEST_INSTALL_PREVIOUS' => 'new']);
+                $process->mustRun();
+                $releases = glob($directory.'/current.releases/*');
+                expect($releases)->toHaveCount(2)->toContain($previous, readlink($directory.'/current'));
+            }
+
         }
     } finally {
         new Filesystem()->remove($directory);

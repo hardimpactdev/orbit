@@ -45,7 +45,7 @@ it('commits once and reports pending until both current process boots confirm', 
             ->postJson('/api/v1/websocket-registry/processes/'.$runtime->id.'/boots', ['boot_id' => $boot])->assertNoContent();
         $this->putJson('/api/v1/websocket-registry/processes/'.$runtime->id, [
             'boot_id' => $boot, 'sequence' => 1, ...$version, 'state' => 'serving',
-            'app_count' => 1, 'connections' => [], 'messages' => [], 'error' => null,
+            'app_count' => 1, 'connections' => [], 'error' => null,
         ])->assertNoContent();
         $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->withoutHeader('Authorization')
             ->getJson('/api/v1/websocket-operations/'.$operationId)->assertOk()
@@ -76,7 +76,7 @@ it('fences reports from an older boot and rejects its registration replay', func
     $this->postJson($base.'/boots', ['boot_id' => $old])->assertNoContent();
     $this->postJson($base.'/boots', ['boot_id' => $new])->assertNoContent();
     $this->postJson($base.'/boots', ['boot_id' => $old])->assertConflict();
-    $this->putJson($base, ['boot_id' => $old, 'sequence' => 100, ...app(WebSocketRegistry::class)->version(), 'state' => 'serving', 'app_count' => 0, 'connections' => [], 'messages' => []])->assertConflict();
+    $this->putJson($base, ['boot_id' => $old, 'sequence' => 100, ...app(WebSocketRegistry::class)->version(), 'state' => 'serving', 'app_count' => 0, 'connections' => []])->assertConflict();
     expect($this->runtime->refresh()->boot_id)->toBe($new)->and($this->runtime->applied_revision)->toBeNull();
 });
 

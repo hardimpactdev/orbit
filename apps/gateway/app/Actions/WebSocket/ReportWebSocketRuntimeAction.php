@@ -46,7 +46,7 @@ final readonly class ReportWebSocketRuntimeAction
             $runtime->update([
                 'epoch' => $report['epoch'], 'applied_revision' => $report['revision'], 'report_sequence' => $report['sequence'],
                 'reported_at' => now(), 'state' => $report['state'],
-                'measurements' => ['app_count' => $report['app_count'], 'connections' => $report['connections'], 'messages' => $report['messages'] ?? []],
+                'measurements' => ['app_count' => $report['app_count'], 'connections' => $report['connections']],
             ]);
         });
     }

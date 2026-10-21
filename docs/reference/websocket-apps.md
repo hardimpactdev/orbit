@@ -105,19 +105,17 @@ Rotation keeps the app key, generates a fresh secret, and advances its credentia
 
 Environment synchronization and application reload remain separate operations. The rotating app can have a short interruption while its publisher or private-channel authorization adopts the new secret. Revocation does not wait for an offline Instance.
 
-### Runtime measurements
-
-Reports include app count, all open sockets by app, and message and byte counters by direction for currently configured apps. Outbound messages count socket sends, including fan-out. They do not count unique published events. The process boot identity identifies a counter reset. Removing an app clears its counters. The future Orbit dashboard owns presentation and storage.
-
 ### Server upgrades
 
-Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
+Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role. After a successful server activation, Orbit keeps the active release and its immediate predecessor and deletes older staged releases. A failed preparation or restart does not prune releases.
 
 ## Deploy and recover
 
-Each Gateway release pins an immutable orbit-reverb commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php`. This value has no environment override. A Gateway rollback selects that release's matching server commit. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
+Merge the managed orbit-reverb server first, then pin its squash-merge commit from main in the Gateway release and deploy that Gateway. Do not converge any websocket role between the server merge and the Gateway deployment: the older Gateway still installs server main.
 
-Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. Recovery rolls forward to a compatible release or restores a coordinated backup.
+Each Gateway release pins an immutable orbit-reverb commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php`. This value has no environment override. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
+
+Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. After a rollback between pinned Gateway releases, converge the websocket role in an announced reconnect window to install the matching server commit. A Gateway rollback only switches Gateway code; it does not change the running Reverb process. Once the managed orbit-reverb server is on main, rollback to a Gateway release before this one is unsupported. Roll forward instead.
 
 After restoring the Gateway database, restart every Reverb process in a reconnect window so it registers a new boot and loads a fresh snapshot. A changed registry epoch, a lower revision, or different contents at the same revision makes a running process exit with failure; systemd restarts it. An unchanged revision can return HTTP 304, so automatic detection does not replace the required restart after a restore. Recovery does not fall back to a static app list.
 

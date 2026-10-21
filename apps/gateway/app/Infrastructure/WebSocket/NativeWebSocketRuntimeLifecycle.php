@@ -207,6 +207,10 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             if systemctl cat orbit-websocket.service >/dev/null 2>&1; then
                 systemctl stop orbit-websocket
             fi
+            previous=""
+            if [ -L "\$install_path" ]; then
+                previous=\$(readlink -f -- "\$install_path")
+            fi
             if [ -d "\$install_path" ] && [ ! -L "\$install_path" ]; then
                 previous=\$(mktemp -d "\$releases/previous.XXXXXXXX")
                 rmdir "\$previous"
@@ -221,6 +225,12 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             systemctl enable --quiet orbit-websocket
             systemctl restart orbit-websocket
             systemctl is-active --quiet orbit-websocket
+            for release in "\$releases"/release.* "\$releases"/previous.*; do
+                [ -d "\$release" ] || continue
+                if [ "\$release" != "\$candidate" ] && [ "\$release" != "\$previous" ]; then
+                    rm -rf -- "\$release"
+                fi
+            done
             BASH;
     }
 

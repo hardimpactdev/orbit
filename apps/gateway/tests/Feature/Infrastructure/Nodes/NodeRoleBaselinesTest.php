@@ -87,7 +87,9 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
@@ -1761,3 +1763,23 @@ function ci_role_baseline(array &$events): CiRunnerRoleBaseline
         new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         baseline_firewall($events), new CiRunnerHostProgram($runner, new RemoteProgramCatalog));
 }
+
+it('withdraws every runtime only on the unreachable websocket role Node', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::WebSocket, 'dead-websocket');
+    [$other] = role_baseline_models(RoleName::WebSocket, 'other-websocket');
+    $runtimes = [];
+    foreach ([[$node, 'default'], [$node, 'second'], [$other, 'default']] as [$host, $slot]) {
+        $runtimes[] = WebSocketRuntime::query()->create([
+            'id' => (string) Str::uuid(), 'node_id' => $host->id, 'slot' => $slot,
+            'registry_token' => 'test-registry', 'notification_token' => 'test-notification',
+        ]);
+    }
+
+    websocket_role_baseline($events)->removeUnreachable($node, $assignment);
+
+    expect($runtimes[0]->refresh()->required)->toBeFalse()
+        ->and($runtimes[1]->refresh()->required)->toBeFalse()
+        ->and($runtimes[2]->refresh()->required)->toBeTrue()
+        ->and($events)->toBe([]);
+});

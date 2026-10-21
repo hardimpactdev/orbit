@@ -54,7 +54,7 @@ Relocate copies the server's `APP_KEY` to the target when the target has none, a
 
 ### Remove the role
 
-`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the server's `APP_KEY`. `--purge-data` also deletes the checkout. With `--offline`, the Gateway removes only the DNS record and the `APP_KEY`. The process remains required for app-change confirmation until shutdown is verified. Node deletion is blocked while any required process remains. The apps stay, so a new role serves them with the same keys.
+`orbit node:role:remove <node> websocket --force` withdraws the Caddy site, stops and disables the unit, removes the certificate and DNS record, and deletes the server's `APP_KEY`. `--purge-data` also deletes the checkout. With `--offline --force`, after confirming the Node is dead or isolated from clients, the Gateway withdraws its publication and credentials and abandons its runtime identities. It cannot stop the remote process. See [dead websocket Nodes](/reference/websocket-apps#remove-a-dead-websocket-node) before returning that machine to service. Ordinary removal keeps unconfirmed runtimes required. The apps stay, so a new role serves them with the same keys.
 
 ## Limits
 
