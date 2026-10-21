@@ -905,7 +905,7 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 | Group | Roles |
 | --- | --- |
 | 1 | `app-dev` |
-| 2 | `metrics`, `analytics` |
+| 2 | `ci-runner`, `metrics`, `analytics` |
 | 3 | `database`, `websocket`, `vpn`, `router` |
 | 4 | `app-prod`, `ingress` |
 

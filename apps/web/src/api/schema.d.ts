@@ -12458,7 +12458,7 @@ export interface operations {
                     user?: string;
                     /** @description Managed user; Linux defaults to orbit, and macOS requires the same existing account as user */
                     orbit_user?: string;
-                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics")[];
+                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner")[];
                     cluster_id?: number | null;
                     /** @description Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it */
                     wireguard_ip?: string | null;
@@ -13526,7 +13526,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     converge_existing?: boolean;
                     /** @description Conditionally required. */
                     postgres_process_id?: number;
@@ -13625,7 +13625,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     /** @description Confirm destructive role removal and dependent cleanup */
                     force?: boolean;
                     /** @description Request supported role-owned data cleanup */
@@ -13713,7 +13713,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     /** @description Confirm the role transfer */
                     force?: boolean;
                     /** @description Optional source Node ID or name */

@@ -256,6 +256,8 @@ Role operations on one Node run one at a time. A command that waits more than 2 
 
 Some steps report a failure without failing the role. The role stays `active`, and `follow_up` in the response names the failure and the retry. The CLI prints it as a warning. The `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way.
 
+The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside Beast's existing roles through this command.
+
 Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
 
 ## orbit node:role:list

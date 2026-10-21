@@ -433,6 +433,16 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 false,
             ));
         }
+        if ($state->ciRunnerHostMatches === false) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::CiRunnerHostMismatch,
+                DoctorIssueKind::Drift,
+                'CI runner project, bridge, ACL or default profile differs from the role baseline.',
+                true,
+                false,
+            ));
+        }
         if (! $state->firewallProjectionMatches) {
             $this->add($issues, $role, $this->issue(
                 $role,

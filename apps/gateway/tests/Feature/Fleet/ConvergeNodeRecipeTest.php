@@ -220,63 +220,56 @@ it('stops with the installer outcome when the PHP build rolls back and records n
     'a failed restore' => ['rollback_failed', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start; the rollback failed too'], 'The rollback of the previous PHP build failed too'],
 ]);
 
-it('loads PCOV and purges extra PHP packages only for the ci-runner profile', function (): void {
-    $sabre = FleetFixtures::node('recipe-php-sabre');
+it('selects CI software and PCOV through roles without purging host PHP packages', function (): void {
+    $sabre = FleetFixtures::node('recipe-php-sabre', [RoleName::CiRunner]);
     recipeSsh();
     $php = app(RemoteProgramRunner::class);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
-    app(ConvergeNodeRecipeAction::class)->execute($sabre, new RecipeLoader()->load(), profile: 'ci-runner');
-    $dev = FleetFixtures::node('recipe-php-dev', [RoleName::AppDev]);
+    app(ConvergeNodeRecipeAction::class)->execute($sabre, new RecipeLoader()->load());
+    $dev = FleetFixtures::node('recipe-php-dev', [RoleName::AppDev, RoleName::CiRunner]);
     app(ConvergeNodeRecipeAction::class)->execute($dev, new RecipeLoader()->load());
 
     $applies = array_values(array_filter($php->inputs, static fn (array $input): bool => $input['mode'] === 'apply'));
-    expect($applies[0])->toMatchArray(['pcov' => true, 'opentelemetry' => false, 'extras' => 'purge'])
+    expect($applies[0])->toMatchArray(['pcov' => true, 'opentelemetry' => false, 'extras' => 'refuse'])
         ->and($applies[1])->toMatchArray(['pcov' => true, 'opentelemetry' => true, 'extras' => 'refuse']);
 });
 
-it('converges a roleless CI runner with the ci-runner profile and records the profile', function (): void {
+it('selects CI role software and replaces a recorded profile with normal recipe state', function (): void {
     $this->freezeTime();
-    $node = FleetFixtures::node('recipe-sabre');
+    $node = FleetFixtures::node('recipe-sabre', [RoleName::CiRunner]);
+    $node->update(['settings' => ['machine_recipe' => ['profile' => 'ci-runner']]]);
     recipeSsh();
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $recipe = new RecipeLoader()->load();
 
-    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, profile: 'ci-runner');
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
     $later = app(ConvergeNodeRecipeAction::class)->execute($node->refresh(), $recipe, dryRun: true);
 
     expect(array_keys($result['plan']->tools))->toContain(...$recipe->php('8.5')->packagesFor(false))
-        ->and($node->settings['machine_recipe'])->toBe(['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), 'profile' => 'ci-runner'])
+        ->and($node->settings['machine_recipe'])->toBe(['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String()])
         ->and(array_keys($later['plan']->tools))->toBe(array_keys($result['plan']->tools))
         ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');
 });
 
-it('keeps the ci-runner profile but no success marker when a run fails', function (array $settings, ?string $requested): void {
-    $node = FleetFixtures::node('recipe-sabre-fail');
-    $node->update(['settings' => $settings]);
+it('clears stale recipe profile state when convergence fails', function (): void {
+    $node = FleetFixtures::node('recipe-sabre-fail', [RoleName::CiRunner]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous', 'profile' => 'ci-runner']]]);
     recipeSsh(ScriptedSshExecutor::fail(stdout: 'recipe-stage:packages'));
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
 
-    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $requested))
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
         ->toThrow(ResourceOperationException::class, 'stopped at recipe-stage:packages');
-    expect($node->refresh()->settings)->toBe(['machine_recipe' => ['profile' => 'ci-runner']])
-        ->and(NodeRecipeProgram::recordedProfile($node))->toBe('ci-runner');
-})->with([
-    'a recorded profile' => [['machine_recipe' => ['version' => 'previous', 'profile' => 'ci-runner']], null],
-    'a first run that names the profile' => [[], 'ci-runner'],
-]);
+    expect($node->refresh()->settings)->toBe([]);
+});
 
-it('refuses the ci-runner profile on a Node with roles and any other profile name before SSH', function (array $roles, string $profile): void {
-    $node = FleetFixtures::node('recipe-profile-'.count($roles).$profile, $roles);
-    $ssh = recipeSsh();
+it('ignores a recorded CI profile on a roleless operator Node', function (): void {
+    $node = FleetFixtures::node('recipe-operator');
+    $node->update(['settings' => ['machine_recipe' => ['profile' => 'ci-runner']]]);
+    $recipe = new RecipeLoader()->load();
 
-    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $profile))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_profile_invalid'));
-    expect($ssh->commands)->toBe([]);
-})->with([
-    'a Node with a role' => [[RoleName::AppDev], 'ci-runner'],
-    'an unknown profile' => [[], 'base'],
-]);
+    expect(array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe)))->not->toContain('php8.5-cli');
+});
 
 it('records the complete identity only after inventory health and Doctor pass and preserves other settings', function (): void {
     $this->freezeTime();
