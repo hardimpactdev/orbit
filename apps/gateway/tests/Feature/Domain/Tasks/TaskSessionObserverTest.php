@@ -38,7 +38,7 @@ function observer_group(): Task
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
         'status' => TaskGroupStatus::Running,
-        'pr_url' => 'https://github.com/nckrtl/orbit/pull/21',
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/21',
     ]);
     $instance = Instance::query()->create([
         'task_workspace_owner_id' => $group->id,
@@ -143,7 +143,7 @@ it('marks an idle implementer observation with the last turn text', function ():
         ->and($implementer?->pendingApprovalId)->toBeNull()
         ->and($implementer?->pendingUserInputId)->toBeNull()
         ->and($implementer?->hasNewCommitsSinceThreadStart)->toBeTrue()
-        ->and($implementer?->prUrl)->toBe('https://github.com/nckrtl/orbit/pull/21');
+        ->and($implementer?->prUrl)->toBe('https://github.com/hardimpactdev/orbit/pull/21');
 });
 
 it('reads a pending user-input request id from the agent observation', function (): void {

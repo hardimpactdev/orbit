@@ -34,7 +34,7 @@ GIT_TEMPLATE = Path(STATE_HOME.name) / 'git-template'
 GIT_TEMPLATE.mkdir()
 (GIT_TEMPLATE / 'config').write_text('[maintenance]\n\tautoDetach = false\n[gc]\n\tautoDetach = false\n')
 os.environ['GIT_TEMPLATE_DIR'] = str(GIT_TEMPLATE)
-REPOSITORY = 'nckrtl/orbit'
+REPOSITORY = 'hardimpactdev/orbit'
 # Answers the gh calls of the worker from files in $GH_FIXTURE and records every call.
 FAKE_GH = r'''#!/usr/bin/env python3
 import json, os, shutil, sys
@@ -47,9 +47,9 @@ if (fixture / 'fail').exists():
 arguments = sys.argv[1:]
 if arguments[0] == 'api':
     path = arguments[1].split('?')[0]
-    if path == 'repos/nckrtl/orbit/actions/workflows/ci.yml/runs':
+    if path == 'repos/hardimpactdev/orbit/actions/workflows/ci.yml/runs':
         print((fixture / 'runs.json').read_text())
-    elif path.startswith('repos/nckrtl/orbit/actions/runs/') and path.endswith('/jobs'):
+    elif path.startswith('repos/hardimpactdev/orbit/actions/runs/') and path.endswith('/jobs'):
         jobs = fixture / ('jobs-' + path.split('/')[5] + '.json')
         if not jobs.exists():
             sys.exit('HTTP 404: Not Found')
@@ -58,7 +58,7 @@ if arguments[0] == 'api':
         sys.exit('HTTP 404: Not Found')
 elif arguments[:2] == ['run', 'download']:
     run_id, destination = arguments[2], arguments[arguments.index('-D') + 1]
-    assert arguments[arguments.index('-R') + 1] == 'nckrtl/orbit'
+    assert arguments[arguments.index('-R') + 1] == 'hardimpactdev/orbit'
     assert arguments[arguments.index('-p') + 1] == 'sandbox-tia-*'
     source = fixture / ('artifacts-' + run_id)
     if not source.is_dir():
@@ -461,15 +461,15 @@ class MainCacheTest(CacheFixture):
 
     def test_origin_key_matches_https_and_ssh_urls_of_one_repository(self):
         keys = set()
-        for url in ['https://github.com/nckrtl/orbit.git', 'git@github.com:nckrtl/orbit.git',
-                    'ssh://git@GitHub.com/nckrtl/orbit', 'https://github.com/nckrtl/orbit/']:
+        for url in ['https://github.com/hardimpactdev/orbit.git', 'git@github.com:hardimpactdev/orbit.git',
+                    'ssh://git@GitHub.com/hardimpactdev/orbit', 'https://github.com/hardimpactdev/orbit/']:
             cache.git(self.root, 'remote', 'set-url', 'origin', url)
             keys.add(cache.origin_key(self.root))
             self.assertEqual(REPOSITORY, cache.github_repository(self.root))
         self.assertEqual(1, len(keys))
         cache.git(self.root, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/other.git')
         self.assertNotIn(cache.origin_key(self.root), keys)
-        cache.git(self.root, 'remote', 'set-url', 'origin', 'https://gitlab.com/nckrtl/orbit.git')
+        cache.git(self.root, 'remote', 'set-url', 'origin', 'https://gitlab.com/hardimpactdev/orbit.git')
         with self.assertRaisesRegex(ValueError, 'not a GitHub repository'):
             cache.github_repository(self.root)
 

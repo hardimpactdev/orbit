@@ -45,7 +45,7 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
     $project = Project::query()->create([
         'name' => 'cancel-app',
         'slug' => 'cancel-app',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
         'default_branch' => 'main',
     ]);
     $node = Node::query()->create([
@@ -213,8 +213,8 @@ it('returns 409 for a completed group or a settling group with a pull request', 
                 ->and($exception->status)->toBe(409);
         });
 })->with([
-    'settling with a pull request' => [TaskGroupStatus::Settling, 'https://github.com/nckrtl/orbit/pull/7'],
-    'waiting for review' => [TaskGroupStatus::WaitingForReview, 'https://github.com/nckrtl/orbit/pull/7'],
+    'settling with a pull request' => [TaskGroupStatus::Settling, 'https://github.com/hardimpactdev/orbit/pull/7'],
+    'waiting for review' => [TaskGroupStatus::WaitingForReview, 'https://github.com/hardimpactdev/orbit/pull/7'],
     'completed' => [TaskGroupStatus::Completed, null],
 ]);
 

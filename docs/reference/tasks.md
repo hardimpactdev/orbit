@@ -20,7 +20,7 @@ While a subtask is open, Orbit also watches a pull request on `task-{id}`. It st
 
 A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything for review, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
 
-The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
+The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
@@ -266,7 +266,7 @@ The base run stops after 600 seconds, and a timed-out run counts as failing on t
 
 Task create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` is the JSON boolean `true` or `false`, and `paths` is a list of strings. Any other value is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
-The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
+The Orbit Project's [task policy skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
 
 ### Confirm deliverables
 
@@ -393,7 +393,7 @@ Filing a task clears that occurrence history after the brief is built. Hits whil
 
 ### Suppression
 
-The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
+The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
 
 | Key | Match |
 | --- | --- |
@@ -1491,7 +1491,7 @@ Cancel and the cancelled-task sweep push the latest approved commit only when a 
 
 ### Incoming pull requests
 
-`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=nckrtl/orbit:1234567`. Unset or empty reviews no incoming pull request.
+`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=hardimpactdev/orbit:1234567`. Unset or empty reviews no incoming pull request.
 
 At most once a minute, each `tasks:tick` lists the open pull requests of every review-and-merge Project, at most three pages of 100. A pull request is eligible when all of these hold:
 

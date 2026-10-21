@@ -37,7 +37,7 @@ Find the pages for a component with `composer docs-context -- --component=apps/c
 
 When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name the mission principle it serves. Implementation details stay in code and tests.
 
-Mark the draft `In progress.` Reviewers assess it with the implementation and the documentation. The pull request that completes the decision absorbs it into the owning page and retires the record, so the documentation stays the single source of truth. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers the steps, numbering, and format.
+Mark the draft `In progress.` Reviewers assess it with the implementation and the documentation. The pull request that completes the decision absorbs it into the owning page and retires the record, so the documentation stays the single source of truth. The [ADR guide](https://github.com/hardimpactdev/orbit/blob/main/docs/decisions/README.md) covers the steps, numbering, and format.
 
 ## 2. Write the documentation
 
@@ -53,7 +53,7 @@ Run the deterministic impact check for the group's start commit and every planne
 bin/docs-impact --base <start-commit> --paths <planned-path>
 ```
 
-The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts. The report, not an agent's opinion, is the evidence.
+The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts. The report, not an agent's opinion, is the evidence.
 
 A person who contributes outside Orbit Tasks has no docs subtask. That person can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
 
@@ -157,7 +157,7 @@ The five projects share one tooling baseline: the same Composer script names and
 
 ## Audit tests and unused code
 
-Routine test review uses each project's testing guidance and the existing reviewer skill. For a requested suite cleanup or unused-code sweep, use the reviewer's [optional audit procedure](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/references/test-audit.md). It requires evidence for removals, named retained coverage, and checks that repaired assertions catch the intended defect. It does not add a mandatory PR gate. A script that checks test quality remains a proposed follow-up.
+Routine test review uses each project's testing guidance and the existing reviewer skill. For a requested suite cleanup or unused-code sweep, use the reviewer's [optional audit procedure](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/references/test-audit.md). It requires evidence for removals, named retained coverage, and checks that repaired assertions catch the intended defect. It does not add a mandatory PR gate. A script that checks test quality remains a proposed follow-up.
 
 ## Static analysis
 
@@ -215,19 +215,19 @@ The skills in the repository guide an agent through the work.
 
 | Task | Skill |
 | --- | --- |
-| Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/nckrtl/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
-| Prepare, implement, or review work tracked by Orbit Tasks | [orbit-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) |
-| Implement, verify, and submit the feature | [developing-features](https://github.com/nckrtl/orbit/blob/main/.agents/skills/developing-features/SKILL.md) |
-| Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
-| Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
+| Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
+| Prepare, implement, or review work tracked by Orbit Tasks | [orbit-tasks](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) |
+| Implement, verify, and submit the feature | [developing-features](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-features/SKILL.md) |
+| Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
+| Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
 
-For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
+For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 
 An independent reviewer can review the proposed ADRs and documentation before coding, on request.
 
 ## Report a problem
 
-Use [GitHub issues](https://github.com/nckrtl/orbit/issues) for bugs and questions. The bug report form adds the `bug` label, so the [open bugs](https://github.com/nckrtl/orbit/issues?q=is%3Aissue+is%3Aopen+label%3Abug) list counts every reported bug. A bug found inside an Orbit task still gets an issue when the task does not fix it. Include the source commit, the Orbit version, the operating system, the exact command, the expected result, and the observed result. Remove credentials, environment values, private keys, tokens, and personal data from shared logs. Include a request ID and a stable error code when you have them.
+Use [GitHub issues](https://github.com/hardimpactdev/orbit/issues) for bugs and questions. The bug report form adds the `bug` label, so the [open bugs](https://github.com/hardimpactdev/orbit/issues?q=is%3Aissue+is%3Aopen+label%3Abug) list counts every reported bug. A bug found inside an Orbit task still gets an issue when the task does not fix it. Include the source commit, the Orbit version, the operating system, the exact command, the expected result, and the observed result. Remove credentials, environment values, private keys, tokens, and personal data from shared logs. Include a request ID and a stable error code when you have them.
 
 ## Why it works this way
 

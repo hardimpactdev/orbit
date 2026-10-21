@@ -63,7 +63,7 @@ A Project owns an ordered [development deploy list](/reference/deployments#devel
 
 ## Project types
 
-The type belongs to the Project, so every Instance of one repository behaves the same way.
+The type belongs to the Project, so every Instance of one repository behaves the same way. The Orbit monorepo has repository identity `github.com/hardimpactdev/orbit`.
 
 | Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
 | --- | --- | --- | --- | --- |

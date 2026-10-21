@@ -189,7 +189,7 @@ A pane polls the one-shot read every 10 seconds instead when the Gateway refuses
 
 ## Installed app on iPhone and iPad
 
-Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
+Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/hardimpactdev/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
 
 The app shell is a `position: fixed` box with an opaque page background that fills the web view. iOS 26 blurs the top edge of an installed web app with its glass edge effect unless a fixed, opaque box covers that edge. The shell keeps the header sharp.
 

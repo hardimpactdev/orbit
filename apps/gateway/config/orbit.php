@@ -52,7 +52,7 @@ return [
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
     // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
     'cli_releases' => [
-        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit'),
         'git_directory' => base_path(),
     ],
     // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).

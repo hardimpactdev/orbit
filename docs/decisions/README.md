@@ -56,4 +56,4 @@ Use the next available four-digit number and a short kebab-case name. A number i
 0001-short-decision-name.md
 ```
 
-Use the [ADR template](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/templates/adr.md). Keep one decision in each record. Run `composer docs-build` when context changes and `composer docs-lint` before submitting.
+Use the [ADR template](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/templates/adr.md). Keep one decision in each record. Run `composer docs-build` when context changes and `composer docs-lint` before submitting.
