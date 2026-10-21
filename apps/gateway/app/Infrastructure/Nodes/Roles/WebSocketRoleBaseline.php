@@ -69,7 +69,7 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
         $this->publication->remove($node);
         $this->runtime->remove($node, $assignment, $purgeData);
         $this->publication->retire($node);
-        $this->credentials->purge($node);
+        $this->credentials->purge($node, runtimeStopped: true);
     }
 
     /**

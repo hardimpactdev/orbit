@@ -6,4 +6,4 @@ Destroying WebSocket app...
 │
 └  Operation failed.
 
-WebSocket app [hauzer] is still on an Instance. Remove it from each Instance first.
+Remove the app from each Instance first.

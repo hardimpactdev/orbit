@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -19,8 +20,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
@@ -32,12 +33,16 @@ use App\Models\Project;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
+    Http::preventStrayRequests();
+    Http::fake();
+    app()->when(ReadWebSocketApplyStatusAction::class)->needs('$waitSeconds')->give(0.0);
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(NodeConverger::class, new FakeNodeConverger);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
@@ -63,10 +68,10 @@ beforeEach(function (): void {
 });
 
 describe('websocket:app:create', function (): void {
-    it('creates an app, never returns its secret, and converges the Reverb server with every app', function (): void {
+    it('creates an app without exposing its secret or converging the Reverb server', function (): void {
         websocket_apps_activate_role($this->caller);
 
-        $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         $response
@@ -81,31 +86,27 @@ describe('websocket:app:create', function (): void {
         expect($response->getContent())->not->toContain($app->secret)
             ->and(DB::table('websocket_apps')->where('name', 'hauzer')->value('secret'))->not->toBe($app->secret)
             ->and(strlen($app->secret))->toBe(40)
-            ->and($this->runtime->appIds())->toBe([
-                WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->sole()->app_id,
-                $app->app_id,
-            ]);
+            ->and($this->runtime->converged)->toBe([]);
     });
 
     it('keeps the app for the next converge when no websocket role is active', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
 
         expect(WebSocketApp::query()->pluck('name')->all())->toBe(['hauzer'])
             ->and($this->runtime->converged)->toBe([]);
     });
 
-    it('keeps the created app when the websocket converge fails', function (): void {
+    it('keeps the created app pending when runtime notification fails', function (): void {
         websocket_apps_activate_role($this->caller);
         $this->runtime->failConverge = true;
 
         $response = $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'node_role.convergence_failed')
-            ->assertJsonPath('error.details.error_code', 'websocket.runtime_convergence_failed');
+            ->assertStatus(202)
+            ->assertJsonPath('operation.state', 'pending');
 
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         expect($response->getContent())->not->toContain($app->secret)
-            ->and($this->runtime->appIds())->toContain($app->app_id);
+            ->and($this->runtime->converged)->toBe([]);
     });
 
     it('refuses the Gateway name, a taken name, and a name that is not a slug', function (string $name): void {
@@ -122,7 +123,7 @@ describe('websocket:app:create', function (): void {
 describe('websocket:app:list and websocket:app:show', function (): void {
     it('lists the apps by name with their Instances and without secrets', function (): void {
         websocket_apps_activate_role($this->caller);
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $instance = websocket_apps_instance();
         $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")->assertOk();
 
@@ -145,17 +146,16 @@ describe('websocket:app:list and websocket:app:show', function (): void {
 });
 
 describe('websocket:app:destroy', function (): void {
-    it('deletes the app and converges the Reverb server without it', function (): void {
+    it('deletes the app without converging the Reverb server', function (): void {
         websocket_apps_activate_role($this->caller);
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
-            ->assertOk()
+            ->assertStatus(202)
             ->assertJsonPath('data.name', 'hauzer');
 
         expect(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
-            ->and($this->runtime->appIds())->toBe([WebSocketApp::query()->sole()->app_id])
-            ->and($this->runtime->converged)->toHaveCount(2);
+            ->and($this->runtime->converged)->toBe([]);
     });
 
     it('refuses the Gateway app', function (): void {
@@ -168,24 +168,23 @@ describe('websocket:app:destroy', function (): void {
         expect(WebSocketApp::query()->count())->toBe(1);
     });
 
-    it('keeps the app deleted when the websocket converge fails', function (): void {
+    it('keeps deletion pending when runtime notification fails', function (): void {
         websocket_apps_activate_role($this->caller);
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
         $this->runtime->failConverge = true;
 
         $this->deleteJson('/api/v1/websocket-apps/hauzer')
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'node_role.convergence_failed')
-            ->assertJsonPath('error.details.error_code', 'websocket.runtime_convergence_failed');
+            ->assertStatus(202)
+            ->assertJsonPath('operation.state', 'pending');
 
         expect(WebSocketApp::query()->whereKey($app->id)->exists())->toBeFalse()
             ->and(WebSocketApp::query()->pluck('name')->all())->toBe(['gateway'])
-            ->and($this->runtime->appIds())->not->toContain($app->app_id);
+            ->and($this->runtime->converged)->toBe([]);
     });
 
     it('refuses an app that is still on an Instance', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $instance = websocket_apps_instance();
         $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")->assertOk();
 
@@ -199,7 +198,7 @@ describe('websocket:app:destroy', function (): void {
 
 describe('instance:websocket:add and instance:websocket:remove', function (): void {
     it('writes the app credentials into the stored environment without returning the secret', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $app = WebSocketApp::query()->sole();
         $instance = websocket_apps_instance();
 
@@ -237,8 +236,8 @@ describe('instance:websocket:add and instance:websocket:remove', function (): vo
     });
 
     it('replaces the app an Instance holds', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-next'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer-next'])->assertStatus(202);
         $instance = websocket_apps_instance();
         $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")->assertOk();
 
@@ -262,7 +261,7 @@ describe('instance:websocket:add and instance:websocket:remove', function (): vo
     });
 
     it('removes the keys and the attachment, and keeps other stored keys', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $instance = websocket_apps_instance();
         $instance->environmentValues()->create(['env_key' => 'APP_NAME', 'env_value' => 'Hauzer']);
         $this->putJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")->assertOk();
@@ -278,7 +277,7 @@ describe('instance:websocket:add and instance:websocket:remove', function (): vo
     });
 
     it('answers 404 when the app is not on the Instance', function (): void {
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated();
+        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
         $instance = websocket_apps_instance();
 
         $this->deleteJson("/api/v1/instances/{$instance->id}/websocket-apps/hauzer")
@@ -396,14 +395,6 @@ final class WebSocketAppsRuntimeFake implements WebSocketRuntimeLifecycle
     {
         return true;
     }
-
-    /** @return list<string> */
-    public function appIds(): array
-    {
-        $last = $this->converged[array_key_last($this->converged)];
-
-        return array_map(static fn (WebSocketCredentials $app): string => $app->appId, $last->apps);
-    }
 }
 
 final class WebSocketAppsPublicationFake implements WebSocketPublicationManager
@@ -441,3 +432,34 @@ final class WebSocketAppsEnvironmentAccess implements InstanceEnvironmentReader,
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 }
+
+it('rotates credentials and all attached stored environments once even when the Instance Node is offline', function (): void {
+    $this->withHeader('Idempotency-Key', 'create')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
+    $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
+    $instance = websocket_apps_instance();
+    $this->putJson('/api/v1/instances/'.$instance->id.'/websocket-apps/hauzer')->assertOk();
+    $before = $app->secret;
+    $instance->node->update(['status' => LifecycleStatus::Failed]);
+    $response = $this->withHeader('Idempotency-Key', 'rotate')->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)
+        ->assertJsonPath('data.instance_rollout.instance_ids', [$instance->id]);
+    $newSecret = $app->refresh()->secret;
+    expect($newSecret)->not->toBe($before)->and($app->credential_generation)->toBe(2)
+        ->and(websocket_apps_stored_env($instance)['REVERB_APP_SECRET'])->toBe($newSecret)
+        ->and($response->getContent())->not->toContain($newSecret)->not->toContain($before);
+    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertStatus(202)->assertJsonPath('operation.id', $response->json('operation.id'));
+    expect($app->refresh()->secret)->toBe($newSecret)->and($app->credential_generation)->toBe(2);
+});
+
+it('rolls back rotation when an attached environment cannot be updated', function (): void {
+    $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202);
+    $app = WebSocketApp::query()->where('name', 'hauzer')->sole();
+    $instance = websocket_apps_instance();
+    $this->putJson('/api/v1/instances/'.$instance->id.'/websocket-apps/hauzer')->assertOk();
+    $secret = $app->secret;
+    $version = app(WebSocketRegistry::class)->version();
+    $instance->update(['checkout_path' => '/invalid/../checkout']);
+    $this->postJson('/api/v1/websocket-apps/hauzer/rotate')->assertConflict();
+    expect($app->refresh()->secret)->toBe($secret)->and($app->credential_generation)->toBe(1)
+        ->and(websocket_apps_stored_env($instance)['REVERB_APP_SECRET'])->toBe($secret)
+        ->and(app(WebSocketRegistry::class)->version())->toBe($version);
+});

@@ -105,6 +105,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `tasks` | `cancel`, `close`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, closes a stale question with `tasks:question:close`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 | `vault` | `setup`, `status`, `sync`, `teardown` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
+| `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |
 
 `doctor`, `profile`, and `self-update` are one-segment commands. Each family name is the command. Project display names, source defaults, and task settings use `project:update`; create and destroy remain the lifecycle commands.
 

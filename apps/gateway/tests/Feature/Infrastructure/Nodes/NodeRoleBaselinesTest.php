@@ -50,7 +50,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Domain\WireGuard\VpnSettings;
@@ -1350,7 +1349,7 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
 {
     $credentials = Mockery::mock(WebSocketCredentialManager::class);
     $credentials->shouldReceive('ensure')->andReturn(
-        new WebSocketServerCredentials('base64:'.base64_encode('k'), [new WebSocketCredentials('id', 'key', 'secret')]),
+        new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token'),
     );
     $credentials->shouldReceive('purge');
 
@@ -1397,7 +1396,7 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
 
         public function storeVersion(Node $node, string $version): void {}
 
-        public function purge(Node $node): void {}
+        public function purge(Node $node, bool $runtimeStopped = false): void {}
     };
 
     // The ClickHouse configuration, the Process runtime, and the publication reach a real node, which this dispatch-only

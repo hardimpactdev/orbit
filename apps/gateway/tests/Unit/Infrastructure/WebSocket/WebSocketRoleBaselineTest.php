@@ -295,7 +295,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketServerCredentials('base64:'.base64_encode('key'), [new WebSocketCredentials('id', 'key', 'secret')]);
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), 'test-process', 'test-registry-token', 'test-notification-token');
     }
 
     public function current(): ?WebSocketCredentials
@@ -303,7 +303,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         return null;
     }
 
-    public function purge(Node $node): void
+    public function purge(Node $node, bool $runtimeStopped = false): void
     {
         $this->record('credentials:purge');
     }

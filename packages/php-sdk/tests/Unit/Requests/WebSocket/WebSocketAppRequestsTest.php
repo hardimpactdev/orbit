@@ -10,10 +10,15 @@ use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketOperationRequest;
+use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppAttachmentResponse;
+use Orbit\Sdk\Responses\WebSocket\WebSocketApplyResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppsResponse;
+use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -51,6 +56,9 @@ describe('websocket app requests', function (): void {
         expect($request->getMethod())->toBe($method)
             ->and($request->resolveEndpoint())->toBe($endpoint);
     })->with([
+        'rotate' => [new RotateWebSocketAppRequest('alpha'), Method::POST, '/api/v1/websocket-apps/alpha/rotate'],
+        'sync' => [new SyncWebSocketAppsRequest, Method::POST, '/api/v1/websocket-sync'],
+        'operation' => [new ShowWebSocketOperationRequest('operation-id'), Method::GET, '/api/v1/websocket-operations/operation-id'],
         'list' => [new ListWebSocketAppsRequest, Method::GET, '/api/v1/websocket-apps'],
         'show' => [new ShowWebSocketAppRequest('hauzer'), Method::GET, '/api/v1/websocket-apps/hauzer'],
         'create' => [new CreateWebSocketAppRequest('hauzer'), Method::POST, '/api/v1/websocket-apps'],
@@ -82,18 +90,19 @@ describe('websocket app requests', function (): void {
             $request::class => MockResponse::make([
                 'data' => [...$payload, 'secret' => $secret, 'values' => ['REVERB_APP_SECRET' => $secret]],
                 'meta' => ['request_id' => $requestId],
+                'operation' => websocket_apply_sdk_payload(),
             ], $status),
         ]));
 
         $result = $connector->send($request)->dto();
 
         expect($result)->toBeInstanceOf($responseClass)
-            ->and($result->toArray())->toBe([...$payload, 'request_id' => $requestId])
+            ->and($result instanceof WebSocketChangeResponse ? $result->app?->toArray() : $result->toArray())->toBe([...$payload, 'request_id' => $requestId])
             ->and(print_r($result, true))->not->toContain($secret)
             ->and(serialize($result))->not->toContain($secret);
     })->with([
-        'create' => [new CreateWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(), WebSocketAppResponse::class, 201],
-        'destroy' => [new DestroyWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(['instance_ids' => []]), WebSocketAppResponse::class, 200],
+        'create' => [new CreateWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(), WebSocketChangeResponse::class, 201],
+        'destroy' => [new DestroyWebSocketAppRequest('hauzer'), websocket_app_sdk_payload(['instance_ids' => []]), WebSocketChangeResponse::class, 200],
         'remove' => [new RemoveInstanceWebSocketAppRequest('hauzer.test', 'hauzer'), websocket_attachment_sdk_payload(['operation' => 'detach', 'key_count' => 0]), WebSocketAppAttachmentResponse::class, 200],
     ]);
 
@@ -171,4 +180,45 @@ describe('websocket app requests', function (): void {
         'negative count' => [websocket_attachment_sdk_payload(['key_count' => -1])],
         'missing changed' => [websocket_attachment_sdk_payload(['changed' => null])],
     ]);
+});
+
+function websocket_apply_sdk_payload(): array
+{
+    return ['id' => '11111111-1111-4111-8111-111111111111', 'epoch' => '22222222-2222-4222-8222-222222222222',
+        'revision' => 2, 'state' => 'pending', 'processes' => [], 'missing_node_ids' => []];
+}
+
+it('preserves explicit operation keys across a transport retry', function (): void {
+    $request = new CreateWebSocketAppRequest('alpha', 'retry-key');
+    expect($request->headers()->get('Idempotency-Key'))->toBe('retry-key')
+        ->and($request->headers()->get('Idempotency-Key'))->toBe('retry-key');
+});
+
+it('maps pending applied and superseded operations without secret extras', function (string $state): void {
+    $secret = 'registry-secret-extra-9f7e';
+    $transport = [...websocket_apply_sdk_payload(), 'state' => $state, 'secret' => $secret, 'status_url' => 'https://attacker.test',
+        'processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'boot_id' => null, 'applied_revision' => null, 'state' => 'stale', 'secret' => $secret]]];
+    $dto = WebSocketApplyResponse::fromTransport($transport);
+    expect($dto->state)->toBe($state)->and(serialize($dto))->not->toContain($secret)
+        ->and($dto->toArray()['status_url'])->toBe('/api/v1/websocket-operations/'.$dto->id);
+})->with(['pending', 'applied', 'superseded']);
+
+it('rejects malformed apply reports at the SDK boundary', function (array $overrides): void {
+    expect(fn () => WebSocketApplyResponse::fromTransport([...websocket_apply_sdk_payload(), ...$overrides]))->toThrow(InvalidArgumentException::class);
+})->with([
+    [['revision' => '2']], [['state' => 'saved']], [['id' => 'secret-invalid']], [['missing_node_ids' => [0]]],
+    [['processes' => [['id' => '33333333-3333-4333-8333-333333333333', 'node_id' => 2, 'state' => 'applied']]]],
+]);
+
+it('preserves separate Instance rollout status in a rotation response', function (): void {
+    $connector = new GatewayConnector('https://10.44.0.1', '/tmp/orbit-ca.pem');
+    $request = new RotateWebSocketAppRequest('hauzer', 'rotate-once');
+    $connector->withMockClient(new MockClient([RotateWebSocketAppRequest::class => MockResponse::make([
+        'data' => [...websocket_app_sdk_payload(), 'instance_rollout' => ['state' => 'configuration_stored', 'instance_ids' => [7], 'requires_env_sync' => true, 'requires_reload' => true]],
+        'operation' => websocket_apply_sdk_payload(), 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ], 202)]));
+    $dto = $connector->send($request)->dto();
+    expect($request->headers()->get('Idempotency-Key'))->toBe('rotate-once')
+        ->and($request)->not->toBeInstanceOf(HasBody::class)
+        ->and($dto->instanceRolloutIds)->toBe([7])->and($dto->operation->state)->toBe('pending');
 });

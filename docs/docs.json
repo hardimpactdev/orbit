@@ -500,7 +500,13 @@
               "GET /api/v1/websocket-apps",
               "POST /api/v1/websocket-apps",
               "DELETE /api/v1/websocket-apps/{websocket_app}",
-              "GET /api/v1/websocket-apps/{websocket_app}"
+              "GET /api/v1/websocket-apps/{websocket_app}",
+              "POST /api/v1/websocket-apps/{websocket_app}/rotate",
+              "GET /api/v1/websocket-operations/{operation}",
+              "GET /api/v1/websocket-registry",
+              "PUT /api/v1/websocket-registry/processes/{runtime}",
+              "POST /api/v1/websocket-registry/processes/{runtime}/boots",
+              "POST /api/v1/websocket-sync"
             ]
           },
           {

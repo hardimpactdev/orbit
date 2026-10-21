@@ -13,10 +13,13 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketAppIssuer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\WebSocketApp;
+use App\Models\WebSocketRuntime;
+use Illuminate\Support\Str;
 
 final readonly class NativeWebSocketCredentialManager implements WebSocketCredentialManager
 {
@@ -32,18 +35,22 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         $laravelAppKey = $this->settings->get($scope, WebSocketFootprint::SettingKeyAppKeyLaravel)
             ?? $this->generateLaravelAppKey($scope);
 
-        if (! WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->exists()) {
-            $this->apps->issue(WebSocketApp::GatewayName);
-        }
+        $runtime = app(WebSocketRegistry::class)->write(function () use ($node): WebSocketRuntime {
+            if (! WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->exists()) {
+                $this->apps->issue(WebSocketApp::GatewayName);
+            }
+            $runtime = WebSocketRuntime::query()->firstOrCreate(['node_id' => $node->id, 'slot' => 'default'], [
+                'id' => (string) Str::uuid(), 'registry_token' => Str::random(64), 'notification_token' => Str::random(64),
+            ]);
+            if (! $runtime->required) {
+                $runtime->update(['required' => true, 'registry_token' => Str::random(64), 'notification_token' => Str::random(64),
+                    'boot_id' => null, 'epoch' => null, 'applied_revision' => null, 'reported_at' => null, 'state' => 'starting']);
+            }
 
-        return new WebSocketServerCredentials(
-            $laravelAppKey,
-            array_values(WebSocketApp::query()
-                ->orderBy('name')
-                ->get()
-                ->map(static fn (WebSocketApp $app): WebSocketCredentials => $app->credentials())
-                ->all()),
-        );
+            return $runtime;
+        });
+
+        return new WebSocketServerCredentials($laravelAppKey, $runtime->id, $runtime->registry_token, $runtime->notification_token);
     }
 
     public function current(): ?WebSocketCredentials
@@ -83,9 +90,12 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
         );
     }
 
-    public function purge(Node $node): void
+    public function purge(Node $node, bool $runtimeStopped = false): void
     {
         $this->settings->delete($this->scope($node), WebSocketFootprint::SettingKeyAppKeyLaravel);
+        if ($runtimeStopped) {
+            app(WebSocketRegistry::class)->write(fn (): int => WebSocketRuntime::query()->where('node_id', $node->id)->where('slot', 'default')->update(['required' => false]));
+        }
     }
 
     private function generateLaravelAppKey(SettingScope $scope): string

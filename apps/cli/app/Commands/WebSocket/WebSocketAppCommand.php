@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppAttachmentResponse;
 use Orbit\Sdk\Responses\WebSocket\WebSocketAppResponse;
+use Orbit\Sdk\Responses\WebSocket\WebSocketChangeResponse;
 
 abstract class WebSocketAppCommand extends GatewayCommand
 {
@@ -33,6 +34,36 @@ abstract class WebSocketAppCommand extends GatewayCommand
         }
 
         return $name;
+    }
+
+    protected function renderChange(WebSocketChangeResponse $change): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($change->toArray());
+
+            return self::SUCCESS;
+        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
+            match ($change->operation->state) {
+                'applied' => 'WebSocket change applied.',
+                'superseded' => 'WebSocket change superseded by a later change.',
+                default => 'WebSocket change saved; runtime application is pending.',
+            }, [
+                'App' => $change->app?->name, 'Operation ID' => $change->operation->id,
+                'Desired revision' => $change->operation->revision, 'State' => $change->operation->state,
+                'Instance rollout' => $change->instanceRolloutIds === null ? null : 'Stored configuration updated; run env:sync and reload each attached app.',
+                'Next step' => $change->operation->state === 'pending' ? 'orbit websocket:sync' : null,
+                'Request ID' => $change->requestId,
+            ]));
+        if ($change->operation->processes !== []) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Process', 'Node', 'Applied revision', 'State'],
+                array_map(static fn (array $process): array => [$process['id'], $process['node_id'], $process['applied_revision'] ?? '—', $process['state']], $change->operation->processes),
+                'No process reports.',
+            ));
+        }
+
+        return self::SUCCESS;
     }
 
     protected function renderApp(WebSocketAppResponse $app, string $message): int

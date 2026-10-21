@@ -128,13 +128,13 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
                     purge_data=$2
                     service=orbit-websocket
                     if systemctl list-unit-files -- "$service.service" >/dev/null 2>&1; then
-                        systemctl disable --now -- "$service" || true
+                        systemctl disable --now -- "$service"
                     fi
                     rm -f -- "/etc/systemd/system/$service.service"
                     systemctl daemon-reload || true
                     systemctl reset-failed -- "$service.service" >/dev/null 2>&1 || true
                     if [ "$purge_data" = 1 ]; then
-                        rm -rf -- "$install_path"
+                        rm -rf -- "$install_path" "$install_path.releases"
                     fi
                     BASH,
             ),
@@ -177,32 +177,46 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             ref=\$5
             umask 0077
             install -d -m 0755 -- "\$(dirname "\$install_path")"
-            if [ ! -d "\$install_path/.git" ]; then
-                install -d -m 0755 -o "\$managed_user" -g "\$managed_group" -- "\$install_path"
-                sudo -u "\$managed_user" -H git clone --quiet --no-checkout -- "\$repository" "\$install_path"
-            fi
-            if sudo -u "\$managed_user" -H git -C "\$install_path" remote get-url origin >/dev/null 2>&1; then
-                sudo -u "\$managed_user" -H git -C "\$install_path" remote set-url origin "\$repository"
-            else
-                sudo -u "\$managed_user" -H git -C "\$install_path" remote add origin "\$repository"
-            fi
-            sudo -u "\$managed_user" -H git -C "\$install_path" fetch --quiet origin "\$ref"
-            sudo -u "\$managed_user" -H git -C "\$install_path" checkout --quiet --force FETCH_HEAD
-            sudo -u "\$managed_user" -H git -C "\$install_path" reset --quiet --hard FETCH_HEAD
-            sudo -u "\$managed_user" -H env COMPOSER_ALLOW_SUPERUSER=1 composer install \\
-                --no-dev --optimize-autoloader --no-interaction --no-progress --working-dir="\$install_path"
-            env_candidate="\$install_path/.env.orbit-candidate"
-            printf '%s' '{$envEncoded}' | base64 --decode > "\$env_candidate"
-            chown "\$managed_user":"\$managed_group" "\$env_candidate"
-            chmod 0600 "\$env_candidate"
-            mv -fT -- "\$env_candidate" "\$install_path/.env"
-            unit_candidate=/etc/systemd/system/.orbit-websocket.service.orbit-candidate
+            exec 9>"\$install_path.install.lock"
+            flock -x 9
+            releases="\$install_path.releases"
+            install -d -m 0755 -o "\$managed_user" -g "\$managed_group" -- "\$releases"
+            candidate=\$(mktemp -d "\$releases/release.XXXXXXXX")
             verify_directory=\$(mktemp -d)
-            trap 'rm -rf -- "\$verify_directory"; rm -f -- "\$unit_candidate"' EXIT
+            activated=0
+            cleanup() {
+                rm -rf -- "\$verify_directory"
+                if [ "\$activated" = 0 ]; then
+                    rm -rf -- "\$candidate"
+                fi
+            }
+            trap cleanup EXIT
+            chown "\$managed_user":"\$managed_group" "\$candidate"
+            sudo -u "\$managed_user" -H git clone --quiet --no-checkout -- "\$repository" "\$candidate"
+            sudo -u "\$managed_user" -H git -C "\$candidate" fetch --quiet origin "\$ref"
+            sudo -u "\$managed_user" -H git -C "\$candidate" checkout --quiet --detach FETCH_HEAD
+            sudo -u "\$managed_user" -H env COMPOSER_ALLOW_SUPERUSER=1 composer install \\
+                --no-dev --optimize-autoloader --no-interaction --no-progress --working-dir="\$candidate"
+            printf '%s' '{$envEncoded}' | base64 --decode > "\$candidate/.env"
+            chown "\$managed_user":"\$managed_group" "\$candidate/.env"
+            chmod 0600 "\$candidate/.env"
+            sudo -u "\$managed_user" -H /usr/bin/php "\$candidate/artisan" orbit:reverb:start --help >/dev/null
             printf '%s' '{$unitEncoded}' | base64 --decode > "\$verify_directory/orbit-websocket.service"
             systemd-analyze verify "\$verify_directory/orbit-websocket.service"
-            install -o root -g root -m 0644 -- "\$verify_directory/orbit-websocket.service" "\$unit_candidate"
-            mv -fT -- "\$unit_candidate" /etc/systemd/system/orbit-websocket.service
+            # All preparation succeeds before stopping the process or replacing its code.
+            if systemctl cat orbit-websocket.service >/dev/null 2>&1; then
+                systemctl stop orbit-websocket
+            fi
+            if [ -d "\$install_path" ] && [ ! -L "\$install_path" ]; then
+                previous=\$(mktemp -d "\$releases/previous.XXXXXXXX")
+                rmdir "\$previous"
+                mv -T -- "\$install_path" "\$previous"
+            fi
+            ln -s -- "\$candidate" "\$verify_directory/current"
+            mv -fT -- "\$verify_directory/current" "\$install_path"
+            activated=1
+            install -o root -g root -m 0644 -- "\$verify_directory/orbit-websocket.service" /etc/systemd/system/.orbit-websocket.service.orbit-candidate
+            mv -fT -- /etc/systemd/system/.orbit-websocket.service.orbit-candidate /etc/systemd/system/orbit-websocket.service
             systemctl daemon-reload
             systemctl enable --quiet orbit-websocket
             systemctl restart orbit-websocket

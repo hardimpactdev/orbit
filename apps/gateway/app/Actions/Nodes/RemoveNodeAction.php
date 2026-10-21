@@ -35,6 +35,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\WebSocketRuntime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -101,6 +102,9 @@ final readonly class RemoveNodeAction
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardDatabaseServers($node);
+        if (WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
+            throw new ResourceOperationException('websocket.runtime_shutdown_required', 'Verify shutdown of every Reverb process before removing this Node.', 409);
+        }
         $this->guardProtected($node, $caller);
         // A task VM Node never hosts a Metrics exporter, so its removal changes nothing in Metrics. Its role removal
         // holds the fleet Metrics reconcile back, and the Metrics retire below is skipped, as its enrollment skips it.
@@ -323,6 +327,7 @@ final readonly class RemoveNodeAction
                 // Completed image builds are history of this host; never discard a running build here.
                 TaskVmImageBuild::query()->where('host_node_id', $node->id)
                     ->whereIn('state', [TaskVmImageBuildState::Succeeded, TaskVmImageBuildState::Failed])->delete();
+                WebSocketRuntime::query()->where('node_id', $node->id)->where('required', false)->delete();
                 $node->delete();
             });
         } catch (Throwable $exception) {

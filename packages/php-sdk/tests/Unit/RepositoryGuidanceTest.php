@@ -109,7 +109,10 @@ use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketOperationRequest;
+use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
 
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
@@ -247,6 +250,9 @@ describe('repository guidance bootstrap', function (): void {
             ListWebSocketAppsRequest::class,
             ShowWebSocketAppRequest::class,
             CreateWebSocketAppRequest::class,
+            RotateWebSocketAppRequest::class,
+            SyncWebSocketAppsRequest::class,
+            ShowWebSocketOperationRequest::class,
             DestroyWebSocketAppRequest::class,
             AddInstanceWebSocketAppRequest::class,
             RemoveInstanceWebSocketAppRequest::class,
@@ -552,7 +558,7 @@ describe('repository guidance bootstrap', function (): void {
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('- Reverb apps: create, list, show, and destroy; add and remove an app on an Instance.')
+            ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')

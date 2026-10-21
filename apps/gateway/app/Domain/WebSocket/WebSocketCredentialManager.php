@@ -21,5 +21,5 @@ interface WebSocketCredentialManager
     public function current(): ?WebSocketCredentials;
 
     /** Deletes the server's Laravel `APP_KEY`. The apps outlive the role. */
-    public function purge(Node $node): void;
+    public function purge(Node $node, bool $runtimeStopped = false): void;
 }

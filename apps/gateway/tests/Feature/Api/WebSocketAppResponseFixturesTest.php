@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -13,6 +14,8 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\WebSocketApp;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
@@ -23,6 +26,7 @@ use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
 
 afterEach(function (): void {
     Str::createRandomStringsNormally();
+    Str::createUuidsNormally();
 });
 
 /**
@@ -30,6 +34,10 @@ afterEach(function (): void {
  */
 it('records the websocket app and attachment responses', function (): void {
     $this->travelTo(Carbon::parse('2026-01-01T00:00:00Z'));
+    Http::preventStrayRequests();
+    app()->when(ReadWebSocketApplyStatusAction::class)->needs('$waitSeconds')->give(0.0);
+    DB::table('websocket_registry')->update(['epoch' => '22222222-2222-4222-8222-222222222222']);
+    Str::createUuidsUsingSequence(['33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444']);
     app()->instance(InstanceOperationPreflight::class, new WebSocketAppFixtureEnvironment);
     app()->instance(InstanceEnvironmentReader::class, new WebSocketAppFixtureEnvironment);
     app()->instance(InstanceEnvironmentWriter::class, new WebSocketAppFixtureEnvironment);
@@ -87,7 +95,7 @@ it('records the websocket app and attachment responses', function (): void {
     });
 
     record_fixture(
-        $this->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertCreated(),
+        $this->withHeader('Idempotency-Key', 'fixture-create')->postJson('/api/v1/websocket-apps', ['name' => 'hauzer'])->assertStatus(202),
         'websocket-apps/websocket-app-create/default',
         CreateWebSocketAppRequest::class,
         'POST /api/v1/websocket-apps',
@@ -115,7 +123,7 @@ it('records the websocket app and attachment responses', function (): void {
     );
 
     record_fixture(
-        $this->deleteJson('/api/v1/websocket-apps/hauzer')->assertConflict(),
+        $this->withHeader('Idempotency-Key', 'fixture-destroy')->deleteJson('/api/v1/websocket-apps/hauzer')->assertConflict(),
         'websocket-apps/websocket-app-destroy/in-use',
         DestroyWebSocketAppRequest::class,
         'DELETE /api/v1/websocket-apps/{websocket_app}',
@@ -129,7 +137,7 @@ it('records the websocket app and attachment responses', function (): void {
     );
 
     record_fixture(
-        $this->deleteJson('/api/v1/websocket-apps/hauzer')->assertOk(),
+        $this->deleteJson('/api/v1/websocket-apps/hauzer')->assertStatus(202),
         'websocket-apps/websocket-app-destroy/default',
         DestroyWebSocketAppRequest::class,
         'DELETE /api/v1/websocket-apps/{websocket_app}',
