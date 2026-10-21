@@ -228,6 +228,10 @@ jobs:
         if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
 
+      - name: Validate CLI bytecode coverage
+        if: matrix.project.directory == 'apps/cli' && env.CHANGE_RUN == 'true'
+        run: vendor/bin/pest tests/Ci/BytecodeCacheCoverageTest.php --no-tia --compact --fail-on-empty-test-suite
+
       # An unknown event base validates the recipe too.
       - name: Verify Ubuntu recipe pins against the named snapshot
         if: matrix.project.directory == 'apps/gateway' && (github.event_name == 'pull_request' || github.event_name == 'push')

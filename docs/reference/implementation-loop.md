@@ -148,7 +148,9 @@ Full suites include architecture and subprocess tests. CI has no subprocess-only
 
 CLI pull-request and task-handoff jobs prepare a private PHP OPcache file cache immediately before the full test step. The cache starts empty under `RUNNER_TEMP`; compilation stays inside the measured test step. PHP reuses bytecode, not applications, containers, command objects, configuration values, or test results. No cache is restored or shared between jobs.
 
-The CLI cache uses `opcache.file_cache_only=1`, timestamp validation, and `opcache.revalidate_freq=0`. PCOV stays enabled. A regression executes cached bytecode and checks that PCOV still records executed lines. It also rewrites the source file and checks that the next process sees the change. Main's TIA-recording runs and the other projects keep their existing PHP settings.
+The CLI cache uses `opcache.file_cache_only=1`, timestamp validation, and `opcache.revalidate_freq=0`. Ordinary CLI tests check cache reuse and rewritten-source visibility without calling coverage APIs. They also run those checks in child test runners with no coverage driver and with coverage disabled. Local runs still support no driver, PCOV, or Xdebug.
+
+After the full test step, CLI change jobs explicitly run the PCOV integration test in `tests/Ci/BytecodeCacheCoverageTest.php`. The job provisions PCOV through the PHP action's `coverage: pcov` input. This test checks executed lines after both cold and cached execution, then rewrites the source and checks its value and coverage. It runs without a skip or a driver-availability branch and fails on missing PCOV or an empty selection. It is outside the ordinary Unit and Feature suites because those suites do not require PCOV. Main's TIA-recording runs and the other projects keep their existing settings.
 
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
