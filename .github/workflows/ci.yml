@@ -236,7 +236,7 @@ jobs:
         env:
           PCRE_JIT: '0'
         # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --no-tia
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=0" --no-tia
 
       # A full run records this commit in the graph.
       # Stage the same-run exports for the cache-ref publisher and the background main cache store.
@@ -414,14 +414,6 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Refuse Gateway script growth
-        env:
-          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
-        run: |
-          python3 -m unittest discover -s tools -p test_node_scripts_ratchet.py
-          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
-          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
-          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
         uses: ./.github/actions/php
@@ -434,6 +426,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/ruff"
           "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0 -r apps/gateway/tests/Programs/requirements.txt
           echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+      - name: Refuse Gateway script growth
+        env:
+          NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
+        run: |
+          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py
+          # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
+          if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
+          bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
         run: |
@@ -661,12 +661,18 @@ jobs:
 
       # Keep this after the builds so a version bump can prove its binaries before tagging.
       # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      - name: Install Python test tools
+        working-directory: .
+        run: |
+          python3 -m venv "$RUNNER_TEMP/agent-tests"
+          "$RUNNER_TEMP/agent-tests/bin/pip" install --quiet -r apps/gateway/tests/Programs/requirements.txt
+          echo "$RUNNER_TEMP/agent-tests/bin" >> "$GITHUB_PATH"
       - name: Check agent release delivery
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m unittest discover -s tools -p 'test_check_agent_release.py'
+          pytest -n auto --dist=load -q tools/test_check_agent_release.py
           python3 tools/check_agent_release.py
 
   desktop:
