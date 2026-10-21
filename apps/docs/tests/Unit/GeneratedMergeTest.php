@@ -10,7 +10,7 @@ pest()->group('subprocess');
 $snapshot = sys_get_temp_dir().'/orbit-generated-merge-snapshot-'.bin2hex(random_bytes(8));
 
 beforeAll(function () use ($snapshot): void {
-    $process = new Process(['python3', dirname(__DIR__).'/generated_merge_test.py', '--prepare-fixture', $snapshot]);
+    $process = new Process(['python3', '-S', dirname(__DIR__).'/generated_merge_test.py', '--prepare-fixture', $snapshot]);
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
@@ -31,7 +31,7 @@ afterAll(function () use ($snapshot): void {
 });
 
 it('preserves the generated merge contract for :dataset', function (string $case) use ($snapshot): void {
-    $process = new Process(['python3', dirname(__DIR__).'/generated_merge_test.py', '--fixture', $snapshot, 'GeneratedMergeTest.'.$case]);
+    $process = new Process(['python3', '-S', dirname(__DIR__).'/generated_merge_test.py', '--fixture', $snapshot, 'GeneratedMergeTest.'.$case]);
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
@@ -39,6 +39,7 @@ it('preserves the generated merge contract for :dataset', function (string $case
     'independent ADR additions' => 'test_independent_adr_additions',
     'reversed ADR additions' => 'test_reversed_adr_additions',
     'base freshness' => 'test_base_freshness',
+    'runtime-only autoloaders' => 'test_runtime_only_autoloaders',
     'independent ADR previews' => 'test_independent_adr_previews',
     'reversed ADR previews' => 'test_reversed_adr_previews',
     'ADR freshness' => 'test_adr_freshness',

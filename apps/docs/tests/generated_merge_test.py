@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).resolve().parent / 'Fixtures/GeneratedMerge'
@@ -111,6 +110,11 @@ return [App\Providers\AppServiceProvider::class, HardImpact\Librarian\LibrarianS
                            'gc.auto': '0', 'maintenance.auto': 'false'}.items():
             git(cls.tree, 'config', key, value)
         TOOL.dependencies(cls.tree, ROOT)
+        # Generators need runtime dependencies, not Pest/PHPUnit bootstrap files
+        # or development class maps. Composer writes only these private loaders.
+        for project in ('apps/docs', 'apps/gateway'):
+            run(cls.tree / project, 'composer', 'dump-autoload', '--no-dev',
+                '--no-scripts', '--no-plugins', '--optimize')
         # Build the locked CLI, not any schema output. Each timed driver still
         # starts a cold Bun process; independent freshness uses the original CLI.
         modules = cls.tree / 'apps/web/node_modules'
@@ -249,6 +253,8 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             self.assertIn(f'CONFLICT (content): Merge conflict in {path}', vanilla.stdout)
         cached = {}
         if cache_lookups:
+            from unittest import mock
+
             # Prime one cold build; Git must read the same bytes from separate
             # driver processes. The spy delegates to the real generator.
             previous = Path.cwd()
@@ -379,7 +385,28 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         self.combined('endpoint')
         self.check()
 
+    def test_runtime_only_autoloaders(self):
+        for project, provider in (('apps/docs', 'AppServiceProvider'),
+                                  ('apps/gateway', 'ExtensionServiceProvider')):
+            with self.subTest(project=project):
+                result = json.loads(run(self.tree / project, 'php', '-r', r'''
+$loader = require 'vendor/autoload.php';
+echo json_encode([
+    'laravel' => class_exists(Illuminate\Foundation\Application::class),
+    'pest' => class_exists(Pest\TestSuite::class),
+    'phpunit' => class_exists(PHPUnit\Framework\TestCase::class),
+    'tests' => isset($loader->getPrefixesPsr4()['Tests\\']),
+    'provider' => (new ReflectionClass($argv[1]))->getFileName(),
+], JSON_THROW_ON_ERROR);
+''', 'App\\Providers\\' + provider))
+                self.assertEqual(result, {
+                    'laravel': True, 'pest': False, 'phpunit': False, 'tests': False,
+                    'provider': str(self.tree / project / f'app/Providers/{provider}.php'),
+                })
+
     def test_changed_merged_locks_refuse_old_dependencies(self):
+        from unittest import mock
+
         for lock in ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock'):
             with self.subTest(lock=lock):
                 self.fresh(self.base)
@@ -423,6 +450,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
 
     def test_generators_run_in_caller_sequence(self):
         import threading
+        from unittest import mock
 
         caller = threading.get_ident()
         commands = []
