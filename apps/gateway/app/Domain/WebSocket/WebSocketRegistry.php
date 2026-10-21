@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\WebSocket;
 
 use App\Models\WebSocketApp;
+use App\Models\WebSocketRuntime;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
@@ -25,6 +26,12 @@ final readonly class WebSocketRegistry
 
             return $callback();
         });
+    }
+
+    /** The caller must hold operator confirmation and establish that the Node is unreachable or deleted. */
+    public function abandonNode(int $nodeId): void
+    {
+        $this->write(fn (): int => WebSocketRuntime::query()->where('node_id', $nodeId)->update(['required' => false]));
     }
 
     /** @return array{epoch: string, revision: int} */

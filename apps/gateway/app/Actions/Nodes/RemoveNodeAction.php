@@ -29,6 +29,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -102,9 +103,6 @@ final readonly class RemoveNodeAction
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardDatabaseServers($node);
-        if (WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
-            throw new ResourceOperationException('websocket.runtime_shutdown_required', 'Verify shutdown of every Reverb process before removing this Node.', 409);
-        }
         $this->guardProtected($node, $caller);
         // A task VM Node never hosts a Metrics exporter, so its removal changes nothing in Metrics. Its role removal
         // holds the fleet Metrics reconcile back, and the Metrics retire below is skipped, as its enrollment skips it.
@@ -116,6 +114,12 @@ final readonly class RemoveNodeAction
             });
         } elseif ($offline) {
             $shed = $this->shedRoles($node, $force, $deleted);
+        }
+        if ($shed !== null) {
+            app(WebSocketRegistry::class)->abandonNode($node->id);
+        }
+        if (WebSocketRuntime::query()->where('node_id', $node->id)->where('required', true)->exists()) {
+            throw new ResourceOperationException('websocket.runtime_shutdown_required', 'Stop every Reverb process first, or confirm an unreachable Node with --offline --force.', 409);
         }
         $this->guardRemoval($node);
 

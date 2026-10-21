@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketRegistry;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -74,7 +75,7 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
 
     /**
      * Removes only what lives on the Gateway, for a websocket node Orbit
-     * cannot reach: the private DNS record and the stored credentials. The
+     * cannot reach after operator confirmation: private DNS, credentials, and required runtime membership. The
      * node's own Caddy site, certificate, Reverb checkout and firewall rule
      * stay on the box, since reaching them would require SSH to a node that
      * is unreachable.
@@ -83,5 +84,6 @@ final readonly class WebSocketRoleBaseline implements RoleBaseline
     {
         $this->publication->removeUnreachable($node);
         $this->credentials->purge($node);
+        app(WebSocketRegistry::class)->abandonNode($node->id);
     }
 }

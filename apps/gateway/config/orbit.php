@@ -69,7 +69,8 @@ return [
     'activity_interrupted_after' => 900,
     'websocket' => [
         'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit-reverb.git'),
-        'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),
+        // Deploy and roll back the server with this Gateway release, never a moving branch.
+        'ref' => 'fe52ed74e3bbb086bd6588366818c01b26e63538',
         'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
         'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
     ],

@@ -16,7 +16,7 @@ The web app and `realtime:tail` need the Gateway to push events. The Gateway pub
 
 ## Cause
 
-Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process. Its Laravel host loads the internal `hardimpactdev/reverb-manager` package for rolling app changes. The Gateway installs and runs it as the `websocket` role, the same way the `metrics` role runs Prometheus and Grafana.
+Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process. Its Laravel application contains the integration with Orbit for rolling app changes. The Gateway installs and runs it as the `websocket` role, the same way the `metrics` role runs Prometheus and Grafana.
 
 ## Solution
 
@@ -32,7 +32,7 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 
 1. It installs the role packages: `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml`. `php-curl` and `php-xml` let `composer install` pass its platform check on a fresh Ubuntu 26.04 Node.
 2. It generates a Laravel `APP_KEY` for the Reverb server the first time, and stores it encrypted as a setting of that Node. It also creates the Gateway's own [Reverb app](/reference/websocket-apps), `gateway`, when it is missing. Later converges reuse both.
-3. It checks out `https://github.com/hardimpactdev/orbit-reverb.git` at `main` into a separate release under `/opt/orbit/websocket.releases` and runs `composer install --no-dev` as the managed user. It validates that release before stopping Reverb and switching `/opt/orbit/websocket` to it.
+3. It checks out `https://github.com/hardimpactdev/orbit-reverb.git` at the immutable commit pinned by the Gateway release into a separate release under `/opt/orbit/websocket.releases` and runs `composer install --no-dev` as the managed user. It validates that release before stopping Reverb and switching `/opt/orbit/websocket` to it.
 4. It writes the app's `.env` with mode `0600`. It contains restricted registry credentials, with no static app list.
 5. It installs `orbit-websocket.service`, which runs `php artisan orbit:reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`. Each converge restarts Reverb, so it loads the current code, fetches the fresh registry, and clients reconnect. App changes use the registry API without convergence.
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
@@ -40,7 +40,7 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 
 Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. The converge stops the runtime again only when it created the role assignment. A preparation failure leaves the existing process running. An activation failure reports an error and requires forward recovery with a compatible release. Orbit does not automatically start a static app list that could contain revoked credentials. That covers `--converge-existing`, a retry after a failed converge, and a relocate target. A failed rollback reports `websocket.rollback_failed`.
 
-`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
+`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. The server ref belongs to the Gateway release and has no environment override. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
 The Gateway reads the connection from the active role assignment. It needs no broadcast setting in its `.env`.
 

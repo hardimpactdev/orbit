@@ -93,9 +93,9 @@ function registryNode(string $name, string $address): Node
     return Node::query()->create(['name' => $name, 'public_ssh_host' => '192.0.2.90', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => $address, 'status' => LifecycleStatus::Active]);
 }
 
-it('cannot delete a Node while an unconfirmed runtime still requires application', function (): void {
+it('refuses ordinary Node removal while a runtime still requires application', function (): void {
     $operation = app(ChangeWebSocketRegistryAction::class)->execute('sync', null, $this->gateway->id, 'sync');
-    $this->deleteJson('/api/v1/nodes/'.$this->server->id, ['offline' => true, 'force' => true])->assertConflict()->assertJsonPath('error.code', 'websocket.runtime_shutdown_required');
+    $this->deleteJson('/api/v1/nodes/'.$this->server->id, ['offline' => false])->assertConflict()->assertJsonPath('error.code', 'websocket.runtime_shutdown_required');
     expect(fn () => $this->server->delete())->toThrow(QueryException::class);
     expect($this->runtime->refresh()->required)->toBeTrue()
         ->and(app(ReadWebSocketApplyStatusAction::class)->execute($operation)['state'])->toBe('pending');

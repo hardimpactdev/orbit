@@ -20,9 +20,13 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Support\Env;
 use Illuminate\Support\Str;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('installs prerequisites, then clones, installs and restarts Reverb on every converge', function (): void {
     $commands = [];
@@ -80,6 +84,28 @@ it('installs prerequisites, then clones, installs and restarts Reverb on every c
         ->toContain('test-registry-token')
         ->not
         ->toContain('[PROTECTED]');
+});
+
+it('installs the server commit pinned by the Gateway release despite a former environment override', function (): void {
+    $environment = Env::getRepository();
+    $previous = $environment->get('ORBIT_WEBSOCKET_REF');
+    $environment->set('ORBIT_WEBSOCKET_REF', 'main');
+    try {
+        $release = require __DIR__.'/../../../../config/orbit.php';
+        $ref = $release['websocket']['ref'];
+        expect($ref)->toMatch('/\A[0-9a-f]{40}\z/');
+        config()->set('orbit.websocket.ref', $ref);
+        $commands = [];
+        $lifecycle = websocket_runtime_lifecycle($commands, ref: '');
+        $lifecycle->converge(websocket_runtime_node(), new NodeRole(['role' => RoleName::WebSocket]), new WebSocketServerCredentials('key', 'process', 'registry', 'notification'));
+        expect($commands[2]->arguments)->toContain($ref)->not->toContain('main');
+    } finally {
+        if ($previous === null) {
+            $environment->clear('ORBIT_WEBSOCKET_REF');
+        } else {
+            $environment->set('ORBIT_WEBSOCKET_REF', $previous);
+        }
+    }
 });
 
 it('stages the configured repository when an existing checkout origin is obsolete or absent', function (bool $missingOrigin): void {
@@ -197,6 +223,7 @@ function websocket_runtime_lifecycle(
     bool $failRuntime = false,
     string $repository = 'https://example.test/orbit-reverb.git',
     string $installPath = '/opt/orbit/websocket',
+    string $ref = 'release-42',
 ): NativeWebSocketRuntimeLifecycle {
     return new NativeWebSocketRuntimeLifecycle(
         commands: new NodeRolePrerequisiteCommandFactory,
@@ -241,7 +268,7 @@ function websocket_runtime_lifecycle(
             }
         },
         repository: $repository,
-        ref: 'release-42',
+        ref: $ref,
         installPath: $installPath,
         port: 8790,
     );

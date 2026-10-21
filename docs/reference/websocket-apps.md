@@ -85,13 +85,19 @@ Add and remove change stored configuration only. Run [`env:sync`](/reference/env
 
 ## The Reverb server
 
-The [orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) server runs the internal Composer package `hardimpactdev/reverb-manager`. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
+[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
 
 The Gateway owns the encrypted app secrets and a versioned registry. After commit, a revision-only webhook prompts each process to fetch the full snapshot. A 30-second reconciliation check repairs missed notifications. HTTP receipt confirms only delivery; a separate process report confirms application.
 
 Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending.
 
 A running process keeps its last applied state when the Gateway is unavailable. This preserves other apps' connections, but removed credentials can remain usable until communication returns. A new process waits for a fresh snapshot before opening its listener.
+
+### Remove a dead websocket Node
+
+Use `orbit node:remove <node> --offline --force` only after confirming the machine is dead or isolated from clients. Orbit checks reachability before abandoning its roles. For an unreachable Node, this confirmation withdraws every runtime on that Node from apply confirmation and revokes its registry access. `orbit node:role:remove <node> websocket --offline --force` also withdraws its runtimes. An ordinary online role removal withdraws only the process it stopped.
+
+The offline path cannot stop a process on the machine. Do not bring the abandoned machine back into service without reconverging it; it may still hold old app secrets. A live Node does not take the offline abandonment path.
 
 ### Rotate an app secret
 
@@ -103,15 +109,17 @@ Environment synchronization and application reload remain separate operations. T
 
 Reports include app count, all open sockets by app, and message and byte counters by direction for currently configured apps. Outbound messages count socket sends, including fan-out. They do not count unique published events. The process boot identity identifies a counter reset. Removing an app clears its counters. The future Orbit dashboard owns presentation and storage.
 
-### Package upgrades
+### Server upgrades
 
-Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and package upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
+Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
 
 ## Deploy and recover
 
-Deploy the matching Gateway schema and control API first. Provision restricted process credentials, then install the matching orbit-reverb release in an announced reconnect window. Confirm a fresh process report and Gateway realtime before closing the window.
+Each Gateway release pins an immutable orbit-reverb commit in its configuration. A Gateway rollback selects that release's matching server commit. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
 
-Run `orbit node:role:add <node> websocket --converge-existing` only for package or role changes. App sync uses the registry API and does not restart the unit. Recovery rolls forward to a compatible release or restores a coordinated backup. It does not fall back to a static app list.
+Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. Recovery rolls forward to a compatible release or restores a coordinated backup.
+
+After restoring the Gateway database, restart every Reverb process in a reconnect window so it registers a new boot and loads a fresh snapshot. A changed registry epoch, a lower revision, or different contents at the same revision makes a running process exit with failure; systemd restarts it. An unchanged revision can return HTTP 304, so automatic detection does not replace the required restart after a restore. Recovery does not fall back to a static app list.
 
 ## Why it works this way
 
@@ -125,7 +133,7 @@ Reverb already keeps apps apart by key and secret. One server per Project would 
 
 The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Revision-only webhooks carry no app secrets and reduce normal update latency. Periodic reconciliation repairs a lost notification without a second queue or registry store.
 
-An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The selected package uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
+An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The integration uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
 
 ### Availability during an outage
 
