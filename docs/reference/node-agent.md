@@ -171,9 +171,10 @@ The agent bounds each step, so a peer that stops answering never holds it.
 | --- | --- |
 | A Gateway request | 10 seconds to connect, 30 seconds in total |
 | One join, from the connection to `pusher_internal:subscription_succeeded` | 30 seconds |
+| A WebSocket write or close | 10 seconds; a blocked write ends the session and starts a new connection |
 | A quiet connection | After 15 seconds without a message, the agent sends `pusher:ping`. Without an answer in 10 more seconds, it reconnects. |
 
-After a drop, the agent reconnects with a backoff from 2 to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
+After a reset, server close, or ping timeout, the agent reconnects with exponential backoff capped at 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
 
@@ -378,6 +379,8 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 ## Releases
 
+The Gateway pins agent `0.4.4`, which includes reconnect recovery after a reset, server close, missing pong, or blocked write. Complete the agent release, Gateway release, and fleet rollout before updating Reverb, so every agent can reconnect when the server restarts. Verify the Gateway Node separately because the fleet rollout excludes it.
+
 A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
 
 The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
@@ -398,7 +401,7 @@ Before merging an agent version bump, wait for its Rust tests and both static bu
 
 Update `NodeAgentFootprint::Version` and replace its single release manifest with the current digests; remove the old manifests. Provisioning and the desired fleet state read that pin, and the Gateway recipe tests check that both pins agree. Download both binaries and verify their digests, then run `php artisan orbit:machine-recipe --validate` from `apps/gateway`. Validation needs the Ubuntu archive keyring and the internal `pi` artifact in `ORBIT_HOME/sandbox-artifacts` (or the directory passed with `--artifact-directory`). Include the pin updates in the version bump pull request and have its final diff reviewed before merging. If review changes the published agent code, release a new version; never move a published tag.
 
-Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
+Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. Update the version, release tag, and rejected prior-tag URL in `tools/test_check_agent_release.py`, then run `python3 -m unittest discover -s tools -p test_check_agent_release.py` after completing the pins. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
 
 Every CI run checks that the Cargo version matches the recipe pin and a published stable release with both binaries and `SHA256SUMS`. It checks both recipe URLs and compares their SHA-256 pins with the published checksum file. Run `python3 tools/check_agent_release.py` from the repository root with Python 3.11 or newer and an authenticated GitHub CLI to check this delivery step locally. A version bump stays red until its release and recipe pin are complete.
 

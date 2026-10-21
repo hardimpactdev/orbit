@@ -376,12 +376,13 @@ it('allows a running prod visit to finish past 06 but starts no next visit', fun
     expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $vpn->id]);
 });
 
-it('visits a roleless CI runner with its recorded ci-runner profile in the overnight service tier', function (): void {
+it('visits a CI-only role Node in the overnight service tier and excludes profile-only Nodes', function (): void {
     [$record, $other, $doctor] = nightlyRecipeFleet();
     $prod = FleetFixtures::node('ci-window-prod', [RoleName::AppProd]);
-    $sabre = FleetFixtures::node('ci-window-sabre');
+    $sabre = FleetFixtures::node('ci-window-sabre', [RoleName::CiRunner]);
     $sabre->update(['settings' => ['machine_recipe' => ['version' => 'sha256:previous', 'profile' => 'ci-runner']]]);
-    FleetFixtures::node('ci-window-operator');
+    $operator = FleetFixtures::node('ci-window-operator');
+    $operator->update(['settings' => ['machine_recipe' => ['profile' => 'ci-runner']]]);
     $this->travelTo(new DateTimeImmutable('2026-10-15 12:00:00 UTC'));
     $action = app(ConvergeFleetRecipeAction::class);
 
@@ -397,7 +398,7 @@ it('visits a roleless CI runner with its recorded ci-runner profile in the overn
     }
 
     expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $sabre->id, $prod->id])
-        ->and($sabre->refresh()->settings['machine_recipe']['profile'])->toBe('ci-runner')
+        ->and($sabre->refresh()->settings['machine_recipe'])->not->toHaveKey('profile')
         ->and($record->refresh()->fleet_convergence['status'])->toBe('succeeded');
 });
 

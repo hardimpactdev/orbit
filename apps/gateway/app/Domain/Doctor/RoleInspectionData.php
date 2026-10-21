@@ -14,5 +14,6 @@ final readonly class RoleInspectionData
         public ?string $caddyVersion = null,
         /** Whether the Gateway machine routes the private domain to VPN DNS, or null when not checked. */
         public ?bool $privateDnsRouteMatches = null,
+        public ?bool $ciRunnerHostMatches = null,
     ) {}
 }

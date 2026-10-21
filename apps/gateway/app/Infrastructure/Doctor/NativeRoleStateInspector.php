@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
+use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -73,6 +74,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         private UfwManagedRulesCheck $firewallCheck = new UfwManagedRulesCheck,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
         private ?VpnSettings $vpnSettings = null,
+        private ?CiRunnerHostProgram $ciRunner = null,
     ) {}
 
     public function inspect(NodeRole $role): RoleInspectionData
@@ -109,12 +111,26 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                     ? $this->caddyVersion($connection)
                     : null,
                 $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
+                $role->role === RoleName::CiRunner
+                    ? $this->ciRunnerHostMatches($node)
+                    : null,
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
+    }
+
+    private function ciRunnerHostMatches(Node $node): bool
+    {
+        $result = ($this->ciRunner ?? app(CiRunnerHostProgram::class))->run($node, 'inspect');
+
+        return match ($result->outcome) {
+            'matches' => true,
+            'drift' => false,
+            default => throw new DoctorInspectionException,
+        };
     }
 
     private function connection(Node $node): SshConnection

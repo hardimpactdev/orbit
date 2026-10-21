@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 import zipfile
 from urllib.parse import urlsplit
@@ -23,6 +24,7 @@ from urllib.parse import urlsplit
 
 POLICY = Path('/usr/sbin/policy-rc.d')
 APT_ETC = Path('/etc/apt')
+NODE_USR = Path('/usr')
 DPKG_LOG = Path('/var/log/dpkg.log')
 UBUNTU_KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
 MAX_SNAPSHOT_LOOKUPS = 3
@@ -160,10 +162,9 @@ def temporary_indexes(source):
                    '-o', 'Dir::Etc::sourceparts=-', '-o', 'Dir::State::lists=' + str(work / 'lists'),
                    '-o', 'Dir::Cache=' + str(work / 'cache'), '-o', 'Dir::Log=' + str(work / 'log'),
                    '-o', 'Debug::NoLocking=true', '-o', 'APT::Sandbox::User=',
-                   '-o', 'Acquire::Languages=none', '-o', 'Acquire::Retries=0',
-                   '-o', 'Acquire::http::Timeout=15', '-o', 'Acquire::https::Timeout=15',
+                   '-o', 'Acquire::Languages=none', *apt_fetch_options(),
                    '-o', 'APT::Update::Error-Mode=any']
-        run(['apt-get', 'update', *options], env=apt_environment(options), timeout=60)
+        apt_fetch(['apt-get', 'update', *options], env=apt_environment(options), timeout=120)
         yield options
 
 
@@ -521,6 +522,90 @@ def docker_sources():
                             r'[a-z][a-z0-9-]*', ['stable'], 'docker')
 
 
+def node_sources():
+    return provider_sources(r'deb\.nodesource\.com',
+                            {'https://deb.nodesource.com/node_' + str(major) + '.x' for major in range(10, 27)},
+                            'nodistro', ['main'], 'node')
+
+
+def node_config(changes):
+    """Validate NodeSource-owned preference/key files and preflight durable backups."""
+    files = []
+    for name in ('nodejs', 'nsolid'):
+        path = APT_ETC / 'preferences.d' / name
+        if not path.exists() and not path.is_symlink():
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise RecipeFailure('node-ownership', detail=f'Refusing unexpected NodeSource preference [{path}].')
+        content = path.read_bytes()
+        fields = deb822_fields(content.decode(), str(path))
+        if (set(fields) != {'package', 'pin', 'pin-priority'} or fields['package'] != name
+                or fields['pin'] != 'origin deb.nodesource.com' or not re.fullmatch(r'-?[0-9]+', fields['pin-priority'])):
+            raise RecipeFailure('node-ownership', detail=f'Refusing mixed or unexpected NodeSource preference [{path}].')
+        files.append((path, content, 'node-preference'))
+    replacements = {path: after.decode() for path, before, after in changes}
+    sources = [APT_ETC / 'sources.list', *sorted((APT_ETC / 'sources.list.d').glob('*.sources')),
+               *sorted((APT_ETC / 'sources.list.d').glob('*.list'))]
+    for path, owner in ((NODE_USR / 'share/keyrings/nodesource.gpg', 'node-usr-keyring'),
+                        (APT_ETC / 'keyrings/nodesource.gpg', 'node-apt-keyring')):
+        if not path.exists() and not path.is_symlink():
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise RecipeFailure('node-ownership', detail=f'Refusing unexpected NodeSource keyring [{path}].')
+        for source in sources:
+            if source.is_file():
+                remaining = replacements[source] if source in replacements else source.read_text()
+                active = '\n'.join(line for line in remaining.splitlines() if not line.lstrip().startswith('#'))
+                if str(path) in active:
+                    raise RecipeFailure('node-ownership', detail=f'NodeSource keyring [{path}] is still referenced by [{source}].')
+        files.append((path, path.read_bytes(), owner))
+    for path, content, owner in files:
+        backup_apt_source(path, content, owner, check_only=True)
+    return files
+
+
+def dangling_corepack_links():
+    links = []
+    for name in ('yarn', 'yarnpkg', 'pnpm', 'pnpx'):
+        path = NODE_USR / 'bin' / name
+        expected = NODE_USR / 'lib/node_modules/corepack/dist' / (name + '.js')
+        if (path.is_symlink() and not path.exists()
+                and Path(os.path.abspath(path.parent / os.readlink(path))) == expected):
+            links.append(path)
+    return links
+
+
+def consolidate_node(tools, *, apply=False):
+    """The recipe owns Node. Retire duplicate APT ownership only after verifying its replacement."""
+    if 'node' not in tools:
+        return []
+    changes = node_sources()
+    config = node_config(changes)
+    installed = 'nodejs' in packages()
+    actions = (['remove_nodejs_package'] if installed else []) + (['retire_node_source'] if changes else [])
+    actions += (['retire_node_config'] if config else []) + (['remove_corepack_links'] if dangling_corepack_links() else [])
+    if not apply:
+        return actions
+    if inspect({'node': tools['node']})['node'] != tools['node']['version']:
+        raise RecipeFailure('node-ownership', detail='Verify the recipe Node runtime before removing the APT source.')
+    if installed:
+        environment = dict(os.environ, LC_ALL='C', DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
+        result = package_command(['apt-get', '--simulate', 'remove', '--', 'nodejs'], ['nodejs'], env=environment)
+        removed = [line.split()[1] for line in result.stdout.splitlines() if line.startswith('Remv ')]
+        if removed != ['nodejs']:
+            raise RecipeFailure('node-ownership', detail='Node removal would affect other packages; inspect dependencies before retrying.')
+        package_command(['apt-get', 'remove', '--yes', '--', 'nodejs'], ['nodejs'], env=environment)
+        if 'nodejs' in packages():
+            raise RecipeFailure('node-ownership', detail='The duplicate nodejs package is still installed.')
+    retire_sources(changes, 'node')
+    for path, content, owner in config:
+        backup_apt_source(path, content, owner)
+        path.unlink()
+    for path in dangling_corepack_links():
+        path.unlink()
+    return actions
+
+
 def git_preferences(tools):
     return ''.join(f'Package: {name}\nPin: version {tools[name]["version"]}\nPin-Priority: 1001\n\n'
                    f'Package: {name}\nPin: version *\nPin-Priority: -1\n\n' for name in tools).encode()
@@ -560,7 +645,7 @@ def pin_git(payload):
 
 def plan(payload):
     check_git_siblings(payload)
-    actions = configure_git(payload)
+    actions = configure_git(payload) + consolidate_node(payload['tools'])
     if ubuntu_sources_repair() is None:
         report = assess(payload['tools'], git_names=git_packages(payload))
     else:
@@ -575,13 +660,64 @@ def snapshot_options(payload, work):
     path = work / 'ubuntu.sources'
     publish(path, source.encode())
     # Keep normal sources and their cached origin metadata for unattended-upgrades and read-only plans.
-    return ['-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
-            '-o', 'APT::Get::List-Cleanup=false']
+    return apt_source_options(path)
+
+
+def apt_fetch_options():
+    # APT's built-in retries include 4xx and omit some 5xx. The fetch boundary owns retries.
+    return ['-o', 'Acquire::Retries=0',
+            '-o', 'Acquire::http::Timeout=15', '-o', 'Acquire::https::Timeout=15']
+
+
+def apt_fetch(argv, **kwargs):
+    kwargs['env'] = dict(kwargs.get('env') or os.environ, LC_ALL='C')
+    for delay in (10, 20, 30, None):
+        try:
+            return run(argv, **kwargs)
+        except RecipeInterrupted:
+            raise
+        except RecipeFailure as error:
+            output = (error.result.stdout + '\n' + error.result.stderr) if error.result is not None else ''
+            failures = re.findall(r'^[EW]: Failed to fetch (\S+)[ \t]+([^\n]+)', output, re.MULTILINE)
+            # A failed Release fetch also produces a derived "not signed" error on a fresh list.
+            unsigned = re.findall(r"^E: The repository '(\S+) (\S+) (?:InRelease|Release)' is not signed\.$", output, re.MULTILINE)
+            derived_unsigned = unsigned and all(any(
+                url in (root.rstrip('/') + '/dists/' + suite + '/InRelease', root.rstrip('/') + '/dists/' + suite + '/Release')
+                for url, _ in failures) for root, suite in unsigned)
+            # Retry only explicit transport failures, never authentication, digest, or other package errors.
+            if (delay is None or not failures
+                    or re.search(r'(?i)hash sum mismatch|unexpected size|signature|NO_PUBKEY', output)
+                    or ('not signed' in output and not derived_unsigned)
+                    or not all(re.match(r'5\d\d\b', reason) or any(message in reason for message in ('Connection reset by peer', 'Connection failed'))
+                               for _, reason in failures)):
+                raise
+            time.sleep(delay)
+
+
+def apt_source_options(path):
+    return [*apt_fetch_options(), '-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
+            '-o', 'APT::Get::List-Cleanup=false', '-o', 'APT::Update::Error-Mode=any',
+            '-o', 'Acquire::Languages=none', '-o', 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled=false',
+            '-o', 'Acquire::IndexTargets::deb::CNF::DefaultEnabled=false']
+
+
+def refresh_ubuntu_indexes(payload, resources):
+    """Refresh origin evidence from Ubuntu without reading unrelated host sources."""
+    work = Path(resources.enter_context(tempfile.TemporaryDirectory(prefix='orbit-recipe-sources-')))
+    path = work / 'ubuntu.sources'
+    source = rolling_source(payload['architecture'])
+    path.write_text(source)
+    options = apt_source_options(path)
+    package_command(['apt-get', 'update', *options], [])
+    # Origin checks also need cached snapshot evidence. Installation still uses only the pinned snapshot.
+    path.write_text(source + '\n' + snapshot_source(payload['snapshot']))
+    return options
 
 
 def package_command(argv, packages, **kwargs):
     try:
-        return run(argv, **kwargs)
+        execute = apt_fetch if argv[:2] in (['apt-get', 'update'], ['apt-get', 'install']) else run
+        return execute(argv, **kwargs)
     except RecipeFailure as error:
         error.packages = packages
         raise
@@ -642,19 +778,24 @@ def inspect(tools):
     versions = {}
     javascript = set(tools) & {'node', 'pnpm', 'bun', 'vp', 'vp-cli'}
     scope = None
+    prefix = []
     if javascript:
         account = pwd.getpwnam(os.environ['SUDO_USER']) if os.environ.get('SUDO_USER') else pwd.getpwuid(os.getuid())
         scope = vite_scope(account)
+        # Store executables are account-writable. Never inspect them with container/host root privileges.
+        if os.geteuid() == 0:
+            prefix = ['sudo', '-u', account.pw_name, '-H']
+        prefix += ['env', 'VP_HOME=' + str(scope)]
     for name, pin in tools.items():
         if pin['source'] == 'ubuntu' or (pin['source'] == 'artifact' and any(a['url'].endswith('.deb') for a in pin.get('artifacts', {}).values())):
             versions[name] = installed.get(pin['package'] if pin['source'] == 'ubuntu' else name)
         elif name == 'bun':
-            versions[name] = binary_version('/opt/orbit/bun/bin/bun')
+            versions[name] = binary_version('/opt/orbit/bun/bin/bun', prefix=prefix)
         elif name == 'vp-cli':
             binary = (scope / 'bin/vp').resolve()
             # Even --version can bootstrap an unmarked Vite+ executable. Never invoke one in a read.
             ready = binary.is_file() and (binary.parent / '.vp-setup-complete').is_file()
-            versions[name] = binary_version(binary, dict(os.environ, VP_HOME=str(scope))) if ready else None
+            versions[name] = binary_version(binary, prefix=prefix) if ready else None
         elif name == 'vp':
             digest = pin.get('lock_sha256')
             target = scope / 'recipe' / ('vp-runtime-' + str(digest))
@@ -671,7 +812,7 @@ def inspect(tools):
             # A moving default can fetch a runtime even for node --version. Inspect exact cached defaults directly.
             default = json_file(scope / 'config.json').get('defaultNodeVersion', '')
             binary = scope / 'js_runtime/node' / default / 'bin/node' if isinstance(default, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', default) else None
-            versions[name] = binary_version(binary) if binary and binary.is_file() else None
+            versions[name] = binary_version(binary, prefix=prefix) if binary and binary.is_file() else None
         else:
             raise RecipeFailure()
         if versions[name] is not None and not isinstance(versions[name], str):
@@ -980,17 +1121,14 @@ def apply_recipe(payload, snapshots):
         if policy.exists() or policy.is_symlink():
             raise RecipeFailure()
         stage = 'apt-source'
-        repaired = repair_ubuntu_sources(payload['architecture'])
-        repair_options = (['-o', 'Dir::Etc::sourcelist=' + str(APT_ETC / 'sources.list.d/ubuntu.sources'),
-                           '-o', 'Dir::Etc::sourceparts=-', '-o', 'APT::Get::List-Cleanup=false'] if repaired else [])
-        # Refresh the rolling pockets before assessing even an already-converged Node.
-        package_command(['apt-get', 'update', *repair_options, '-o', 'APT::Update::Error-Mode=any'], [])
+        repair_ubuntu_sources(payload['architecture'])
+        origin_options = refresh_ubuntu_indexes(payload, snapshots)
         stage = 'preflight'
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
         versions = inspect(tools)
         check_git_siblings(payload)
-        assessment = assess(tools, versions, snapshots=snapshots, git_names=git_packages(payload))
+        assessment = assess(tools, versions, origin_options, snapshots, git_packages(payload))
         supported(assessment)
         active = active_units()
         recipe_packages = {pin['package'] for pin in tools.values() if pin['source'] == 'ubuntu'}
@@ -1016,11 +1154,12 @@ def apply_recipe(payload, snapshots):
                     raise RecipeFailure()
             stage = 'apt-source'
             configure_git(payload, apply=True)
-            apt_options = snapshot_options(payload, work)
-            stage = 'packages'
-            package_command(['apt-get', 'update', *apt_options], [])
             ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items()
                       if pin['source'] == 'ubuntu' and assessment[name]['changed']]
+            apt_options = snapshot_options(payload, work) if ubuntu or debs else None
+            stage = 'packages'
+            if apt_options is not None:
+                package_command(['apt-get', 'update', *apt_options], [])
             environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
             # This is temporary restart suppression, not a package/configuration rollback.
             publish(policy, b'#!/bin/sh\nexit 101\n', 0o755)
@@ -1040,10 +1179,12 @@ def apply_recipe(payload, snapshots):
             install_javascript(tools, downloads, work, account, payload.get('vp_lock')) if js else None
             stage = 'inventory'
             after_versions = inspect(tools)
-            after_assessment = assess(tools, after_versions, apt_options, snapshots, git_packages(payload))
+            after_assessment = assess(tools, after_versions, origin_options, snapshots, git_packages(payload))
             supported(after_assessment)
             if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in after_assessment.values()):
                 raise RecipeFailure()
+            stage = 'node-ownership'
+            consolidate_node(tools, apply=True)
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
             stage = 'restart'

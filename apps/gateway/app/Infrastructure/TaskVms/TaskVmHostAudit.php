@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -70,9 +72,10 @@ final readonly class TaskVmHostAudit
     public function strays(TaskVmHost $host, Node $node): array
     {
         $inventory = $this->incus->inventory($node);
+        $ciRunner = $node->roles()->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists();
         $instances = [];
         foreach ($inventory['instances'] as ['project' => $project, 'name' => $name]) {
-            if (! $host->operatorOwns($project, $name) && ! ($project === $host->project && $this->ownsInstance($node, $name))) {
+            if (! ($ciRunner && $project === 'orbit-ci') && ! $host->operatorOwns($project, $name) && ! ($project === $host->project && $this->ownsInstance($node, $name))) {
                 $instances[] = "{$project}/{$name}";
             }
         }
@@ -80,7 +83,7 @@ final readonly class TaskVmHostAudit
         $fingerprints = array_keys($this->incus->images($host, $node));
         foreach ($inventory['volumes'] as ['project' => $project, 'pool' => $pool, 'name' => $name]) {
             $owned = $project === $host->project && $pool === $host->pool && TaskVmVolumes::owns($name, $fingerprints);
-            if (! $owned && ! $host->operatorOwns($project, $name)) {
+            if (! $owned && ! ($ciRunner && $project === 'orbit-ci') && ! $host->operatorOwns($project, $name)) {
                 $volumes[] = "{$project}/{$pool}/{$name}";
             }
         }

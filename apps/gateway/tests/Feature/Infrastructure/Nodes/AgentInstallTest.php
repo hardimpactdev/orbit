@@ -50,13 +50,13 @@ it('refuses macOS agent installation before SSH and skips removal', function ():
 it('pins the current agent release for both supported architectures', function (): void {
     expect(NodeAgentFootprint::Architectures)->toBe(['x86_64', 'aarch64']);
 
-    expect(NodeAgentFootprint::Version)->toBe('0.4.3')
-        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('4effe5a562dbb087f33a580e9912e0b78c83f77ff72af6d2eec030b4b918d74a')
-        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('8c063259e2f04900b988bc6405c987dd5273ad9d15b856abb3ab98bbb36cb4df')
+    expect(NodeAgentFootprint::Version)->toBe('0.4.4')
+        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf')
+        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-x86_64')
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64')
         ->and(NodeAgentFootprint::downloadUrl('aarch64'))
-        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.3/orbit-agent-0.4.3-linux-aarch64');
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-aarch64');
 });
 
 it('rejects an architecture absent from the current agent manifest', function (): void {
