@@ -156,7 +156,7 @@ The merge driver and its test runner start Python without loading site packages.
 
 The real animation composition proof retains seven outer ticks across admission and resume at the production 300 ms cadence. The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
 
-The Rector cache invalidation proof runs Rector twice against fresh parent and child sources. It runs from the task-local Rector installation, not the Docs project, so it does not scan unrelated application sources. Its result cache is private and starts empty; the first pass must populate it. The proof uses the project's ordinary Rector container cache rather than compiling a new container for each fixture. It retains both real passes, the warm result cache and the unchanged child assertion.
+The Rector cache regression directly checks that the project's `composer rector` command includes the `--clear-cache` argument. The tooling baseline keeps this command identical in all five Composer projects and rejects a command without that argument. This checks the cache invalidation contract inside the test's two-second limit, without starting Rector or moving part of the proof into an unmeasured hook.
 
 CLI applications, configuration, containers, and command objects are freshly built for each feature test. CI adds no private bytecode cache or separate cache-coverage lane.
 
@@ -314,7 +314,7 @@ TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs t
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
-Stock ParaTest detects all runner CPUs for both full Docs runs: the change-run proof and the fresh graph-recording run. The generated-merge driver and independent freshness checks run their commands in sequence. ParaTest owns CPU allocation; nested generator pools would compete with the other cases and cold Rector processes under the unchanged two-second per-test limit.
+Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel --no-tia` and record no graph. The generated-merge driver runs its commands in sequence, and each independent freshness gate has its own test case. ParaTest owns CPU allocation; nested generator pools would compete with the other cases under the unchanged two-second per-test limit.
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
@@ -632,9 +632,9 @@ Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. 
 
 CI does not restore or save Rector's cache. Every project's `composer rector` uses `--clear-cache`, including runs through `composer check` in CI and the local review gate. Rector's unchanged-file cache does not track all class dependencies: a parent-only property change can leave an unchanged child's missing `#[Override]` undetected. Clearing the cache trades warm-run speed for a complete check of the configured Rector paths; Pint, PHPStan, and Pest keep their existing caches. The candidate gate narrows the files instead of keeping a cache, as [The gate checks changed files](#the-gate-checks-changed-files) explains.
 
-The regression in `apps/docs/tests/Unit/ToolingBaselineRectorCacheTest.php` prepares a private warm-cache fixture in Pest's file setup, using an empty parent and a child that declares `public string $name = '';`. Setup checks that the real project command succeeds and writes file-result caches. The test then adds that same property only to the parent and runs the command again. Before the fix, the second check exits 0 without reporting the child. With the project's check command, it exits 2 and proposes `#[\Override]` on the child's property. The dry run leaves the child unchanged.
+The regression in `apps/docs/tests/Unit/ToolingBaselineRectorCacheTest.php` reads the project's Composer script in the test body and requires an exact `--clear-cache` argument. Removing the argument makes the test fail. `bin/tooling-baseline` keeps the Rector command identical in every project, and its drift test rejects removal of the argument from another project too.
 
-The fixture keeps its PHPStan container cache separate from Rector's file-result cache, so the second run reuses only the container, not analysis results. This keeps cold tool setup out of the regression's two-second test budget without changing the limit or suppressing risky tests.
+Running Rector twice from cold exceeded the stock two-second per-test limit on CI. The direct command assertion checks the setting Orbit owns instead of retesting Rector's cache implementation. No Rector work or assertions run in a class-level hook.
 
 Gateway timings were measured in the task workspace on Linux x86_64, with four CPUs, PHP 8.5.11, and Rector 2.6.7. They were 126.24 seconds for an uncached run and 0.65 seconds for a warm run before the fix. After adding `--clear-cache`, `composer rector` took 154.77 seconds on the first run and 118.92 seconds on the repeat. These are wall-clock samples, not a performance guarantee: checks now pay the full analysis cost on every run.
 

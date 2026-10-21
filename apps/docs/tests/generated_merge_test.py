@@ -174,7 +174,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         git(cls.tree, 'update-ref', 'refs/remotes/origin/main', cls.base)
         # Branch commits and expected trees are immutable source inputs. Build
         # them once; the timed tests still exercise conflicts and cold drivers.
-        fixture = cls('test_base_freshness')
+        fixture = cls('test_base_openapi_freshness')
         scenarios = {}
         for kind in ('adr', 'endpoint'):
             scenarios[kind] = {'commits': fixture.changes(kind), 'tree': fixture.combined(kind)}
@@ -200,27 +200,28 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         for path in paths:
             (self.tree / path).write_bytes(f'not generated: {label}\n'.encode())
 
-    def check(self):
+    def check(self, gate):
         tree = self.tree
-        # Each gate independently rebuilds its expected output. Run them in
-        # sequence: ParaTest owns CPU allocation, not these nested consumers.
+        # Each test runs one independent, cold freshness gate. ParaTest owns
+        # CPU allocation, not a nested pool of generator subprocesses.
         before = {path: (tree / path).read_bytes() for path in TOOL.ARTIFACTS}
         env = dict(os.environ, ORBIT_DOCS_ROOT=str(tree / 'docs'),
                    APP_CONFIG_CACHE=str(tree / 'private-config.php'))
         schema = Path(self.scratch.name) / 'fresh-schema.d.ts'
-        commands = [
-            ['bin/docs-openapi', '--check'],
-            ['bin/mcp-tools', '--check'],
-            ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
-            ['bin/docs-nav'],
-            ['bun', '--bun', str(ROOT / 'apps/web/node_modules/.bin/openapi-typescript'),
-             str(tree / 'docs/openapi.json'), '-o', str(schema)],
-        ]
-        for command in commands:
-            process = subprocess.run(command, cwd=tree, env=env, text=True, capture_output=True)
-            self.assertEqual(process.returncode, 0, f'{command}:\n{process.stdout}{process.stderr}')
-        self.assertEqual(before['apps/web/src/api/schema.d.ts'], schema.read_bytes(),
-                         'web types differ from a fresh build')
+        commands = {
+            'openapi': ['bin/docs-openapi', '--check'],
+            'mcp': ['bin/mcp-tools', '--check'],
+            'lint': ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
+            'navigation': ['bin/docs-nav'],
+            'web_types': ['bun', '--bun', str(ROOT / 'apps/web/node_modules/.bin/openapi-typescript'),
+                          str(tree / 'docs/openapi.json'), '-o', str(schema)],
+        }
+        command = commands[gate]
+        process = subprocess.run(command, cwd=tree, env=env, text=True, capture_output=True)
+        self.assertEqual(process.returncode, 0, f'{command}:\n{process.stdout}{process.stderr}')
+        if gate == 'web_types':
+            self.assertEqual(before['apps/web/src/api/schema.d.ts'], schema.read_bytes(),
+                             'web types differ from a fresh build')
         for path, contents in before.items():
             self.assertTrue(contents == (tree / path).read_bytes(), f'{path} changed during freshness checks')
 
@@ -331,18 +332,11 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
     def test_reversed_adr_additions(self):
         self.merge_order('adr', reverse=True)
 
-    def test_base_freshness(self):
-        self.check()
-
     def test_independent_adr_previews(self):
         self.preview_order('adr')
 
     def test_reversed_adr_previews(self):
         self.preview_order('adr', reverse=True)
-
-    def test_adr_freshness(self):
-        self.combined('adr')
-        self.check()
 
     def endpoint_changes(self, branches=True):
         commits = []
@@ -380,10 +374,6 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
 
     def test_reversed_endpoint_previews(self):
         self.preview_order('endpoint', reverse=True)
-
-    def test_endpoint_freshness(self):
-        self.combined('endpoint')
-        self.check()
 
     def test_runtime_only_autoloaders(self):
         for project, provider in (('apps/docs', 'AppServiceProvider'),
@@ -494,6 +484,19 @@ echo json_encode([
             self.assertIn('merge_conflict:', stderr)
             self.assertIn('local_driver_failed:', stderr)
         git(self.tree, 'merge', '--abort')
+
+
+def freshness_case(kind, gate):
+    def test(self):
+        if kind != 'base':
+            self.combined(kind)
+        self.check(gate)
+    return test
+
+
+for kind in ('base', 'adr', 'endpoint'):
+    for gate in ('openapi', 'mcp', 'lint', 'navigation', 'web_types'):
+        setattr(GeneratedMergeTest, f'test_{kind}_{gate}_freshness', freshness_case(kind, gate))
 
 
 if __name__ == '__main__':

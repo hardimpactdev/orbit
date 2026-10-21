@@ -88,7 +88,7 @@ Regeneration is cached once per ordered pair of commit SHAs, driver version, and
 
 Before sharing installed dependencies, it also compares the merged tree's locks with the dependency checkout. A lock change or mismatch fails clearly: install the merged locked dependencies and run the generators explicitly instead of using old vendor packages. Source conflicts and dependency failures are not cached. Cache hits reuse the completed validation of those immutable commits.
 
-The private source merge uses the maintained-index driver only for navigation and ADR rows. Git's no-op driver handles derived snapshots, which the generators replace before publishing the cache. The Markdown context index runs independently of OpenAPI generation. MCP tools and web types run independently after OpenAPI is ready. Web types use the web app's installed OpenAPI TypeScript CLI on Bun, the web app's runtime. Every generator must succeed before the complete output is published.
+The private source merge uses the maintained-index driver only for navigation and ADR rows. Git's no-op driver handles derived snapshots, which the generators replace before publishing the cache. The generators run in sequence on the calling thread: Markdown context index, OpenAPI document, MCP tools, then web types. Web types use the web app's installed OpenAPI TypeScript CLI on Bun, the web app's runtime. Every generator must succeed before the complete output is published.
 
 `bin/docs-merge-check` previews GitHub's ordinary text merge without custom drivers; it reports the local driver result separately on a conflict, never turning that conflict into a successful GitHub preview.
 
@@ -163,7 +163,7 @@ Tests for generated merges write distinct markers to derived artifacts instead o
 
 Recorded fixtures contain real generator output for the base, combined ADR additions, and combined endpoint changes. Separate read-only freshness cases rebuild each fixture's outputs, including a fresh web type comparison. Every check must pass and leave all artifacts unchanged. Regenerate fixture bytes with the real generators when their inputs change; never update them just to silence a mismatch. Policy tests use small, valid corpora that exercise the rule under test; `composer docs-lint` checks the full corpus.
 
-Run the merge generators and independent freshness checks in sequence. Stock ParaTest owns CI parallelism; nested pools compete with its workers. Another test rejects generators that run on a different thread. The real merge and freshness cases remain separate.
+Run the merge generators in sequence. Give each independent freshness gate its own test case for each recorded fixture: OpenAPI, MCP tools, Docs lint, navigation, and web types. Each gate checks that all recorded artifacts remain unchanged. Stock ParaTest owns CI parallelism; nested pools compete with its workers. Another test rejects generators that run on a different thread. The real merge and freshness cases remain separate.
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 

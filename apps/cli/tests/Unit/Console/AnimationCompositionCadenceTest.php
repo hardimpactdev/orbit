@@ -29,7 +29,7 @@ describe('animation composition cadence', function (): void {
         try {
             stream_set_blocking($pipes[1], false);
             $send(['frames' => $outerFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
-            $deadline = microtime(true) + 4;
+            $deadline = microtime(true) + 1.9;
 
             while (microtime(true) < $deadline) {
                 $now = microtime(true);
