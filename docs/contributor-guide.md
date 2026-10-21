@@ -139,6 +139,8 @@ CLI feature tests reuse resolved configuration with Laravel's `WithCachedConfig`
 
 Cold-boot and environment-sensitive proofs run in subprocesses without these in-memory caches. The CLI schedules its Unit suite first and keeps composition and print-line cadence proofs in separate files so stock parallel workers can overlap them with command tests.
 
+CLI pull-request and handoff CI jobs also use a private, initially empty PHP bytecode cache. This caches compiled code, not application state or test results. The [CI reference](/reference/implementation-loop#ci) describes its isolation, coverage and freshness checks.
+
 Consent matrices register only their command in the real application kernel. An affirmative case for each family retains full command discovery. Tests that validate prompt input deliver Backspace keys in one buffered read instead of rendering hundreds of unrelated frames. The prompt still processes every key. The real PTY driver polls readiness every 2 ms and drains queued output without waiting once the child has exited. Neither interval is a production-cadence assertion.
 
 When a test must observe native cURL options, inject its option-setting callable and use a stock mock that delegates to `curl_setopt`; checking a private timeout selector does not prove the transfer uses it.

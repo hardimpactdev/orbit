@@ -146,6 +146,10 @@ The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-l
 
 Full suites include architecture and subprocess tests. CI has no subprocess-only lanes or affected-test selector. A test that starts PHP still declares `pest()->group('subprocess')` so the coverage limitation stays explicit: runtime coverage cannot link the child process's code to its parent test. The workflow contract uses Pest's stock XML test listing once per configured suite. It checks both full-suite inclusion and subprocess-group membership from that listing, including each source file that starts PHP.
 
+CLI pull-request and task-handoff jobs prepare a private PHP OPcache file cache immediately before the full test step. The cache starts empty under `RUNNER_TEMP`; compilation stays inside the measured test step. PHP reuses bytecode, not applications, containers, command objects, configuration values, or test results. No cache is restored or shared between jobs.
+
+The CLI cache uses `opcache.file_cache_only=1`, timestamp validation, and `opcache.revalidate_freq=0`. PCOV stays enabled. A regression executes cached bytecode and checks that PCOV still records executed lines. It also rewrites the source file and checks that the next process sees the change. Main's TIA-recording runs and the other projects keep their existing PHP settings.
+
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
 Every main push, scheduled run and manual dispatch runs each Composer project's full suite with `pest --parallel --tia --fresh`. The fork records a fresh graph while running every test; no restored graph selects CI tests. After a passing run on main, the export requires that graph to record the tested SHA and a result for every linked test file. The job saves the graph and quality caches for [task workspaces](#ci-cache-refs). Local task checks retain TIA, as the [contributor guide](/contributor-guide#3-implement-and-verify) describes.
