@@ -51,6 +51,40 @@ class GeneratedMergeTest(unittest.TestCase):
                      'apps/web/tests', 'apps/web/fixtures', 'packages/php-sdk/tests',
                      'packages/php-sdk/fixtures', '.agents'):
             shutil.rmtree(cls.tree / path)
+        # Keep real core and extension discovery without generating every core
+        # endpoint. Activities anchors the navigation assertion; route:create is
+        # also required by the generator's own request-schema checks.
+        (cls.tree / 'apps/gateway/routes/api.php').write_text(r'''<?php
+use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\RoutesController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('v1/activities', [ActivitiesController::class, 'index'])->name('activity:list');
+Route::post('v1/routes', [RoutesController::class, 'store'])->name('route:create');
+''')
+        for route_file in (cls.tree / 'apps/gateway/extensions').glob('*/routes/api.php'):
+            route_file.write_text('<?php\nuse Illuminate\\Support\\Facades\\Route;\n')
+        (cls.tree / 'apps/gateway/extensions/conn/routes/api.php').write_text(r'''<?php
+use App\Http\Middleware\RequireEnabledExtension;
+use Illuminate\Support\Facades\Route;
+use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
+
+Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
+    ->middleware(RequireEnabledExtension::class.':conn')->name('conn:me');
+''')
+        # The static generator evaluates rule constants in PHP subprocesses.
+        # Keep the real form requests reached by this route corpus, not every
+        # unrelated product request. Non-request helpers stay available too.
+        requests = {
+            'apps/gateway/app/Http/Requests/Activities/ListActivitiesRequest.php',
+            'apps/gateway/app/Http/Requests/Routes/StoreRouteRequest.php',
+        }
+        request_roots = [cls.tree / 'apps/gateway/app/Http/Requests',
+                         *(cls.tree / 'apps/gateway/extensions').glob('*/src/Http/Requests')]
+        for folder in request_roots:
+            for path in folder.rglob('*Request.php'):
+                if path.relative_to(cls.tree).as_posix() not in requests:
+                    path.unlink()
         git(cls.tree, 'add', '-u')
         # Keep the real Gateway, CLI, SDK and all generators. The documentation
         # corpus only needs the core pages and ADR table used by these merges;
@@ -233,9 +267,9 @@ class GeneratedMergeTest(unittest.TestCase):
             # Append to the table, not to its following blank paragraph.
             text = text.replace('\n\n| [' + number, '\n| [' + number)
             overview.write_text(text)
-            self.mark_derived(number, [TOOL.ARTIFACTS[0]])
+            self.mark_derived(number, [TOOL.ARTIFACTS[0], *TOOL.ARTIFACTS[3:]])
             commits.append(self.commit(f'add ADR {number}'))
-        self.merge_both_orders(*commits, conflicts=TOOL.ARTIFACTS[:3])
+        self.merge_both_orders(*commits, conflicts=TOOL.ARTIFACTS)
 
     def test_independent_endpoint_changes(self):
         commits = []

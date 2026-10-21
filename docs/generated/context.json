@@ -708,6 +708,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

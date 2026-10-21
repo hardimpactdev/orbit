@@ -135,6 +135,8 @@ Keep one real binary smoke test for local profile output, and real PTY cases for
 
 Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests accept short work and renderer intervals for process ownership and cleanup checks; terminal recordings and production-cadence assertions retain the 300 ms interval and their original tick counts across admission and resume. Keep cold nested-panel startup and settlement inside the outer callback.
 
+CLI feature tests reuse resolved configuration with Laravel's `WithCachedConfig`, but still boot a fresh application and container for every case. Cold-boot and environment-sensitive proofs run in subprocesses without that in-memory cache. The CLI schedules its Unit suite first and keeps composition and print-line cadence proofs in separate files so stock parallel workers can overlap them with command tests.
+
 Consent matrices register only their command in the real application kernel. An affirmative case for each family retains full command discovery. Tests that validate prompt input deliver Backspace keys in one buffered read instead of rendering hundreds of unrelated frames. The prompt still processes every key. The real PTY driver polls readiness every 2 ms and drains queued output without waiting once the child has exited. Neither interval is a production-cadence assertion.
 
 When a test must observe native cURL options, inject its option-setting callable and use a stock mock that delegates to `curl_setopt`; checking a private timeout selector does not prove the transfer uses it.
@@ -142,6 +144,8 @@ When a test must observe native cURL options, inject its option-setting callable
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
 
 Docs tests build each file's Git template once and copy it for isolated cases. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
+
+The generated-merge cases share one private Git template. Its disposable route corpus keeps real core controllers and extension discovery, but only the endpoints and form requests needed to anchor the merge proofs and the generator's request-schema checks. This avoids evaluating unrelated request constants in PHP subprocesses. Both ADR and endpoint branches mark derived API artifacts as conflicting too, so the real merge replaces them without generating an unused baseline snapshot. Keep all Python cases in the Pest wrapper.
 
 Tests for generated merges write distinct markers to derived artifacts instead of generating branch snapshots. Maintained navigation entries and ADR rows remain real inputs. Real Git merges exercise the driver and its generators in both orders, alongside independent preview commands in private checkouts. Keep unrelated suites and guides out of these fixtures. Check identical merge trees once with the independent read-only freshness gates running concurrently, including a fresh web type comparison. Every gate must pass and leave all artifacts unchanged. Policy tests use small, valid corpora that exercise the rule under test; `composer docs-lint` checks the full corpus.
 
