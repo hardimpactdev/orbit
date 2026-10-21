@@ -6122,21 +6122,30 @@
                     "type": "string",
                     "enum": [
                       "mysql",
-                      "redis"
+                      "redis",
+                      "pgsql"
                     ],
-                    "description": "Server driver: mysql or redis. Defaults to mysql"
+                    "description": "Server driver: mysql, redis, or pgsql. Defaults to mysql"
                   },
                   "tag": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
+                    "pattern": "",
                     "maxLength": 128,
-                    "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis"
+                    "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql"
+                  },
+                  "lan_node_ids": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
                   },
                   "port": {
                     "type": "integer",
                     "maximum": 65535,
                     "minimum": 1,
-                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis"
+                    "description": "Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql"
                   },
                   "process_id": {
                     "type": "integer",
@@ -10203,6 +10212,14 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "network": {
+                    "type": "string",
+                    "enum": [
+                      "wireguard",
+                      "lan"
+                    ],
+                    "description": "Connection network: wireguard (default) or lan"
+                  },
                   "prefix": {
                     "type": "string",
                     "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
@@ -10282,7 +10299,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"prefix\": \"DB\"}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"network\": \"wireguard\", \"prefix\": \"DB\"}'\n"
           },
           {
             "lang": "php",
@@ -32464,6 +32481,12 @@
               "string",
               "null"
             ]
+          },
+          "lan_host": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -32525,6 +32548,12 @@
           },
           "databases_count": {
             "type": "integer"
+          },
+          "lan_node_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
           }
         }
       },

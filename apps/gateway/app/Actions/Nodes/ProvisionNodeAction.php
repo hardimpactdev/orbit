@@ -14,6 +14,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Fleet\NodeCliConvergence;
@@ -93,7 +94,14 @@ final readonly class ProvisionNodeAction
     public function execute(ProvisionNodeData $data): Node
     {
         try {
-            return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
+            return $this->provisioningLock->run($data->name, function () use ($data): Node {
+                try {
+                    return $this->provision($data);
+                } catch (Throwable $exception) {
+                    app(DatabaseServerFirewallReconciler::class)->reconcilePeers();
+                    throw $exception;
+                }
+            });
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }
@@ -309,6 +317,9 @@ final readonly class ProvisionNodeAction
         }
         $rolelessOperator = $data->roles === [] && (! $node->exists || $node->roles()->doesntExist());
 
+        if ($node->exists && $lanIp !== $node->lan_ip) {
+            app(DatabaseServerFirewallReconciler::class)->reconcilePeers([$node->id => ['lan_ip' => $lanIp, 'status' => LifecycleStatus::Active]], expand: true);
+        }
         $node->fill([
             'status' => LifecycleStatus::Provisioning,
             'cluster_id' => $clusterId,
@@ -466,6 +477,7 @@ final readonly class ProvisionNodeAction
 
         $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+        app(DatabaseServerFirewallReconciler::class)->reconcilePeers();
         $clock->step('activate');
 
         if ($data->settingsProvided) {
@@ -786,6 +798,7 @@ final readonly class ProvisionNodeAction
     /** @param list<int> $clusterIds */
     private function expandRouterLanIngress(Node $node, array $clusterIds): void
     {
+        app(DatabaseServerFirewallReconciler::class)->reconcilePeers([$node->id => ['lan_ip' => $node->lan_ip, 'status' => LifecycleStatus::Active]], expand: true);
         $this->lanIngress()->expand(
             nodeOverrides: [
                 $node->id => [

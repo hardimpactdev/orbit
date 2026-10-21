@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseServerFirewall;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
@@ -107,7 +108,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->assertJsonPath('data.databases_count', 0);
 
         expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
+            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count', 'lan_node_ids',
         ]);
 
         $server = DatabaseServer::query()->sole();
@@ -263,7 +264,7 @@ describe('database:server:create --driver=redis', function (): void {
         expect(DatabaseServer::query()->exists())->toBeFalse()
             ->and($this->programs->runs)->toBe([]);
     })->with([
-        'pgsql' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'pgsql']),
+        'pgsql' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'sqlite' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'unknown driver' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'valkey']),
         'process without connection' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => 1]),
@@ -808,4 +809,12 @@ describe('database:server:close boundary', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.99'])
             ->postJson('/api/v1/database-servers/missing/close')->assertForbidden();
     });
+});
+
+it('publishes Valkey on LAN and WireGuard with exact LAN peers', function (): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
+    expect(DatabaseServer::query()->sole()->process->runtime_config['ports'])->toBe(['10.44.0.80:6379:6379', '10.0.0.6:6379:6379']);
+    expect(app(DatabaseServerFirewall::class)->calls[0]['rules'])->toContain('-d 10.0.0.6/32 -p tcp --dport 6379 -s 10.0.0.5/32 -j RETURN', '-d 10.0.0.6/32 -p tcp --dport 6379 -j DROP');
 });

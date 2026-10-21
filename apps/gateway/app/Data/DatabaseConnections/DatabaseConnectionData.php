@@ -26,11 +26,13 @@ final class DatabaseConnectionData extends Data
         public ?string $server,
         public ?int $ownerInstanceId,
         public ?string $testDatabase,
+        public ?string $lanHost = null,
     ) {}
 
     public static function fromModel(DatabaseConnection $connection): self
     {
         return new self(
+            lanHost: $connection->server?->node->lan_ip,
             id: $connection->id,
             slug: $connection->slug,
             driver: $connection->driver->value,

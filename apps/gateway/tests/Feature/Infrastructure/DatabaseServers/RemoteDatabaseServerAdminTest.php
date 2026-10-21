@@ -195,3 +195,15 @@ final class RemoteDatabaseServerFakeHosts implements KnownHostsStore
 
     public function put(string $host, int $port, HostKey $key): void {}
 }
+
+it('executes PostgreSQL over authenticated TCP with protected input and psql error stopping', function (): void {
+    $server = remote_database_server();
+    $server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $ssh = new RemoteDatabaseServerFakeSsh([new CommandResult(0, "app\n", '', 5, false)]);
+    expect(remote_database_server_admin($ssh)->execute($server, "SELECT datname FROM pg_database;\n"))->toBe(['app']);
+    $command = $ssh->commands[0];
+    expect($command->arguments[3])->toBe(RemoteDatabaseServerAdmin::POSTGRES_EXECUTE_SCRIPT)
+        ->toContain('--host=127.0.0.1', '--no-psqlrc', '--set=ON_ERROR_STOP=1')
+        ->and(json_encode($command->arguments))->not->toContain(REMOTE_DATABASE_SERVER_ROOT, 'SELECT datname')
+        ->and($ssh->protectedInputs[0])->toBe(REMOTE_DATABASE_SERVER_ROOT."\nSELECT datname FROM pg_database;\n");
+});

@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $node_id
  * @property int|null $process_id
  * @property string $tag
+ * @property list<int>|null $lan_node_ids
  * @property int $port
  * @property bool $default_open
  * @property string $root_password
@@ -47,6 +48,7 @@ final class DatabaseServer extends Model
         'process_id',
         'tag',
         'port',
+        'lan_node_ids',
         'root_password',
         'status',
         'failed_step',
@@ -97,6 +99,7 @@ final class DatabaseServer extends Model
             'node_id' => 'integer',
             'process_id' => 'integer',
             'port' => 'integer',
+            'lan_node_ids' => 'array',
             'root_password' => 'encrypted',
             'status' => LifecycleStatus::class,
         ];

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $database_connection_id
  * @property int $instance_id
+ * @property string $network
  * @property string $prefix
  * @property-read DatabaseConnection $databaseConnection
  * @property-read Instance $instance
@@ -23,6 +24,7 @@ final class DatabaseConnectionTarget extends Model
         'database_connection_id',
         'instance_id',
         'prefix',
+        'network',
     ];
 
     /** @return BelongsTo<DatabaseConnection, $this> */

@@ -17,15 +17,16 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
     protected $signature = 'database:server:create
         {slug : Database server slug}
         {--node= : Node ID or registered name}
-        {--driver= : Server driver: mysql or redis. Defaults to mysql}
+        {--driver= : Server driver: mysql, redis, or pgsql. Defaults to mysql}
         {--process= : Existing Valkey Process ID to adopt}
         {--connection= : Existing redis connection for adoption}
-        {--tag= : Image tag. Defaults to 8.4 for mysql or 8.1 for redis}
-        {--port= : Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis}
+        {--tag= : Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql}
+        {--port= : Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql}
+        {--lan-node=* : Explicit LAN peer Node ID or registered name (repeatable)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Run a MySQL or Valkey server as a Docker Node Process and keep its admin password in the Gateway.';
+    protected $description = 'Run a MySQL, PostgreSQL, or Valkey server as a Docker Node Process and keep its admin password in the Gateway.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -36,8 +37,8 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
         }
 
         $driver = $this->stringOption('driver');
-        if ($driver !== null && ! in_array($driver, ['mysql', 'redis'], true)) {
-            return $this->renderGatewayFailure('database.driver_invalid', 'Server driver must be mysql or redis.');
+        if ($driver !== null && ! in_array($driver, ['mysql', 'redis', 'pgsql'], true)) {
+            return $this->renderGatewayFailure('database.driver_invalid', 'Server driver must be mysql, redis, or pgsql.');
         }
 
         $process = $this->option('process');
@@ -78,9 +79,18 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
+        $lanNodeIds = [];
+        foreach ($this->option('lan-node') as $selector) {
+            $peerId = $this->resolveNodeId($connector, $selector);
+            if ($peerId === null) {
+                return self::FAILURE;
+            }
+            $lanNodeIds[] = $peerId;
+        }
         $server = $this->sendWithProgress(
             $connector,
             new CreateDatabaseServerRequest(
+                lanNodeIds: $lanNodeIds === [] ? null : array_values(array_unique($lanNodeIds)),
                 slug: $slug,
                 nodeId: $nodeId,
                 tag: $tag,

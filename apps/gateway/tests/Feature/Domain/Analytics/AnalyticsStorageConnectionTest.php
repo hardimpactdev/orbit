@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -56,4 +58,13 @@ describe('AnalyticsStorageConnection', function (): void {
 
         expect(print_r($connection, true))->not->toContain('word')->not->toContain('click');
     });
+});
+
+it('uses only the managed plausible owner credentials and refuses a missing owner connection', function (): void {
+    $postgres = ($this->postgres)([]);
+    $clickhouse = ($this->clickhouse)();
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $postgres->id, 'tag' => '18', 'port' => 5432, 'root_password' => 'admin-not-for-app', 'status' => LifecycleStatus::Active]);
+    expect(fn () => AnalyticsStorageConnection::from($postgres, $clickhouse))->toThrow(ResourceOperationException::class);
+    DatabaseConnection::query()->create(['slug' => 'plausible-db', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'database_server_id' => $server->id, 'host' => $this->node->wireguard_ip, 'port' => 5432, 'database' => 'plausible_db', 'username' => 'plausible_db', 'password' => 'owner-secret']);
+    expect(AnalyticsStorageConnection::from($postgres, $clickhouse)->databaseUrl)->toBe('postgres://plausible_db:owner-secret@10.44.0.3:5432/plausible_db');
 });

@@ -17,6 +17,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -463,3 +464,23 @@ final class DatabaseAttachmentAccess implements InstanceEnvironmentReader, Insta
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 }
+
+it('persists explicit LAN selection for an eligible peer and keeps WireGuard as the default', function (): void {
+    $node = $this->instance->node;
+    $node->update(['lan_ip' => '10.0.0.4']);
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => LifecycleStatus::Active, 'lan_node_ids' => [$node->id]]);
+    $this->caller->update(['lan_ip' => '10.0.0.6']);
+    $connection = DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'node_id' => $server->node_id, 'host' => $this->caller->wireguard_ip, 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    $url = "/api/v1/instances/{$this->instance->id}/database-connections/catalog";
+    $this->putJson($url, ['network' => 'lan'])->assertOk()->assertJsonPath('data.host', '10.0.0.6');
+    expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('lan')->and(stored_env($this->instance)['DB_HOST'])->toBe('10.0.0.6');
+    $this->putJson($url, ['network' => 'wireguard'])->assertOk()->assertJsonPath('data.host', $connection->host);
+    expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('wireguard');
+});
+
+it('refuses LAN selection outside a managed server peer list before writing environment values', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'external', 'driver' => 'pgsql', 'host' => 'db.example.test', 'port' => 5432, 'database' => 'app', 'username' => 'app', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/external", ['network' => 'lan'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'database.lan_unavailable');
+    expect(DatabaseConnectionTarget::query()->count())->toBe(0)->and(stored_env($this->instance))->toBe([]);
+});

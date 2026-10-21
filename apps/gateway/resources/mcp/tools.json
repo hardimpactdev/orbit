@@ -2133,21 +2133,30 @@
             "type": "string",
             "enum": [
               "mysql",
-              "redis"
+              "redis",
+              "pgsql"
             ],
-            "description": "Server driver: mysql or redis. Defaults to mysql"
+            "description": "Server driver: mysql, redis, or pgsql. Defaults to mysql"
           },
           "tag": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
+            "pattern": "",
             "maxLength": 128,
-            "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis"
+            "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql"
+          },
+          "lan_node_ids": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
           },
           "port": {
             "type": "integer",
             "maximum": 65535,
             "minimum": 1,
-            "description": "Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis"
+            "description": "Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql"
           },
           "process_id": {
             "type": "integer",
@@ -3500,6 +3509,14 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Database connection slug."
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "wireguard",
+              "lan"
+            ],
+            "description": "Connection network: wireguard (default) or lan"
           },
           "prefix": {
             "type": "string",

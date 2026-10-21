@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -11,6 +12,7 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -420,3 +422,21 @@ final class ServerDatabaseEnvironmentAccess implements InstanceEnvironmentReader
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 }
+
+it('creates a managed PostgreSQL database and non-superuser owner through the SQL server path', function (): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18', 'port' => 5434]);
+    $response = $this->postJson('/api/v1/database-connections', ['slug' => 'mealou-food-catalog', 'server' => $this->server->slug]);
+    $response->assertCreated()->assertJsonPath('data.driver', 'pgsql')->assertJsonPath('data.database', 'mealou_food_catalog');
+    $connection = DatabaseConnection::query()->where('slug', 'mealou-food-catalog')->sole();
+    expect($this->admin->sql())->toContain('CREATE DATABASE "mealou_food_catalog";', 'ALTER DATABASE "mealou_food_catalog" OWNER TO "mealou_food_catalog";', 'NOSUPERUSER NOCREATEDB NOCREATEROLE', 'SCRAM-SHA-256$')
+        ->not->toContain($connection->password)
+        ->and($connection->test_database)->toBeNull();
+});
+
+it('refuses PostgreSQL Instance ownership before creating database objects', function (): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $instance = Instance::query()->first();
+    expect(fn () => app(CreateServerDatabaseAction::class)->activeServer($this->server->slug))
+        ->toThrow(ResourceOperationException::class, 'Instance-owned databases require MySQL.');
+    expect($this->admin->sql())->toBe('');
+});

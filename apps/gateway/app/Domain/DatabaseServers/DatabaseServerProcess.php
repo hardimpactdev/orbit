@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
 use App\Models\DatabaseServer;
@@ -41,16 +42,16 @@ final readonly class DatabaseServerProcess
             targetId: $node->id,
             name: $server->slug,
             runtime: ProcessRuntime::Docker,
-            command: ['mysqld'],
-            image: 'mysql:'.$server->tag,
+            command: [$server->driver === DatabaseDriver::Pgsql ? 'postgres' : 'mysqld'],
+            image: ($server->driver === DatabaseDriver::Pgsql ? 'postgres:' : 'mysql:').$server->tag,
             workingDirectory: null,
-            environment: [self::ROOT_PASSWORD_VARIABLE => $rootPassword],
+            environment: [self::passwordVariable($server) => $rootPassword],
             // WireGuard only: Docker publishes around the host firewall, so a server never
             // listens on a public address.
-            ports: [self::publishedPort($node, $server->port)],
+            ports: self::publishedPorts($node, $server->port, $server->driver === DatabaseDriver::Pgsql ? 5432 : self::CONTAINER_PORT),
             volumes: [[
                 'source' => self::volume($server->slug),
-                'target' => '/var/lib/mysql',
+                'target' => $server->driver === DatabaseDriver::Pgsql ? '/var/lib/postgresql' : '/var/lib/mysql',
                 'read_only' => false,
             ]],
             restartPolicy: 'unless-stopped',
@@ -73,7 +74,7 @@ final readonly class DatabaseServerProcess
             image: self::valkeyImage($server->tag),
             workingDirectory: self::VALKEY_DATA_DIRECTORY,
             environment: [],
-            ports: [self::publishedPort($node, $server->port, self::VALKEY_CONTAINER_PORT)],
+            ports: self::publishedPorts($node, $server->port, self::VALKEY_CONTAINER_PORT),
             volumes: [[
                 'source' => $volume,
                 'target' => self::VALKEY_DATA_DIRECTORY,
@@ -124,6 +125,22 @@ final readonly class DatabaseServerProcess
     {
         $environment = $process->runtime_config['environment'] ?? null;
 
-        return is_array($environment) && array_key_exists(self::ROOT_PASSWORD_VARIABLE, $environment);
+        return is_array($environment) && (array_key_exists(self::ROOT_PASSWORD_VARIABLE, $environment) || array_key_exists('POSTGRES_PASSWORD', $environment));
+    }
+
+    public static function passwordVariable(DatabaseServer $server): string
+    {
+        return $server->driver === DatabaseDriver::Pgsql ? 'POSTGRES_PASSWORD' : self::ROOT_PASSWORD_VARIABLE;
+    }
+
+    /** @return list<string> */
+    public static function publishedPorts(Node $node, int $port, int $containerPort): array
+    {
+        $ports = [self::publishedPort($node, $port, $containerPort)];
+        if (is_string($node->lan_ip) && $node->lan_ip !== '') {
+            $ports[] = "{$node->lan_ip}:{$port}:{$containerPort}";
+        }
+
+        return $ports;
     }
 }

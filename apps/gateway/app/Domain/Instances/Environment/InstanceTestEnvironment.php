@@ -41,7 +41,7 @@ final readonly class InstanceTestEnvironment
 
         $prefix = InstanceDatabaseClonePlanner::PREFIX;
         $managedKeys = $this->projection->managedKeys($prefix);
-        $database = $this->projection->project($connection, $prefix)['values'];
+        $database = $this->projection->project($connection, $prefix, $target->network, $target->instance->node)['values'];
         $database[$this->projection->key($prefix, 'DATABASE')] = $connection->test_database;
 
         return new InstanceTestEnvironmentPlan(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
@@ -60,6 +61,27 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
         done
         BASH;
 
+    public const string POSTGRES_EXECUTE_SCRIPT = <<<'BASH'
+        IFS= read -r PGPASSWORD
+        export PGPASSWORD
+        exec sudo --preserve-env=PGPASSWORD docker container exec -i --env PGPASSWORD -- "$1" psql --no-psqlrc --host=127.0.0.1 --username=postgres --dbname=postgres --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1
+        BASH;
+
+    public const string POSTGRES_READY_SCRIPT = <<<'BASH'
+        IFS= read -r PGPASSWORD
+        export PGPASSWORD
+        deadline=$((SECONDS + $2))
+        while :; do
+            if printf 'SELECT 1;\n' | sudo --preserve-env=PGPASSWORD docker container exec -i --env PGPASSWORD -- "$1" psql --no-psqlrc --host=127.0.0.1 --username=postgres --dbname=postgres --set=ON_ERROR_STOP=1 >/dev/null 2>&1; then
+                exit 0
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+                exit 75
+            fi
+            sleep 2
+        done
+        BASH;
+
     private const float COMMAND_TIMEOUT_SECONDS = 600.0;
 
     private const int MAX_OUTPUT_BYTES = 1_048_576;
@@ -75,7 +97,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
     {
         $result = $this->run(
             $server,
-            self::READY_SCRIPT,
+            $server->driver === DatabaseDriver::Pgsql ? self::POSTGRES_READY_SCRIPT : self::READY_SCRIPT,
             'orbit-database-server-ready',
             [(string) $timeoutSeconds],
             '',
@@ -89,7 +111,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
     {
         $result = $this->run(
             $server,
-            self::EXECUTE_SCRIPT,
+            $server->driver === DatabaseDriver::Pgsql ? self::POSTGRES_EXECUTE_SCRIPT : self::EXECUTE_SCRIPT,
             'orbit-database-server-sql',
             [],
             $sql,
@@ -115,6 +137,9 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 
     public function copyDatabase(DatabaseServer $server, string $source, string $target): void
     {
+        if ($server->driver !== DatabaseDriver::Mysql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance database cloning requires MySQL.', 422);
+        }
         foreach ([$source, $target] as $database) {
             if (preg_match('/\A[A-Za-z0-9_]{1,64}\z/D', $database) !== 1) {
                 throw $this->failed($server);

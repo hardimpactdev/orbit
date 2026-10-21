@@ -1262,6 +1262,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0227-manage-postgresql-and-private-database-endpoints.md",
+            "title": "0227: Manage PostgreSQL and private database endpoints",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Database server",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": [
+                "0227"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1324,7 +1343,8 @@
                 "0223",
                 "0224",
                 "0225",
-                "0226"
+                "0226",
+                "0227"
             ]
         },
         {
@@ -1771,6 +1791,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Database server",
                 "Doctor",
                 "Extension",
@@ -1819,6 +1840,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -2638,6 +2660,22 @@
                 "Route",
                 "Task",
                 "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/postgresql-migration.md",
+            "title": "Move PostgreSQL databases to a managed server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role"
             ],
             "governing_adrs": []
         },

@@ -1,6 +1,6 @@
 ---
 title: "Database servers"
-description: "How Orbit runs a MySQL or Valkey server as a Docker Node Process, keeps its admin password only in the Gateway, and creates databases and ACL users on it."
+description: "How Orbit runs a MySQL, PostgreSQL or Valkey server as a Docker Node Process, keeps its admin password only in the Gateway, and creates databases and ACL users on it."
 covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
@@ -14,9 +14,9 @@ covers:
 
 # Database servers
 
-A Database server is a MySQL or Valkey server that Orbit runs and administers. It runs as a Docker [Node Process](/reference/processes-and-schedules#owners), and the Gateway keeps its admin password. Orbit uses that password to create a database or an ACL user, and to [clone](/domains/applications#database-clone) the default Instance's MySQL database. [`database:server`](/cli/database#orbit-databaseservercreate) lists the commands.
+A Database server is a MySQL, PostgreSQL or Valkey server that Orbit runs and administers. It runs as a Docker [Node Process](/reference/processes-and-schedules#owners), and the Gateway keeps its admin password. Orbit uses that password to create a database or an ACL user, and to [clone](/domains/applications#database-clone) the default Instance's MySQL database. [`database:server`](/cli/database#orbit-databaseservercreate) lists the commands.
 
-A server's `driver` names its kind. A `mysql` server runs MySQL, and a `redis` server runs Valkey. A Valkey server's clients use the [`redis` driver](/reference/database-connections#drivers-and-fields), so the server uses the same name.
+A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` server runs PostgreSQL 18, and a `redis` server runs Valkey. A Valkey server's clients use the [`redis` driver](/reference/database-connections#drivers-and-fields), so the server uses the same name.
 
 ## Create a server
 
@@ -30,9 +30,9 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=NODE` | required | Numeric Node ID or Node name. The Node must be an active Linux Node with Docker. |
-| `--driver=DRIVER` | `mysql` | `mysql` or `redis`. |
-| `--tag=TAG` | `8.4` for mysql, `8.1` for redis | Image tag. The image is `mysql:<tag>` or `valkey/valkey:<tag>`. |
-| `--port=PORT` | `3306` for mysql, `6379` for redis | Port that the server publishes on the Node's WireGuard address. |
+| `--driver=DRIVER` | `mysql` | `mysql`, `pgsql` or `redis`. |
+| `--tag=TAG` | `8.4` for mysql, `18` for pgsql, `8.1` for redis | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. |
+| `--port=PORT` | `3306` for mysql, `5432` for pgsql, `6379` for redis | Port published on the Node's WireGuard address and its LAN address when present. |
 
 ### A MySQL server
 
@@ -44,6 +44,32 @@ The Gateway creates a MySQL server in this order:
 4. It removes the variable from the Process and recreates the container. The data volume keeps the password.
 
 After step 4, the root password exists only encrypted in the Gateway. It is not in the Process record, the container environment, `docker inspect`, or a file on the Node. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
+
+### A PostgreSQL server
+
+Create PostgreSQL 18 on an explicit free port:
+
+```bash
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434 --lan-node=app-prod --lan-node=gateway
+```
+
+PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, container port 5432, and first-start variable `POSTGRES_PASSWORD`. The default tag is `18`; accepted tags are `18`, `18.N`, and these versions with an image variant suffix. Other majors and `latest` return `validation.failed`. The named volume mounts at `/var/lib/postgresql`, because PostgreSQL 18 stores data in `/var/lib/postgresql/18/docker`. The pre-18 mount `/var/lib/postgresql/data` is wrong for this image. Readiness runs an authenticated TCP SQL query; the image's temporary initialization server is socket-only. A retry reuses the encrypted password, Process and volume, and finishes password removal before returning active.
+
+A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries. 
+
+Create application objects as the managed owner. Custom schemas need explicit operator grants. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
+
+[Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
+
+### Private publication and filtering
+
+All three drivers publish on WireGuard and, when set, `lan_ip`. The stored connection host stays WireGuard. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) explicitly select LAN for an active consumer in the server LAN peer list. A server never publishes on a wildcard or public address.
+
+Only IPv4 is published. LAN traffic is limited to the server Node and explicitly selected active peer Nodes. WireGuard admits all mesh peers, as today. Orbit installs a raw PREROUTING chain before Docker DNAT with an owned UFW `before.init` hook. Allowed traffic returns to Docker's own rules; other endpoint ingress drops. UFW must be installed and active or creation fails before publication. The database role adds no broad port allow.
+
+ Node provisioning, LAN address changes and removal reconcile peer sources automatically. Server address changes require a create retry before switching clients; the old Process binding stays filtered until replaced. Retrying an active MySQL server can recreate its container to repair publication drift.
+
+Doctor reports `database_server.publication_mismatch`, `database_server.filter_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database-server` family. Repeat creation repairs filter and publication drift.
 
 ### A Valkey server
 
@@ -107,7 +133,7 @@ After saving the password, the Gateway revokes every other `default` session, in
 
 ## Create a database on a server
 
-`database:create` with `--server` creates a database and a user on a MySQL server, then records the [connection](/reference/database-connections).
+`database:create` with `--server` creates a database and an owner user on a MySQL or PostgreSQL server, then records the [connection](/reference/database-connections).
 
 ```bash
 orbit database:create dlf-leden --server=beast-mysql --instance=60
@@ -115,11 +141,11 @@ orbit database:create dlf-leden --server=beast-mysql --instance=60
 
 The database name comes from the slug, with hyphens replaced by underscores. A database name longer than 64 characters, or a user name longer than 32, ends in an underscore and an 8-character hash. Orbit generates the user's password.
 
-Each Instance has one user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets driver `mysql`, the server's Node address and port, and a link to the server.
+Each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
 
 Orbit refuses a name with `database.name_conflict` when the server already has that database or user, or when the name starts with the test database name of another database on the server. So one Instance's user never reaches another database through its test database grant. A create that fails drops what it made and records nothing.
 
-With `--instance`, Orbit also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
+On MySQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
 `database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
 

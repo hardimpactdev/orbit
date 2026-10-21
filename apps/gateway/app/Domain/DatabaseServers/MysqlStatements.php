@@ -51,7 +51,7 @@ final readonly class MysqlStatements
     }
 
     /** Replace the user's privileges on one database. The first grant makes the revoke safe for a new user. */
-    public function replaceGrant(string $database, string $username, bool $readOnly): string
+    public function replaceGrant(string $database, string $username, bool $readOnly, ?string $owner = null): string
     {
         $quoted = $this->database($database);
         $user = $this->account($username);

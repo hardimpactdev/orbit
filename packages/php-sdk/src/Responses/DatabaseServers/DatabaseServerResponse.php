@@ -19,6 +19,7 @@ final readonly class DatabaseServerResponse
     private const string STATUS_PATTERN = '/\A(?:provisioning|active|failed|removing)\z/D';
 
     /**
+     * @param list<int> $lanNodeIds
      * @param  list<DatabaseConnectionResponse>|null  $databases  Present only when the server is shown.
      */
     public function __construct(
@@ -33,7 +34,13 @@ final readonly class DatabaseServerResponse
         public string $requestId,
         public ?array $databases = null,
         public string $driver = 'mysql',
+        public array $lanNodeIds = [],
     ) {
+        foreach ($lanNodeIds as $peer) {
+            if (! is_int($peer) || $peer < 1) {
+                throw new InvalidArgumentException('Invalid Database server response field [lan_node_ids].');
+            }
+        }
         if ($id < 1 || $nodeId < 1 || ($processId !== null && $processId < 1) || $databasesCount < 0) {
             throw new InvalidArgumentException('Invalid Database server response identifier.');
         }
@@ -46,7 +53,7 @@ final readonly class DatabaseServerResponse
             throw new InvalidArgumentException('Invalid Database server response field [tag].');
         }
 
-        if (! in_array($driver, ['mysql', 'redis'], true)) {
+        if (! in_array($driver, ['mysql', 'redis', 'pgsql'], true)) {
             throw new InvalidArgumentException('Invalid Database server response field [driver].');
         }
 
@@ -67,6 +74,7 @@ final readonly class DatabaseServerResponse
         string $requestId,
     ): self {
         return new self(
+            lanNodeIds: self::lanNodeIds($data),
             id: self::integer($data, 'id'),
             slug: self::string($data, 'slug'),
             nodeId: self::integer($data, 'node_id'),
@@ -96,6 +104,9 @@ final readonly class DatabaseServerResponse
             'databases_count' => $this->databasesCount,
         ];
 
+        if ($this->lanNodeIds !== []) {
+            $data['lan_node_ids'] = $this->lanNodeIds;
+        }
         if ($this->databases !== null) {
             $data['databases'] = array_map(
                 static function (DatabaseConnectionResponse $connection): array {
@@ -162,4 +173,21 @@ final readonly class DatabaseServerResponse
 
         return $data[$key];
     }
+    /** @param array<string, mixed> $data
+     * @return list<int>
+     */
+    private static function lanNodeIds(array $data): array
+    {
+        $peers = $data['lan_node_ids'] ?? [];
+        if (! is_array($peers) || ! array_is_list($peers)) {
+            throw new InvalidArgumentException('Invalid Database server response field [lan_node_ids].');
+        }
+        foreach ($peers as $peer) {
+            if (! is_int($peer) || $peer < 1) {
+                throw new InvalidArgumentException('Invalid Database server response field [lan_node_ids].');
+            }
+        }
+        return $peers;
+    }
+
 }

@@ -18,6 +18,7 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param list<int>|null $lanNodeIds */
     public function __construct(
         private readonly string $slug,
         private readonly int $nodeId,
@@ -26,6 +27,7 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
         private readonly ?string $driver = null,
         private readonly ?int $processId = null,
         private readonly ?string $connection = null,
+        private readonly ?array $lanNodeIds = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -38,7 +40,7 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
         return DatabaseServerResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, int|string|list<int>> */
     protected function defaultBody(): array
     {
         $body = [
@@ -60,6 +62,9 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
             }
         }
 
+        if ($this->lanNodeIds !== null) {
+            $body['lan_node_ids'] = $this->lanNodeIds;
+        }
         return $body;
     }
 }

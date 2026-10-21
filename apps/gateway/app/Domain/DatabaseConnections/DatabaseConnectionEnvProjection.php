@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseConnections;
 
+use App\Domain\DatabaseServers\DatabaseServerLanPolicy;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
+use App\Models\Node;
 
 /**
  * The prefixed env keys of a connection. Host and port are always the record's own values, also
@@ -31,7 +35,7 @@ final readonly class DatabaseConnectionEnvProjection
      *     port: int|null
      * }
      */
-    public function project(DatabaseConnection $connection, string $prefix): array
+    public function project(DatabaseConnection $connection, string $prefix, string $network = 'wireguard', ?Node $consumer = null): array
     {
         $managed = $this->managedKeys($prefix);
         $values = [$this->key($prefix, 'CONNECTION') => $connection->driver->value];
@@ -51,6 +55,22 @@ final readonly class DatabaseConnectionEnvProjection
         }
 
         $host = (string) $connection->host;
+        $server = $connection->server;
+        if ($network === 'lan') {
+            if (! $server instanceof DatabaseServer || ! $consumer instanceof Node || ! (new DatabaseServerLanPolicy)->eligible($server, $consumer)) {
+                throw new ResourceOperationException('database.lan_unavailable', 'The consumer must be an active LAN peer of this server.', 422);
+            }
+            $host = (string) $server->node->lan_ip;
+        } elseif ($network !== 'wireguard') {
+            throw new ResourceOperationException('validation.failed', 'The network must be wireguard or lan.', 422);
+        }
+        if (! $server instanceof DatabaseServer && $consumer instanceof Node) {
+            foreach (DatabaseServer::query()->where('port', $connection->port)->with('node')->get() as $candidate) {
+                if ($host === $candidate->node->lan_ip && ! (new DatabaseServerLanPolicy)->eligible($candidate, $consumer)) {
+                    throw new ResourceOperationException('database.lan_unavailable', 'This LAN alias requires an active server peer.', 422);
+                }
+            }
+        }
         $port = (int) $connection->port;
         $values[$this->key($prefix, 'HOST')] = $host;
         $values[$this->key($prefix, 'PORT')] = (string) $port;

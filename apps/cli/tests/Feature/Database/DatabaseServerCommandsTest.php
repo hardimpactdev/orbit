@@ -123,7 +123,7 @@ it('refuses invalid server driver or Process before sending', function (array $o
     $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--json' => true, ...$options])->assertExitCode(1);
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    [['--driver' => 'pgsql']],
+    [['--driver' => 'sqlite']],
     [['--process' => '0']],
 ]);
 

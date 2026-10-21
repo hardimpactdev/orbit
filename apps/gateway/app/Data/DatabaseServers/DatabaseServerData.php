@@ -12,6 +12,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class DatabaseServerData extends Data
 {
+    /** @param list<int> $lanNodeIds */
     public function __construct(
         public int $id,
         public string $slug,
@@ -22,11 +23,13 @@ final class DatabaseServerData extends Data
         public int $port,
         public string $status,
         public int $databasesCount,
+        public array $lanNodeIds = [],
     ) {}
 
     public static function fromModel(DatabaseServer $server): self
     {
         return new self(
+            lanNodeIds: $server->lan_node_ids ?? [],
             id: $server->id,
             slug: $server->slug,
             driver: $server->driver->value,

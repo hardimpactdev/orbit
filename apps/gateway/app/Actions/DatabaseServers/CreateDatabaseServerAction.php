@@ -9,6 +9,8 @@ use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
+use App\Domain\DatabaseServers\DatabaseServerLanPolicy;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyProcessAdoption;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -55,6 +57,8 @@ final readonly class CreateDatabaseServerAction
         private ProcessRuntimeManager $runtime,
         private ProcessSpecification $specifications,
         private DatabaseServerAdmin $admin,
+        private DatabaseServerFirewallReconciler $firewall,
+        private DatabaseServerLanPolicy $lan,
         private ValkeyServerAdmin $valkey,
         private ValkeyProcessAdoption $adoption,
         private WriteValkeyAclFileAction $aclFile,
@@ -89,6 +93,10 @@ final readonly class CreateDatabaseServerAction
             );
         }
 
+        $this->lan->validate($node, $data->lanNodeIds ?? []);
+        if ($data->driver === DatabaseDriver::Pgsql && preg_match('/\A18(?:\.[0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]*)?\z/D', $data->tag) !== 1) {
+            throw new ResourceOperationException('validation.failed', 'Managed PostgreSQL requires a major 18 image tag.', 422);
+        }
         $adoption = null;
 
         if ($data->processId !== null) {
@@ -105,6 +113,8 @@ final readonly class CreateDatabaseServerAction
         $reserved = $this->reserve($data, $node, $adoption);
         $server = $reserved['server'];
 
+        $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
+
         if ($server->status !== LifecycleStatus::Active) {
             if ($server->driver === DatabaseDriver::Redis) {
                 $connection = $data->connection === null ? null : $this->adoption->connection($server, $data->connection);
@@ -114,7 +124,12 @@ final readonly class CreateDatabaseServerAction
             }
         } elseif ($server->driver === DatabaseDriver::Redis) {
             $this->converge->execute($server);
+        } else {
+            $this->provision($server, $node);
         }
+        $this->reconcilePublications($server, $node);
+        $server->load('process');
+        $this->step($server, 'firewall', fn () => $this->firewall->reconcile($node));
 
         return ['server' => $server->refresh(), 'created' => $reserved['created']];
     }
@@ -137,6 +152,7 @@ final readonly class CreateDatabaseServerAction
                         $existing->node_id !== $node->id
                         || $existing->driver !== $data->driver
                         || $existing->tag !== $data->tag
+                        || ($data->lanNodeIds !== null && $existing->lan_node_ids !== $data->lanNodeIds)
                         || ($data->processId === null ? $existing->port !== $data->port : $existing->process_id !== $data->processId)
                     ) {
                         throw $this->slugConflict($data->slug);
@@ -155,6 +171,7 @@ final readonly class CreateDatabaseServerAction
                         'process_id' => $adoption['process']->id,
                         'tag' => $data->tag,
                         'port' => $adoption['port'],
+                        'lan_node_ids' => $data->lanNodeIds ?? [],
                         'root_password' => $adoption['connection']->password ?: Str::random(self::ROOT_PASSWORD_LENGTH),
                         'default_open' => ! filled($adoption['connection']->password),
                         'status' => LifecycleStatus::Provisioning,
@@ -173,6 +190,7 @@ final readonly class CreateDatabaseServerAction
                     'process_id' => null,
                     'tag' => $data->tag,
                     'port' => $port,
+                    'lan_node_ids' => $data->lanNodeIds ?? [],
                     'root_password' => Str::random(self::ROOT_PASSWORD_LENGTH),
                     'status' => LifecycleStatus::Provisioning,
                 ]);
@@ -326,7 +344,7 @@ final readonly class CreateDatabaseServerAction
         $this->recreate($process, static function (Process $fresh): array {
             $runtimeConfig = $fresh->runtime_config;
             $environment = is_array($runtimeConfig['environment'] ?? null) ? $runtimeConfig['environment'] : [];
-            unset($environment[DatabaseServerProcess::ROOT_PASSWORD_VARIABLE]);
+            unset($environment[DatabaseServerProcess::ROOT_PASSWORD_VARIABLE], $environment['POSTGRES_PASSWORD']);
 
             return ['runtime_config' => [...$runtimeConfig, 'environment' => $environment]];
         });
@@ -418,5 +436,21 @@ final readonly class CreateDatabaseServerAction
             message: "Database server [{$slug}] already exists with a different Node, driver, tag, port, or Process.",
             status: 409,
         );
+    }
+
+    private function reconcilePublications(DatabaseServer $server, Node $node): void
+    {
+        $process = $server->process;
+        if (! $process instanceof Process) {
+            return;
+        }
+        $containerPort = $server->driver->defaultPort() ?? 3306;
+        $ports = DatabaseServerProcess::publishedPorts($node, $server->port, $containerPort);
+        if (($process->runtime_config['ports'] ?? []) === $ports) {
+            return;
+        }
+        $this->step($server, 'publication', fn () => $this->recreate($process, static fn (Process $fresh): array => [
+            'runtime_config' => [...$fresh->runtime_config, 'ports' => $ports],
+        ]));
     }
 }

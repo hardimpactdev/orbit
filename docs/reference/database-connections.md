@@ -87,9 +87,9 @@ An unknown table returns `database.table_missing` (404). A failed query on the d
 
 ## Create a database on a server
 
-`POST /api/v1/database-connections` with `slug`, `server`, and an optional `instance_id` creates a MySQL database and user on that [Database server](/reference/database-servers#create-a-database-on-a-server). `server` excludes `driver`, `node_id`, `host`, `port`, `database`, `username`, `password`, and `path`, and `instance_id` needs `server`. The Gateway returns 201 with the new record.
+`POST /api/v1/database-connections` with `slug`, `server`, and an optional `instance_id` creates a MySQL or PostgreSQL database and owner on that [Database server](/reference/database-servers#create-a-database-on-a-server). `server` excludes `driver`, `node_id`, `host`, `port`, `database`, `username`, `password`, and `path`, and `instance_id` needs `server`. The Gateway returns 201 with the new record.
 
-On a `redis` server, the same request with `patterns`, `allow`, and an optional numeric `database` creates a [Valkey ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) named after the slug and records a `redis` connection that logs in as that user. `patterns` and `allow` are lists of strings. A MySQL server refuses them with `validation.failed`, and a `redis` server refuses `instance_id` with `database.driver_unsupported`.
+On a `redis` server, the same request with `patterns`, `allow`, and an optional numeric `database` creates a [Valkey ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) named after the slug and records a `redis` connection that logs in as that user. `patterns` and `allow` are lists of strings. A MySQL or PostgreSQL server refuses them with `validation.failed`, and a `redis` server refuses `instance_id` with `database.driver_unsupported`.
 
 A managed Valkey connection's driver, Node, address, port, username, and password cannot change through `database:update`. It returns `database.server_connection_managed` (409). The database index can change. Create another connection to move clients to a different user.
 
@@ -136,13 +136,19 @@ A SQLite connection can only be attached to an Instance on the connection's regi
 
 The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
 
-The Gateway writes the stored host and port, also when the Instance runs on the record's Node. It never derives them from the Node's Processes. A database on a [Database server](/reference/database-servers) stores the Node's WireGuard address and the published port, so every Instance in the fleet reaches it at that address.
+The Gateway writes the stored host and port by default. A database on a [Database server](/reference/database-servers) stores the Node's WireGuard address and the published port. The response also exposes `lan_host` for a managed connection whose server Node has a LAN address. External records keep their explicit host.
 
 The result names the Instance, slug, prefix, written keys, host, port, whether stored configuration changed, and the key count. It never holds a value.
 
 `DELETE /api/v1/instances/{instance}/database-connections/{slug}` removes the mapping and the six keys of its prefix. Other keys stay. An unknown mapping returns `database.attachment_missing` (404).
 
 Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`.
+
+## Choose LAN for an Instance
+
+`instance:database:add <slug> --instance=<instance> --network=lan` selects the managed server's LAN address for that attachment only. Both Nodes must be active with IPv4 LAN addresses. The consumer must be in the server's stored `lan_node_ids` list or be the server Node itself. Set peers with repeatable `--lan-node` when creating the server; Cluster membership does not grant access. Peer IDs are part of the server specification and a retry must keep the same list. Orbit refuses an ineligible selection with `database.lan_unavailable` before writing keys. `--network=wireguard` is the default. Reattach with that option to switch back.
+
+The attachment stores its network choice. Environment projection, `.env.testing`, and Doctor use that same choice. The connection's default host and Gateway inspection remain WireGuard. External connections do not derive LAN endpoints: record their intended host explicitly. `env:sync` is still required after reattachment.
 
 ## Inspect attachments with Doctor
 

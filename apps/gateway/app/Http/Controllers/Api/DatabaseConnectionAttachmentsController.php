@@ -27,6 +27,7 @@ final class DatabaseConnectionAttachmentsController extends Controller
                 $this->instance($request),
                 $this->connection($request),
                 $request->prefix(),
+                network: $request->network(),
             )->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);

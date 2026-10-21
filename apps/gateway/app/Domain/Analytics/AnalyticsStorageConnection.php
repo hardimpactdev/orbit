@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
@@ -34,11 +36,28 @@ final readonly class AnalyticsStorageConnection
         #[SensitiveParameter]
         Process $clickhouse,
     ): self {
+        $server = DatabaseServer::query()->where('process_id', $postgres->id)->first();
+        $username = self::optional($postgres, 'POSTGRES_USER') ?? 'postgres';
+        $password = null;
+        if ($server instanceof DatabaseServer) {
+            $connections = $server->databaseConnections()->where('driver', DatabaseDriver::Pgsql->value)
+                ->where('database', self::POSTGRES_DATABASE)->whereNull('owner_instance_id')->get();
+            if ($server->driver !== DatabaseDriver::Pgsql || $connections->count() !== 1) {
+                throw new ResourceOperationException('analytics.storage_credentials_missing', 'The managed server requires exactly one plausible_db owner connection.', 422);
+            }
+            $connection = $connections->sole();
+            if (! filled($connection->username) || ! filled($connection->password)) {
+                throw new ResourceOperationException('analytics.storage_credentials_missing', 'The managed plausible_db owner credentials are missing.', 422);
+            }
+            $username = (string) $connection->username;
+            $password = (string) $connection->password;
+        }
+
         return new self(
             databaseUrl: sprintf(
                 'postgres://%s:%s@%s:%d/%s',
-                rawurlencode(self::optional($postgres, 'POSTGRES_USER') ?? 'postgres'),
-                rawurlencode(self::required($postgres, 'POSTGRES_PASSWORD')),
+                rawurlencode($username),
+                rawurlencode($password ?? self::required($postgres, 'POSTGRES_PASSWORD')),
                 self::host($postgres),
                 self::publishedPort($postgres, 5432),
                 rawurlencode(self::POSTGRES_DATABASE),

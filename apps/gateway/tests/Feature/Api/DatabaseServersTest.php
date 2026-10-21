@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseServerFirewall;
+use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -72,7 +74,7 @@ describe('database:server:create', function (): void {
             ->assertJsonPath('data.databases_count', 0);
 
         expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
+            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count', 'lan_node_ids',
         ]);
 
         $server = DatabaseServer::query()->sole();
@@ -317,4 +319,83 @@ describe('database:server list, show, and destroy', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'node.has_database_servers');
     });
+});
+
+it('provisions PostgreSQL 18 with the versioned data layout and removes its initialization secret', function (): void {
+    $response = $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'slug' => 'managed-postgres', 'port' => 5434]));
+    $response->assertCreated()->assertJsonPath('data.tag', '18')->assertJsonPath('data.port', 5434);
+    $server = DatabaseServer::query()->sole();
+    $process = $server->process;
+    expect($process->runtime_config['image'])->toBe('postgres:18')
+        ->and($process->runtime_config['volumes'][0]['target'])->toBe('/var/lib/postgresql')
+        ->and($process->runtime_config['environment'])->toBe([])
+        ->and($process->runtime_config['ports'])->toBe(['10.44.0.80:5434:5432'])
+        ->and(DB::table('database_servers')->sole()->root_password)->not->toBe($server->root_password)
+        ->and($response->getContent())->not->toContain($server->root_password);
+});
+
+it('rejects PostgreSQL images outside major 18 before reserving a server', function (string $tag): void {
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'tag' => $tag]))
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseServer::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+})->with(['16', '17-alpine', '19', 'latest', '180']);
+
+it('publishes SQL servers on both private addresses with exact peer rules', function (string $driver, int $port): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver, 'lan_node_ids' => [$this->gateway->id]]))
+        ->assertCreated()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
+    $server = DatabaseServer::query()->sole();
+    expect($server->process->runtime_config['ports'])->toBe(["10.44.0.80:{$port}:{$port}", "10.0.0.6:{$port}:{$port}"]);
+    $calls = app(DatabaseServerFirewall::class)->calls;
+    expect($calls[0]['rules'])->toContain("-d 10.0.0.6/32 -p tcp --dport {$port} -s 10.0.0.5/32 -j RETURN", "-d 10.0.0.6/32 -p tcp --dport {$port} -j DROP");
+})->with([['mysql', 3306], ['pgsql', 5432]]);
+
+it('fails before publishing when the ingress filter cannot be installed and resumes on retry', function (): void {
+    $firewall = app(DatabaseServerFirewall::class);
+    $firewall->fail = true;
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql', 'tag' => '18']);
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(Process::query()->count())->toBe(0)->and(DatabaseServer::query()->sole()->failed_step)->toBe('firewall');
+    $password = DatabaseServer::query()->sole()->root_password;
+    $firewall->fail = false;
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    expect(DatabaseServer::query()->sole()->root_password)->toBe($password)->and(Process::query()->count())->toBe(1);
+});
+
+it('reconciles active SQL publications without restoring its password variable', function (): void {
+    $request = database_server_request($this->dbNode);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    $config = DatabaseServer::query()->sole()->process->runtime_config;
+    expect($config['ports'])->toBe(['10.44.0.80:3306:3306', '10.0.0.6:3306:3306'])->and($config['environment'])->toBe([]);
+});
+
+it('resumes PostgreSQL initialization with the original password and Process after readiness failure', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->admin->readiness = [false];
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    $server = DatabaseServer::query()->sole();
+    $processId = $server->process_id;
+    $password = $server->root_password;
+    expect($server->failed_step)->toBe('readiness')->and($server->process->runtime_config['environment']['POSTGRES_PASSWORD'])->toBe($password);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    expect($server->refresh()->process_id)->toBe($processId)->and($server->root_password)->toBe($password)->and($server->process->runtime_config['environment'])->toBe([]);
+});
+
+it('prunes retired and changed peer sources from the filter', function (): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
+    $reconciler = app(DatabaseServerFirewallReconciler::class);
+    $reconciler->reconcilePeers([$this->gateway->id => ['lan_ip' => '10.0.0.9']], expand: true);
+    $firewall = app(DatabaseServerFirewall::class);
+    expect($firewall->calls[array_key_last($firewall->calls)]['expand'])->toBeTrue();
+    $this->gateway->update(['lan_ip' => '10.0.0.9']);
+    $reconciler->reconcilePeers();
+    $rules = implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']);
+    expect($rules)->toContain('-s 10.0.0.9/32')->not->toContain('-s 10.0.0.5/32');
+    $reconciler->reconcilePeers([$this->gateway->id => ['status' => LifecycleStatus::Removing]]);
+    expect(implode("\n", $firewall->calls[array_key_last($firewall->calls)]['rules']))->not->toContain('-s 10.0.0.9/32');
 });

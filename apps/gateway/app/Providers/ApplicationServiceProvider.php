@@ -36,6 +36,7 @@ use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
+use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -58,10 +59,13 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseServerFirewall;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
@@ -264,6 +268,7 @@ use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Firewall\NativeDatabaseServerFirewall;
 use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
@@ -519,6 +524,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
+        DatabaseServerFirewall::class => NativeDatabaseServerFirewall::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
@@ -566,7 +572,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([ValkeyConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
+        $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
+        $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 
         $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
 

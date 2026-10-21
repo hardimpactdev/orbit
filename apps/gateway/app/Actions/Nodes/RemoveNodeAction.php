@@ -8,6 +8,7 @@ use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseServers\DatabaseServerFirewallReconciler;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -223,6 +224,7 @@ final readonly class RemoveNodeAction
             }
         }
 
+        app(DatabaseServerFirewallReconciler::class)->reconcilePeers([$node->id => ['status' => LifecycleStatus::Removing]]);
         $lanClusterId = $node->cluster_id;
 
         if ($node->wireguard_public_key !== null) {

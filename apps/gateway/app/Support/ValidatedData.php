@@ -35,6 +35,19 @@ final class ValidatedData
         return $value;
     }
 
+    /** @return list<int> */
+    public static function integerList(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new InvalidArgumentException('Validated input must be a list.');
+        }
+        $result = [];
+        foreach ($value as $item) {
+            $result[] = self::integer($item);
+        }
+        return $result;
+    }
+
     /** @return list<string> */
     public static function stringList(mixed $value): array
     {

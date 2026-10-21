@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
+use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
+use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
+use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
@@ -120,4 +124,18 @@ it('calls a tagged removal guard before deleting or broadcasting', function (): 
 
     $this->assertModelExists($connection);
     Event::assertNotDispatched(RecordBroadcast::class);
+});
+
+it('wires the core PostgreSQL update hook and refuses changing managed credentials or endpoints', function (): void {
+    expect(collect(app()->tagged(DatabaseConnectionUpdateHook::class))->contains(fn ($hook): bool => $hook instanceof PostgresConnectionUpdateHook))->toBeTrue();
+    $node = Node::query()->create(['name' => 'services', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.17', 'status' => 'active', 'platform' => 'linux']);
+    $server = DatabaseServer::query()->create(['slug' => 'pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin', 'status' => 'active']);
+    $connection = DatabaseConnection::query()->create(['slug' => 'app', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'host' => '10.44.0.3', 'port' => 5434, 'database' => 'app', 'username' => 'app', 'password' => 'secret']);
+    expect(fn () => app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update()))
+        ->toThrow(ResourceOperationException::class, 'Create a new managed PostgreSQL connection');
+    expect($connection->fresh()->host)->toBe('10.44.0.3');
+});
+
+it('wires the core analytics database removal guard before database destruction', function (): void {
+    expect(collect(app()->tagged(DatabaseConnectionRemovalGuard::class))->contains(fn ($guard): bool => $guard instanceof AnalyticsDatabaseConnectionGuard))->toBeTrue();
 });

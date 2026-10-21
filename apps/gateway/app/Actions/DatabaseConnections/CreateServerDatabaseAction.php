@@ -12,6 +12,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
@@ -67,7 +68,7 @@ final readonly class CreateServerDatabaseAction
         return $this->createOnServer(
             server: $server,
             slug: $data->slug,
-            database: $this->names->database($data->slug),
+            database: $server->driver === DatabaseDriver::Pgsql ? $this->postgresName($data->slug) : $this->names->database($data->slug),
             instance: $instance,
             createdBy: $createdBy,
         );
@@ -83,6 +84,9 @@ final readonly class CreateServerDatabaseAction
     ): DatabaseConnection {
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
+        if ($server->driver === DatabaseDriver::Pgsql && $instance !== null) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
+        }
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
             throw $this->slugConflict($slug);
@@ -93,12 +97,12 @@ final readonly class CreateServerDatabaseAction
 
         $this->assertNamesFree($server, $database, $testDatabase, $credentials);
 
-        $sql = $this->statements->ensureUser($credentials['username'], $credentials['password'])
-            .$this->statements->createDatabase($database)
-            .$this->statements->grantAll($database, $credentials['username']);
+        $sql = $this->sql($server)->ensureUser($credentials['username'], $credentials['password'])
+            .$this->sql($server)->createDatabase($database)
+            .$this->sql($server)->grantAll($database, $credentials['username']);
 
         if ($testDatabase !== null) {
-            $sql .= $this->statements->createDatabase($testDatabase)
+            $sql .= $this->sql($server)->createDatabase($testDatabase)
                 .$this->statements->grantAllWithPrefix($testDatabase, $credentials['username']);
         }
 
@@ -122,7 +126,7 @@ final readonly class CreateServerDatabaseAction
             ): DatabaseConnection {
                 $connection = DatabaseConnection::query()->create([
                     'slug' => $slug,
-                    'driver' => DatabaseDriver::Mysql->value,
+                    'driver' => $server->driver->value,
                     'node_id' => $server->node_id,
                     'database_server_id' => $server->id,
                     'owner_instance_id' => $instance?->id,
@@ -138,7 +142,7 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $credentials['username'],
-                    'privileges' => $this->statements->privilegeText($database, prefix: $testDatabase),
+                    'privileges' => $this->sql($server)->privilegeText($database, prefix: $testDatabase),
                     'created_by' => $createdBy,
                 ]);
 
@@ -179,6 +183,9 @@ final readonly class CreateServerDatabaseAction
     ): DatabaseConnection {
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
+        if ($server->driver === DatabaseDriver::Pgsql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
+        }
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
             throw $this->slugConflict($slug);
@@ -202,7 +209,7 @@ final readonly class CreateServerDatabaseAction
                 $connection = DatabaseConnection::query()->create([
                     ...$attributes,
                     'slug' => $slug,
-                    'driver' => DatabaseDriver::Mysql->value,
+                    'driver' => $server->driver->value,
                     'node_id' => $server->node_id,
                     'database_server_id' => $server->id,
                     'owner_instance_id' => $instance->id,
@@ -218,7 +225,7 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $credentials['username'],
-                    'privileges' => $this->statements->privilegeText($database, prefix: $testDatabase),
+                    'privileges' => $this->sql($server)->privilegeText($database, prefix: $testDatabase),
                     'created_by' => $createdBy,
                 ]);
 
@@ -259,12 +266,12 @@ final readonly class CreateServerDatabaseAction
 
         $this->admin->execute(
             $server,
-            $this->statements->ensureUser($connection->username, $connection->password)
-                .$this->statements->dropDatabase($connection->database)
-                .$this->statements->dropDatabase($connection->test_database)
-                .$this->statements->createDatabase($connection->database)
-                .$this->statements->grantAll($connection->database, $connection->username)
-                .$this->statements->createDatabase($connection->test_database)
+            $this->sql($server)->ensureUser($connection->username, $connection->password)
+                .$this->sql($server)->dropDatabase($connection->database)
+                .$this->sql($server)->dropDatabase($connection->test_database)
+                .$this->sql($server)->createDatabase($connection->database)
+                .$this->sql($server)->grantAll($connection->database, $connection->username)
+                .$this->sql($server)->createDatabase($connection->test_database)
                 .$this->statements->grantAllWithPrefix($connection->test_database, $connection->username),
         );
     }
@@ -278,6 +285,9 @@ final readonly class CreateServerDatabaseAction
         $server = $this->server($slug);
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
+        if ($server->driver !== DatabaseDriver::Mysql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
+        }
 
         return $server;
     }
@@ -455,7 +465,7 @@ final readonly class CreateServerDatabaseAction
             }
         }
 
-        if ($this->admin->execute($server, $this->statements->databasesNamed($database, $testDatabase)) !== []) {
+        if ($this->admin->execute($server, $this->sql($server)->databasesNamed($database, $testDatabase)) !== []) {
             throw $this->nameConflict($server, $database);
         }
 
@@ -473,7 +483,7 @@ final readonly class CreateServerDatabaseAction
                 ->whereIn('database_connection_id', $connections->pluck('id'))
                 ->exists();
 
-        if ($recorded || $this->admin->execute($server, $this->statements->userNamed($username)) !== []) {
+        if ($recorded || $this->admin->execute($server, $this->sql($server)->userNamed($username)) !== []) {
             throw $this->nameConflict($server, $username);
         }
     }
@@ -490,14 +500,14 @@ final readonly class CreateServerDatabaseAction
         #[SensitiveParameter]
         array $credentials,
     ): void {
-        $sql = $this->statements->dropDatabase($database);
+        $sql = $this->sql($server)->dropDatabase($database);
 
         if ($testDatabase !== null) {
-            $sql .= $this->statements->dropDatabase($testDatabase);
+            $sql .= $this->sql($server)->dropDatabase($testDatabase);
         }
 
         if ($credentials['new']) {
-            $sql .= $this->statements->dropUser($credentials['username']);
+            $sql .= $this->sql($server)->dropUser($credentials['username']);
         }
 
         try {
@@ -533,5 +543,17 @@ final readonly class CreateServerDatabaseAction
             message: "Database server [{$server->slug}] already has a database or user named [{$name}].",
             status: 409,
         );
+    }
+
+    private function sql(DatabaseServer $server): MysqlStatements|PostgresStatements
+    {
+        return $server->driver === DatabaseDriver::Pgsql ? new PostgresStatements : $this->statements;
+    }
+
+    private function postgresName(string $slug): string
+    {
+        $name = $this->names->database($slug);
+
+        return strlen($name) <= 63 ? $name : substr($name, 0, 54).'_'.substr(sha1($name), 0, 8);
     }
 }
