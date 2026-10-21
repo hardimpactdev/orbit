@@ -15,27 +15,15 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def shard_count():
-    count = json.loads((ROOT / 'tools/gateway-shards.json').read_text())['count']
-    if type(count) is not int or count < 2:
-        raise ValueError('Gateway shard count must be an integer of at least 2.')
-    return count
-
-
-def matrix(write=False):
-    """Keep the static CI matrix in sync without a runtime planning job."""
-    path = ROOT / '.github/workflows/ci.yml'
-    workflow = path.read_text()
-    pattern = r'(  gateway-shards:\n[\s\S]*?        shard: )\[[^\n]*\]'
-    expected = list(range(1, shard_count() + 1))
-    match = re.search(pattern, workflow)
+    workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+    match = re.search(r'  gateway-shards:\n[\s\S]*?        shard: (\[[^\n]*\])', workflow)
     if match is None:
         raise ValueError('Cannot find the static Gateway shard matrix.')
-    actual = json.loads(match[0][len(match[1]):])
-    if write:
-        path.write_text(workflow[:match.start()] + match[1] + json.dumps(expected) + workflow[match.end():])
-    elif actual != expected:
-        raise ValueError('Gateway shard matrix differs from tools/gateway-shards.json. '
-                         'Run bin/check-pest-shards --write-matrix.')
+    matrix = json.loads(match[1])
+    count = len(matrix)
+    if count < 2 or any(type(shard) is not int for shard in matrix) or matrix != list(range(1, count + 1)):
+        raise ValueError('Gateway shard matrix must be the consecutive integers 1..count, with at least 2 shards.')
+    return count
 
 
 def listed_classes(*options):
@@ -53,7 +41,6 @@ def listed_classes(*options):
 
 
 def check():
-    matrix()
     count = shard_count()
     full = listed_classes()
     assigned = Counter(test for shard in range(1, count + 1) for test in listed_classes(f'--shard={shard}/{count}'))
@@ -68,11 +55,8 @@ def check():
 
 if __name__ == '__main__':
     try:
-        if sys.argv[1:] == ['--write-matrix']:
-            matrix(write=True)
-        elif sys.argv[1:]:
-            sys.exit('Usage: bin/check-pest-shards [--write-matrix]')
-        else:
-            check()
+        if sys.argv[1:]:
+            sys.exit('Usage: bin/check-pest-shards')
+        check()
     except ValueError as error:
         sys.exit(str(error))

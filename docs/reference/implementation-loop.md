@@ -5,7 +5,7 @@ covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
   - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
-  - tools/{check_budget.py,gateway-shards.json}
+  - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
@@ -180,7 +180,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use th
 
 ### Gateway shards
 
-Each PR runs one stock Pest shard per shared runner. `tools/gateway-shards.json` defines the count in one place. After changing that number, run `bin/check-pest-shards --write-matrix` to update the committed static CI matrix. `bin/check-pest-shards` rejects a matrix that differs from the configured count. Each job runs `vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=N/COUNT`; the workflow takes `COUNT` from `strategy.job-total`, so the denominator follows the matrix. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all shards. No planner, plan artifact, API polling or hand-built class filter is involved.
+Each PR runs one stock Pest shard per shared runner. The `gateway-shards` matrix list in `.github/workflows/ci.yml` is the only source of the count. Change capacity by editing that list. `bin/check-pest-shards` reads its length and requires consecutive shard numbers from 1 through that count. Each job runs `vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=N/COUNT`; the workflow takes `COUNT` from `strategy.job-total`, so the denominator follows the matrix. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all shards. No planner, plan artifact, API polling or hand-built class filter is involved.
 
 #### Gateway tests and privilege
 
@@ -243,7 +243,7 @@ Beast and Shark are app-dev Nodes with live Instances and task workspaces. So ea
 
 Create an organization registration token with `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
-The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The setup script's default profile specifies 4 CPUs and 8 GiB. The six deployed runners override those defaults with `limits.cpu=6` and `limits.memory=12GiB`; each runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The setup script's default profile specifies 6 CPUs and 12 GiB. Each runner runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
 
 Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
 

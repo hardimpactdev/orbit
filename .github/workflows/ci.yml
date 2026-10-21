@@ -293,7 +293,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Change runs use the static stock shard matrix from tools/gateway-shards.json. Main keeps one recording run for a complete TIA graph.
+  # Change runs use the static stock shard matrix below as the only source of the shard count. Main keeps one recording run for a complete TIA graph.
   gateway-shards:
     name: Gateway shards
     # env.CHANGE_RUN, spelled out.

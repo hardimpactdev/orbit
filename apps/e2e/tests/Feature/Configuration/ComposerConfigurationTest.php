@@ -399,15 +399,17 @@ SH);
     it('requires the full Gateway suite in shards on every pull request and task-*-handoff push', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $jobs = $workflow['jobs'];
+        $shardCount = count($jobs['gateway-shards']['strategy']['matrix']['shard']);
         $shardSteps = array_column($jobs['gateway-shards']['steps'], null, 'name');
         $projectSteps = array_column($jobs['project']['steps'], null, 'name');
 
+        expect($shardCount)->toBeGreaterThan(1);
         expect($jobs)->not->toHaveKey('gateway-plan');
         expect($jobs['project'])->not->toHaveKey('needs');
         expect($jobs['gateway-shards'])->not->toHaveKey('needs')
             ->toMatchArray([
                 'if' => "github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')",
-                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, json_decode((string) file_get_contents(base_path('../../tools/gateway-shards.json')), true, flags: JSON_THROW_ON_ERROR)['count'])]],
+                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => range(1, $shardCount)]],
             ]);
         expect($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');

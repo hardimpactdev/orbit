@@ -38,7 +38,6 @@ def listing(classes, code=0):
 class PestShardsTest(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.object(checker, 'shard_count', return_value=len(CLASSES)))
-        self.enterContext(patch.object(checker, 'matrix'))
 
     def outputs(self, partitions=None):
         return [listing(CLASSES), *(listing(classes) for classes in
@@ -94,25 +93,21 @@ class PestShardsTest(unittest.TestCase):
 
 
 class ShardCapacityTest(unittest.TestCase):
-    def test_one_count_generates_and_checks_the_static_matrix(self):
+    def test_matrix_is_the_only_count_source_and_is_read_only(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(checker, 'ROOT', Path(directory)):
-            root = Path(directory)
-            (root / 'tools').mkdir()
-            (root / '.github/workflows').mkdir(parents=True)
-            capacity = root / 'tools/gateway-shards.json'
-            workflow = root / '.github/workflows/ci.yml'
-            workflow.write_text('jobs:\n  gateway-shards:\n    strategy:\n      matrix:\n        shard: [1, 2]\n')
+            workflow = Path(directory) / '.github/workflows/ci.yml'
+            workflow.parent.mkdir(parents=True)
             for count in (3, 7):
-                capacity.write_text(json.dumps({'count': count}))
-                with self.assertRaisesRegex(ValueError, 'matrix differs'):
-                    checker.matrix()
-                checker.matrix(write=True)
-                checker.matrix()
-                self.assertIn(f'shard: {list(range(1, count + 1))}', workflow.read_text())
+                contents = ('jobs:\n  gateway-shards:\n    strategy:\n      matrix:\n'
+                            f'        shard: {list(range(1, count + 1))}\n')
+                workflow.write_text(contents)
+                self.assertEqual(count, checker.shard_count())
+                self.assertEqual(contents, workflow.read_text())
 
-            for count in (True, 1, 0, -1, '6'):
-                capacity.write_text(json.dumps({'count': count}))
-                with self.subTest(count=count), self.assertRaisesRegex(ValueError, 'at least 2'):
+            for matrix in ([], [1], [1, 3], [2, 1], [1, 2, 2], [True, 2], [1, '2'], [1.0, 2]):
+                workflow.write_text('jobs:\n  gateway-shards:\n    strategy:\n      matrix:\n'
+                                    f'        shard: {json.dumps(matrix)}\n')
+                with self.subTest(matrix=matrix), self.assertRaisesRegex(ValueError, '1..count'):
                     checker.shard_count()
 
 
