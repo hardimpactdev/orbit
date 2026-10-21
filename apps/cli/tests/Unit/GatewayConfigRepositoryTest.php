@@ -11,8 +11,6 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->configDirectory = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
     $this->configPath = $this->configDirectory.'/config.json';

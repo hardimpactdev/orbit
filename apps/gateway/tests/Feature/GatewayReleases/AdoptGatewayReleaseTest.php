@@ -31,8 +31,6 @@ use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
 use Tests\Support\WebArtifactFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->fixture = new GatewayReleaseFixture;
     $this->current = $this->fixture->layout->currentPath();

@@ -6,8 +6,6 @@ use App\Infrastructure\Tasks\TaskUnitProgram;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * Runs `topology.sh` with bash under a temporary HOME, with `sudo` and `systemctl` stubbed, and a checkout whose
  * harness commands are stubs that log their arguments.

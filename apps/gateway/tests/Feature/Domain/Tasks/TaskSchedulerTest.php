@@ -2789,7 +2789,7 @@ it('does not infer mutation provenance from an overlapping legacy check', functi
     $changedTree = str_repeat('d', 40);
     $checks = new FakeTaskCheckRunner([
         TaskCheckReading::running(),
-        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_tia_fixture/test.php'], 'check created untracked fixture'),
+        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_check_fixture/test.php'], 'check created untracked fixture'),
     ]);
     $checks->tree = $changedTree;
     app()->instance(TaskCheckRunner::class, $checks);

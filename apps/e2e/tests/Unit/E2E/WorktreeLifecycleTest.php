@@ -26,18 +26,13 @@ function loopFlowFixture(): array
     }
     file_put_contents($root.'/bin/bootstrap', "#!/bin/sh\nexit 0\n");
     chmod($root.'/bin/bootstrap', 0755);
-    file_put_contents(
-        $root.'/bin/tia-cache',
-        "#!/bin/sh\nprintf '%s\\n' \"\$*\" > \"\$(git rev-parse --git-common-dir)/tia-queued\"\nexit 1\n",
-    );
-    chmod($root.'/bin/tia-cache', 0755);
     expect($run->path($root)->run(['git', 'add', '.'])->successful())->toBeTrue();
     expect($run->path($root)->run(['git', 'commit', '-m', 'base'])->successful())->toBeTrue();
 
     return ['root' => $root, 'run' => $run];
 }
 
-it('creates from fetched main without updating primary or queuing duplicate checks', function (): void {
+it('creates from fetched main without updating primary', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
     $primaryHead = $run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output();
     $remote = temporaryPath('orbit-flow-new-main-', 6);
@@ -57,7 +52,6 @@ it('creates from fetched main without updating primary or queuing duplicate chec
     expect(file_exists($root.'/next.txt'))->toBeFalse();
     expect($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output())->toBe($primaryHead);
     expect(file_get_contents($root.'-worktrees/tst-46/next.txt'))->toBe('new main');
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
     expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
 });
 
@@ -80,7 +74,6 @@ it('creates from main while preserving a dirty primary on another branch', funct
     expect($run->path($root)->run(['git', 'write-tree'])->output())->toBe($index);
     expect(trim($run->path($root)->run(['git', 'branch', '--show-current'])->output()))->toBe('running-checkout');
     expect(file_get_contents($root.'-worktrees/tst-47/shared.txt'))->toBe("base\n");
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
 
 it('refuses a configured worktree root inside primary or a relative path', function (string $suffix): void {
@@ -92,7 +85,6 @@ it('refuses a configured worktree root inside primary or a relative path', funct
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('orbit.worktreeRoot must be');
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 })->with(['', '/nested', 'relative']);
 
 it('reuses an existing registered branch after its worktree moves', function (): void {
@@ -119,7 +111,6 @@ it('refuses ambiguous legacy branches for issue-only creation and cleanup', func
         expect($result->successful())->toBeFalse();
         expect($result->errorOutput())->toContain('More than one branch matches TST-50');
     }
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
 
 it('closes out a merged worktree when the repository has a long worktree listing', function (): void {
@@ -164,8 +155,6 @@ it('closes out a merged worktree when the repository has a long worktree listing
     ]);
 
     expect($result->successful())->toBeTrue($result->errorOutput());
-    // Removal queues no cache maintenance: CI publishes no main caches.
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
     expect(is_dir($worktree))->toBeFalse();
     expect(
         $run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-44-cleanup'])->successful(),
@@ -211,5 +200,4 @@ it('does not remove an unmerged feature', function (): void {
 
     expect($result->successful())->toBeFalse();
     expect(is_dir($worktree))->toBeTrue();
-    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });

@@ -18,8 +18,6 @@ use App\Models\TaskCheck;
 use Symfony\Component\Process\Process;
 use Tests\Support\NullTaskReviewDiff;
 
-pest()->group('subprocess');
-
 function render_task_prompt(string $role, array $payload): array
 {
     $process = new Process(

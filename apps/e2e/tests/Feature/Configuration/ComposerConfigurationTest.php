@@ -5,10 +5,8 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
-pest()->group('subprocess');
-
 describe('Composer configuration', function (): void {
-    it('enables TIA for every repository-owned Pest command', function (): void {
+    it('runs every repository-owned Pest command as a stock full suite without test impact analysis', function (): void {
         foreach ([
             'bin/test',
             'apps/cli/composer.json',
@@ -21,9 +19,8 @@ describe('Composer configuration', function (): void {
 
             expect($contents)
                 ->toBeString()
-                ->toContain('--tia')
                 ->not->toContain(
-                    '--no-tia',
+                    '--tia',
                     '--filter',
                     '--exclude-filter',
                     '--group',
@@ -36,14 +33,15 @@ describe('Composer configuration', function (): void {
                 /** @var array{scripts: array<string, mixed>} $composer */
                 $composer = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
 
-                foreach (['test', 'test:affected'] as $script) {
-                    $command = $composer['scripts'][$script] ?? null;
-
-                    expect($command)
-                        ->toBeString()
-                        ->toContain('vendor/bin/pest', '--colors=never')
-                        ->not->toContain('--no-progress');
-                }
+                expect($composer['scripts']['test'] ?? null)
+                    ->toBeString()
+                    ->toContain('vendor/bin/pest', '--parallel', '--colors=never')
+                    ->not->toContain('--no-progress');
+                expect($composer['scripts'])->not->toHaveKey('test:affected')
+                    ->and($composer['scripts'])->not->toHaveKey('test:fresh');
+                expect(file_get_contents(base_path('../../'.dirname($path).'/tests/Pest.php')))
+                    ->not->toContain('tia()')
+                    ->not->toContain('ORBIT_TIA_DIRECTORY');
 
                 array_walk_recursive($composer['scripts'], function (mixed $command): void {
                     if (! is_string($command) || ! str_contains($command, 'vendor/bin/pest')) {
@@ -144,9 +142,7 @@ describe('Composer configuration', function (): void {
             ->not
             ->toHaveKey('test:live-incus')
             ->and($composer['scripts']['test'])
-            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never')
-            ->and($composer['scripts']['test:fresh'])
-            ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never')
             ->and($composer['scripts']['guidance:check'])
             ->toBe('../../bin/guidance-check');
         expect(array_filter(
@@ -156,7 +152,7 @@ describe('Composer configuration', function (): void {
         expect(glob(base_path('phpunit.scenario-*.xml')))->toBe([])
             ->and(is_dir(base_path('tests/Scenario')))->toBeFalse();
         expect(file_get_contents(base_path('../../bin/test')))
-            ->toContain('--tia')
+            ->toContain("'--parallel'")
             ->not->toContain('incus-live');
         expect(file_get_contents(base_path('../../.github/workflows/ci.yml')))
             ->toContain('coverage: pcov')
@@ -206,8 +202,8 @@ describe('Composer configuration', function (): void {
                 'retention-days' => 14,
             ],
         ]);
-        // CI records and exports no TIA graph.
-        foreach (['sandbox-tia', 'graph.json', '.orbit-tia', 'ORBIT_TIA_DIRECTORY', '--fresh', '--tia --', 'Pest TIA graph'] as $needle) {
+        // CI runs stock Pest: it records, exports and selects nothing with test impact analysis.
+        foreach (['sandbox-tia', 'graph.json', '.orbit-tia', 'ORBIT_TIA_DIRECTORY', '--fresh', '--tia', 'Pest TIA graph'] as $needle) {
             expect($source)->not->toContain($needle);
         }
         foreach ($workflow['jobs'] as $name => $job) {
@@ -239,7 +235,7 @@ printf '%s:%s:%s\n' "${PWD#"$FIXTURE_ROOT/"}" "${0##*/}" "$*" >> "$INSTALL_LOG"
 SH);
             chmod($root.'/tooling/'.$tool, 0700);
         }
-        foreach (['generated-merge', 'worktree-cache', 'gateway-app-key', 'tia-cache'] as $helper) {
+        foreach (['generated-merge', 'worktree-cache', 'gateway-app-key'] as $helper) {
             file_put_contents($root.'/bin/'.$helper, "#!/usr/bin/env sh\nexit 19\n");
             chmod($root.'/bin/'.$helper, 0700);
         }
@@ -286,7 +282,7 @@ SH);
         expect($steps['Run full test suite'])
             ->toMatchArray([
                 'if' => "matrix.project.directory != 'apps/gateway'",
-                'run' => 'vendor/bin/pest --parallel --no-tia --compact',
+                'run' => 'vendor/bin/pest --parallel --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
@@ -300,7 +296,7 @@ SH);
         );
     });
 
-    it('tests pull requests on the merge ref and records no Pest TIA graph', function (): void {
+    it('tests pull requests on the merge ref with stock Pest', function (): void {
         $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
 
         expect($workflow)
@@ -312,22 +308,14 @@ SH);
             ->toContain('actions/cache/save@')
             ->toContain('coverage: pcov')
             ->toContain("github.event_name == 'pull_request'")
-            ->not->toContain('bin/ci-tia', 'Restore Pest TIA graph')
+            ->not->toContain('bin/ci-tia')
             ->not->toContain('bin/tia-cache')
-            ->not->toContain('tia-baseline.yml')
-            ->not->toContain('vendor/.orbit-guidance-tia');
+            ->not->toContain('tia-baseline.yml');
 
-        foreach (['Compute Pest TIA cache prefix', 'Save Pest TIA graph', 'orbit-tia-php'] as $deadCache) {
+        foreach (['Compute Pest TIA cache prefix', 'Restore Pest TIA graph', 'Save Pest TIA graph', 'orbit-tia-php'] as $deadCache) {
             expect($workflow)->not->toContain($deadCache);
         }
-
-        $ignored = new Process(
-            ['git', 'check-ignore', '-q', 'apps/cli/.orbit-tia/graph.json'],
-            base_path('../..'),
-        );
-        $ignored->run();
-
-        expect($ignored->getExitCode())->toBe(0, 'The hosted TIA graph must stay out of the candidate tree.');
+        expect(is_file(base_path('../../bin/tia-cache')))->toBeFalse();
     });
 
     it('persists per-project Pint caches without reusing Rector caches around the quality checks', function (): void {
@@ -405,7 +393,7 @@ SH);
         expect($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
-            ->toBe('vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
+            ->toBe('vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
             'if' => "matrix.project.directory == 'apps/gateway'",
             'run' => '../../bin/check-pest-shards',
@@ -455,7 +443,7 @@ SH);
         expect(json_encode($matrix, JSON_THROW_ON_ERROR))->not->toContain('subprocess');
     });
 
-    it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
+    it('executes the guidance contract when a guidance input is corrupt', function (): void {
         $source = base_path('../../apps/docs');
         // composer guidance:check runs ../../bin/guidance-check, so the copy keeps the monorepo layout.
         $root = temporaryPath('orbit-guidance-check-', 6);
@@ -499,8 +487,7 @@ SH);
         expect($process->getExitCode())
             ->not->toBe(0)
             ->and($output)
-            ->toContain('repository-root `docs/`')
-            ->not->toContain('TIA does not apply to partial runs');
+            ->toContain('repository-root `docs/`');
     });
 });
 
@@ -520,8 +507,8 @@ it('keeps the whole privileged group required in one disposable CI job', functio
     expect($job['runs-on'])->toBe('ubuntu-26.04');
     expect($job)->not->toHaveKey('strategy')->not->toHaveKey('if');
     $commands = implode("\n", array_column($job['steps'], 'run'));
-    expect($commands)->toContain('vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never');
-    expect($commands)->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite')
+    expect($commands)->toContain('vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never');
+    expect($commands)->toContain('--group=privileged', '--fail-on-empty-test-suite')
         ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');

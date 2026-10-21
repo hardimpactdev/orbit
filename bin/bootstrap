@@ -115,10 +115,6 @@ fi
 
 "$repository_root/bin/gateway-app-key"
 
-# A cache miss falls back to normal checks.
-"$repository_root/bin/tia-cache" seed --repository="$repository_root" || printf 'TIA cache seeding unavailable.\n' >&2
-unset ORBIT_MAIN_CACHE_STORE
-
 pids=()
 
 for project in "${projects[@]}"; do
@@ -149,11 +145,11 @@ fi
 
 if ((run_checks)); then
     for project in "${projects[@]}"; do
-        printf '\n[%s] affected tests and quality checks\n' "$project"
+        printf '\n[%s] tests and quality checks\n' "$project"
         (
             cd "$repository_root/$project"
             export COMPOSER_PROCESS_TIMEOUT=0
-            composer test:affected
+            composer test
             composer check
         )
     done

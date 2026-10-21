@@ -104,10 +104,10 @@ The SDK exposes typed one-shot log reads for Instances and Processes, and create
 
 ## Quality
 
-Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only `composer test:affected` in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
+Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only the tests that cover the change in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
 
 ```bash
-composer test       # Pest suite with TIA (parallel)
+composer test       # full Pest suite in parallel
 composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```

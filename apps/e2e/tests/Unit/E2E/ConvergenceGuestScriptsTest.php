@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * A host copy of one guest script under a temporary root: `/home/orbit` becomes `<root>/home` and
  * `/var/lib/orbit-e2e` becomes `<root>/state`, and each stub is an executable in `<root>/bin`, first on PATH.

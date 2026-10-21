@@ -25,8 +25,6 @@ use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->probeHome = sys_get_temp_dir().'/orbit-probe-recovery-'.Str::uuid();
     config(['orbit.home' => $this->probeHome]);

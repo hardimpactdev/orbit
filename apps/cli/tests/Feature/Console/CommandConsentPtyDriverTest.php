@@ -6,8 +6,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 it('waits for real input consumption through stale output and an empty input queue', function (string $transition): void {
     $directory = sys_get_temp_dir().'/orbit-pty-driver-'.Str::uuid();
     new Filesystem()->ensureDirectoryExists($directory);

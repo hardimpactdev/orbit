@@ -7,8 +7,6 @@ use PHPUnit\Framework\SkippedWithMessageException;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 
-pest()->group('subprocess');
-
 function linux_host_temporary_directory(): string
 {
     $directory = realpath(sys_get_temp_dir()).'/orbit-linux-host-test-'.bin2hex(random_bytes(6));
@@ -61,7 +59,7 @@ it('builds delegated commands with the toolchain from the copied Gateway', funct
 });
 
 it('preserves the selected case privilege when building a real Pest delegation', function (bool $privileged): void {
-    $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never'];
+    $arguments = ['tests/Fixtures/linux-host-selection.php', '--colors=never'];
 
     if ($privileged) {
         $arguments[] = '--group=privileged';

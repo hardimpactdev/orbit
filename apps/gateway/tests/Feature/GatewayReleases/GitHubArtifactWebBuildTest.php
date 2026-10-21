@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\Http;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\WebArtifactFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->web = new WebArtifactFixture(new GatewayReleaseLayout(sys_get_temp_dir().'/orbit-web-layout/orbit/apps/gateway'));
     $this->id = substr(WebArtifactFixture::Sha, 0, 12);
@@ -66,7 +64,7 @@ describe('web build install', function (): void {
         'pull request run' => [['run' => ['event' => 'pull_request']], 'published no artifact'],
         'fork run' => [['run' => ['head_repository' => ['id' => 99, 'full_name' => 'fork/orbit']]], 'published no artifact'],
         'other branch' => [['run' => ['head_branch' => 'feature']], 'published no artifact'],
-        'other workflow' => [['run' => ['path' => '.github/workflows/tia-baseline.yml']], 'published no artifact'],
+        'other workflow' => [['run' => ['path' => '.github/workflows/dependency-audit.yml']], 'published no artifact'],
         'other commit' => [['artifact' => ['workflow_run' => ['id' => 37647307459, 'repository_id' => 1348221080, 'head_repository_id' => 1348221080, 'head_branch' => 'main', 'head_sha' => str_repeat('b', 40)]]], 'published no artifact'],
     ]);
 
