@@ -266,6 +266,8 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
+        public function remove(Instance $instance): void {}
+
         public function prepareCaddyAccess(Instance $instance): void
         {
             $this->calls[] = 'access';
@@ -1409,7 +1411,7 @@ it('keeps production identity stable across slug changes and refuses another dir
         ->toBe($identity);
 });
 
-it('removes an existing production Instance through retained-content removal', function (): void {
+it('removes an existing production Instance through production source removal', function (): void {
     $node = create_app_prod_node('removal-prod');
     [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'production');
     $home = $instance->production_home;

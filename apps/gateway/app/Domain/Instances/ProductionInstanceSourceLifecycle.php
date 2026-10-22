@@ -17,4 +17,6 @@ interface ProductionInstanceSourceLifecycle
     public function inspectProfile(Instance $instance): DevelopmentSourceProfile;
 
     public function prepareCaddyAccess(Instance $instance): void;
+
+    public function remove(Instance $instance): void;
 }

@@ -21,7 +21,7 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -467,9 +467,9 @@ describe('route web root', function (): void {
         $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
         $removal = new FakeRouteRemovalProjector;
         app()->instance(RouteRemovalProjector::class, $removal);
-        $content = Mockery::mock(ProductionInstanceContentRetention::class);
+        $content = Mockery::mock(ProductionInstanceSourceRemoval::class);
         $content->shouldReceive('inventory')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The production home changed.', 409));
-        app()->instance(ProductionInstanceContentRetention::class, $content);
+        app()->instance(ProductionInstanceSourceRemoval::class, $content);
 
         expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
             ->toThrow(ResourceOperationException::class, 'The production home changed.');
@@ -484,7 +484,7 @@ describe('route web root', function (): void {
         $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
         $removal = new FakeRouteRemovalProjector;
         app()->instance(RouteRemovalProjector::class, $removal);
-        $content = Mockery::mock(ProductionInstanceContentRetention::class);
+        $content = Mockery::mock(ProductionInstanceSourceRemoval::class);
         $content->shouldReceive('inventory')->andReturn(new InstanceSourceInventory(
             instanceId: $instance->id,
             layout: $instance->source_layout,
@@ -503,7 +503,7 @@ describe('route web root', function (): void {
 
             throw new ResourceOperationException('instance.test_stop', 'Stopped after acceptance.', 409);
         });
-        app()->instance(ProductionInstanceContentRetention::class, $content);
+        app()->instance(ProductionInstanceSourceRemoval::class, $content);
 
         expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
             ->toThrow(InstanceRemovalException::class);

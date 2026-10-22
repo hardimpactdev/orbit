@@ -909,6 +909,8 @@ final class Orb198ProductionSource implements ProductionInstanceSourceLifecycle
         return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
     }
 
+    public function remove(Instance $instance): void {}
+
     public function prepareCaddyAccess(Instance $instance): void
     {
         $this->calls[] = 'caddy-access';

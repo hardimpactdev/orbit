@@ -139,7 +139,7 @@ use App\Domain\Instances\Registration\RegistrationSourceManager;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
@@ -305,7 +305,7 @@ use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
-use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
+use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
@@ -452,7 +452,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         RemoteProgramRunner::class => SshProgramRunner::class,
-        ProductionInstanceContentRetention::class => RecordedProductionInstanceContentRetention::class,
+        ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
         InstanceRemover::class => DestroyInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,

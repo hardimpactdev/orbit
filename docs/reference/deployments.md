@@ -381,11 +381,13 @@ When preparing a candidate, Orbit keeps the selected release's Node and package-
 
 A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
 
+The `release-layout` marker is owned by root and records the original layout. Validation authenticates that marker and the selected release without requiring `initial` to remain.
+
 Releases that only stopped Processes used can be removed once they fall outside the retention limit. If a Process opts out, uses a fixed old-release path, or leaves child processes running, it can still use an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process of the production user, also beyond the limit. The output names each such release; stop or restart its remaining processes to free it. When cleanup cannot read where a live process works, it removes nothing and reports a failed cleanup.
 
 Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. Cleanup deletes the release's own files and shared-path links. It does not follow those links or delete persistent shared directories in the Instance home. Files in unshared directories go with the release. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
 
-[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+[Instance removal](/reference/instance-removal) removes the serving setup, production account, home, and source state. Releases, environment files, and SQLite data in that home are deleted with it. Back up any application data you need before removal.
 
 ## Why it works this way
 

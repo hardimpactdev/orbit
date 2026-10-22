@@ -455,6 +455,8 @@ final class Orb198ApiProductionSource implements ProductionInstanceSourceLifecyc
         return new DevelopmentSourceProfile(null, false);
     }
 
+    public function remove(Instance $instance): void {}
+
     public function prepareCaddyAccess(Instance $instance): void {}
 }
 
