@@ -8,6 +8,7 @@ use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
+use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\InstanceState;
@@ -573,7 +574,11 @@ it('reports public Process Route drift on the Ingress and leaves the service Nod
     $probe = app(RouteDoctorProbe::class);
     $ingress = Node::query()->where('name', 'public-ingress')->sole();
     $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
-    $report = $probe->inspect($context);
+    $scope = new DoctorInspectionScope([
+        $ingress->id => $context,
+        $this->node->id => new DoctorNodeContext($this->node, $context->inspection),
+    ]);
+    $report = $probe->inspect($context->withScope($scope));
     expect($report->checked)->toBe(1)
         ->and(array_map(fn ($issue) => $issue->code, $report->issues))->toBe(['route.certificate_mismatch', 'route.upstream_unreachable', 'route.firewall_mismatch'])
         ->and($report->issues[0]->resourceId)->toBe($id);

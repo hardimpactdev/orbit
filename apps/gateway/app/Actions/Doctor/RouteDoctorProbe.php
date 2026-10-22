@@ -64,7 +64,11 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $routes = $context->select($this->servedRoutes($context->node));
+        $proxies = $context->select($this->proxies($context->node), key: 'route_id')
+            ->filter(static fn (RouteCustomProxy $proxy): bool => $proxy->node_id === $context->node->id
+                || $context->scope?->has($proxy->node_id) === true)->values();
+        $routes = $context->select($this->servedRoutes($context->node))
+            ->reject(static fn (Route $route): bool => $route->isCustomProxy() && ! $proxies->contains('route_id', $route->id))->values();
         $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
         $attachments = WebSocketAppTarget::query()->with(['route.targets.instance'])->whereIn('route_id', $routes->modelKeys())->get()->unique('route_id');
         $observedChecks = [];
@@ -99,7 +103,6 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                     'route', $route->id, $route->domain, 'The current Laravel release could not be checked for public Reverb route collisions.', 'verifiable', 'unverifiable');
             }
         }
-        $proxies = $context->select($this->proxies($context->node), key: 'route_id');
 
         if ($context->inspection->reachable) {
             $observedChecks[DoctorResources::nodeCheckId($context->node->id)] = [RouteDoctorIssueCode::NodeUnreachable->value];

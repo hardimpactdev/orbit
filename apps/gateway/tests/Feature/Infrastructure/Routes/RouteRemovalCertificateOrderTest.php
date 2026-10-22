@@ -8,8 +8,10 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\CustomProxyRouteInspector;
+use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -589,6 +591,9 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var array<string, string> */
     public array $firewallStatuses = [];
 
+    /** @var list<string> */
+    public array $firewallReads = [];
+
     public ?string $failCaddy = null;
 
     public bool $failHttp = false;
@@ -611,6 +616,8 @@ final class CertificateOrderNodes implements SshExecutor
         }
 
         if ($command->arguments === ['sudo', 'ufw', 'status', 'numbered']) {
+            $this->firewallReads[] = $host;
+
             return new CommandResult(0, $this->firewallStatuses[$host] ?? "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n", '', 1, false);
         }
 
@@ -759,7 +766,9 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         $observation = app(NativeCustomProxyRouteInspector::class)->inspect($failed->customProxy);
         expect($observation->firewallMatches)->toBeFalse();
         app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
-        $issues = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null)));
+        $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
+        $scope = new DoctorInspectionScope([$ingress->id => $context, $this->beast->id => new DoctorNodeContext($this->beast, $context->inspection)]);
+        $issues = app(RouteDoctorProbe::class)->inspect($context->withScope($scope));
         expect(array_map(static fn ($issue) => $issue->code, $issues->issues))->toContain('route.firewall_mismatch');
         $this->nodes->firewallStatuses['10.44.0.7'] = $allowed;
     }
@@ -808,4 +817,40 @@ it('retains a public Process activation when its HTTP listener is unreachable an
         ->and($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse();
     $this->nodes->failHttp = false;
     $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
+});
+
+it('limits native public Process Doctor firewall reads to selected authorized Nodes', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
+    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
+    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
+    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp']], 'status' => 'active']);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
+    app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
+    $routeId = $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])
+        ->assertCreated()->json('data.id');
+    $caller = certificate_order_node('limited-caller', 90, RoleName::AppDev);
+    $caller->accessibleNodes()->attach($ingress->id);
+    $inspector = Mockery::mock(NodeStateInspector::class);
+    $inspector->shouldReceive('inspect')->andReturn(new NodeInspectionData(true, 'linux', 'x86_64', true));
+    app()->instance(NodeStateInspector::class, $inspector);
+    $this->nodes->firewallReads = [];
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+    $this->getJson('/api/v1/routes/'.$routeId)->assertForbidden();
+    $report = $this->postJson('/api/v1/doctor', ['families' => ['route']])->assertOk();
+    expect($this->nodes->firewallReads)->toBeEmpty();
+    $report->assertJsonPath('data.nodes.0.families.0.checked', 0)
+        ->assertJsonPath('data.nodes.0.families.0.issues', []);
+
+    $caller->accessibleNodes()->attach($this->beast->id);
+    $this->getJson('/api/v1/routes/'.$routeId)->assertOk();
+    $this->postJson('/api/v1/doctor', ['node_id' => $ingress->id, 'families' => ['route']])->assertOk()
+        ->assertJsonPath('data.nodes.0.families.0.checked', 0)
+        ->assertJsonPath('data.nodes.0.families.0.issues', []);
+    expect($this->nodes->firewallReads)->toBeEmpty();
+
+    $report = $this->postJson('/api/v1/doctor', ['families' => ['route']])->assertOk();
+    $edge = collect($report->json('data.nodes'))->firstWhere('node_id', $ingress->id);
+    expect($edge['families'][0]['checked'])->toBe(1)
+        ->and($this->nodes->firewallReads)->toContain($this->beast->wireguard_ip);
 });

@@ -58,7 +58,7 @@ Every Route is expected to be `active`. Doctor reports any other status as `rout
 
 No Route may hold a reserved name, such as `gateway.orbit`. A Route that took a name before core or an extension reserved it keeps the name until you move the Route. Doctor reports such a Route as `route.domain_reserved` in the `route` family. It also reads only stored state.
 
-Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped Route belongs to the Node that holds the Cluster's Router role. A Route with neither is not reported.
+Doctor reports each Route on one Node. A Node-scoped Route belongs to its Node. A Cluster-scoped app Route belongs to the Node that holds the Cluster's Router role. A public Process Route belongs to its Ingress and is checked only when both the Ingress and Process Node are selected and accessible. A Route with no serving Node is not reported.
 
 ## Select a domain and scope
 
@@ -268,7 +268,7 @@ It keeps the activation for retry and Doctor reports the blocked path. Orbit add
 
 Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal and configuration updates are refused with `process.has_routes`; remove the Route first.
 
-Doctor checks public Process Routes on the Ingress in the `route` family. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
+Doctor checks public Process Routes on the Ingress in the `route` family only when both Nodes are in its selected scope. Otherwise it reports nothing about that Route and does not inspect the Process Node. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
 
 The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on a Node backs up and stops serving any hand-placed Caddy site. Create a custom proxy Route for such a site before that build. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) shows an example.
 

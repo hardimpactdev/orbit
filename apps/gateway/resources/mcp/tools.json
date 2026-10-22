@@ -8379,6 +8379,12 @@
                 "enum": [
                   "private"
                 ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "public"
+                ]
               }
             ]
           },
@@ -8400,6 +8406,9 @@
             "maxLength": 253
           },
           "process_id": {
+            "type": "integer"
+          },
+          "ingress_node_id": {
             "type": "integer"
           }
         },
@@ -8475,6 +8484,33 @@
                   "process_id"
                 ]
               }
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "public"
+                ]
+              },
+              "ingress_node_id": {
+                "type": "integer"
+              },
+              "process_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "publication",
+              "process_id"
             ],
             "additionalProperties": false
           }
