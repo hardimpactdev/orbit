@@ -10732,7 +10732,10 @@ export interface operations {
     "instance-deploy": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 /** @description Numeric Instance ID. */
                 instance: number;
@@ -10775,7 +10778,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10784,7 +10787,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -11822,7 +11825,10 @@ export interface operations {
     "instance-rollback": {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 /** @description Numeric Instance ID. */
                 instance: number;
@@ -11868,7 +11874,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -11877,7 +11883,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy. */
+            /** @description The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy. A malformed Idempotency-Key also returns `validation.failed`. */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
   - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -63,7 +64,7 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 ## Start an operation
 
-A start request validates the input and the caller's access, creates the record as `queued`, queues its job, and answers `202` with the record:
+After the access and idempotency checks, a start request validates the input, creates the record as `queued`, queues its job, and answers `202` with the record:
 
 ```json
 {
@@ -74,10 +75,24 @@ A start request validates the input and the caller's access, creates the record 
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
+| `operation.idempotency_conflict` | 409 | This kind already has the key with another target or input. Nothing starts |
+| `validation.failed` | 422 | The `Idempotency-Key` header is malformed, or the input is invalid |
 | `operation.target_busy` | 409 | Another operation on the same target has not ended. `details.operation_id` names it |
 | `operation.queue_unavailable` | 503 | `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty. The Gateway records nothing |
 
 When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code. A deploy that a rollback superseded stays cancelled.
+
+### Retry a start with a key
+
+Every route that starts an operation accepts an optional `Idempotency-Key` header. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`) and `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`). A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+
+After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
+
+Concurrent starts with one new key create one operation and queue one job. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
+
+The CLI commands `instance:deploy` and `instance:rollback` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the optional `Idempotency-Key` argument, generated from the OpenAPI header.
+
+Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule until their changes become operations.
 
 ## Read an operation
 
@@ -187,6 +202,8 @@ These codes belong to every operation.
 
 | Code | Meaning |
 | --- | --- |
+| `operation.idempotency_conflict` | The kind already has this key with another target or input; HTTP 409 |
+| `validation.failed` | A malformed key or invalid input; HTTP 422 |
 | `operation.target_busy` | Another operation holds the target |
 | `operation.queue_unavailable` | The Gateway has no queue |
 | `operation.dispatch_failed` | The Gateway could not queue the job |
@@ -205,6 +222,10 @@ These reasons explain the design. Check them before you propose a change.
 ### The database is the truth
 
 An operation outlives every client and every worker, so its state lives in the database. Events and poll replies only tell a client what changed since its last read. A lost event, a closed socket, or a lost MCP context costs one more read, never a wrong state.
+
+### A key survives the caller and the operation
+
+An orchestrator can lose a response or move to another Node. A key scoped to the kind lets either caller find the same work. The early check lets a replay succeed even when the target's state fails start validation, and prevents a retry from creating another target. A database constraint settles concurrent inserts without a process-local lock. Keeping keyed operations forever prevents a late retry from starting the work again after retention would otherwise remove its key.
 
 ### One job, many steps
 

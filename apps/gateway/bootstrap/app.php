@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
 use App\Http\Middleware\GuardBrowserOrigins;
+use App\Http\Middleware\HandleOperationIdempotency;
 use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -92,10 +93,11 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->convertEmptyStringsToNull(except: [ValidateRequestBodySize::keepsExactBody(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->prepend(EnsureRequestId::class);
-        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class]);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class, HandleOperationIdempotency::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
         $middleware->appendToPriorityList(RequireNodeAccess::class, RequireEnabledExtension::class);
+        $middleware->appendToPriorityList(RequireEnabledExtension::class, HandleOperationIdempotency::class);
     })
     ->withExceptions(
         function (Exceptions $exceptions): void {

@@ -715,7 +715,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['slug'],
             ['instance' => null, 'prefix' => null, 'force' => false, 'json' => false],
         ],
-        'instance:deploy' => [['instance'], ['json' => false]],
+        'instance:deploy' => [['instance'], ['idempotency-key' => null, 'json' => false]],
         'instance:deploy-step:create' => [
             ['instance', 'name'],
             [
@@ -814,7 +814,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'instance:release:list' => [['instance'], ['json' => false]],
-        'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
+        'instance:rollback' => [['instance'], ['release' => null, 'idempotency-key' => null, 'json' => false]],
         'instance:dependencies:scan' => [[], ['project' => null, 'all' => false, 'json' => false]],
         'instance:dependencies:update' => [[], ['project' => null, 'all' => false, 'latest' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],

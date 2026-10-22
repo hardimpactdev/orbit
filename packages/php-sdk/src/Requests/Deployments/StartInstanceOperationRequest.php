@@ -15,6 +15,14 @@ abstract class StartInstanceOperationRequest extends GatewayRequest implements H
 {
     use HasJsonBody;
 
+    public function __construct(private readonly ?string $idempotencyKey = null) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
+
     final public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
         return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));

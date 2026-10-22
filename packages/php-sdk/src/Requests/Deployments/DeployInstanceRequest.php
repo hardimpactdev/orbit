@@ -13,7 +13,10 @@ final class DeployInstanceRequest extends StartInstanceOperationRequest
     #[\Override]
     protected Method $method = Method::POST;
 
-    public function __construct(private readonly int $instanceId) {}
+    public function __construct(private readonly int $instanceId, ?string $idempotencyKey = null)
+    {
+        parent::__construct($idempotencyKey);
+    }
 
     /** The Gateway requires an empty JSON object, so the empty body encodes as `{}`, not `[]`. */
     #[\Override]

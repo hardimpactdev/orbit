@@ -7,8 +7,8 @@ Run from any directory:
     bin/mcp-tools --check    exit 1 when the manifest differs from what the OpenAPI document produces
 
 Every Gateway API operation becomes one MCP tool named after its operationId. The tool's input schema is the
-operation's path parameters, query parameters, and JSON body properties flattened into one object; the manifest
-records which inputs travel in the path and the query, and the rest form the body. Run bin/docs-openapi first
+operation's path, query, and header parameters and JSON body properties flattened into one object; the manifest
+records which inputs travel in the path, query, and headers, and the rest form the body. Run bin/docs-openapi first
 when routes, form requests, or data classes changed.
 """
 
@@ -66,7 +66,7 @@ def resolve(node, components, seen=()):
 
 def tool(method, path, operation, components):
     name = operation['operationId']
-    properties, required, path_inputs, query_inputs = {}, [], [], []
+    properties, required, path_inputs, query_inputs, header_inputs = {}, [], [], [], []
 
     for parameter in operation.get('parameters', []):
         parameter = resolve(parameter, components)
@@ -74,7 +74,10 @@ def tool(method, path, operation, components):
         if parameter.get('description'):
             schema['description'] = parameter['description']
         properties[parameter['name']] = schema
-        (path_inputs if parameter['in'] == 'path' else query_inputs).append(parameter['name'])
+        inputs = path_inputs if parameter['in'] == 'path' else query_inputs
+        if parameter['in'] == 'header':
+            inputs = header_inputs
+        inputs.append(parameter['name'])
         if parameter.get('required') or parameter['in'] == 'path':
             required.append(parameter['name'])
 
@@ -129,6 +132,7 @@ def tool(method, path, operation, components):
         'path': path,
         'path_inputs': path_inputs,
         'query_inputs': query_inputs,
+        **({'header_inputs': header_inputs} if header_inputs else {}),
         'starts_operation': operation.get('x-orbit-operation') == 'start',
         'input_schema': schema,
     }

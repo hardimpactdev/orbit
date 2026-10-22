@@ -14,6 +14,7 @@ final readonly class ToolDefinition
      * @param  list<string>  $pathInputs
      * @param  list<string>  $queryInputs
      * @param  array<string, mixed>  $inputSchema
+     * @param  list<string>  $headerInputs
      */
     public function __construct(
         public string $name,
@@ -27,6 +28,7 @@ final readonly class ToolDefinition
         public ?string $extension = null,
         /** The operation answers 202 with an operation that the caller polls with `operation-show`. */
         public bool $startsOperation = false,
+        public array $headerInputs = [],
     ) {}
 
     /** @param array<array-key, mixed> $entry */
@@ -41,11 +43,12 @@ final readonly class ToolDefinition
         $pathInputs = $entry['path_inputs'] ?? null;
         $queryInputs = $entry['query_inputs'] ?? null;
         $inputSchema = $entry['input_schema'] ?? null;
+        $headerInputs = $entry['header_inputs'] ?? [];
 
         if (
             ! is_string($name) || ($extension !== null && ! is_string($extension)) || ! is_string($title) || ! is_string($description)
             || ! is_string($method) || ! is_string($path)
-            || ! is_array($pathInputs) || ! is_array($queryInputs) || ! is_array($inputSchema)
+            || ! is_array($pathInputs) || ! is_array($queryInputs) || ! is_array($headerInputs) || ! is_array($inputSchema)
         ) {
             throw new InvalidArgumentException('The MCP tool manifest has a malformed entry.');
         }
@@ -61,6 +64,7 @@ final readonly class ToolDefinition
             queryInputs: array_values(array_filter($queryInputs, is_string(...))),
             startsOperation: ($entry['starts_operation'] ?? false) === true,
             inputSchema: ValidatedData::object($inputSchema),
+            headerInputs: array_values(array_filter($headerInputs, is_string(...))),
         );
     }
 

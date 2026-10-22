@@ -12,6 +12,8 @@ An external orchestrator owns the lifecycle of task work: its stages, gates, bud
 
 In progress.
 
+The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons.
+
 Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick, so step 1 does not wait for ADR 0224.
 
 Principle: [Lean](/mission#principles). Orbit stops owning a hand-rolled workflow engine. A general orchestrator holds the lifecycle as data, and Orbit keeps only the effects that it alone can perform. It also serves [Deterministic first](/mission#principles), because stages, gates, and budgets become declared data with typed records. Exceptions to [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles): while this ADR is being built, task work has two modes, the tick and an external orchestrator, and Orbit keeps the tick's engine until its replacement works. Both exceptions end when step 3 removes the state machine from `tasks:tick`.

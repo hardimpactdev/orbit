@@ -3669,6 +3669,9 @@
         "instance"
       ],
       "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
       "starts_operation": true,
       "input_schema": {
         "type": "object",
@@ -3677,6 +3680,13 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
           }
         },
         "additionalProperties": false,
@@ -4219,6 +4229,9 @@
         "instance"
       ],
       "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
       "starts_operation": true,
       "input_schema": {
         "type": "object",
@@ -4227,6 +4240,13 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
           },
           "release": {
             "type": "string",
@@ -10174,7 +10194,8 @@
       "method": "POST",
       "path": "/api/v1/websocket-apps",
       "path_inputs": [],
-      "query_inputs": [
+      "query_inputs": [],
+      "header_inputs": [
         "Idempotency-Key"
       ],
       "starts_operation": false,
@@ -10209,7 +10230,8 @@
       "path_inputs": [
         "websocket_app"
       ],
-      "query_inputs": [
+      "query_inputs": [],
+      "header_inputs": [
         "Idempotency-Key"
       ],
       "starts_operation": false,
@@ -10259,7 +10281,8 @@
       "path_inputs": [
         "websocket_app"
       ],
-      "query_inputs": [
+      "query_inputs": [],
+      "header_inputs": [
         "Idempotency-Key"
       ],
       "starts_operation": false,
@@ -10345,7 +10368,8 @@
       "method": "POST",
       "path": "/api/v1/websocket-sync",
       "path_inputs": [],
-      "query_inputs": [
+      "query_inputs": [],
+      "header_inputs": [
         "Idempotency-Key"
       ],
       "starts_operation": false,
