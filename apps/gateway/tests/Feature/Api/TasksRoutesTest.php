@@ -114,6 +114,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:check:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/check/cancel', ['POST']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
+        'tasks:check' => ['api/v1/task-groups/{group}/check', ['POST']],
         'tasks:provision' => ['api/v1/task-groups/{group}/provision', ['POST']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
