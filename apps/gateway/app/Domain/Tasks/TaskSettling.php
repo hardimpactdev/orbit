@@ -10,6 +10,7 @@ use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -87,6 +88,9 @@ final readonly class TaskSettling
                 $this->requestMissingPullRequest($group);
             }
 
+            return;
+        }
+        if ($this->pullRequestOutsideRepository($group)) {
             return;
         }
         $reviews = $this->observeReviewFeedback($group);
@@ -1202,6 +1206,26 @@ final readonly class TaskSettling
     {
         $reason = TaskScheduler::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
         TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason);
+    }
+
+    /**
+     * Orbit reads the pull request in the Project repository only. A pr_url outside it would leave the group
+     * settling without a health read, so the group asks for assistance until pr_url names the repository again.
+     */
+    private function pullRequestOutsideRepository(Task $group): bool
+    {
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+        $outside = $repository instanceof GitHubRepository && is_string($group->pr_url)
+            && $repository->pullRequestNumber($group->pr_url) === null;
+        $flagged = is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, TaskScheduler::ForeignPullRequestPrefix);
+        if ($outside) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, TaskScheduler::ForeignPullRequestPrefix.$group->pr_url
+                .' is not in '.$repository->owner.'/'.$repository->name.'. Set pr_url to the pull request in that repository.');
+        } elseif ($flagged) {
+            TaskAssistance::apply($group);
+        }
+
+        return $outside;
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool

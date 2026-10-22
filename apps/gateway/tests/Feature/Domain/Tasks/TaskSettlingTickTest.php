@@ -2798,3 +2798,35 @@ it('flags the parent when a subtask already asks and the parent does not', funct
         ->and($group->fresh()?->assistance_question)->toBe($question)
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
+
+it('asks for assistance while pr_url is outside the Project repository and clears it when pr_url returns', function (): void {
+    $group = tick_group();
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/old-owner/orbit/pull/42']);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reason = TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit. Set pr_url to the pull request in that repository.';
+    $this->assertDatabaseHas('tasks', [
+        'id' => $group->id, 'status' => 'settling', 'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Failure->value, 'assistance_reason' => $reason,
+    ]);
+    expect(tick_assistance_reasons())->toBe([$reason]);
+    Http::assertNothingSent();
+
+    $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => false, 'state' => 'open']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+});

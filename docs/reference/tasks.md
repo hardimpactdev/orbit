@@ -1245,6 +1245,8 @@ A merged task that asks for assistance with `An approved commit is not on the pu
 
 A `settling` task without `pr_url` and without a `todo` subtask asks for assistance with `The settling task has no reviewed pull request URL. Cancel the task to push its approved commits to task-{id} and remove its workspace.` This happens when a subtask cancel ends the last open subtask before any pull request exists.
 
+A `settling` or `waiting_for_review` task whose `pr_url` is not a pull request in the Project's GitHub repository asks for assistance with `The task pull request URL is not in the Project repository: {pr_url} is not in {owner}/{name}. Set pr_url to the pull request in that repository.` Orbit reads the pull request only in the Project repository, so without this request the task would wait without a health read and start no `todo` subtask. The request clears on the first tick after `pr_url` names the Project repository again.
+
 #### Trusted GitHub feedback
 
 The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. Each entry maps a `github.com` repository name, `owner/repository`, to a comma-separated list of positive GitHub numeric account IDs. Semicolons separate entries. For example, `ORBIT_TASKS_GITHUB_REVIEWERS=acme/widgets:123456,789012;acme/api:123456` trusts those accounts for those repositories only. The Gateway lower-cases repository names. Unset or empty creates no work from GitHub feedback until the operator opts in. The value is Gateway configuration, `orbit.tasks.github_reviewers`, not a Project input, Instance environment variable, CLI option, or repository file read from the task branch. Rebuild the Gateway's configuration cache and reload the Gateway and scheduler after a change.
