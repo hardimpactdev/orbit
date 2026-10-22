@@ -9,7 +9,7 @@ import { screenText } from "./screen";
 it("draws the dashboard", async () => {
     const app = await openApp("/");
     await expect.element(row("Needs attention", /Node\s*app-prod/)).toBeVisible();
-    await expect.element(row("Nodes with roles", "beast")).toHaveTextContent("82%");
+    await expect.element(row("Nodes with roles", "beast")).toMatchTextContent("82%");
 
     await expect(screenText()).toMatchFileSnapshot("./expected/dashboard.txt");
     // The Gateway names the Nodes and hands out the Grafana credential once; no metrics request goes out per Node.
@@ -43,7 +43,7 @@ it("draws a node record", async () => {
 it("draws an instance record with its deployments", async () => {
     await openApp("/instances/1");
     await expect.element(row("Deployments", "20260102000000")).toBeVisible();
-    await expect.element(pane("Application log")).toHaveTextContent("Order 1042 paid.");
+    await expect.element(pane("Application log")).toMatchTextContent("Order 1042 paid.");
 
     await expect(screenText()).toMatchFileSnapshot("./expected/instance-charlie-shop-dev.txt");
 });
@@ -51,5 +51,5 @@ it("draws an instance record with its deployments", async () => {
 it("says so when a node has no metrics", async () => {
     await openApp("/nodes/3");
 
-    await expect.element(pane("app-prod · failed")).toHaveTextContent("No metrics.");
+    await expect.element(pane("app-prod · failed")).toMatchTextContent("No metrics.");
 });

@@ -88,15 +88,15 @@ it("follows a Process log through a live stream without polling, and polls once 
     emit("log.lines", { sequence: 2, lines: ["job 1 done"], dropped: 3, skipped: 1_572_864 });
 
     const log = pane("Log");
-    await expect.element(log).toHaveTextContent("job 1 done");
-    await expect.element(log).toHaveTextContent("[orbit] 3 lines dropped");
-    await expect.element(log).toHaveTextContent("[orbit] 1.5 MiB skipped");
-    await expect.element(log).toHaveTextContent("live");
+    await expect.element(log).toMatchTextContent("job 1 done");
+    await expect.element(log).toMatchTextContent("[orbit] 3 lines dropped");
+    await expect.element(log).toMatchTextContent("[orbit] 1.5 MiB skipped");
+    await expect.element(log).toMatchTextContent("live");
     expect(calls.filter((call) => call.endsWith("/logs"))).toEqual([]);
 
     emit("log.ended", { reason: "agent_left" });
 
-    await expect.element(log).toHaveTextContent("is ready.");
+    await expect.element(log).toMatchTextContent("is ready.");
     expect(calls.filter((call) => call.endsWith("/logs"))).toEqual([
         "GET /api/v1/processes/2/logs",
     ]);
@@ -128,6 +128,6 @@ it("polls when the Gateway refuses the stream", async () => {
         },
     });
 
-    await expect.element(pane("Log")).toHaveTextContent("is ready.");
+    await expect.element(pane("Log")).toMatchTextContent("is ready.");
     expect(calls).toContain("GET /api/v1/processes/2/logs");
 });

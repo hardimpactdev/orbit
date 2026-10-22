@@ -125,7 +125,7 @@ class GeneratedMergeTest(unittest.TestCase):
             ['bin/mcp-tools', '--check'],
             ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
             ['bin/docs-nav'],
-            [str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+            [str(tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'),
              str(tree / 'docs/openapi.json'), '-o', str(schema)],
         ]
         with ExitStack() as processes:

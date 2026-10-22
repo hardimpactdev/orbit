@@ -29,15 +29,24 @@ final class DocsImpactCommand extends Command
         $root = dirname($docsPath);
         $base = $this->option('base');
         $paths = $this->option('paths');
-        if ($base !== null && trim($base) === '') {
-            $this->error('The --base commit must not be empty.');
+        if ($base !== null && (! is_string($base) || trim($base) === '')) {
+            $this->error('The --base commit must be a non-empty string.');
 
             return self::FAILURE;
         }
-        if (array_filter($paths, static fn (?string $path): bool => $path === null || trim($path) === '') !== []) {
+        if (! is_array($paths)) {
             $this->error('Every --paths value must be a non-empty repository-relative path.');
 
             return self::FAILURE;
+        }
+        $validatedPaths = [];
+        foreach ($paths as $path) {
+            if (! is_string($path) || trim($path) === '') {
+                $this->error('Every --paths value must be a non-empty repository-relative path.');
+
+                return self::FAILURE;
+            }
+            $validatedPaths[] = $path;
         }
         try {
             $impact = new DocsImpact($root);
@@ -61,7 +70,7 @@ final class DocsImpactCommand extends Command
 
                 return self::SUCCESS;
             }
-            $report = $impact->report($base, array_values(array_map(static fn (?string $path): string => $path ?? '', $paths)));
+            $report = $impact->report($base, $validatedPaths);
             $this->line(json_encode($report, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
 
             return self::SUCCESS;

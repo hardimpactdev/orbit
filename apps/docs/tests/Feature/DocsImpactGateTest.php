@@ -76,6 +76,32 @@ Schema::create('orphaned', function (Blueprint $table): void { $table->string('n
 PHP;
 }
 
+it('docs impact rejects an invalid base option without a type error', function (mixed $base): void {
+    [$root] = docsImpactGateFixture();
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base]))->toBe(1)
+        ->and(Artisan::output())->toContain('The --base commit must be a non-empty string.');
+})->with(['empty' => [''], 'blank' => ['  '], 'integer' => [42], 'boolean' => [true], 'array' => [['HEAD']]]);
+
+it('docs impact rejects an invalid path option without a type error', function (mixed $path): void {
+    [$root] = docsImpactGateFixture();
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--paths' => [$path]]))->toBe(1)
+        ->and(Artisan::output())->toContain('Every --paths value must be a non-empty repository-relative path.');
+})->with(['empty' => [''], 'blank' => ['  '], 'missing' => [null], 'integer' => [42], 'array' => [['docs/reference/tasks.md']]]);
+
+it('docs impact reports explicitly selected paths without a base', function (): void {
+    [$root] = docsImpactGateFixture();
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--paths' => ['apps/gateway/app/Domain/Tasks/RunTask.php']]))->toBe(0);
+    $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($report['paths'])->toContain('apps/gateway/app/Domain/Tasks/RunTask.php');
+});
+
 it('docs impact gate fixtures disable automatic Git maintenance before cleanup', function (): void {
     [$root] = docsImpactGateFixture();
     $settings = [];

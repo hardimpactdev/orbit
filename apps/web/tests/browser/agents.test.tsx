@@ -119,8 +119,8 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     implementer.send({ kind: "snapshot", thread_id: 2, cursor: "5", state: "idle", entries: [] });
     await expect
         .element(page.getByRole("tabpanel"))
-        .toHaveTextContent("Thread created. No agent activity yet.");
-    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("t3 - beast");
+        .toMatchTextContent("Thread created. No agent activity yet.");
+    await expect.element(page.getByRole("tabpanel")).toMatchTextContent("t3 - beast");
     expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain("implement");
     const entry = (id: string, kind: string, text: string) => ({
         id,
@@ -137,7 +137,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     });
     await expect
         .element(page.getByRole("tabpanel"))
-        .toHaveTextContent("Reading the source <script>unsafe()</script>");
+        .toMatchTextContent("Reading the source <script>unsafe()</script>");
     expect(document.querySelector('[role="tabpanel"] script')).toBeNull();
     implementer.send({ kind: "state", thread_id: 2, cursor: "7", state: "working" });
     implementer.send({
@@ -157,7 +157,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
             document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
         )
         .toBe("active");
-    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("edited file");
+    await expect.element(page.getByRole("tabpanel")).toMatchTextContent("edited file");
     implementer.send({
         kind: "entry",
         thread_id: 2,
@@ -169,7 +169,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
             document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
         )
         .toBe("complete");
-    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("2 steps");
+    await expect.element(page.getByRole("tabpanel")).toMatchTextContent("2 steps");
     implementer.send({
         kind: "entry",
         thread_id: 2,
@@ -189,7 +189,9 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     }
     implementer.onerror?.();
     await expect.element(page.getByRole("status", { name: "Failed", exact: true })).toBeVisible();
-    await expect.element(page.getByLabelText("Agent connection")).toHaveTextContent("Reconnecting");
+    await expect
+        .element(page.getByLabelText("Agent connection"))
+        .toMatchTextContent("Reconnecting");
     document.getElementById("agent-tab-2")!.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect
@@ -352,10 +354,10 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
         });
         await expect
             .element(page.getByRole("tabpanel"))
-            .toHaveTextContent("Running: $ composer test");
+            .toMatchTextContent("Running: $ composer test");
 
         setVisibility("hidden");
-        await expect.element(page.getByLabelText("Agent connection")).toHaveTextContent("Paused");
+        await expect.element(page.getByLabelText("Agent connection")).toMatchTextContent("Paused");
         expect(first.closed).toBe(true);
 
         setVisibility("visible");
@@ -365,7 +367,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
         );
         await expect
             .element(page.getByRole("tabpanel"))
-            .toHaveTextContent("Running: $ composer test");
+            .toMatchTextContent("Running: $ composer test");
     } finally {
         delete (document as { visibilityState?: unknown }).visibilityState;
     }

@@ -99,21 +99,21 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
         .toBeVisible();
     expect(screenText()).toContain("Tasks │ 9");
     expect(pane("Backlog").getByRole("link").all()).toHaveLength(1);
-    await expect.element(pane("Backlog")).toHaveTextContent("EXA-2");
-    await expect.element(pane("Backlog")).not.toHaveTextContent("Being prepared");
+    await expect.element(pane("Backlog")).toMatchTextContent("EXA-2");
+    await expect.element(pane("Backlog")).not.toMatchTextContent("Being prepared");
     expect(document.querySelector(".navigation-page-header")?.textContent?.trim()).toBe("Tasks");
     expect(pane("In progress").getByRole("link").all()).toHaveLength(4);
     expect(pane("Done").getByRole("link").all()).toHaveLength(3);
-    await expect.element(pane("In progress")).toHaveTextContent("0/1");
-    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
-    await expect.element(pane("Done")).toHaveTextContent("Failed");
-    await expect.element(pane("Done")).toHaveTextContent("Cancelled");
-    await expect.element(pane("Todo")).toHaveTextContent("EXA-1");
+    await expect.element(pane("In progress")).toMatchTextContent("0/1");
+    await expect.element(pane("In progress")).not.toMatchTextContent("Running");
+    await expect.element(pane("Done")).toMatchTextContent("Failed");
+    await expect.element(pane("Done")).toMatchTextContent("Cancelled");
+    await expect.element(pane("Todo")).toMatchTextContent("EXA-1");
     await pane("Todo").getByRole("link").click();
-    await expect.element(pane("Description")).toHaveTextContent("Deliver the requested feature.");
-    await expect.element(pane("Task")).toHaveTextContent("Todo");
-    await expect.element(pane("Subtasks")).toHaveTextContent("First step");
-    await expect.element(pane("Subtasks")).not.toHaveTextContent("Acceptance details");
+    await expect.element(pane("Description")).toMatchTextContent("Deliver the requested feature.");
+    await expect.element(pane("Task")).toMatchTextContent("Todo");
+    await expect.element(pane("Subtasks")).toMatchTextContent("First step");
+    await expect.element(pane("Subtasks")).not.toMatchTextContent("Acceptance details");
     expect(app.url()).toBe("/tasks/1");
     app.router.history.back();
     await expect.element(pane("Todo")).toBeVisible();
@@ -130,8 +130,8 @@ it.each(["running", "stopped", "destroyed", null, undefined] as const)(
         await pane("In progress").getByRole("link").click();
         await expect
             .element(pane("Description"))
-            .toHaveTextContent("Deliver the requested feature.");
-        await expect.element(pane("Task")).toHaveTextContent("In progress");
+            .toMatchTextContent("Deliver the requested feature.");
+        await expect.element(pane("Task")).toMatchTextContent("In progress");
         expect(queryClient.getQueryData<TaskGroup>(["task-groups", "1"])?.status).toBe(
             "waiting_for_review",
         );
@@ -175,18 +175,18 @@ it("distinguishes direction requests from failures on task and subtask cards", a
     }));
     const card = (title: string) =>
         page.getByRole("link", { name: `Open task: ${title}`, exact: true });
-    await expect.element(card(direction.title)).toHaveTextContent("Needs your direction");
-    await expect.element(card(direction.title)).not.toHaveTextContent("Needs attention");
-    await expect.element(card(failure.title)).toHaveTextContent("Needs attention");
-    await expect.element(card(failure.title)).not.toHaveTextContent("Needs your direction");
-    await expect.element(card(resolved.title)).not.toHaveTextContent("Needs your direction");
+    await expect.element(card(direction.title)).toMatchTextContent("Needs your direction");
+    await expect.element(card(direction.title)).not.toMatchTextContent("Needs attention");
+    await expect.element(card(failure.title)).toMatchTextContent("Needs attention");
+    await expect.element(card(failure.title)).not.toMatchTextContent("Needs your direction");
+    await expect.element(card(resolved.title)).not.toMatchTextContent("Needs your direction");
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect
         .element(pane("Todo").getByRole("link", { name: "Open subtask: First step" }))
-        .toHaveTextContent("Needs your direction");
+        .toMatchTextContent("Needs your direction");
     await expect
         .element(pane("Todo").getByRole("link", { name: "Open subtask: Failed check" }))
-        .toHaveTextContent("Needs attention");
+        .toMatchTextContent("Needs attention");
 });
 
 it("leads a direction request with its question and shows question and escalation counts", async () => {
@@ -204,7 +204,7 @@ it("leads a direction request with its question and shows question and escalatio
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
-    await expect.element(pane("Needs your direction")).toHaveTextContent(task.assistance_question);
+    await expect.element(pane("Needs your direction")).toMatchTextContent(task.assistance_question);
     const content = document.querySelector('[aria-label="Needs your direction"]')!.parentElement!;
     const frames = [...content.querySelectorAll("section.frame")];
     expect(frames[0]?.getAttribute("aria-label")).toBe("Needs your direction");
@@ -213,8 +213,8 @@ it("leads a direction request with its question and shows question and escalatio
         0,
     );
     await expect.element(pane("Task").getByTitle("4", { exact: true })).toBeVisible();
-    await expect.element(pane("Task")).toHaveTextContent(/Questions\s*4/);
-    await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*2/);
+    await expect.element(pane("Task")).toMatchTextContent(/Questions\s*4/);
+    await expect.element(pane("Task")).toMatchTextContent(/Escalations\s*2/);
     // Visibility assertions alone do not detect rows clipped by a scrolling frame body.
     const properties = document.querySelector('[aria-label="Task"] .frame-body')!;
     expect(properties.scrollHeight).toBeLessThanOrEqual(properties.clientHeight);
@@ -225,8 +225,8 @@ it("leads a direction request with its question and shows question and escalatio
         expect(bounds.bottom).toBeLessThanOrEqual(bodyBounds.bottom);
     }
     await pane("Todo").getByRole("link").click();
-    await expect.element(pane("Task")).toHaveTextContent(/Questions\s*3/);
-    await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*1/);
+    await expect.element(pane("Task")).toMatchTextContent(/Questions\s*3/);
+    await expect.element(pane("Task")).toMatchTextContent(/Escalations\s*1/);
     expect(document.querySelector('[aria-label="Needs your direction"]')).toBeNull();
 });
 
@@ -247,8 +247,8 @@ it.each(["failure", "direction"] as const)(
         await expect.element(pane("Task")).toBeVisible();
         expect(document.querySelector('[aria-label="Needs your direction"]')).toBeNull();
         expect(document.body.textContent).not.toContain(task.assistance_question);
-        await expect.element(pane("Task")).toHaveTextContent(/Questions\s*0/);
-        await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*0/);
+        await expect.element(pane("Task")).toMatchTextContent(/Questions\s*0/);
+        await expect.element(pane("Task")).toMatchTextContent(/Escalations\s*0/);
     },
 );
 
@@ -276,7 +276,7 @@ function expectFilledLanes(board: Element, titles: string[]): void {
 it("hides empty task lanes and shares the width as cards move between statuses", async () => {
     let groups = [group(1, "backlog"), group(2, "failed")];
     await openTasks(async () => ({ status: 200, payload: { data: groups } }));
-    await expect.element(pane("Backlog")).toHaveTextContent("Feature 1");
+    await expect.element(pane("Backlog")).toMatchTextContent("Feature 1");
     expectFilledLanes(document.querySelector(".kanban-board")!, ["Backlog", "Done"]);
     expect(document.querySelector('[aria-label="Todo"]')).toBeNull();
     expect(document.querySelector('[aria-label="In progress"]')).toBeNull();
@@ -288,7 +288,7 @@ it("hides empty task lanes and shares the width as cards move between statuses",
     }
     groups = [group(1, "todo")];
     await queryClient.invalidateQueries();
-    await expect.element(pane("Todo")).toHaveTextContent("Feature 1");
+    await expect.element(pane("Todo")).toMatchTextContent("Feature 1");
     expectFilledLanes(document.querySelector(".kanban-board")!, ["Todo"]);
     groups = [];
     await queryClient.invalidateQueries();
@@ -307,7 +307,7 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
-    await expect.element(pane("In progress")).toHaveTextContent("First step");
+    await expect.element(pane("In progress")).toMatchTextContent("First step");
     expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, [
         "In progress",
         "Done",
@@ -316,11 +316,11 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
     task = { ...task, tasks: [task.tasks[1]!] };
     await queryClient.invalidateQueries();
     await expect.element(pane("In progress")).not.toBeInTheDocument();
-    await expect.element(pane("Done")).toHaveTextContent("Second step");
+    await expect.element(pane("Done")).toMatchTextContent("Second step");
     expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, ["Done"]);
     task = { ...task, tasks: [] };
     await queryClient.invalidateQueries();
-    await expect.element(pane("Subtasks")).toHaveTextContent("No subtasks yet.");
+    await expect.element(pane("Subtasks")).toMatchTextContent("No subtasks yet.");
     expect(document.querySelector('[aria-label="Subtasks"] .kanban-board')).toBeNull();
 });
 
@@ -334,11 +334,11 @@ it("explains a disabled extension and can retry a failed request", async () => {
               }
             : { status: 200, payload: { data: [group(1, "todo")] } },
     );
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Tasks are disabled");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Tasks are disabled");
     expect(document.querySelector('[aria-label="Todo"]')).toBeNull();
     disabled = false;
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect.element(pane("Todo")).toHaveTextContent("Feature 1");
+    await expect.element(pane("Todo")).toMatchTextContent("Feature 1");
 });
 
 it("shows missing task errors on a direct detail URL", async () => {
@@ -347,7 +347,7 @@ it("shows missing task errors on a direct detail URL", async () => {
         payload: { error: { code: "not_found", message: "Task not found" } },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "999" } });
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Task not found");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Task not found");
 });
 
 it("shows completed subtask counts on in-progress cards instead of a running label", async () => {
@@ -370,8 +370,8 @@ it("shows completed subtask counts on in-progress cards instead of a running lab
         status: 200,
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
-    await expect.element(pane("In progress")).toHaveTextContent("2/5");
-    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
+    await expect.element(pane("In progress")).toMatchTextContent("2/5");
+    await expect.element(pane("In progress")).not.toMatchTextContent("Running");
     await expect
         .element(pane("In progress").getByLabelText("2 of 5 subtasks completed"))
         .toBeVisible();
@@ -387,7 +387,7 @@ it("lets the keyboard activate a focused card", async () => {
     await expect.element(pane("In progress").getByRole("link")).toBeVisible();
     (document.querySelector('a[href="/tasks/1"]') as HTMLAnchorElement).focus();
     await userEvent.keyboard("{Enter}");
-    await expect.element(pane("Task")).toHaveTextContent("In progress");
+    await expect.element(pane("Task")).toMatchTextContent("In progress");
 });
 
 it("groups subtasks by status and keeps their sequence within columns", async () => {
@@ -416,7 +416,7 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
-    await expect.element(pane("Todo")).toHaveTextContent("Step 2");
+    await expect.element(pane("Todo")).toMatchTextContent("Step 2");
     const titles = (column: string) =>
         [...document.querySelectorAll(`[aria-label="${column}"] a h2`)].map(
             (element) => element.textContent,
@@ -424,10 +424,10 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
     expect(titles("Todo")).toEqual(["Step 2", "Step 8"]);
     expect(titles("In progress")).toEqual(["Step 3", "Step 4", "Step 5"]);
     expect(titles("Done")).toEqual(["Step 1", "Step 6", "Step 7"]);
-    await expect.element(pane("Todo")).toHaveTextContent("EXA-2");
-    await expect.element(pane("Todo")).not.toHaveTextContent("Acceptance details");
-    await expect.element(pane("Done")).toHaveTextContent("Failed");
-    await expect.element(pane("Done")).toHaveTextContent("Cancelled");
+    await expect.element(pane("Todo")).toMatchTextContent("EXA-2");
+    await expect.element(pane("Todo")).not.toMatchTextContent("Acceptance details");
+    await expect.element(pane("Done")).toMatchTextContent("Failed");
+    await expect.element(pane("Done")).toMatchTextContent("Cancelled");
 });
 
 it("shows card identity, separate line changes and elapsed time, with tokens in details", async () => {
@@ -449,30 +449,30 @@ it("shows card identity, separate line changes and elapsed time, with tokens in 
         status: 200,
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
-    await expect.element(pane("In progress")).toHaveTextContent("EXA-1");
-    await expect.element(pane("In progress")).toHaveTextContent("+23.32K");
-    await expect.element(pane("In progress")).toHaveTextContent("−9.322K");
-    await expect.element(pane("In progress")).toHaveTextContent("1.5K");
-    await expect.element(pane("In progress")).toHaveTextContent("0/1");
-    await expect.element(pane("In progress")).toHaveTextContent("<1m");
-    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
-    await expect.element(pane("In progress")).not.toHaveTextContent("tokens");
+    await expect.element(pane("In progress")).toMatchTextContent("EXA-1");
+    await expect.element(pane("In progress")).toMatchTextContent("+23.32K");
+    await expect.element(pane("In progress")).toMatchTextContent("−9.322K");
+    await expect.element(pane("In progress")).toMatchTextContent("1.5K");
+    await expect.element(pane("In progress")).toMatchTextContent("0/1");
+    await expect.element(pane("In progress")).toMatchTextContent("<1m");
+    await expect.element(pane("In progress")).not.toMatchTextContent("Running");
+    await expect.element(pane("In progress")).not.toMatchTextContent("tokens");
     await pane("In progress").getByRole("link").click();
-    await expect.element(pane("Task")).toHaveTextContent("Tokens");
-    await expect.element(pane("Task")).toHaveTextContent("1.5K");
+    await expect.element(pane("Task")).toMatchTextContent("Tokens");
+    await expect.element(pane("Task")).toMatchTextContent("1.5K");
     await expect.element(pane("Task").getByTitle("1,500")).toBeVisible();
-    await expect.element(pane("Task")).toHaveTextContent("Line diff");
-    await expect.element(pane("Task")).toHaveTextContent("+23.32K −9.322K");
+    await expect.element(pane("Task")).toMatchTextContent("Line diff");
+    await expect.element(pane("Task")).toMatchTextContent("+23.32K −9.322K");
     await expect.element(pane("Task").getByTitle("+23,320 −9,322")).toBeVisible();
-    await expect.element(pane("Task")).toHaveTextContent("5s");
-    await expect.element(pane("Todo")).toHaveTextContent("First step");
-    await expect.element(pane("Todo")).toHaveTextContent("1.2K");
-    await expect.element(pane("Todo")).not.toHaveTextContent("tokens");
+    await expect.element(pane("Task")).toMatchTextContent("5s");
+    await expect.element(pane("Todo")).toMatchTextContent("First step");
+    await expect.element(pane("Todo")).toMatchTextContent("1.2K");
+    await expect.element(pane("Todo")).not.toMatchTextContent("tokens");
     await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
-    await expect.element(pane("Task")).toHaveTextContent("First step");
-    await expect.element(pane("Task")).toHaveTextContent("1.2K");
-    await expect.element(pane("Task")).toHaveTextContent("5");
-    await expect.element(pane("Task")).not.toHaveTextContent("1.5K");
+    await expect.element(pane("Task")).toMatchTextContent("First step");
+    await expect.element(pane("Task")).toMatchTextContent("1.2K");
+    await expect.element(pane("Task")).toMatchTextContent("5");
+    await expect.element(pane("Task")).not.toMatchTextContent("1.5K");
     expect(app.url()).toBe("/tasks/1/subtasks/1");
 });
 
@@ -484,10 +484,10 @@ it("opens a subtask with its own detail and returns to the parent board", async 
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
-    await expect.element(pane("Task")).toHaveTextContent("First step");
-    await expect.element(pane("Task")).toHaveTextContent("Todo");
-    await expect.element(pane("Task")).toHaveTextContent("example-project");
-    await expect.element(pane("Description")).toHaveTextContent("Acceptance details");
+    await expect.element(pane("Task")).toMatchTextContent("First step");
+    await expect.element(pane("Task")).toMatchTextContent("Todo");
+    await expect.element(pane("Task")).toMatchTextContent("example-project");
+    await expect.element(pane("Description")).toMatchTextContent("Acceptance details");
     expect(document.querySelector('[aria-label="Subtasks"]')).toBeNull();
     expect(app.url()).toBe("/tasks/1/subtasks/1");
     await page
@@ -526,13 +526,13 @@ it("loads a subtask URL directly and refuses an unknown subtask", async () => {
         to: "/tasks/$id/subtasks/$subtaskId",
         params: { id: "1", subtaskId: "1" },
     });
-    await expect.element(pane("Description")).toHaveTextContent("Acceptance details");
+    await expect.element(pane("Description")).toMatchTextContent("Acceptance details");
     expect(document.querySelector('[aria-label="Subtasks"]')).toBeNull();
     await app.router.navigate({
         to: "/tasks/$id/subtasks/$subtaskId",
         params: { id: "1", subtaskId: "999" },
     });
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Subtask not found");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Subtask not found");
     expect(document.querySelector('[aria-label="Description"]')).toBeNull();
 });
 
@@ -560,7 +560,7 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(pane("Application log")).toBeVisible();
-    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toMatchTextContent(/Tasks\s*1/);
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await expect
         .element(page.getByRole("link", { name: "Open task: Fix this Instance" }))
@@ -584,9 +584,9 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
     queryClient.setQueryData(["task-groups"], [other, unassigned]);
     await expect
         .element(page.getByRole("tab", { name: "Tasks", exact: true }))
-        .toHaveTextContent("Tasks");
+        .toMatchTextContent("Tasks");
     queryClient.setQueryData(["task-groups"], [owned, other, unassigned]);
-    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toMatchTextContent(/Tasks\s*1/);
 });
 
 it("hides the Instance Tasks tab and skips task queries when the extension starts disabled", async () => {
