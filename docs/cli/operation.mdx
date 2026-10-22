@@ -28,7 +28,7 @@ orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--status=STATUS` | `queued`, `running`, `succeeded`, `failed`, or `cancelled`. |
+| `--status=STATUS` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. |
 | `--kind=KIND` | An operation kind, such as `instance.deploy`. |
 | `--instance=ID` | Only operations on this Instance. |
 
@@ -58,7 +58,7 @@ orbit operation:show 42
 
 ## orbit operation:cancel
 
-Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. A deploy or rollback whose release is already active finishes instead. Orbit never undoes the steps that ran.
+Ask an operation to stop. A queued operation ends `cancelled` at once. A waiting one stops its current step through its stop hook before ending `cancelled`; an unconfirmed stop keeps it waiting and returns the step’s error. See [Cancel an operation](/reference/operations#cancel-an-operation). A running one finishes its running step and ends `cancelled`. A deploy or rollback whose release is already active finishes instead. Orbit never undoes the steps that ran.
 
 ```bash
 orbit operation:cancel <operation> [--json]

@@ -178,6 +178,28 @@ final readonly class OperationStore
         return $claimed;
     }
 
+    /** Claims a due read without spending a worker-loss attempt. The conditional write settles duplicate jobs. */
+    public function claimWaiting(Operation $operation, string $worker): bool
+    {
+        $claimed = Operation::query()
+            ->whereKey($operation->id)
+            ->where('status', OperationStatus::Waiting->value)
+            ->where('next_read_at', '<=', Carbon::now())
+            ->update([
+                'status' => OperationStatus::Running->value,
+                'worker' => $worker,
+                'sequence' => DB::raw('sequence + 1'),
+                'updated_at' => Carbon::now(),
+            ]) === 1;
+        $operation->refresh();
+
+        if ($claimed) {
+            $this->broadcaster->changed($operation, true);
+        }
+
+        return $claimed;
+    }
+
     /** Ends an operation that no worker started as cancelled. Any other operation stops at its next step instead. */
     public function cancelQueued(Operation $operation): bool
     {

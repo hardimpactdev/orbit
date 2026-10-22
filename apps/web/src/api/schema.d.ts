@@ -2437,7 +2437,7 @@ export interface paths {
         };
         /**
          * List operations
-         * @description Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.
+         * @description Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds active jobs; `status=waiting` finds operations waiting for existing work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.
          */
         get: operations["operation-list"];
         put?: never;
@@ -2479,7 +2479,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel an operation
-         * @description Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A finished operation stays as it is. Returns the operation with its steps.
+         * @description Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A waiting one calls its step stop hook at once and ends `cancelled` only when the stop is confirmed. An unconfirmed stop records the cancel request, returns the step error, and stays `waiting`; its next read retries the stop. A finished operation stays as it is. Returns the operation with its steps.
          */
         post: operations["operation-cancel"];
         delete?: never;
@@ -14191,7 +14191,7 @@ export interface operations {
     "operation-list": {
         parameters: {
             query?: {
-                status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+                status?: "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
                 kind?: string;
                 target_type?: string;
                 target_id?: number;

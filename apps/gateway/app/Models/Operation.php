@@ -37,6 +37,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $triggered_by
  * @property string|null $request_id
  * @property Carbon|null $cancel_requested_at
+ * @property int|null $wait_delay_seconds
+ * @property Carbon|null $next_read_at
  * @property Carbon|null $dispatched_at
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
@@ -69,6 +71,8 @@ final class Operation extends Model
         'triggered_by',
         'request_id',
         'cancel_requested_at',
+        'wait_delay_seconds',
+        'next_read_at',
         'dispatched_at',
         'started_at',
         'finished_at',
@@ -93,6 +97,8 @@ final class Operation extends Model
             'sequence' => 'integer',
             'attempts' => 'integer',
             'cancel_requested_at' => 'datetime',
+            'wait_delay_seconds' => 'integer',
+            'next_read_at' => 'datetime',
             'dispatched_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

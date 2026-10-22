@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -15,7 +16,7 @@ final class ListOperationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['sometimes', 'string', Rule::in(['queued', 'running', 'succeeded', 'failed', 'cancelled'])],
+            'status' => ['sometimes', 'string', Rule::enum(OperationStatus::class)],
             'kind' => ['sometimes', 'string', 'max:64', 'regex:'.OperationKinds::NamePattern],
             'target_type' => ['sometimes', 'string', 'max:32', 'regex:'.OperationKinds::TargetTypePattern],
             'target_id' => ['sometimes', 'integer', 'min:1'],

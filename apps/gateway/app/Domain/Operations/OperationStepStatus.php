@@ -8,6 +8,7 @@ enum OperationStepStatus: string
 {
     case Pending = 'pending';
     case Running = 'running';
+    case Waiting = 'waiting';
     case Succeeded = 'succeeded';
     case Failed = 'failed';
     case Cancelled = 'cancelled';

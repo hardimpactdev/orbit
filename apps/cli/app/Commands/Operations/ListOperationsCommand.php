@@ -13,11 +13,11 @@ use Orbit\Sdk\Responses\Operations\OperationsResponse;
 
 final class ListOperationsCommand extends GatewayCommand
 {
-    private const array Statuses = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
+    private const array Statuses = ['queued', 'running', 'waiting', 'succeeded', 'failed', 'cancelled'];
 
     #[\Override]
     protected $signature = 'operation:list
-        {--status= : queued, running, succeeded, failed, or cancelled}
+        {--status= : queued, running, waiting, succeeded, failed, or cancelled}
         {--kind= : An operation kind, such as instance.deploy}
         {--instance= : Only operations on this Instance}
         {--json : Return machine-readable JSON}';
@@ -32,7 +32,7 @@ final class ListOperationsCommand extends GatewayCommand
         $instance = $this->option('instance');
 
         if ($status !== null && ! in_array($status, self::Statuses, true)) {
-            return $this->renderGatewayFailure('input.invalid', '--status must be queued, running, succeeded, failed, or cancelled.', details: ['field' => 'status']);
+            return $this->renderGatewayFailure('input.invalid', '--status must be queued, running, waiting, succeeded, failed, or cancelled.', details: ['field' => 'status']);
         }
 
         if ($instance !== null && preg_match('/\A[1-9][0-9]*\z/', $instance) !== 1) {

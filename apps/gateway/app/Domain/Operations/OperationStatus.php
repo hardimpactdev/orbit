@@ -9,6 +9,7 @@ enum OperationStatus: string
 {
     case Queued = 'queued';
     case Running = 'running';
+    case Waiting = 'waiting';
     case Succeeded = 'succeeded';
     case Failed = 'failed';
     case Cancelled = 'cancelled';

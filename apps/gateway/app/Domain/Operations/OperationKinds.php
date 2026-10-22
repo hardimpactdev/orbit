@@ -31,11 +31,12 @@ final readonly class OperationKinds
         self::InstanceRollback => InstanceRollbackOperation::class,
     ];
 
-    public function __construct(private Container $container) {}
+    /** @param array<string, class-string<OperationKind>> $kinds */
+    public function __construct(private Container $container, private array $kinds = self::Kinds) {}
 
     public function for(string $kind): OperationKind
     {
-        $class = self::Kinds[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
+        $class = $this->kinds[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
 
         return $this->container->make($class);
     }
