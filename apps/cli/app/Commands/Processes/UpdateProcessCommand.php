@@ -29,21 +29,21 @@ final class UpdateProcessCommand extends ProcessCommand
         {name? : Process ID or Project process definition name}
         {--project= : Numeric Project ID}
         {--for= : Comma-separated definition environments}
-        {--runtime=systemd : systemd or docker}
+        {--runtime= : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
         {--working-directory= : Runtime working directory}
         {--environment=* : Docker NAME=VALUE; repeat as needed}
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
-        {--restart=never : never, on-failure, always, or unless-stopped}
+        {--restart= : never, on-failure, always, or unless-stopped}
         {--keep-alive : Keep running through app-dev idle hibernation}
         {--no-restart-on-deploy : Skip automatic restart after production activation}
         {--user= : Existing non-root account for a Node systemd Process}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Replace an installed Process specification or one Project process definition.';
+    protected $description = 'Update an installed Process specification or one Project process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -96,9 +96,9 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $runtime = $this->stringOption('runtime');
+        $runtime = $this->stringOption('runtime') ?? ($installed ? null : 'systemd');
 
-        if ($runtime === null || ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
+        if ($runtime !== null && ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
             return $this->renderGatewayFailure(
                 'process.runtime_invalid',
                 'Process runtime must be systemd or docker.',
@@ -106,7 +106,7 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $command = $this->stringListOption('command');
-        if ($command === [] && $this->consoleMode()->mayPrompt) {
+        if (! $installed && $command === [] && $this->consoleMode()->mayPrompt) {
             do {
                 $argument = $this->commandPrompts()->run(fn () => new TextPrompt(
                     label: 'Command argument', required: $command === [],
@@ -134,11 +134,11 @@ final class UpdateProcessCommand extends ProcessCommand
             );
         }
 
-        $restartPolicy = $this->stringOption('restart');
+        $restartPolicy = $this->stringOption('restart') ?? ($installed ? null : 'never');
 
         if (
-            $restartPolicy === null
-            || ! in_array($restartPolicy, ['never', 'on-failure', 'always', 'unless-stopped'], strict: true)
+            $restartPolicy !== null
+            && ! in_array($restartPolicy, ['never', 'on-failure', 'always', 'unless-stopped'], strict: true)
         ) {
             return $this->renderGatewayFailure(
                 'process.restart_policy_invalid',
@@ -147,7 +147,7 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $image = $this->stringOption('image');
-        if ($runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
+        if (! $installed && $runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
             $answer = $this->commandPrompts()->run(fn () => new TextPrompt(
                 label: 'Docker image', required: true,
                 validate: static fn (string $value): ?string => strlen($value) > 255 || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $value) !== 1 ? 'Invalid Docker image.' : null,
@@ -190,17 +190,17 @@ final class UpdateProcessCommand extends ProcessCommand
             if ($this->providedOption('for')) {
                 return $this->renderGatewayFailure('process.option_invalid', 'The --for option requires --project.');
             }
-            if ($command === [] || ($runtime === 'systemd' && ! str_starts_with($command[0], '/'))) {
+            if (($this->input->hasParameterOption('--command') && $command === []) || ($command !== [] && $runtime === 'systemd' && ! str_starts_with($command[0], '/'))) {
                 return $this->renderGatewayFailure('process.command_invalid', 'Process command must be nonempty; systemd needs an absolute executable.');
             }
-            if ($runtime === 'docker' && ($image === null || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $image) !== 1)) {
+            if ($image !== null && (preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $image) !== 1)) {
                 return $this->renderGatewayFailure('process.image_invalid', 'A valid Docker image is required.');
             }
             if ($workingDirectory !== null && (strlen($workingDirectory) > 4096 || preg_match('/\\A\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*\\z/D', $workingDirectory) !== 1)) {
                 return $this->renderGatewayFailure('process.working_directory_invalid', 'Process working directory must be a safe absolute path.');
             }
             $user = $this->stringOption('user');
-            if (($runtime !== 'docker' && ($environmentWasProvided || $portsWereProvided || $volumesWereProvided || $image !== null)) || ($runtime !== 'systemd' && $user !== null)) {
+            if (($runtime === 'systemd' && ($environmentWasProvided || $portsWereProvided || $volumesWereProvided || $image !== null)) || ($runtime === 'docker' && $user !== null)) {
                 return $this->renderGatewayFailure('process.option_invalid', 'Options do not match the Process runtime.');
             }
             if ($user !== null && ($user === 'root' || preg_match('/\\A[a-z_][a-z0-9_-]{0,31}\\z/D', $user) !== 1)) {
@@ -211,7 +211,13 @@ final class UpdateProcessCommand extends ProcessCommand
                 return self::FAILURE;
             }
             $response = $this->sendWithProgress($connector,
-                new UpdateProcessRequest($id, $runtime, $command, $image, $workingDirectory, $environment, $ports, $volumes, $restartPolicy, $this->option('keep-alive') === true, $user, restartOnDeploy: $this->option('no-restart-on-deploy') !== true),
+                new UpdateProcessRequest(
+                    $id, $runtime, $command === [] ? null : $command, $image, $workingDirectory,
+                    $environmentWasProvided ? $environment : null, $portsWereProvided ? $ports : null,
+                    $volumesWereProvided ? $volumes : null, $restartPolicy,
+                    $this->option('keep-alive') === true ? true : null, $user,
+                    restartOnDeploy: $this->option('no-restart-on-deploy') === true ? false : null,
+                ),
                 ProcessResponse::class,
                 ['Update Process', 'Updating Process', 'Updated Process']);
 

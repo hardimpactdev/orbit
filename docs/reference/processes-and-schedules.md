@@ -73,7 +73,7 @@ Restore into a new named volume or bind-mounted directory at the image's expecte
 
 #### 5. Update and verify before admitting clients
 
-Run `process:update` with the complete retained specification and the restored mount. Omit `--working-directory` to choose the image default, or send `working_directory: null` through the API. Because the Process was stopped for migration, update leaves it stopped. Start it explicitly, verify the effective working directory and mounts, and check the restored records and application health before admitting clients again.
+Run `process:update` with the restored mount. Send `working_directory: null` through the API to choose the image default. Because the Process was stopped for migration, update leaves it stopped. Start it explicitly, verify the effective working directory and mounts, and check the restored records and application health before admitting clients again.
 
 #### 6. Recover from the backup if needed
 
@@ -136,7 +136,11 @@ Process removal runs the tagged [Process removal guards](/reference/extensions#p
 
 ### Update in place
 
-[`process:update`](/cli/process#orbit-processupdate) replaces an installed Process specification without deleting its record. `PATCH /api/v1/processes/{process}` accepts a complete specification with the same runtime fields and defaults as create: `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. It does not accept a new name, owner, preset, or initial-start flag. The Process ID, name, owner, and desired state stay the same. For Docker, omitted or null `working_directory` restores the image default; omitted environment, ports, and volumes are empty. This is replacement, not a merge of individual environment keys.
+[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
+
+The resulting specification must satisfy the runtime rules. The Process ID, name, owner, and desired state stay the same; identity, preset, and initial-start fields cannot be changed. A supplied environment map or list replaces that whole field. An empty map or list clears it. Explicit `working_directory: null` restores the Docker image default or the systemd owner default; omission keeps the current directory. Create defaults do not apply to updates. The CLI, PHP SDK, and MCP use the same partial-update contract.
+
+A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard an omitted field. For example, switching Docker to systemd requires explicit `image: null`, `ports: []`, and `volumes: []` for populated Docker fields. The SDK uses `clearImage: true` for an explicit null image and `clearWorkingDirectory: true` for an explicit null directory.
 
 The Gateway validates the new specification before changing the runtime, holds the same admission and runtime locks as other Process operations, and verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
 
@@ -144,7 +148,7 @@ Update does not delete named volumes, but replacing a container discards its wri
 
 A runtime failure is reported with the Process lifecycle status, failed step, and error code; the caller must not treat it as success or assume the old runtime is still running. The response uses the same Process data and redaction as create and list, including nullable `working_directory` for a Docker Process without an override. The SDK preserves this null instead of converting it to an empty string. Updating a Project definition remains separate and affects later copies only.
 
-For example, `PATCH /api/v1/processes/41` can replace a Docker specification with this body:
+For example, `PATCH /api/v1/processes/41` can change only the published ports with `{"ports":["10.44.0.20:6380:6379"]}`. It can also change several fields with this body:
 
 ```json
 {

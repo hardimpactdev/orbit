@@ -19,24 +19,26 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::PATCH;
 
     /**
-     * @param  list<string>  $command
-     * @param  array<string, string>  $environment
-     * @param  list<string>  $ports
-     * @param  list<array{source: string, target: string, read_only: bool}>  $volumes
+     * @param  list<string>|null  $command
+     * @param  array<string, string>|null  $environment
+     * @param  list<string>|null  $ports
+     * @param  list<array{source: string, target: string, read_only?: bool}>|null  $volumes
      */
     public function __construct(
         private readonly int $processId,
-        private readonly string $runtime,
-        private readonly array $command,
+        private readonly ?string $runtime = null,
+        private readonly ?array $command = null,
         private readonly ?string $image = null,
         private readonly ?string $workingDirectory = null,
-        #[\SensitiveParameter] private readonly array $environment = [],
-        private readonly array $ports = [],
-        private readonly array $volumes = [],
-        private readonly string $restartPolicy = 'never',
-        private readonly bool $keepAlive = false,
+        #[\SensitiveParameter] private readonly ?array $environment = null,
+        private readonly ?array $ports = null,
+        private readonly ?array $volumes = null,
+        private readonly ?string $restartPolicy = null,
+        private readonly ?bool $keepAlive = null,
         private readonly ?string $user = null,
-        private readonly bool $restartOnDeploy = true,
+        private readonly ?bool $restartOnDeploy = null,
+        private readonly bool $clearWorkingDirectory = false,
+        private readonly bool $clearImage = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -52,20 +54,27 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
     /** @return array<string, mixed> */
     protected function defaultBody(): array
     {
-        return [
+        $body = array_filter([
             'runtime' => $this->runtime,
             'command' => $this->command,
+            'image' => $this->image,
             'working_directory' => $this->workingDirectory,
+            'environment' => $this->environment === null ? null : (object) $this->environment,
+            'ports' => $this->ports,
+            'volumes' => $this->volumes,
             'restart_policy' => $this->restartPolicy,
             'keep_alive' => $this->keepAlive,
             'restart_on_deploy' => $this->restartOnDeploy,
-            ...($this->runtime === 'docker' ? [
-                'image' => $this->image,
-                'environment' => (object) $this->environment,
-                'ports' => $this->ports,
-                'volumes' => $this->volumes,
-            ] : []),
-            ...($this->user === null ? [] : ['user' => $this->user]),
-        ];
+            'user' => $this->user,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        if ($this->clearWorkingDirectory) {
+            $body['working_directory'] = null;
+        }
+        if ($this->clearImage) {
+            $body['image'] = null;
+        }
+
+        return $body;
     }
 }

@@ -32,7 +32,7 @@ A Process is one systemd service or Docker container that the Gateway manages fo
 | [`process:create`](#orbit-processcreate) | Install one Process or record one Project process definition. |
 | [`process:list`](#orbit-processlist) | List the Processes of one Instance or Node, or the definitions of one Project. |
 | [`process:show`](#orbit-processshow) | Show one Project process definition. |
-| [`process:update`](#orbit-processupdate) | Replace an installed Process specification in place, or one Project process definition. |
+| [`process:update`](#orbit-processupdate) | Update an installed Process specification in place, or one Project process definition. |
 | [`process:start`](#orbit-processstart) | Start one Process and store the running desired state. |
 | [`process:stop`](#orbit-processstop) | Stop one Process and store the stopped desired state. |
 | [`process:restart`](#orbit-processrestart) | Restart one Process. |
@@ -136,7 +136,7 @@ orbit process:show <name> --project=ID [--json]
 
 ## orbit process:update
 
-Replace the complete specification of an installed Process, keeping its ID, name, owner, and desired state. A running Process restarts in place; a stopped Process stays stopped. This is not destroy followed by create. It can interrupt a running service and discard a replaced Docker container's writable layer. It does not delete named volumes or require destructive consent. Back up and migrate container-layer data before updating a stateful container; see [Move data before removing an override](/reference/processes-and-schedules#move-data-before-removing-an-override).
+Change only the supplied fields of an installed Process, keeping its ID, name, owner, and desired state. A running Process restarts in place; a stopped Process stays stopped. This is not destroy followed by create. It can interrupt a running service and discard a replaced Docker container's writable layer. It does not delete named volumes or require destructive consent. Back up and migrate container-layer data before updating a stateful container; see [Move data before removing an override](/reference/processes-and-schedules#move-data-before-removing-an-override).
 
 ```bash
 orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--no-restart-on-deploy] [--user=NAME] [--json]
@@ -148,30 +148,24 @@ orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [-
 | `name` | required with `--project` | Definition name in the Project form. |
 | `--project=ID` | none | Select the Project-definition form instead of an installed Process. |
 | `--for=production` | none | Required only with `--project`; refused for an installed Process. |
-| Runtime options | same as create | A complete specification, not a field-by-field merge. `--runtime` defaults to `systemd`, `--restart` to `never`, and `--keep-alive` to off. `--no-restart-on-deploy` sets `restart_on_deploy` to false; omitting it sets true. Supply every setting to retain. |
-| `--working-directory=PATH` | owner-derived for systemd; image default for Docker | Omit to remove a prior explicit override. |
-| `--environment=NAME=VALUE` | empty map | Repeat for each Docker variable. Replaces the whole map; omit to clear it. Values can contain `=`. |
-| `--port`, `--volume` | empty lists | Repeat for each Docker binding or mount to retain. |
-| `--user=NAME` | derived account | Accepted only for an installed Node systemd Process. Refused for Project definitions. |
+| Runtime options | unchanged | Only supplied options change an installed Process. Omitted runtime, command, image, restart policy, keep-alive, and restart-on-deploy settings keep their values. `--keep-alive` sets true; `--no-restart-on-deploy` sets false. |
+| `--working-directory=PATH` | unchanged | Set an explicit directory. Use API `working_directory: null` to restore the runtime default. |
+| `--environment=NAME=VALUE` | unchanged | Repeat for each Docker variable. Replaces the whole map when supplied. Values can contain `=`. |
+| `--port`, `--volume` | unchanged | Supplied bindings or mounts replace that whole list. Use the API or SDK to send an empty list to clear it. |
+| `--user=NAME` | unchanged | Accepted only for an installed Node systemd Process. Refused for Project definitions. |
 | `--json` | off | One final JSON response, without prompts or progress output. |
 
-The command uses the runtime fields and validation of [`process:create`](#orbit-processcreate). It accepts no `--instance`, `--node`, `--preset`, or `--start`. The runtime options must form a valid complete specification before mutation. A Docker update needs its image and command arguments again. Omitted working directory keeps the image's `WORKDIR`, not `/app`. The Gateway API is `PATCH /api/v1/processes/{process}`; the SDK sends the same fields and environment map. See [Update in place](/reference/processes-and-schedules#update-in-place) for locks, ownership checks, and runtime failures.
+The command uses the runtime fields and validation of [`process:create`](#orbit-processcreate), but sends only supplied options. It accepts no `--instance`, `--node`, `--preset`, or `--start`. The Gateway validates the resulting specification before mutation. A Docker ports-only update needs no image, command, or runtime option. The Gateway API is `PATCH /api/v1/processes/{process}`; the SDK preserves omission, explicit false, and empty lists. See [Update in place](/reference/processes-and-schedules#update-in-place) for locks, ownership checks, and runtime failures.
 
-Existing Docker Processes keep their stored working directory across upgrades and unchanged convergence. Include an existing `--working-directory=/app` when retaining that override; omitting it is an explicit change to the image default. For example, after verifying that all cache data is in the mounted `/data` volume or completing the linked migration procedure, retain the cache mount and binding while choosing the image default:
+For example, change a Docker binding while retaining its restart policy, environment, mounts, and working directory:
 
 ```bash
-orbit process:update 41 \
-  --runtime=docker \
-  --image=valkey/valkey:8 \
-  --command=valkey-server \
-  --volume=valkey-data:/data \
-  --port=10.44.0.20:6379:6379 \
-  --restart=unless-stopped
+orbit process:update 41 --port=10.44.0.20:6380:6379
 ```
 
 This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and `process:update` refuses its Process.
 
-In an interactive terminal, an omitted target uses a finite `Process` selector (`process.update.target`) populated by the read-only Process list, with choices labeled by ID, name, and owner and no default. Selection returns the numeric ID. With `--project`, use a `Process definition` selector populated by that Project's definitions and return the name. An empty list reports `No Processes found.` (or `No Process definitions found.`) and returns `process.id_invalid` (or `process.name_required`) without mutation. A slow lookup shows indeterminate waiting feedback. A missing required Docker image uses a text prompt `Docker image` (`process.update.image`, source `--image`, no default). A missing command collects literal argv items through text prompts (`process.update.command`, source repeated `--command`, no default), never through shell evaluation. Validate each answer and prompt again when it is invalid. Ctrl-C or EOF returns `input.cancelled` before mutation. JSON and noninteractive calls never prompt: an omitted or invalid installed target returns `process.id_invalid` (an omitted definition name returns `process.name_required`), and invalid runtime fields use the create validation codes, including `process.command_invalid`, `process.environment_invalid`, and `process.option_invalid`.
+In an interactive terminal, an omitted target uses a finite `Process` selector (`process.update.target`) populated by the read-only Process list, with choices labeled by ID, name, and owner and no default. Selection returns the numeric ID. With `--project`, use a `Process definition` selector populated by that Project's definitions and return the name. An empty list reports `No Processes found.` (or `No Process definitions found.`) and returns `process.id_invalid` (or `process.name_required`) without mutation. A slow lookup shows indeterminate waiting feedback. Installed updates do not prompt for omitted runtime fields. With `--project`, the complete definition still prompts for a missing command and Docker image. Ctrl-C or EOF returns `input.cancelled` before mutation. JSON and noninteractive calls never prompt. Invalid supplied fields use the create validation codes, including `process.command_invalid`, `process.environment_invalid`, and `process.option_invalid`.
 
 The synchronous Gateway request shows one indeterminate operation with labels `Update Process`, `Updating Process`, and `Updated Process`. It does not invent separate remote stop, install, or start progress stages. Human success uses the Process detail renderer with `ID`, `Name`, owner, runtime, desired state, runtime status, working directory, restart policy, and keep-alive; it never prints environment values. JSON success uses the existing Process response shape with the same ID, lifecycle fields, redacted `runtime_config.environment` map, and request ID. Failure uses the standard failure renderer or JSON `error` envelope, returns nonzero, and prints no success result. Success returns zero. `process.operation_busy` and `process.runtime_lock_failed` retain their existing meanings.
 

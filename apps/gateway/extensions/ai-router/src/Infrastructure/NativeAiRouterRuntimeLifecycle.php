@@ -7,6 +7,7 @@ namespace Orbit\Extensions\AiRouter\Infrastructure;
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\UpdateProcessAction;
+use App\Data\Processes\UpdateProcessData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
@@ -72,7 +73,10 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
 
             $process = Process::query()->where('owner_type', Node::class)
                 ->where('owner_id', $node->id)->where('name', AiRouterProcess::NAME)->sole();
-            $process = $this->update->execute($process, $data);
+            $process = $this->update->execute($process, new UpdateProcessData($data, [
+                'runtime', 'command', 'image', 'working_directory', 'environment', 'ports', 'volumes',
+                'restart_policy', 'keep_alive', 'restart_on_deploy', 'user',
+            ]));
         }
 
         $source ??= AiRouterProcessSource::query()->firstOrNew(['process_id' => $process->id]);

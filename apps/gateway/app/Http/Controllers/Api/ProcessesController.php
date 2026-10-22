@@ -67,7 +67,7 @@ final class ProcessesController extends Controller
         UpdateProcessAction $action,
         ProcessRuntimeManager $runtime,
     ): JsonResponse {
-        return $this->processResponse($request, $action->execute($process, $request->payload()), $runtime);
+        return $this->processResponse($request, $action->execute($process, $request->updates()), $runtime);
     }
 
     public function start(

@@ -177,12 +177,11 @@ it('preserves explicitly supplied empty process collections', function (): void 
     ]);
 });
 
-it('sends an in-place update with null working directory and an empty JSON object environment', function (): void {
+it('sends only supplied in-place update fields', function (): void {
     $request = new UpdateProcessRequest(41, 'docker', ['valkey-server'], 'valkey/valkey:8');
     expect($request->resolveEndpoint())->toBe('/api/v1/processes/41')
         ->and($request->getMethod()->value)->toBe('PATCH')
-        ->and($request->body()->all()['working_directory'])->toBeNull()
-        ->and(json_encode($request->body()->all()['environment'], JSON_THROW_ON_ERROR))->toBe('{}');
+        ->and($request->body()->all())->toBe(['runtime' => 'docker', 'command' => ['valkey-server'], 'image' => 'valkey/valkey:8']);
     $response = ProcessResponse::fromGatewayData(['working_directory' => null], 'request-id');
     expect($response->workingDirectory)->toBeNull()->and($response->toArray()['working_directory'])->toBeNull();
 });
@@ -442,10 +441,47 @@ it('transports the deploy restart setting and preserves false in the Process res
     expect($create->body()->all()['restart_on_deploy'])->toBeFalse()
         ->and($update->body()->all()['restart_on_deploy'])->toBeFalse()
         ->and(new CreateProcessRequest(target: new InstanceProcessTarget(7), name: 'horizon')->body()->all()['restart_on_deploy'])->toBeTrue()
-        ->and(new UpdateProcessRequest(41, 'systemd', ['/usr/bin/php', 'artisan', 'horizon'])->body()->all()['restart_on_deploy'])->toBeTrue();
+        ->and(new UpdateProcessRequest(41, 'systemd', ['/usr/bin/php', 'artisan', 'horizon'])->body()->all())->not->toHaveKey('restart_on_deploy');
     $envelope = process_envelope();
     $envelope['data']['restart_on_deploy'] = false;
     $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
     $response = process_connector($mock)->send($create)->dto();
     expect($response->restartOnDeploy)->toBeFalse()->and($response->toArray()['restart_on_deploy'])->toBeFalse();
+});
+
+it('transports a ports-only patch without defaults', function (): void {
+    $request = new UpdateProcessRequest(41, ports: ['6380:6379']);
+    $mock = new MockClient([UpdateProcessRequest::class => MockResponse::make(process_envelope())]);
+
+    process_connector($mock)->send($request);
+
+    expect($request->body()->all())->toBe(['ports' => ['6380:6379']])
+        ->and($mock->getLastPendingRequest()?->getUrl())->toBe('https://10.44.0.1/api/v1/processes/41');
+});
+
+it('transports explicit empty collections false values and working directory reset', function (): void {
+    $request = new UpdateProcessRequest(41, environment: [], ports: [], volumes: [],
+        restartPolicy: 'never', keepAlive: false, restartOnDeploy: false, clearWorkingDirectory: true);
+
+    expect($request->body()->all())->toEqual([
+        'environment' => (object) [], 'ports' => [], 'volumes' => [],
+        'restart_policy' => 'never', 'keep_alive' => false, 'restart_on_deploy' => false, 'working_directory' => null,
+    ]);
+});
+
+it('forwards every supplied update field even without a runtime selector', function (): void {
+    $request = new UpdateProcessRequest(41, command: ['server'], image: 'server:2', workingDirectory: '/data',
+        environment: ['LABEL' => 'literal'], ports: ['8080:80'], volumes: [['source' => 'data', 'target' => '/data']], user: 'worker');
+
+    expect($request->body()->all())->toMatchArray([
+        'command' => ['server'], 'image' => 'server:2', 'working_directory' => '/data',
+        'ports' => ['8080:80'], 'volumes' => [['source' => 'data', 'target' => '/data']], 'user' => 'worker',
+    ])->not->toHaveKey('runtime');
+    expect((array) $request->body()->all()['environment'])->toBe(['LABEL' => 'literal']);
+});
+
+it('transports an explicit image reset for a runtime switch', function (): void {
+    $request = new UpdateProcessRequest(41, runtime: 'systemd', ports: [], volumes: [], clearImage: true);
+
+    expect($request->body()->all())->toBe(['runtime' => 'systemd', 'ports' => [], 'volumes' => [], 'image' => null]);
 });
