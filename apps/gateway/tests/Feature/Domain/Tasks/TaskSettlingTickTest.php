@@ -2860,3 +2860,43 @@ it('keeps other assistance and skips non-GitHub Projects when pr_url is outside 
     'another failure stays' => ['https://github.com/acme/orbit.git', 'settling', 'failure', 'Workspace removal failed: disk full', false],
     'a non-GitHub Project is not flagged' => ['git@example.test:tick.git', 'settling', null, null, false],
 ]);
+
+it('follows a proved repository move and clears the foreign pr_url request, or keeps it when the move is not proved', function (int $previousId, bool $followed): void {
+    $group = tick_group();
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    test_update_task($group, [
+        'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/old-owner/orbit/pull/42',
+        'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
+        'assistance_reason' => TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit.',
+    ]);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
+            ['number' => 42, 'html_url' => 'https://github.com/acme/orbit/pull/42', 'state' => 'open', 'merged_at' => null],
+        ]),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['id' => 7]),
+        'https://api.github.com/repos/old-owner/orbit' => Http::response(['id' => $previousId]),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => false, 'state' => 'open']),
+        '*' => Http::response([], 404),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $group->fresh();
+    if ($followed) {
+        expect($fresh?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
+            ->and(TaskSettling::isForeignPullRequestReason($fresh?->assistance_reason))->toBeFalse();
+    } else {
+        expect($fresh?->pr_url)->toBe('https://github.com/old-owner/orbit/pull/42')
+            ->and($fresh?->assistance_requested)->toBeTrue()
+            ->and(TaskSettling::isForeignPullRequestReason($fresh?->assistance_reason))->toBeTrue();
+    }
+})->with([
+    'proved move' => [7, true],
+    'unrelated repository' => [8, false],
+]);
