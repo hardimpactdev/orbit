@@ -7,6 +7,8 @@ namespace App\Infrastructure\Routes;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -35,6 +37,9 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
 
     public function nodes(Route $route): array
     {
+        if ($route->isCustomProxy() && $route->publication === RoutePublication::Public) {
+            return array_values($this->publicProcessNodes($route)->map(static fn (Node $node): RouteRemovalNode => new RouteRemovalNode($node, [RouteRemovalStep::Caddy, RouteRemovalStep::Firewall]))->all());
+        }
         $nodes = [];
         $steps = [];
         $stepNodes = [
@@ -79,6 +84,9 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
 
     public function cleanupCertificates(Route $route, array $skippedNodeIds = []): void
     {
+        if ($route->isCustomProxy() && $route->publication === RoutePublication::Public) {
+            return;
+        }
         $route->loadMissing('node');
 
         if ($route->isCustomProxy() && $route->node instanceof Node && ! in_array($route->node->id, $skippedNodeIds, true)) {
@@ -110,6 +118,13 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
 
     public function cleanupFirewall(Route $route, array $skippedNodeIds = []): void
     {
+        if ($route->isCustomProxy() && $route->publication === RoutePublication::Public) {
+            foreach ($this->without($this->publicProcessNodes($route), $skippedNodeIds) as $node) {
+                app(NodeRoleFirewallManager::class)->converge($node, RoleName::Ingress, $node->user);
+            }
+
+            return;
+        }
         foreach ($this->without($this->workloadNodes($route), $skippedNodeIds) as $node) {
             $this->firewall->remove($node, $route->id);
         }
@@ -174,6 +189,15 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
     }
 
     /** @return Collection<int, Node> */
+    private function publicProcessNodes(Route $route): Collection
+    {
+        $route->loadMissing('cluster.ingressAssignment.node');
+        $node = $route->cluster?->ingressAssignment?->node;
+
+        return $node instanceof Node ? collect([$node]) : collect();
+    }
+
+    /** @return Collection<int, Node> */
     private function certificateNodes(Route $route): Collection
     {
         $route->loadMissing('node');
@@ -188,6 +212,10 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
     /** @return Collection<int, Node> */
     private function projectionNodes(Route $route): Collection
     {
+        if ($route->isCustomProxy() && $route->publication === RoutePublication::Public) {
+            return $this->publicProcessNodes($route);
+        }
+
         return $this->workloadNodes($route)
             ->merge($this->router($route) instanceof Node ? [$this->router($route)] : [])
             ->unique(static fn (Node $node): int => $node->id)

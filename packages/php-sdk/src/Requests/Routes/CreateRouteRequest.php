@@ -26,6 +26,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
         private readonly ?string $upstream = null,
         private readonly ?int $processId = null,
         private readonly ?string $webRoot = null,
+        private readonly ?int $ingressNodeId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -47,6 +48,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
                 'publication' => $this->publication,
                 'instance_id' => $this->instanceId,
                 'node_id' => $this->nodeId,
+                'ingress_node_id' => $this->ingressNodeId,
                 'upstream' => $this->upstream,
                 'process_id' => $this->processId,
                 'web_root' => $this->webRoot,

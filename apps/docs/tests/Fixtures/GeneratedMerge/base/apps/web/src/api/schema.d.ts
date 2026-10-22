@@ -291,7 +291,13 @@ export interface operations {
                     node_id: number;
                     upstream?: string;
                     process_id?: number;
-                } & (unknown | unknown));
+                } & (unknown | unknown)) | {
+                    domain: string;
+                    /** @enum {string} */
+                    publication: "public";
+                    ingress_node_id?: number;
+                    process_id: number;
+                };
             };
         };
         responses: {

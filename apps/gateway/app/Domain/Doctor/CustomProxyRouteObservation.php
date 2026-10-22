@@ -11,5 +11,6 @@ final readonly class CustomProxyRouteObservation
         public ?bool $certificateMatches,
         public ?bool $caddyMatches,
         public ?bool $upstreamReachable,
+        public ?bool $firewallMatches = true,
     ) {}
 }

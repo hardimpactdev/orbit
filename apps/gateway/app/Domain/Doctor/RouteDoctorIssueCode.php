@@ -10,6 +10,7 @@ enum RouteDoctorIssueCode: string implements DoctorIssueCode
     case WebSocketInspectionFailed = 'route.websocket_inspection_failed';
     case LifecycleNotActive = 'route.lifecycle_not_active';
     case DomainReserved = 'route.domain_reserved';
+    case FirewallMismatch = 'route.firewall_mismatch';
     case DnsMismatch = 'route.dns_mismatch';
     case CertificateMismatch = 'route.certificate_mismatch';
     case CaddyMismatch = 'route.caddy_mismatch';

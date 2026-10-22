@@ -50,11 +50,11 @@ final readonly class PublicRouteEligibility
             ? $route->cluster
             : Cluster::query()->find($route->cluster_id);
 
-        if (! $cluster instanceof Cluster || $cluster->state !== ClusterState::Active) {
+        if (! $cluster instanceof Cluster || (! $route->isCustomProxy() && $cluster->state !== ClusterState::Active)) {
             return 'cluster-inactive';
         }
 
-        if (! $this->activeRouter($cluster) instanceof Node) {
+        if (! $route->isCustomProxy() && ! $this->activeRouter($cluster) instanceof Node) {
             return 'router-missing';
         }
 

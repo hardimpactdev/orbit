@@ -277,7 +277,7 @@ final readonly class DestroyRouteAction
             );
         }
 
-        if (new PublicRouteEligibility()->publicEdgeIsLive($route)) {
+        if (! $route->isCustomProxy() && new PublicRouteEligibility()->publicEdgeIsLive($route)) {
             $this->reconciliation->refuse();
         }
 

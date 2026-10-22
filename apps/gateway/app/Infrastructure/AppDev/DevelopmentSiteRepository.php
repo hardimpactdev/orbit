@@ -7,10 +7,12 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
+use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
@@ -647,6 +649,24 @@ final readonly class DevelopmentSiteRepository
     private function customProxySite(Route $route): ?DevelopmentSite
     {
         $route->loadMissing(['node', 'customProxy']);
+        if ($route->publication === RoutePublication::Public) {
+            if (! $this->eligibility->publicEdgeIsLive($route)) {
+                return null;
+            }
+            $ingress = $this->ingressSites->ingressNode($route);
+            $process = $route->customProxy?->process;
+            if ($process === null) {
+                return null;
+            }
+            $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
+
+            return new DevelopmentSite(
+                nodeId: $ingress->id, nodeAddress: $ingress->wireguard_ip ?? '',
+                scope: "route-{$route->id}-ingress", checkoutPath: '', documentRoot: '', phpVersion: null,
+                domain: $route->domain, certificateScope: "route-{$route->id}-ingress",
+                publicListener: true, localHttpUpstream: $upstream->authority(),
+            );
+        }
         $node = $route->node;
         $proxy = $route->customProxy;
 

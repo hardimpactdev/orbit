@@ -284,3 +284,8 @@ function route_request_id(): string
 {
     return '0198e15d-16c4-7855-8eb2-182b53ad28ba';
 }
+
+it('transports public Process Route scope without a Node or upstream URL', function (?int $ingressNodeId): void {
+    expect(new CreateRouteRequest(domain: 'sync.example.com', publication: 'public', processId: 267, ingressNodeId: $ingressNodeId)->body()->all())
+        ->toBe(['domain' => 'sync.example.com', 'publication' => 'public', ...($ingressNodeId !== null ? ['ingress_node_id' => $ingressNodeId] : []), 'process_id' => 267]);
+})->with([null, 4]);

@@ -934,6 +934,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'publication' => 'private',
                 'node' => null,
+                'ingress' => null,
                 'upstream' => null,
                 'process' => null,
                 'web-root' => null,

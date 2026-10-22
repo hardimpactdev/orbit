@@ -570,3 +570,28 @@ function public_edge_node(string $name, string $wireguardIp, ?string $lanIp, Clu
 
     return $node;
 }
+
+it('checks the public Process listener directly from the Ingress without a Router hop', function (): void {
+    $listener = public_edge_listener();
+    $port = (int) substr((string) stream_socket_get_name($listener, false), strlen('127.0.0.1:'));
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
+    public_edge_node('process-router', '10.44.0.20', '10.10.0.20', $cluster, [RoleName::Router]);
+    $ingress = public_edge_node('process-ingress', '10.44.0.30', '10.10.0.30', $cluster, [RoleName::Ingress]);
+    $services = Node::query()->create(['name' => 'services', 'wireguard_ip' => '127.0.0.1', 'lan_ip' => '10.0.0.6', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.6', 'user' => 'orbit', 'status' => 'active']);
+    $process = $services->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['127.0.0.1:'.$port.':80/tcp']], 'status' => 'active']);
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $cluster->id, 'domain' => 'sync.example.com', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
+    $route->customProxy()->create(['node_id' => $services->id, 'process_id' => $process->id, 'upstream' => 'http://127.0.0.1:'.$port]);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'ingress-firewall']);
+    try {
+        public_edge_publish($this->caddy, $ingress);
+        $inspector = public_edge_inspector($this->ssh, $this->caddy);
+        expect($inspector->inspect($ingress, $route)->privateForwardingMatches)->toBeTrue();
+        fclose($listener);
+        $listener = null;
+        expect($inspector->inspect($ingress, $route)->privateForwardingMatches)->toBeFalse();
+    } finally {
+        if (is_resource($listener)) {
+            fclose($listener);
+        }
+    }
+});

@@ -73,7 +73,7 @@ operations. Keep the public API typed and small.
   Node-or-Cluster scope, a single Instance target, an ordered production
   target set with explicit Instance and Route identities plus removal
   authorization, or a custom proxy Node, optional Process, and loopback
-  upstream with omitted nulls. The Gateway owns domain, kind, scope, basis,
+  upstream, or a public custom proxy Process and optional Ingress Node with omitted nulls. The Gateway owns domain, kind, scope, basis,
   relationship, pool policy, and lifecycle policy.
 - Keep log transport limited to a numeric Instance or Process ID and a line
   count for a one-shot read, the caller's Reverb socket ID and a line count to

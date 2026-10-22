@@ -372,6 +372,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'route.websocket_inspection_failed',
             'route.lifecycle_not_active',
             'route.domain_reserved',
+            'route.firewall_mismatch',
             'route.dns_mismatch',
             'route.certificate_mismatch',
             'route.caddy_mismatch',

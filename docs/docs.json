@@ -1639,6 +1639,10 @@
     {
       "source": "/decisions/0231-publish-a-process-under-an-app-route-path",
       "destination": "/reference/routes#a-service-owns-its-hostname"
+    },
+    {
+      "source": "/decisions/0233-publish-node-processes-through-public-routes",
+      "destination": "/reference/routes#public-process-routes-select-an-edge-separately-from-the-workload"
     }
   ]
 }

@@ -23,6 +23,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SshProcessUserResolver;
 use App\Models\Instance;
 use App\Models\Process;
+use App\Models\RouteCustomProxy;
 use SensitiveParameter;
 
 final readonly class UpdateProcessAction
@@ -46,6 +47,9 @@ final readonly class UpdateProcessAction
             Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [],
             fn (): Process => $this->lease->run($process, function (Process $fresh) use ($update): Process {
                 $this->databaseServers->assertUpdatable($fresh);
+                if (RouteCustomProxy::query()->where('process_id', $fresh->id)->whereHas('route', static fn ($route) => $route->where('publication', 'public'))->exists()) {
+                    throw new ResourceOperationException('process.has_routes', 'Remove the public Process Route before updating its Process.', 409);
+                }
                 if (isset($fresh->runtime_config['preset'])) {
                     throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
                 }

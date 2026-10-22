@@ -7,9 +7,13 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\CustomProxyUpstream;
+use App\Domain\Routes\RoutePublication;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Routes\IngressSiteRepository;
+use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\Route;
@@ -38,6 +42,9 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
         }
 
         try {
+            if ($route->publication === RoutePublication::Public) {
+                return $this->inspectPublic($route);
+            }
             $upstream = CustomProxyUpstream::parse($proxy->upstream);
             $values = $this->observe($node, $this->command($route, $node, $upstream));
         } catch (DoctorInspectionException $exception) {
@@ -51,6 +58,41 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
             certificateMatches: $values['tls'] ?? null,
             caddyMatches: $values['caddy'] ?? null,
             upstreamReachable: $values['upstream'] ?? null,
+        );
+    }
+
+    private function inspectPublic(Route $route): CustomProxyRouteObservation
+    {
+        $node = new IngressSiteRepository()->ingressNode($route);
+        // Keep independent observations when a not-yet-published site cannot be inspected.
+        try {
+            $backendFirewall = app(PublicProcessRouteFirewall::class)->matches($route, $node);
+        } catch (Throwable) {
+            $backendFirewall = null;
+        }
+        try {
+            $edge = app(PublicRouteEdgeInspector::class)->inspect($node, $route);
+        } catch (DoctorInspectionException) {
+            $edge = null;
+        }
+        try {
+            $dns = $this->ssh->execute($node, new RemoteCommand(['getent', 'ahostsv4', $route->domain]),
+                step: 'doctor-custom-proxy-route', errorCode: 'route.inspection_failed', commandTimeout: $this->deadline->cap(10.0));
+            $answer = preg_split('/\s+/', trim($dns->stdout))[0] ?? '';
+            $dnsMatches = $answer === $node->wireguard_ip;
+        } catch (Throwable) {
+            $dnsMatches = null;
+        }
+        $firewallMatches = $backendFirewall === false || $edge?->firewallMatches === false
+            ? false
+            : ($backendFirewall === true && $edge?->firewallMatches === true ? true : null);
+
+        return new CustomProxyRouteObservation(
+            dnsMatches: $dnsMatches,
+            certificateMatches: $edge?->publicTlsMatches,
+            caddyMatches: $edge?->ingressProjectionMatches,
+            upstreamReachable: $edge?->privateForwardingMatches,
+            firewallMatches: $firewallMatches,
         );
     }
 

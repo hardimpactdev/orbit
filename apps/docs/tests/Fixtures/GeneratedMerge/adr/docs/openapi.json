@@ -401,6 +401,33 @@
                       }
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "domain": {
+                        "type": "string",
+                        "maxLength": 253
+                      },
+                      "publication": {
+                        "type": "string",
+                        "enum": [
+                          "public"
+                        ]
+                      },
+                      "ingress_node_id": {
+                        "type": "integer"
+                      },
+                      "process_id": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "domain",
+                      "publication",
+                      "process_id"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }

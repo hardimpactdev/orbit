@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Routes;
 
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -25,6 +27,7 @@ final readonly class RouteRemovalResidueCleaner
         private AppDevPhpFpmManager $php,
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevRouteFirewallManager $firewall,
+        private NodeRoleFirewallManager $roleFirewall,
     ) {}
 
     /** Returns whether the Node had residue to remove. */
@@ -56,6 +59,10 @@ final readonly class RouteRemovalResidueCleaner
             if (in_array(RouteRemovalStep::Firewall, $residue->removalSteps(), true)) {
                 $this->firewall->remove($node, $residue->route_id);
             }
+        }
+
+        if ($needs(RouteRemovalStep::Firewall) && $node->roles()->where('role', RoleName::Ingress)->exists()) {
+            $this->roleFirewall->converge($node, RoleName::Ingress, $node->user);
         }
 
         RouteRemovalResidue::query()->whereKey($residues->modelKeys())->delete();
