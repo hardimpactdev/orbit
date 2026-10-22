@@ -194,7 +194,9 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 
 An update is published once a new value is visible: a replacement Route has cut over, or the Project record holds a new value. A failure before that rolls back, also during `publishing`. Orbit withdraws each replacement Route that never activated, renders each environment it synchronized against the old Route again, and restores origins, production homes, branches, and the Project record.
 
-The update then ends in `rolled_back`, and other updates can run. A retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after publication stays in place, and an identical retry continues forward.
+The update then ends in `rolled_back`, and other updates can run. A retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it.
+
+Orbit records each `origin` change before it runs, and each default branch switch when it ends. So a rollback restores every checkout that changed, or started to change, before a later one failed. A restore does not write an `origin` that never changed. Before it restores any `origin`, a rollback resumes each parked task VM it must reach, and stays `rolling_back` with `project.task_vm_parked` until a retry. A failure after publication stays in place, and an identical retry continues forward.
 
 A different update while one is published but incomplete returns `project.update_in_progress`. An update holds the locks of every Instance of the Project while it runs, so an unpublished incomplete update that another request finds is not running: an update that stopped before this rule, or a rollback that failed. Orbit rolls it back first and then runs the new request. When that rollback fails, the request returns the rollback's error and the old update stays `rolling_back`. A Project without Instances has no Instance lock. Its incomplete update requires an identical retry; a different request returns `project.update_in_progress` without rolling it back.
 
@@ -211,6 +213,8 @@ Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 ### Repository changes
 
 A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout.
+
+A task workspace on a task VM gets its new `origin` too. Its preflight checks the checkout but does not read the proposed repository there, because a task VM gets no token ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). The Gateway checks the default branch in the proposed repository once instead. A parked task VM refuses the update with `project.task_vm_parked`; Orbit resumes it, and the update can run again when it is ready.
 
 Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node.
 
@@ -253,6 +257,7 @@ The Gateway returns these codes for Project requests.
 | `project.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
 | `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
 | `project.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
+| `project.task_vm_parked` | A task workspace's VM is parked. Orbit resumes it; retry the update. |
 | `project.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
 | `project.production_ownership_changed` | A production Instance changed during the update. |
 | `project.production_repository_mismatch` | A production home records another repository than the new URL. `details.instance_id` names the Instance. |

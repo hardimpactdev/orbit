@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -32,6 +33,7 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
+use App\Models\TaskVm;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -420,6 +422,7 @@ final readonly class UpdateProjectAction
 
             if ($update->requested_repository_url !== $project->repository_url) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
+                $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url, $update->requested_default_branch);
                 $this->sources->preflightRepository(
                     $plan['checkouts'],
                     $project->repository_url,
@@ -448,6 +451,54 @@ final readonly class UpdateProjectAction
         ]);
     }
 
+    /**
+     * A restore on a parked task VM would fail over SSH. The rollback resumes it and stays open until a retry.
+     *
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $origins
+     */
+    private function wakeRestoredTaskVms(array $origins): void
+    {
+        $ids = array_values(array_filter(array_map(static fn (array $row): ?int => $row['instance_id'] ?? null, $origins)));
+        $this->refuseParkedTaskVms(array_filter(Instance::query()->whereKey($ids)->get()
+            ->map(static fn (Instance $instance): ?TaskVm => TaskVm::forNode($instance->node_id))->all()));
+    }
+
+    /**
+     * Starts every parked task VM resuming, then refuses once, so a single retry can run.
+     *
+     * @param  array<TaskVm>  $vms
+     */
+    private function refuseParkedTaskVms(array $vms): void
+    {
+        $parked = array_values(array_filter($vms, static fn (TaskVm $vm): bool => ! app(WakeTaskVmAction::class)->forVm($vm)));
+        if ($parked !== []) {
+            throw new ResourceOperationException(
+                errorCode: 'project.task_vm_parked',
+                message: 'Task VM ['.implode(', ', array_map(static fn (TaskVm $vm): string => $vm->name, $parked)).'] is parked. Orbit is resuming it. Retry the update when it is ready.',
+                status: 409,
+            );
+        }
+    }
+
+    /**
+     * A task workspace's preflight cannot read the proposed repository, because a task VM gets no token. The
+     * Gateway checks the default branch there once instead. A parked task VM cannot run the preflight: Orbit resumes it and refuses.
+     *
+     * @param  list<Instance>  $checkouts
+     */
+    private function preflightTaskWorkspaces(Project $project, array $checkouts, string $repositoryUrl, ?string $requestedDefaultBranch): void
+    {
+        $vms = array_filter(array_map(static fn (Instance $checkout): ?TaskVm => TaskVm::forNode($checkout->node_id), $checkouts));
+        if ($vms === []) {
+            return;
+        }
+        $this->refuseParkedTaskVms($vms);
+        // A requested default branch is already verified there.
+        if ($requestedDefaultBranch === null) {
+            $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
+        }
+    }
+
     private function prepare(ProjectUpdate $update): void
     {
         $project = $update->project()->with('instances')->firstOrFail();
@@ -456,6 +507,7 @@ final readonly class UpdateProjectAction
 
         if (is_string($update->requested_default_branch)) {
             $evidence['branches'] = $this->prepareDefaultBranches(
+                $update,
                 $project,
                 $update->requested_default_branch,
                 $this->branchEvidence($evidence['branches'] ?? []),
@@ -477,6 +529,7 @@ final readonly class UpdateProjectAction
                     $update->previous_repository_url,
                     $update->requested_repository_url,
                     $this->originMutations($origins),
+                    fn (array $origins) => $this->recordEvidence($update, 'origins', $origins),
                 );
             }
 
@@ -503,7 +556,7 @@ final readonly class UpdateProjectAction
      * @param  list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>  $evidence
      * @return list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>
      */
-    private function prepareDefaultBranches(Project $project, string $branch, array $evidence): array
+    private function prepareDefaultBranches(ProjectUpdate $update, Project $project, string $branch, array $evidence): array
     {
         $byId = [];
 
@@ -531,6 +584,8 @@ final readonly class UpdateProjectAction
                 'current_branch' => $branch,
                 'switched' => true,
             ];
+            // Stored at once, so a later failure in this update still restores this branch.
+            $this->recordEvidence($update, 'branches', array_values($byId));
         }
 
         return array_values($byId);
@@ -586,6 +641,18 @@ final readonly class UpdateProjectAction
     }
 
     /**
+     * Stores one kind of evidence as soon as it changes, so a rollback knows every source it may restore.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function recordEvidence(ProjectUpdate $update, string $key, array $rows): void
+    {
+        $evidence = $this->storedMap($update->refresh()->evidence) ?? [];
+        $evidence[$key] = $rows;
+        $update->update(['evidence' => $evidence]);
+    }
+
+    /**
      * Stores what the slug projection did for one prepared Route, so a rollback can undo it.
      *
      * @param  array<string, string>  $facts
@@ -627,7 +694,7 @@ final readonly class UpdateProjectAction
 
     /**
      * @param  array<mixed, mixed>  $origins
-     * @return list<array{path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>
      */
     private function originMutations(array $origins): array
     {
@@ -640,6 +707,8 @@ final readonly class UpdateProjectAction
                 || ! is_string($origin['previous_url'] ?? null)
                 || ! is_string($origin['current_url'] ?? null)
                 || ! is_bool($origin['mutated'] ?? null)
+                || (array_key_exists('instance_id', $origin) && ! is_int($origin['instance_id']))
+                || (array_key_exists('attempted', $origin) && ! is_bool($origin['attempted']))
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'project.update_failed',
@@ -649,10 +718,12 @@ final readonly class UpdateProjectAction
             }
 
             $mutations[] = [
+                ...(isset($origin['instance_id']) ? ['instance_id' => $origin['instance_id']] : []),
                 'path' => $origin['path'],
                 'previous_url' => $origin['previous_url'],
                 'current_url' => $origin['current_url'],
                 'mutated' => $origin['mutated'],
+                ...(isset($origin['attempted']) ? ['attempted' => $origin['attempted']] : []),
             ];
         }
 
@@ -675,7 +746,9 @@ final readonly class UpdateProjectAction
         }
 
         if (is_array($evidence['origins'] ?? null)) {
-            $this->sources->restoreOrigins($this->originMutations($evidence['origins']));
+            $origins = $this->originMutations($evidence['origins']);
+            $this->wakeRestoredTaskVms($origins);
+            $this->sources->restoreOrigins($origins);
         }
 
         $this->restoreProductionRepositories($update);

@@ -8,17 +8,24 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
+use App\Domain\Projects\ProjectUpdateStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProjectUpdate;
+use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -264,6 +271,274 @@ describe('App repository reconciliation', function (): void {
             ->toContain('remote set-url origin')
             ->and($ssh->commands[0]->input)
             ->toContain('test ! -f "$path/.git"');
+    });
+
+    it('preflights, changes and restores task VM workspaces that share a path without a credential', function (): void {
+        $workspaces = [];
+        foreach (['10.44.0.131', '10.44.0.132'] as $index => $address) {
+            $node = Node::query()->create(['name' => 'tvm-'.$index, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $address, 'wireguard_ip' => $address]);
+            $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'running']);
+            test_task_vm($group, $node);
+            $workspaces[] = Instance::query()->create([
+                'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+                'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+                'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+                'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+            ]);
+        }
+        $ssh = new AppDevFakeSshExecutor([
+            ...array_fill(0, 2, new CommandResult(0, '', '', 1, false)),
+            ...array_fill(0, 2, new CommandResult(0, 'https://github.com/acme/site.git', '', 1, false)),
+        ]);
+        $this->app->instance(SshExecutor::class, $ssh);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+
+        $mutator->preflightRepository($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git');
+        $evidence = $mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', []);
+        $mutator->restoreOrigins($evidence);
+
+        expect($ssh->commands)->toHaveCount(6)
+            ->and(array_map(static fn ($connection): string => $connection->host, $ssh->connections))
+            ->toBe(['10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132'])
+            ->and(array_map(static fn ($command): ?bool => $command->protectedInput?->carriesGitCredential(), $ssh->commands))
+            ->toBe(array_fill(0, 6, null))
+            ->and($ssh->commands[0]->arguments)->toContain('0')
+            ->and(array_column($evidence, 'instance_id'))->toBe([$workspaces[0]->id, $workspaces[1]->id]);
+        // A retry with that evidence changes nothing again.
+        expect($mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', $evidence))->toBe($evidence)
+            ->and($ssh->commands)->toHaveCount(6);
+    });
+
+    it('reads the proposed repository on the Gateway for a task workspace and refuses a parked task VM', function (TaskVmState $state): void {
+        Bus::fake([ResumeTaskVm::class]);
+        $node = Node::query()->create(['name' => 'tvm-e2e', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.133', 'wireguard_ip' => '10.44.0.133']);
+        $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'settling']);
+        test_task_vm($group, $node)->update(['state' => $state]);
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+            'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+        ]);
+        $branches = new class implements RepositoryDefaultBranchResolver
+        {
+            /** @var list<string> */
+            public array $resolved = [];
+
+            public function resolve(string $repository, ProjectSourceAccess $source): string
+            {
+                $this->resolved[] = $repository;
+
+                return 'main';
+            }
+
+            public function verify(string $repository, string $branch, ProjectSourceAccess $source): void
+            {
+                $this->resolved[] = $repository.'@'.$branch;
+            }
+        };
+        $this->app->instance(RepositoryDefaultBranchResolver::class, $branches);
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        if ($state === TaskVmState::Parked) {
+            expect($update)->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('project.task_vm_parked');
+            });
+            expect($branches->resolved)->toBe([])
+                ->and($this->fixture->sources->originMutations)->toBe([])
+                ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+            Bus::assertDispatched(ResumeTaskVm::class);
+        } else {
+            $update();
+            expect($branches->resolved)->toBe(['https://github.com/acme/site.git@main'])
+                ->and($this->fixture->sources->originMutations)->toContain('/home/orbit/apps/acme/workspace')
+                ->and($this->fixture->project->refresh()->repository_url)->toBe('https://github.com/acme/site.git');
+        }
+    })->with([
+        'ready' => [TaskVmState::Ready],
+        'parked' => [TaskVmState::Parked],
+    ]);
+
+    it('restores origin evidence written before rows named their Instance by its path', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        $this->app->instance(SshExecutor::class, $ssh);
+
+        $this->app->make(RemoteProjectUpdateSourceMutator::class)->restoreOrigins([[
+            'path' => '/srv/orbit/apps/acme/default', 'previous_url' => 'git@github.com:acme/site.git',
+            'current_url' => 'https://github.com/acme/site.git', 'mutated' => true,
+        ]]);
+
+        expect($ssh->commands)->toHaveCount(1)
+            ->and($ssh->connections[0]->host)->toBe($this->fixture->defaultInstance->node->wireguard_ip);
+    });
+
+    it('restores an earlier origin when a later checkout fails and records why the update rolled back', function (): void {
+        $second = Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+
+        expect(fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.repository_origin_failed');
+        });
+
+        $update = ProjectUpdate::query()->sole();
+        expect($this->fixture->sources->originMutations)->toBe(['/srv/orbit/apps/acme/default'])
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default', $second->checkout_path])
+            ->and(array_column($update->evidence['origins'], 'mutated', 'path'))
+            ->toBe(['/srv/orbit/apps/acme/default' => true, $second->checkout_path => false])
+            ->and($update->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('keeps a rollback open until its origins are restored, and finishes it on retry', function (): void {
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+        $this->fixture->sources->failOriginRestores = 1;
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project->refresh(),
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        expect($update)->toThrow(ResourceOperationException::class);
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RollingBack)
+            ->and($this->fixture->sources->originRestores)->toBe([]);
+
+        $update();
+
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/second'])
+            ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('restores a switched default branch when a later origin change fails', function (): void {
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+
+        expect(fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            new UpdateProjectData(
+                typeProvided: false, type: null, slugProvided: false, slug: null,
+                repositoryUrlProvided: true, repositoryUrl: 'https://github.com/acme/site.git',
+                defaultBranchProvided: true, defaultBranch: 'stable', rootProvided: false, root: null,
+            ),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect($this->fixture->sources->switchedInstances)->toBe([$this->fixture->defaultInstance->id])
+            ->and($this->fixture->sources->restoredBranches)->toBe([$this->fixture->defaultInstance->id])
+            ->and($this->fixture->defaultInstance->refresh()->branch)->toBe('main')
+            ->and(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack);
+    });
+
+    it('resumes a parked task VM before it restores its origin, and keeps the rollback open meanwhile', function (): void {
+        Bus::fake([ResumeTaskVm::class]);
+        $node = Node::query()->create(['name' => 'tvm-rollback', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.134', 'wireguard_ip' => '10.44.0.134']);
+        $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'settling']);
+        $vm = test_task_vm($group, $node);
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+            'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+        $this->fixture->sources->failOriginRestores = 1;
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project->refresh(),
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        expect($update)->toThrow(ResourceOperationException::class);
+        $vm->update(['state' => TaskVmState::Parked]);
+        expect($update)->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.task_vm_parked');
+        });
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RollingBack);
+        Bus::assertDispatched(ResumeTaskVm::class);
+
+        $vm->update(['state' => TaskVmState::Ready]);
+        $update();
+
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->sources->originRestores)->toContain('/home/orbit/apps/acme/workspace');
+    });
+
+    it('keeps the evidence of a real checkout that changed before a later one failed, and restores it', function (): void {
+        $sandbox = sys_get_temp_dir().'/orbit-app-update-partial-'.Str::uuid();
+        $git = static function (array $arguments): void {
+            $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', ...$arguments]));
+            expect($result->succeeded())->toBeTrue($result->stderr);
+        };
+        $checkouts = [];
+        foreach (['first', 'second'] as $name) {
+            $git(['init', '--initial-branch=main', "{$sandbox}/{$name}"]);
+            $git(['-C', "{$sandbox}/{$name}", 'remote', 'add', 'origin', 'git@github.com:acme/site.git']);
+            $checkouts[] = Instance::query()->create([
+                'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => $name,
+                'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+                'checkout_path' => "{$sandbox}/{$name}", 'branch' => 'main', 'status' => InstanceState::Active,
+            ]);
+        }
+        // The second checkout cannot write its config, so its origin change fails after the first one changed.
+        chmod("{$sandbox}/second/.git", 0555);
+        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+        $recorded = [];
+        $origin = static fn (string $path): string => trim((string) shell_exec('git -C '.escapeshellarg($path).' config --get remote.origin.url'));
+
+        try {
+            $failure = null;
+            try {
+                $mutator->changeOrigins($checkouts, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', [], function (array $rows) use (&$recorded): void {
+                    $recorded = $rows;
+                });
+            } catch (ResourceOperationException $exception) {
+                $failure = $exception->errorCode;
+            }
+
+            expect($failure)->toBe('project.repository_origin_failed');
+
+            expect($origin("{$sandbox}/first"))->toBe('https://github.com/acme/site.git')
+                ->and(array_column($recorded, 'mutated', 'instance_id'))->toBe([$checkouts[0]->id => true, $checkouts[1]->id => false]);
+
+            // The second checkout never changed, so its restore writes nothing and passes while it stays read-only.
+            $mutator->restoreOrigins($recorded);
+
+            expect($origin("{$sandbox}/first"))->toBe('git@github.com:acme/site.git')
+                ->and($origin("{$sandbox}/second"))->toBe('git@github.com:acme/site.git');
+        } finally {
+            @chmod("{$sandbox}/second/.git", 0755);
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
+
+    it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        $this->app->instance(SshExecutor::class, $ssh);
+
+        $this->app->make(RemoteProjectUpdateSourceMutator::class)->preflightRepository(
+            [$this->fixture->defaultInstance], 'git@github.com:acme/site.git', 'https://github.com/acme/site.git',
+        );
+
+        expect($ssh->commands)->toHaveCount(1)
+            ->and($ssh->commands[0]->arguments)->toContain('1')
+            ->and($ssh->commands[0]->input)->toContain('ls-remote --heads');
     });
 
     it('re-binds every production home when the URL moves from SSH to HTTPS', function (): void {

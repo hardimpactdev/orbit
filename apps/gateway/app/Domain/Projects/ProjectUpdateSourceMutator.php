@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Models\Instance;
+use Closure;
 
 interface ProjectUpdateSourceMutator
 {
@@ -15,13 +16,16 @@ interface ProjectUpdateSourceMutator
 
     /**
      * @param  list<Instance>  $checkouts
-     * @param  list<array{path: string, previous_url: string, current_url: string, mutated: bool}>  $evidence
-     * @return list<array{path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $evidence
+     * @param  (Closure(list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>): void)|null  $record  receives the evidence before and after each origin change
+     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>
      */
-    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array;
+    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence, ?Closure $record = null): array;
 
     /**
-     * @param  list<array{path: string, previous_url: string, current_url: string, mutated: bool}>  $mutations
+     * Restores every row that changed, or that started to change and may have.
+     *
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $mutations
      */
     public function restoreOrigins(array $mutations): void;
 
