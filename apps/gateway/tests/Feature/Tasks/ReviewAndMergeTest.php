@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
+use App\Data\Tasks\CreateTaskData;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubListedPullRequest;
@@ -215,6 +217,8 @@ function rm_runtime(array $receipts = []): object
 
         public int $pushFailures = 0;
 
+        public ?Closure $beforeMergeBase = null;
+
         /** @var list<GitHubListedPullRequest> */
         public array $open = [];
 
@@ -262,6 +266,11 @@ function rm_runtime(array $receipts = []): object
 
         public function mergeBase(Task $group): string
         {
+            if ($this->beforeMergeBase !== null) {
+                ($this->beforeMergeBase)();
+                $this->beforeMergeBase = null;
+            }
+
             return RM_BASE;
         }
 
@@ -624,6 +633,99 @@ describe('final review before every push', function (): void {
             ->and($runtime->reviews)->toBe([])
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
             ->and(rm_activity($group))->toContain('final review requested changes');
+    });
+
+    it('starts the final-review findings fixup before queued operator work', function (): void {
+        $group = rm_group([
+            ['Measure', TaskStatus::Completed],
+            [TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview],
+            [TaskFinalReview::FixupTitle, TaskStatus::Cancelled],
+            [TaskFinalReview::Title, TaskStatus::Reviewing, TaskType::FinalReview],
+        ]);
+        $group->tasks->firstWhere('title', TaskFinalReview::FixupTitle)->update(['fixup_problem' => TaskFinalReview::FixupProblem]);
+        $final = $group->tasks->last();
+        rm_reviewing($final, RM_COMMIT);
+        $queued = collect(range(1, 5))->map(fn (int $number): Task => app(CreateTaskAction::class)->execute(
+            $group, new CreateTaskData('Implement '.$number, 'Build the feature.', [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]),
+        ));
+        $runtime = rm_runtime([rm_receipt('changes_requested', 'The measured branch has no implementation yet.')]);
+
+        app(TaskScheduler::class)->tick();
+
+        $fixup = $group->tasks()->where('fixup_problem', TaskFinalReview::FixupProblem)->where('status', TaskStatus::Running)->sole();
+        expect($final->fresh())->status->toBe(TaskStatus::Completed);
+        expect($fixup)->status->toBe(TaskStatus::Running)->position->toBe(5);
+        expect($group->tasks()->where('status', TaskStatus::Todo)->pluck('id')->all())->toBe($queued->pluck('id')->all());
+        expect($group->tasks()->pluck('position')->all())->toBe(range(1, 10));
+        expect($runtime->implementers)->toBe([$fixup->id]);
+        expect($runtime->pushes)->toBe([]);
+        expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
+    });
+
+    it('resumes queued work in a reviewing group without appending a final review', function (): void {
+        $group = rm_group([['Measure', TaskStatus::Completed]], TaskGroupStatus::Reviewing);
+        $measure = $group->tasks->sole();
+        $measure->update(['implementer_agent_thread_id' => test_agent_thread($group, 'measure', $measure)->id]);
+        TaskComment::query()->create(['task_id' => $measure->id, 'task_group_id' => $group->id, 'type' => 'approved',
+            'body' => 'Measured.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+        $queued = app(CreateTaskAction::class)->execute($group, new CreateTaskData('Implement', 'Build the feature.',
+            [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]));
+        $runtime = rm_runtime();
+
+        app(TaskScheduler::class)->beginFinalReview($group);
+        app(TaskScheduler::class)->tick();
+
+        expect($queued->fresh())->status->toBe(TaskStatus::Running);
+        expect($group->tasks()->where('type', TaskType::FinalReview)->count())->toBe(0);
+        expect($runtime->reviewers)->toBe([]);
+        expect($runtime->implementers)->toBe([$queued->id]);
+        expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
+    });
+
+    it('defers an appended final review when operator work is queued before it starts', function (): void {
+        $group = rm_group([
+            ['Measure', TaskStatus::Completed],
+            [TaskFinalReview::Title, TaskStatus::Todo, TaskType::FinalReview],
+        ], TaskGroupStatus::Running);
+        $measure = $group->tasks->firstWhere('title', 'Measure');
+        $measure->update(['implementer_agent_thread_id' => test_agent_thread($group, 'measure', $measure)->id]);
+        $queued = app(CreateTaskAction::class)->execute($group, new CreateTaskData('Implement', 'Build the feature.',
+            [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]));
+        $runtime = rm_runtime();
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        $final = $group->tasks()->where('type', TaskType::FinalReview)->sole();
+        expect($final)->status->toBe(TaskStatus::Todo)->reviewer_agent_thread_id->toBeNull()->position->toBe(3);
+        expect($queued->fresh())->status->toBe(TaskStatus::Running)->position->toBe(2);
+        expect($runtime->reviewers)->toBe([]);
+        expect($runtime->implementers)->toBe([$queued->id]);
+
+        $group->refresh()->update(['status' => TaskGroupStatus::Reviewing]);
+        rm_reviewing($queued);
+        app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([rm_receipt('approved', deliverables: ['tests' => 'Tests cover the implementation.'])]));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($final->fresh())->status->toBe(TaskStatus::Reviewing)->implementer_agent_thread_id->toBeNull();
+        expect($runtime->implementers)->toBe([$queued->id]);
+        expect($runtime->reviewers)->toBe([$final->id]);
+        expect($runtime->reviewPackets[0])->not->toContain('This is a delta re-review');
+    });
+
+    it('defers a final review when work is added while fetching its base', function (): void {
+        $group = rm_group([[TaskFinalReview::Title, TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running);
+        $final = $group->tasks->sole();
+        $runtime = rm_runtime();
+        $runtime->beforeMergeBase = fn (): Task => app(CreateTaskAction::class)->execute($group, new CreateTaskData('Implement', 'Build the feature.',
+            [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]));
+
+        app(TaskScheduler::class)->startFinalReview($group, $final, false);
+
+        expect($final->fresh())->status->toBe(TaskStatus::Todo)->position->toBe(2);
+        expect($group->tasks()->first())->title->toBe('Implement')->status->toBe(TaskStatus::Todo);
+        expect($runtime->reviewers)->toBe([]);
     });
 
     it('asks for assistance instead of a third final-review fixup in one window', function (): void {
@@ -1120,6 +1222,33 @@ describe('merge on green', function (): void {
 });
 
 describe('incoming pull requests', function (): void {
+    it('resumes operator work at position one after deferring the first incoming final review', function (): void {
+        $group = rm_group([[TaskFinalReview::Title, TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running, prUrl: RM_PR_URL, prBranch: 'feature/login');
+        $final = $group->tasks->sole();
+        $final->update(['fixup_head_sha' => RM_PR_HEAD]);
+        TaskCheck::query()->create([
+            'task_id' => $final->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Passed,
+            'pid' => 4001, 'process_started' => 'Wed Sep 23 12:00:01 2026', 'head_before' => RM_BASE, 'tree_before' => str_repeat('b', 40),
+            'started_at' => now(), 'finished_at' => now(),
+        ]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_PR_HEAD));
+        $runtime->beforeMergeBase = fn (): Task => app(CreateTaskAction::class)->execute($group, new CreateTaskData('Implement', 'Build the feature.',
+            [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]));
+
+        app(TaskScheduler::class)->startFinalReview($group, $final, false);
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        $operator = $group->tasks()->first();
+        expect($operator)->title->toBe('Implement')->position->toBe(1)->status->toBe(TaskStatus::Running);
+        expect($final->fresh())->position->toBe(2)->status->toBe(TaskStatus::Todo)->implementer_agent_thread_id->toBeNull();
+        expect($runtime->implementers)->toBe([$operator->id]);
+        expect($runtime->reviewers)->toBe([]);
+        expect(app(TaskCheckRunner::class)->starts)->toBe(0);
+        expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
+    });
+
     it('reviews a new head on an incoming pull request again instead of merging it', function (): void {
         $group = rm_settled('feature/login');
         $runtime = rm_runtime();

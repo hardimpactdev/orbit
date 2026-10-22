@@ -1028,8 +1028,8 @@ final readonly class TaskSettling
     }
 
     /**
-     * Starts a later subtask left todo after the group returned to running, including a conflict fixup
-     * whose base fetch failed. The group's first subtask is started by claim, not by this retry.
+     * Resumes the next todo in an active group with no busy subtask, including work moved to position 1
+     * by final-review deferral and a conflict fixup whose base fetch failed.
      */
     public function resumeStrandedSubtask(TaskScheduler $scheduler, Task $group): void
     {
@@ -1038,7 +1038,7 @@ final readonly class TaskSettling
         }
 
         $todo = $this->runner->lowestTodo($group->tasks);
-        if (! $todo instanceof Task || ! $this->followedAnotherSubtask($todo, $group->tasks)) {
+        if (! $todo instanceof Task) {
             return;
         }
 
@@ -1062,10 +1062,10 @@ final readonly class TaskSettling
         }
 
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
+        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
             return;
         }
-        if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
+        if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true) && $this->progressBlockedByAssistance($group)) {
             return;
         }
         if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
@@ -1153,10 +1153,10 @@ final readonly class TaskSettling
                 $group = Task::topLevel()
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
-                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
+                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
                     return null;
                 }
-                if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
+                if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true) && $this->progressBlockedByAssistance($group)) {
                     return null;
                 }
                 if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
@@ -1167,7 +1167,7 @@ final readonly class TaskSettling
                 if ($this->hasBusyTask($tasks)) {
                     return null;
                 }
-                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+                if ($group->status !== TaskGroupStatus::Running) {
                     $this->clearResumeAssistance($group);
                     $group->status = TaskGroupStatus::Running;
                     $group->save();
@@ -1180,15 +1180,6 @@ final readonly class TaskSettling
         } catch (TaskSequenceException) {
             return null;
         }
-    }
-
-    /** @param  Collection<int, Task>  $tasks */
-    private function followedAnotherSubtask(Task $task, Collection $tasks): bool
-    {
-        return $this->runner->orderedTasks($tasks)->contains(
-            static fn (Task $candidate): bool => $candidate->position < $task->position
-                || ($candidate->position === $task->position && $candidate->id < $task->id),
-        );
     }
 
     /** The base ref stored on a conflict fixup, or null when the subtask is not one. */

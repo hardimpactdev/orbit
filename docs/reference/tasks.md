@@ -132,6 +132,8 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
 
+A group left in `running` or `reviewing` with no active subtask resumes its first queued subtask on the next tick, including a subtask at position 1. A final review that has not started waits behind queued implementation work, including work added after Orbit appended that review.
+
 Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
 
 | Task status | What can change |
@@ -1449,7 +1451,7 @@ For the first final review, its start commit is the merge base of the workspace 
 | Outcome | Orbit |
 | --- | --- |
 | `approved` | Records `HEAD` as reviewed, pushes it, opens the pull request when none exists, completes the final review, and settles the task |
-| `changes_requested` | Completes the final review and starts the fixup subtask `Address final review`, whose brief holds the findings |
+| `changes_requested` | Completes the final review and starts the fixup subtask `Address final review`, whose brief holds the findings. The fixup goes before any queued `todo` subtasks, which keep their relative order |
 | `blocked` | Asks for direction, as any reviewer does |
 
 A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`.
@@ -1919,6 +1921,8 @@ Pushing each subtask and reviewing only before the merge was rejected. A pushed 
 The cost is that approved work waits in the workspace until final review. A lost workspace loses it. Removal after failure or cancellation pushes the latest final-reviewed head only when publication never pushed it. A later unreviewed approval does not hide that reviewed head. A published head, an incoming author head, and a task completed by a merge need no preservation push. Approved work that no final review saw is discarded.
 
 The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
+
+A final review starts only after queued implementation work has ended. If an operator adds work during a final review that already started, its findings still need explicit resolution. The findings fixup goes before that queued work: skipping it would assume that unrelated todo subtasks address the findings. The queued work then runs before the next final review.
 
 ### Incoming pull requests become tasks
 

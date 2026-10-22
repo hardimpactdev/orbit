@@ -122,7 +122,7 @@ final readonly class TaskScheduler
             ->get();
         $runningAtStart = [];
         foreach ($groups as $group) {
-            if ($group->status === TaskGroupStatus::Running) {
+            if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
                 $runningAtStart[$group->id] = true;
             }
         }
