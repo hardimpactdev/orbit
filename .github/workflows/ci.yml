@@ -735,7 +735,11 @@ jobs:
       # Tauri links WebKitGTK on Linux; https://v2.tauri.app/start/prerequisites/ lists these packages.
       - name: Install the Tauri system libraries
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+        run: |
+          # The image prefers Azure, which stalls on .deb downloads even when its indexes are fast.
+          echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          time sudo apt-get update
+          time sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
