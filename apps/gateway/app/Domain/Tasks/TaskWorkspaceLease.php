@@ -730,7 +730,7 @@ final class TaskWorkspaceLease
                     $reading = $this->readCheck($instance, $process);
                 } catch (TaskCheckException $exception) {
                     // Assistance would skip the normal handler, so account for this failed read here.
-                    if ($group->assistance_requested || $checkTask->assistance_requested) {
+                    if ($group->groupOrchestration() === TaskOrchestration::Tick && ($group->assistance_requested || $checkTask->assistance_requested)) {
                         app(TaskScheduler::class)->recordCommunicationFailure($checkTask, $group, $exception->getMessage());
                     }
 

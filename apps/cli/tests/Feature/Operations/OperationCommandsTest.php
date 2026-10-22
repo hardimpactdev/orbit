@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -443,4 +444,58 @@ describe('tasks:provision', function (): void {
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
         $mock->assertNothingSent();
     })->with([[null, 'tasks.group_required'], ['bad', 'tasks.group_invalid']]);
+});
+
+describe('tasks:check', function (): void {
+    beforeEach(function (): void {
+        MockClient::global(gateway_fixture_mock());
+        app(GatewayExtensionState::class)->discover();
+        MockClient::destroyGlobal();
+    });
+
+    it('follows the check wait and returns its outcome without treating a failed check as an operation failure', function (bool $json, string $outcome): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.check', 'target_type' => 'task_group'];
+        $result = ['outcome' => $outcome, 'check_id' => 31, 'commit' => $outcome === 'passed' ? str_repeat('c', 40) : null, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'deliverables' => [], 'output' => 'Check result.'];
+        $mock = cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'check'], [cli_step('check', 2, 'waiting', 4)]),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result], [cli_step('check', 2, 'succeeded', 7)]),
+        ], $seen, CheckTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('tasks:check', ['group' => '17', '--subtask' => '21', '--phase' => 'handoff', '--idempotency-key' => 'group.check.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        $output = Artisan::output();
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        } else {
+            expect($output)->toContain('Check task group [17]', 'Ran task check', 'Check: 31', match ($outcome) {
+                'passed' => 'Check passed.',
+                'failed' => 'Check failed.',
+                'changed' => 'Check changed the tree.',
+            });
+            expect($output)->not->toContain('Check succeeded.');
+            if ($outcome === 'passed') {
+                expect($output)->toContain('Commit: '.str_repeat('c', 40));
+            }
+        }
+        $mock->assertSentCount(1, CheckTaskGroupRequest::class);
+        $pending = $mock->findResponseByRequest(CheckTaskGroupRequest::class)->getPendingRequest();
+        expect($pending->body()->all())->toBe(['subtask' => 21, 'phase' => 'handoff']);
+        expect($pending->headers()->get('Idempotency-Key'))->toBe('group.check.c1');
+    })->with([[false, 'passed'], [false, 'failed'], [false, 'changed'], [true, 'passed'], [true, 'failed'], [true, 'changed']]);
+
+    it('refuses missing and invalid inputs before Gateway access', function (array $arguments, string $code): void {
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('tasks:check', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
+
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([
+        [[], 'tasks.group_required'],
+        [['group' => 'bad'], 'tasks.group_invalid'],
+        [['group' => '17'], 'tasks.subtask_required'],
+        [['group' => '17', '--subtask' => 'bad'], 'tasks.subtask_invalid'],
+        [['group' => '17', '--subtask' => '21'], 'tasks.phase_required'],
+        [['group' => '17', '--subtask' => '21', '--phase' => 'bad'], 'tasks.phase_invalid'],
+    ]);
 });

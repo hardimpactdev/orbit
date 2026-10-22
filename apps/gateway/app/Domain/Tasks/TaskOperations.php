@@ -79,7 +79,7 @@ final readonly class TaskOperations
         $operation = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))->first();
         if ($operation instanceof Operation) {
             $this->extension->execute();
-            $this->cancel->execute($operation);
+            $this->cancel->execute($operation, targetEnding: true);
         }
     }
 }

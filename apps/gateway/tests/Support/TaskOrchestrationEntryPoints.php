@@ -25,6 +25,7 @@ use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
+use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -62,6 +63,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskClaimAdmission;
@@ -221,6 +223,8 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
+        TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
         TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared claim provisioning; tasks.provision admits external groups and never starts a subtask or check.'],
         StartTaskProvisionAction::class => ['execute' => 'tasks.provision is the explicit external operation; shared admission requires an open external group.'],
         TaskProvisionOperation::class => [
@@ -250,6 +254,15 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        StartTaskCheckAction::class => ['execute' => 'Explicit external check start through shared admission.'],
+        TaskCheckOperation::class => [
+            'requireCheck' => 'Validates the workspace, current subtask, and baseline eligibility.',
+            'run' => 'Runs the external check operation without advancing task lifecycle.',
+            'waitingStep' => 'Supplies the waiting check hooks.',
+            'read' => 'Reconciles and runs the existing check under its own workspace lease.',
+            'stop' => 'Stops the operation check and removes its queued lease.',
+            'abandon' => 'Removes queued ownership without retrying an effect.',
+        ],
         TaskStatusMoves::class => [
             'group' => 'Validates external board moves without performing task effects.',
             'subtask' => 'Validates external board moves without performing task effects.',
@@ -806,6 +819,9 @@ final class TaskOrchestrationEntryPoints
             'lowestTodo' => 'Records existing check readings or reads task ordering without starting a check or turn.',
             'finishWorkspaceRoute' => 'Reads workspace state or records metadata; does not start agents, checks, or claims.',
             'workspaceRouteReady' => 'Reads workspace state or records metadata; does not start agents, checks, or claims.',
+            'baselineSetup' => 'Reads the shared baseline setup plan.',
+            'handoffCheck' => 'Builds the shared deliverable verification input.',
+            'groupImplementerStarted' => 'Reads whether any implementer has started in the group.',
             'hasImplementer' => 'Reads workspace state or records metadata; does not start agents, checks, or claims.',
             'recordSubtaskStart' => 'Reads workspace state or records metadata; does not start agents, checks, or claims.',
             'lockedTasks' => 'Reads workspace state or records metadata; does not start agents, checks, or claims.',

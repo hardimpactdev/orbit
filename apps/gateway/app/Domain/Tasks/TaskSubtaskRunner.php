@@ -338,7 +338,7 @@ final readonly class TaskSubtaskRunner
     /**
      * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, topology?: bool}|null
      */
-    private function handoffCheck(Task $task): ?array
+    public function handoffCheck(Task $task): ?array
     {
         $check = $this->deliverableCheck($task);
         $group = $task->parent;
@@ -602,8 +602,7 @@ final readonly class TaskSubtaskRunner
      */
     private function needsBaseline(Task $task): bool
     {
-        $started = Task::query()->where('parent_id', $task->parent_id)->whereNotNull('implementer_agent_thread_id')->exists()
-            || AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
+        $started = $this->groupImplementerStarted($task->parent);
 
         // ADR 0203: an incoming pull request's first final review ran the baseline without an implementer.
         $scope = $task->parent->reviewsIncomingPullRequest()
@@ -612,6 +611,12 @@ final readonly class TaskSubtaskRunner
 
         return ! $started && ! $scope->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Passed->value)->exists();
+    }
+
+    public function groupImplementerStarted(Task $group): bool
+    {
+        return Task::query()->where('parent_id', $group->id)->whereNotNull('implementer_agent_thread_id')->exists()
+            || AgentThread::query()->where('task_group_id', $group->id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
     }
 
     public function hasImplementer(Task $task): bool
@@ -721,6 +726,19 @@ final readonly class TaskSubtaskRunner
         $this->startBaseline($scheduler, $group, $task);
     }
 
+    /** @return list<array{name: string, command: string, timeout_seconds: int}> */
+    public function baselineSetup(Task $group): array
+    {
+        return array_values(ProjectLifecycleStep::query()
+            ->where('project_id', $group->project_id)
+            ->where('phase', LifecyclePhase::Setup->value)
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
+            ->all());
+    }
+
     private function startBaseline(TaskScheduler $scheduler, Task $group, Task $task): void
     {
         $instance = $group->taskable;
@@ -729,14 +747,7 @@ final readonly class TaskSubtaskRunner
 
             return;
         }
-        $setup = array_values(ProjectLifecycleStep::query()
-            ->where('project_id', $group->project_id)
-            ->where('phase', LifecyclePhase::Setup->value)
-            ->orderBy('position')
-            ->orderBy('id')
-            ->get()
-            ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
-            ->all());
+        $setup = $this->baselineSetup($group);
         $command = $instance->project->taskCheckCommand();
         $claim = null;
         try {

@@ -54,7 +54,7 @@ final readonly class CommandVocabulary
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
         'self-update' => ['self-update'],
-        'tasks' => ['cancel', 'close', 'complete', 'provision', 'status'],
+        'tasks' => ['cancel', 'check', 'close', 'complete', 'provision', 'status'],
         'tool' => ['adopt', 'scan'],
         'vault' => ['setup', 'status', 'sync', 'teardown'],
         'websocket' => ['rotate', 'sync'],

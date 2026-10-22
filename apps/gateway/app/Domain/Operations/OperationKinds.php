@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
+use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskProvisionOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
@@ -23,6 +24,8 @@ final readonly class OperationKinds
 
     public const string InstanceRollback = 'instance.rollback';
 
+    public const string TasksCheck = 'tasks.check';
+
     public const string TasksProvision = 'tasks.provision';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
@@ -35,6 +38,7 @@ final readonly class OperationKinds
     private const array Kinds = [
         self::InstanceDeploy => InstanceDeployOperation::class,
         self::InstanceRollback => InstanceRollbackOperation::class,
+        self::TasksCheck => TaskCheckOperation::class,
         self::TasksProvision => TaskProvisionOperation::class,
     ];
 

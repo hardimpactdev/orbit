@@ -176,9 +176,9 @@ final readonly class OperationRunner
     }
 
     /** A direct cancel confirms the step stopped before it frees the target. Errors reach the caller unchanged. */
-    public function cancelWaiting(Operation $operation): void
+    public function cancelWaiting(Operation $operation, bool $targetEnding = false): void
     {
-        $this->lease->hold($operation->id, function () use ($operation): void {
+        $this->lease->hold($operation->id, function () use ($operation, $targetEnding): void {
             $operation->refresh();
 
             if ($operation->status !== OperationStatus::Waiting) {
@@ -186,7 +186,16 @@ final readonly class OperationRunner
             }
 
             $step = $operation->steps()->where('status', OperationStepStatus::Waiting->value)->sole();
-            $this->stopWaiting($operation, $step, $this->kinds->for($operation->kind), new OperationRun($operation, $this->store));
+            $kind = $this->kinds->for($operation->kind);
+            try {
+                $this->stopWaiting($operation, $step, $kind, new OperationRun($operation, $this->store));
+            } catch (ResourceOperationException $exception) {
+                if (! $targetEnding || $exception->status !== 502) {
+                    throw $exception;
+                }
+                // Ending the target retains its unreachable workspace through the target's removal rules.
+                $this->finishStoppedStep($operation, $step, $kind);
+            }
         });
     }
 

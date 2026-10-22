@@ -27584,6 +27584,158 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/check": {
+      "post": {
+        "operationId": "tasks-check",
+        "summary": "Run a Task group check",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, and redacted output. A passed handoff commits without a CI push; a lost check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subtask": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Numeric subtask ID"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "baseline",
+                      "handoff"
+                    ],
+                    "description": "baseline or handoff"
+                  }
+                },
+                "required": [
+                  "subtask",
+                  "phase"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/check\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"subtask\": 1, \"phase\": \"baseline\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CheckTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CheckTaskGroupRequest(groupId: 1, subtask: 1, phase: 'baseline'))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/complete": {
       "post": {
         "operationId": "tasks-complete",
