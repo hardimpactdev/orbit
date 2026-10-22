@@ -8,6 +8,7 @@ use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
@@ -35,6 +36,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
+            'orchestration' => ['sometimes', 'string', Rule::enum(TaskOrchestration::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
@@ -65,6 +67,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'title',
                 'brief',
                 'status',
+                'orchestration',
                 'preview',
                 'tasks',
             ]);
@@ -98,6 +101,7 @@ final class CreateTaskGroupRequest extends FormRequest
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
             preview: $this->boolean('preview'),
+            orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::Tick->value)->toString()),
         );
     }
 }

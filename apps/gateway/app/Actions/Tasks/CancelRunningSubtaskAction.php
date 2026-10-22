@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskScheduler;
 use App\Models\Task;
 
@@ -23,6 +24,7 @@ final readonly class CancelRunningSubtaskAction
     public function execute(Task $group, Task $task): Task
     {
         $this->requireExtension->execute();
+        TaskGroupGuard::requireTick($group);
 
         $this->scheduler->cancelRunningSubtask($group, $task, function (Task $running) use ($group): void {
             $this->stop->execute($group, $running);

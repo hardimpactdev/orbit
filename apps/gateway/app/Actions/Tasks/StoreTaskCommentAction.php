@@ -51,6 +51,9 @@ final readonly class StoreTaskCommentAction
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload, ?Node $actor = null, ?string $requestId = null): TaskComment
     {
+        if (($payload['type'] ?? null) === TaskCommentType::Resolution->value || ($payload['type'] ?? null) === TaskCommentType::Resolution) {
+            TaskGroupGuard::requireTick($task);
+        }
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
@@ -157,6 +160,7 @@ final readonly class StoreTaskCommentAction
     /** Retry only the explicit persisted intent, never an older resolution from comment history. */
     public function retryPendingResolution(Task $task): void
     {
+        TaskGroupGuard::requireTick($task);
         TaskExecutionHold::run($task->parent, function () use ($task): void {
             $task->refresh();
             if ($task->pending_resolution_comment_id === null) {

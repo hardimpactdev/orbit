@@ -12,7 +12,9 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
@@ -30,6 +32,7 @@ final readonly class RetryTaskBaselineAction
     /** Called in the comment transaction: retry intent must commit before any remote mutation. */
     public function queue(Task $task, TaskComment $comment): bool
     {
+        TaskGroupGuard::requireTick($task);
         $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
         $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
         $check = $this->failedBaseline($group, $locked);
@@ -73,6 +76,7 @@ final readonly class RetryTaskBaselineAction
      */
     public function recover(Task $task): bool
     {
+        TaskGroupGuard::requireTick($task);
         if (! $this->pending($task)) {
             return false;
         }
@@ -130,7 +134,8 @@ final readonly class RetryTaskBaselineAction
     /** A failed baseline is retryable only while the entire group remains untouched and its watched PR has not ended. */
     private function failedBaseline(Task $group, Task $task): ?TaskCheck
     {
-        if ($group->status !== TaskGroupStatus::Running
+        if ($group->orchestration === TaskOrchestration::External
+            || $group->status !== TaskGroupStatus::Running
             || TaskExecutionHold::active($group)
             || $task->status !== TaskStatus::Running || ! $task->assistance_requested
             || $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction) {

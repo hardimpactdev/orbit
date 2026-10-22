@@ -310,6 +310,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'id' => 4,
                 'project_id' => 1,
                 'title' => 'Stalled',
+                'orchestration' => 'tick',
                 'brief' => 'The group is waiting.',
                 'status' => 'running',
                 'assistance_requested' => true,
@@ -594,7 +595,7 @@ function task_fixture_send(string $fixture, GatewayRequest $request): object
 it('bounds observed VM power without inferring it from group status', function (mixed $value, ?string $expected): void {
     $group = TaskGroupResponse::fromGatewayData([
         'id' => 1, 'project_id' => 1, 'title' => 'Sandbox', 'brief' => 'Power is separate.',
-        'status' => 'waiting_for_review', 'questions' => 0, 'escalations' => 0,
+        'orchestration' => 'tick', 'status' => 'waiting_for_review', 'questions' => 0, 'escalations' => 0,
         'vm_power' => $value,
     ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
@@ -689,3 +690,14 @@ it('refuses malformed nested workspace actors with a correlated safe error', fun
     'invalid time' => ['acquired_at', 42],
     'invalid uncertainty' => ['remote_uncertain', 'credential-sentinel'],
 ]);
+
+it('transports an explicit orchestration mode', function (string $mode): void {
+    $request = new CreateTaskGroupRequest(1, 'Work', 'Brief', orchestration: $mode);
+    expect(json_decode($request->body()->all(), true, flags: JSON_THROW_ON_ERROR)['orchestration'])->toBe($mode);
+})->with(['tick', 'external']);
+
+it('returns the external orchestration mode from the Gateway', function (): void {
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-create/external.json'), true, flags: JSON_THROW_ON_ERROR);
+    $group = TaskGroupResponse::fromGatewayData($fixture['body']['data'], task_request_id());
+    expect($group->orchestration)->toBe('external')->and($group->toArray()['orchestration'])->toBe('external');
+});

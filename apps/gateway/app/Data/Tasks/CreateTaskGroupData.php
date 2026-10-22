@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -22,5 +23,6 @@ final class CreateTaskGroupData extends Data
         public TaskGroupStatus $status,
         public array $tasks,
         public bool $preview = false,
+        public TaskOrchestration $orchestration = TaskOrchestration::Tick,
     ) {}
 }

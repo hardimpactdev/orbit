@@ -46,6 +46,7 @@ final readonly class TaskHandoffCi
      */
     public function test(TaskScheduler $scheduler, Task $group, Task $task, TaskCheck $check, TaskComment $receipt, ?int $threadId, string $checkName): RequiredCheckState
     {
+        TaskGroupGuard::requireTick($group);
         $commit = $check->commit_sha ?? $this->commit($scheduler, $group, $task, $check, $receipt, $threadId);
         if ($commit === null || $check->status !== TaskCheckStatus::Passed) {
             return $check->status === TaskCheckStatus::Failed ? RequiredCheckState::Failed : RequiredCheckState::Pending;

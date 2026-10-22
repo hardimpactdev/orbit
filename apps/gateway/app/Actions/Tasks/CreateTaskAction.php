@@ -29,6 +29,7 @@ final readonly class CreateTaskAction
             throw TaskGroupGuard::deliverablesRequired();
         }
 
+        TaskGroupGuard::supportOrchestration($group->groupOrchestration(), false, [$data->topology]);
         TaskTopology::assertFits([...TaskTopology::declarations($group), $data->topology]);
         $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 

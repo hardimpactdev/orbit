@@ -26,6 +26,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     public function spawnReviewer(Task $task): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedReviewer($task));
     }
 
@@ -51,12 +53,16 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     /** Sends an implementer's question to this subtask's reviewer, starting that reviewer when none exists. */
     public function consult(Task $task, string $message, ?string $key = null): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return $this->sendReviewer($task, $message, new TaskTurnMode(consult: true), $key);
     }
 
     /** Sends a direction resolution to this subtask's reviewer, starting that reviewer when none exists. */
     public function relay(Task $task, string $message): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return $this->sendReviewer($task, $message, new TaskTurnMode(relay: true));
     }
 
@@ -89,6 +95,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     /** Reserves the subtask reviewer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveReviewer(Task $task): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedReviewer($task));
     }
 
@@ -105,6 +113,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     /** Reserves the implementer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveImplementer(Task $task): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedImplementer($task));
     }
 
@@ -123,6 +133,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     public function spawnImplementer(Task $task): ?int
     {
+        TaskGroupGuard::requireTick($task);
+
         return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedImplementer($task));
     }
 
@@ -152,6 +164,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     public function requestReview(Task $task): void
     {
+        TaskGroupGuard::requireTick($task);
         TaskExecutionHold::run($task->parent, fn () => $this->requestAdmittedReview($task));
     }
 

@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
 use App\Models\Task;
 use Illuminate\Support\Collection;
@@ -70,7 +71,7 @@ final readonly class UpdateTaskGroupAction
             return $locked;
         }), wait: false);
 
-        if ($data->status === TaskGroupStatus::Todo) {
+        if ($data->status === TaskGroupStatus::Todo && $updated->orchestration === TaskOrchestration::Tick) {
             $this->scheduler->claimNext();
         }
 

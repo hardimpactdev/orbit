@@ -10,6 +10,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
@@ -35,6 +36,8 @@ final readonly class RequestEndedPullRequestAssistanceAction
     /** Returns whether this group must not advance, including while a pending notice is retried. */
     public function execute(Task $group): bool
     {
+        TaskGroupGuard::requireTick($group);
+
         return TaskExecutionHold::run($group, fn (): bool => $this->requestWhileAdmitted($group)) ?? true;
     }
 

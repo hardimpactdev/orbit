@@ -56,6 +56,7 @@ final readonly class TaskSubtaskRunner
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
     {
+        TaskGroupGuard::requireTick($group);
         $implementer = $observation->thread(TaskThreadRole::Implementer);
         if ($implementer === null) {
             return false;
@@ -386,6 +387,7 @@ final readonly class TaskSubtaskRunner
     /** @throws TaskTurnReceiptException */
     public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false, ?string $sendKey = null, bool $topologyAdmitted = false): bool
     {
+        TaskGroupGuard::requireTick($group);
         $leases = app(TaskWorkspaceLease::class);
         if ($threadId === null) {
             return $leases->run($group, $role->value, 'prepare:'.$task->id.':'.$role->value,
@@ -488,6 +490,7 @@ final readonly class TaskSubtaskRunner
 
     public function startTask(TaskScheduler $scheduler, Task $task): Task
     {
+        TaskGroupGuard::requireTick($task);
         $task->load('parent');
         if (TaskExecutionHold::active($task->parent) || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
             return $task->parent->fresh(['tasks', 'project', 'taskable']) ?? $task->parent;
@@ -502,6 +505,7 @@ final readonly class TaskSubtaskRunner
 
     public function startFirstTask(TaskScheduler $scheduler, Task $group): void
     {
+        TaskGroupGuard::requireTick($group);
         $first = $this->orderedTasks($group->tasks)->first();
 
         if (! $first instanceof Task || $first->status !== TaskStatus::Todo) {
@@ -541,6 +545,7 @@ final readonly class TaskSubtaskRunner
      */
     public function markRunning(Task $task, Collection $tasks): void
     {
+        TaskGroupGuard::requireTick($task);
         $running = $this->runningSibling($tasks, $task);
 
         if ($running instanceof Task) {
@@ -564,6 +569,7 @@ final readonly class TaskSubtaskRunner
      */
     public function beginRunningTask(TaskScheduler $scheduler, Task $task, bool $alreadyFetched = false): void
     {
+        TaskGroupGuard::requireTick($task);
         TaskExecutionHold::run($task->parent, fn () => $this->beginAdmittedTask($scheduler, $task, $alreadyFetched));
     }
 
@@ -901,6 +907,7 @@ final readonly class TaskSubtaskRunner
 
     public function assignImplementer(TaskScheduler $scheduler, Task $task, bool $alreadyFetched = false): void
     {
+        TaskGroupGuard::requireTick($task);
         TaskExecutionHold::run($task->parent, fn () => $this->assignAdmittedImplementer($scheduler, $task, $alreadyFetched));
     }
 
@@ -1083,6 +1090,7 @@ final readonly class TaskSubtaskRunner
     /** @param  list<TaskSessionDecision>  $decisions */
     public function tickSubtasks(TaskScheduler $scheduler, Task $group, bool $runningAtStart, array &$decisions): void
     {
+        TaskGroupGuard::requireTick($group);
         if ($group->status === TaskGroupStatus::Completed
             || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
             || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {

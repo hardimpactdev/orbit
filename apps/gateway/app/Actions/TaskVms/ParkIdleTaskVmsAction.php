@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -15,6 +17,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * Parks the `ready` task VM of each group that has nothing to do: it waits for review with a pull request,
@@ -76,6 +79,10 @@ final readonly class ParkIdleTaskVmsAction
     private static function idle(Builder $groups): Builder
     {
         return $groups
+            ->whereNotExists(static fn (QueryBuilder $operations): QueryBuilder => $operations->selectRaw('1')->from('operations')
+                ->where('target_type', OperationKinds::TaskGroupTarget)->whereColumn('target_id', 'tasks.id')
+                ->whereNotIn('status', array_map(static fn (OperationStatus $status): string => $status->value,
+                    array_filter(OperationStatus::cases(), static fn (OperationStatus $status): bool => $status->terminal()))))
             ->where('status', TaskGroupStatus::WaitingForReview)
             ->whereNotNull('pr_url')->where('pr_url', '!=', '')
             ->whereNull('watched_pr_completion')

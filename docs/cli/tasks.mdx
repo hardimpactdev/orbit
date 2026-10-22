@@ -104,7 +104,7 @@ A task of a review-and-merge Project, or one that reviews an incoming pull reque
 Create a task. It starts in `backlog` unless you ask for `todo`.
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--preview] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -114,6 +114,7 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the task. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
+| `--orchestration=MODE` | `tick` | `tick` or `external`. Create fixes the mode for the group. External groups skip the task engine and cannot declare topologies or use review and merge. An unknown mode returns `tasks.orchestration_invalid`. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 
 

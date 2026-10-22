@@ -116,6 +116,7 @@ final readonly class TaskScheduler
         }
 
         $groups = Task::topLevel()
+            ->where('orchestration', TaskOrchestration::Tick)
             ->with(['project', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])
             ->orderBy('id')
@@ -153,6 +154,14 @@ final readonly class TaskScheduler
             }
         }
 
+        foreach (Task::topLevel()->where('orchestration', TaskOrchestration::External)
+            ->whereNotIn('status', TaskGroupStatus::endedStatuses())->get() as $group) {
+            try {
+                $this->settling->observeExternalPullRequest($group);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
         $this->pendingThreads->run();
 
         return $decisions;

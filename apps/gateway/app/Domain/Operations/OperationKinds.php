@@ -25,6 +25,9 @@ final readonly class OperationKinds
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 
+    /** All operations on a task group hold the same target. */
+    public const string TaskGroupTarget = 'task_group';
+
     /** @var array<string, class-string<OperationKind>> */
     private const array Kinds = [
         self::InstanceDeploy => InstanceDeployOperation::class,
