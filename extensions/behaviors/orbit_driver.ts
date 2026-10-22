@@ -25,6 +25,11 @@ const GlobalArgsSchema = z.object({
   stageModel: z.string().default("orbit-stage"),
   maxLaunches: z.number().int().default(3),
   startGraceSeconds: z.number().int().default(180),
+  // When set, stage runs start through swamp serve (`--server --detach`) and
+  // liveness comes from swamp's own run summary instead of a claim pid.
+  serveUrl: z.string().optional(),
+  serveTokenFile: z.string().optional(),
+  maxRunSeconds: z.number().int().default(7200),
 });
 type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
@@ -109,6 +114,23 @@ interface Launch {
   launches: number;
   lastLaunchedAt: string;
   log: string;
+  runId?: string;
+}
+
+/** Status of a serve-started run from swamp's run summary, or null while it has none. */
+async function summaryStatus(ctx: Ctx, runId: string): Promise<string | null> {
+  const rows = (await ctx.queryData(
+    `name == "report-swamp-workflow-summary-json" && version > 0`,
+    "content",
+  )) as (string | null)[];
+  for (const c of rows) {
+    if (!c) continue;
+    try {
+      const j = JSON.parse(c) as { workflowRunId?: string; status?: string };
+      if (j.workflowRunId === runId) return j.status ?? "unknown";
+    } catch { /* not JSON */ }
+  }
+  return null;
 }
 
 /** Start one stage workflow run, detached. Phase 3 replaces this with a swamp serve API call. */
@@ -120,10 +142,24 @@ async function launchWorkflow(ctx: Ctx, workflow: string, key: string, inputs: R
   const inputFile = `${dir}/${key}.json`;
   const log = `${dir}/${key}.${n}.log`;
   await Deno.writeTextFile(inputFile, JSON.stringify(inputs));
-  const cmd = `exec swamp workflow run ${workflow} --input-file ${inputFile} --no-supersede > ${log} 2>&1`;
-  await new Deno.Command("setsid", { args: ["--fork", "sh", "-c", cmd], cwd: g.repoDir, stdin: "null", stdout: "null", stderr: "null" })
-    .spawn().status;
-  const launch = { key, workflow, launches: n, lastLaunchedAt: new Date().toISOString(), log };
+  let runId: string | undefined;
+  if (g.serveUrl) {
+    // Through swamp serve: the run lives in serve; --detach returns its id at once.
+    const out = await new Deno.Command("swamp", {
+      args: ["workflow", "run", workflow, "--server", g.serveUrl, "--token-file", g.serveTokenFile ?? "", "--detach",
+        "--input-file", inputFile, "--no-supersede", "--json"],
+      cwd: g.repoDir, stdin: "null", stdout: "piped", stderr: "piped",
+    }).output();
+    const text = new TextDecoder().decode(out.stdout);
+    await Deno.writeTextFile(log, text + new TextDecoder().decode(out.stderr));
+    if (!out.success) throw new Error(`serve launch of ${workflow} for ${key} failed; see ${log}`);
+    runId = (JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { runId: string }).runId;
+  } else {
+    const cmd = `exec swamp workflow run ${workflow} --input-file ${inputFile} --no-supersede > ${log} 2>&1`;
+    await new Deno.Command("setsid", { args: ["--fork", "sh", "-c", cmd], cwd: g.repoDir, stdin: "null", stdout: "null", stderr: "null" })
+      .spawn().status;
+  }
+  const launch = { key, workflow, launches: n, lastLaunchedAt: new Date().toISOString(), log, ...(runId ? { runId } : {}) };
   await ctx.writeResource("launch", `launch-${key}`, launch as unknown as Record<string, unknown>);
   return launch;
 }
@@ -138,7 +174,17 @@ async function workflowStep(ctx: Ctx, workItem: string, key: string, status: Sta
   }
   const prev = await latest<Launch>(ctx, ctx.definitionName, `launch-${key}`);
   const claim = await latest<{ pid: number; startedAt: string; runId: string }>(ctx, g.stageModel, `claim-${key}`);
-  if (prev) {
+  if (prev?.runId) {
+    // Serve mode: the run has ended once swamp wrote its summary.
+    const ended = await summaryStatus(ctx, prev.runId);
+    const age = (Date.now() - Date.parse(prev.lastLaunchedAt)) / 1000;
+    if (ended === null && age < g.maxRunSeconds) {
+      return { action: null, waiting: `stage run ${prev.runId.slice(0, 8)} for ${key} running (serve)` };
+    }
+    if (prev.launches >= g.maxLaunches) {
+      return { action: null, waiting: `assistance: ${prev.workflow} for ${key} ended ${prev.launches} times without recording ${status.work!.resultEvidence} (last ${ended ?? "overdue"}); run ${prev.runId}` };
+    }
+  } else if (prev) {
     const claimedThisLaunch = claim !== null && claim.startedAt >= prev.lastLaunchedAt;
     if (claimedThisLaunch && processAlive(claim.pid)) return { action: null, waiting: `stage run ${claim.runId.slice(0, 8)} for ${key} running` };
     const age = (Date.now() - Date.parse(prev.lastLaunchedAt)) / 1000;
@@ -248,7 +294,7 @@ export const behavior = {
   resources: {
     launch: {
       description: "Detached stage workflow launches per key",
-      schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string() }),
+      schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string(), runId: z.string().optional() }),
       lifetime: "30d",
       garbageCollection: 10,
     },

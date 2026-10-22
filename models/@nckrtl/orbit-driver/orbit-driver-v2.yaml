@@ -6,4 +6,6 @@ version: 1
 tags: {}
 globalArguments:
   factory: orbit-subtasks
+  serveUrl: ws://127.0.0.1:9417
+  serveTokenFile: /home/nckrtl/.config/swamp/serve-driver-token
 methods: {}

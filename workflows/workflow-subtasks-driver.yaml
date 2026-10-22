@@ -5,6 +5,9 @@ description: >-
   item takes one short, guarded step. Run it every minute (a CLI loop now,
   trigger.schedule under swamp serve in phase 3).
 tags: {}
+# One tick a minute under swamp serve (cron granularity is one minute).
+trigger:
+  schedule: "* * * * *"
 inputs:
   properties:
     maxSteps:
