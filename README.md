@@ -103,10 +103,11 @@ Orbit's caps (same in v1 and v2):
   key already committed; commits carry `Swamp-Idempotency-Key`; `report` is a
   no-op when the entry already has its evidence.
 - Driver: `orbit-driver-v2` (`workflows/workflow-subtasks-driver.yaml`). It
-  dispatches once per entry, starts the stage run detached
-  (`swamp workflow run --input-file`; in phase 3 a `swamp serve` call), judges
-  liveness from the claim's pid, and relaunches a dead run under the same key
-  (at most 3 launches, then it parks for assistance).
+  dispatches once per entry, starts the stage run on `swamp serve`
+  (`workflow run --server --detach`, run id kept in `launch-<key>`), judges
+  liveness from the run's summary or Swamp's run record, and relaunches a dead
+  run under the same key (at most 3 launches, then it parks for assistance).
+  Without `serveUrl` it falls back to a local detached run and the claim's pid.
 - Crash recovery the Swamp way also works: `swamp run doctor --fix` marks a
   killed run `interrupted`, `swamp workflow recover` auto-recovers it (the
   in-flight steps are guarded), and `resume` repeats nothing.
@@ -120,6 +121,30 @@ swamp model method run orbit-subtasks start --input workItem=bump-packages-php-s
 DRIVER_WORKFLOW=subtasks-driver bin/tick-loop 60 bump-packages-php-sdk
 swamp model method run orbit-subtasks summary --input workItem=bump-packages-php-sdk
 ~/.swamp/deno/deno test --allow-all tests/
+```
+
+### Serve on Beast
+
+- User unit `swamp-serve` on `127.0.0.1:9417` (9090 is Prometheus), token
+  auth, admin `user:nckrtl`, Club key from `~/.config/swamp/api-key`.
+  The drop-in `swamp-serve.service.d/path.conf` sets `PATH` (Composer, PHP,
+  `claude`, `codex`) and turns off update checks and telemetry.
+- `subtasks-driver` has a 1-minute `trigger.schedule`. Pause it with
+  `swamp workflow schedule pause subtasks-driver --reason …`.
+- The driver authenticates with the serve token `serve-driver` in
+  `~/.config/swamp/serve-driver-token` (mode 600).
+- Serve does not reload extension code. Restart the unit after a change to
+  `extensions/`, when no stage run is in flight.
+- `stage-implement` runs Codex with `sandbox: danger-full-access`: Beast sets
+  `kernel.apparmor_restrict_unprivileged_userns=1`, so Codex's bwrap sandbox
+  cannot start. The workspace is a disposable scratch worktree.
+- `stage-review` allows `Bash(tee:*)`, which agent-runner uses to write its
+  result. A review with no result counts as a failed run, not a finding.
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+systemctl --user restart swamp-serve
+journalctl --user -u swamp-serve -f -o cat
 ```
 
 The stage workflows were generated once and are edited as YAML from here on.
