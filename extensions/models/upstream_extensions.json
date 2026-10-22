@@ -23,5 +23,50 @@
     "filesChecksum": "bd88c6fde30717cda01bd6cc80adae5fc1661c7c2f4cbd2030ac0c2dde48af80",
     "serverUrl": "https://swamp-club.com",
     "publishedChannel": "stable"
+  },
+  "@swamp/git": {
+    "version": "2026.10.16.1",
+    "pulledAt": "2026-10-22T10:21:24.690Z",
+    "files": [
+      ".swamp/pulled-extensions/@swamp/git/files/LICENSE.txt",
+      ".swamp/pulled-extensions/@swamp/git/files/README.md",
+      ".swamp/pulled-extensions/@swamp/git/manifest.yaml",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/checks.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/operations.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/paths.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/runner.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/schemas.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/tracing.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/_lib/types.ts",
+      ".swamp/pulled-extensions/@swamp/git/models/git.ts"
+    ],
+    "checksum": "2d7df34046c8ccabb3fdbcc47ee0e3455813b61c28282be34b9cedccfddca7fe",
+    "filesChecksum": "f939ae4639cfe7b9acc03449083c746dd2dfc742e23cd83a96a3fefc1eeb22f0",
+    "serverUrl": "https://swamp-club.com",
+    "publishedChannel": "stable"
+  },
+  "@swamp/agent-runner": {
+    "version": "2026.10.17.3",
+    "pulledAt": "2026-10-22T10:21:32.234Z",
+    "files": [
+      ".swamp/pulled-extensions/@swamp/agent-runner/files/LICENSE.txt",
+      ".swamp/pulled-extensions/@swamp/agent-runner/files/README.md",
+      ".swamp/pulled-extensions/@swamp/agent-runner/manifest.yaml",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/auth.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/platform.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/providers/claude.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/providers/codex.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/providers/registry.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/review.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/runner.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/schemas.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/tracing.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/_lib/types.ts",
+      ".swamp/pulled-extensions/@swamp/agent-runner/models/agent_runner.ts"
+    ],
+    "checksum": "74b0b306c55a83d34a899c356a7228fcf8af0660cbc8bcbda8bc2c2453963143",
+    "filesChecksum": "3ea35dc2acb4fc76ebc91f9b543faa144ec8c9af8e501af1973b6fc6e2cdd9a4",
+    "serverUrl": "https://swamp-club.com",
+    "publishedChannel": "stable"
   }
 }

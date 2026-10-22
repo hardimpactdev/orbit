@@ -1,0 +1,12 @@
+type: '@swamp/agent-runner'
+typeVersion: 2026.10.17.1
+id: cfb03a74-f772-4676-92dd-9214db619240
+name: agent-claude
+version: 1
+tags: {}
+globalArguments:
+  provider: claude
+  version: 2.1.292
+  auth: cli
+  defaultModel: claude-opus-5-5
+methods: {}
