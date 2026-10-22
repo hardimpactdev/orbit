@@ -69,6 +69,38 @@ final readonly class PostgresStatements
             ."ALTER DEFAULT PRIVILEGES FOR ROLE {$ownerName} IN SCHEMA public GRANT {$sequences} ON SEQUENCES TO {$user};\n\\connect postgres\n";
     }
 
+    /**
+     * @param  list<string>  $databases
+     * @param  list<string>  $usernames
+     */
+    public function removalBlockers(array $databases, array $usernames): string
+    {
+        $names = implode(', ', array_map($this->literal(...), $databases)) ?: 'NULL';
+        $roles = implode(', ', array_map($this->literal(...), $usernames)) ?: 'NULL';
+
+        return <<<SQL
+            SELECT DISTINCT blocker FROM (
+                SELECT datname::text AS blocker FROM pg_stat_activity WHERE datname IN ({$names})
+                UNION ALL
+                SELECT database::text FROM pg_replication_slots WHERE database IN ({$names})
+                UNION ALL
+                SELECT database::text FROM pg_prepared_xacts WHERE database IN ({$names})
+                UNION ALL
+                SELECT d.datname::text FROM pg_subscription s JOIN pg_database d ON d.oid = s.subdbid WHERE d.datname IN ({$names})
+                UNION ALL
+                SELECT COALESCE(d.datname::text, owned.datname::text, r.rolname::text)
+                FROM pg_shdepend dep
+                JOIN pg_roles r ON dep.refclassid = 'pg_authid'::regclass AND dep.refobjid = r.oid
+                LEFT JOIN pg_database d ON d.oid = dep.dbid
+                LEFT JOIN pg_database owned ON dep.dbid = 0 AND dep.classid = 'pg_database'::regclass AND dep.objid = owned.oid
+                WHERE r.rolname IN ({$roles})
+                  AND (dep.dbid <> 0 AND d.datname NOT IN ({$names})
+                       OR dep.dbid = 0 AND (owned.oid IS NULL OR owned.datname NOT IN ({$names})))
+            ) blockers ORDER BY blocker;
+
+            SQL;
+    }
+
     public function dropDatabase(string $database): string
     {
         return 'DROP DATABASE IF EXISTS '.$this->identifier($database).";\n";

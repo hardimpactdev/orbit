@@ -176,7 +176,9 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Owned databases
 
-`runtime_cleanup` drops each [database the Instance owns](/reference/database-connections#owned-databases): the database and its test databases on the [Database server](/reference/database-servers), or the SQLite file. When the Instance owns no database on a server any more, its user there goes too. It deletes the connection record and every attachment only after the server drop succeeds. A database the Instance only has attached stays, and only the attachment goes. A failed drop keeps the member in `runtime_cleanup`, and a retry drops again. A database that is already gone counts as done.
+`runtime_cleanup` first checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, and connection records stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
+
+After this preflight, it drops all planned databases and test databases on each [Database server](/reference/database-servers) before their unshared users, then deletes their records and attachments. It also removes owned SQLite files. A database the Instance only has attached stays, and only the attachment goes. A failed drop keeps the member in `runtime_cleanup`, and a retry drops again. A database that is already gone counts as done.
 
 ### Transfer history
 

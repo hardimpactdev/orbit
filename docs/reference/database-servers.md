@@ -234,7 +234,11 @@ On a Valkey server, the Gateway connects to the Node's WireGuard address and the
 
 ## Remove a database
 
-`database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. Then it deletes the record. A failed drop keeps the record, and a repeat drops again.
+`database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
+
+Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
+
+A blocker returns `database.in_use` (409), names the affected databases or users, and leaves databases, users, attachments, and records unchanged. Stop clients and remove or move the blocking dependencies, then retry. Orbit never force-disconnects clients. A server or transport failure after dropping starts can still interrupt removal; retain the record and repeat the same command to finish.
 
 On a Valkey server, `database:destroy` deletes the connection's ACL user with `ACL DELUSER` and runs `ACL SAVE`. The user's keys stay. A connection without a username, such as one linked by adoption, logs in as `default`, so destroying it deletes only the record.
 
@@ -300,11 +304,11 @@ The server commands return these codes.
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
+| `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
 | `database.name_conflict` | 409 | The name is taken on the server. |
 | `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
 
-PostgreSQL refuses database removal while clients remain connected; stop those clients and retry. Orbit does not force-disconnect them.
 
 ## Why it works this way
 
@@ -371,3 +375,7 @@ Replication consumers need the same current and future table reads as a managed 
 ### PostgreSQL workers exist before tests start
 
 PostgreSQL has no database prefix grant. Giving an Instance `CREATEDB` would let it create databases outside its managed set. Orbit therefore creates a bounded pool as admin, using its normal managed ownership and public-schema grants. This serves the mission principles **One way, one name** and **Lean**. Hand-written grants, bespoke roles, a repository-specific parallel-testing provider, and a custom test runner are rejected. Stock Laravel probes each worker database and reuses it when the connection succeeds. The Instance can migrate and reset tables as owner without the right to create databases.
+
+### Check the whole database set before removal
+
+Database removal follows Orbit’s existing refusal rule for connected clients. `DROP DATABASE ... WITH (FORCE)` was rejected because it would disconnect clients without a separate choice and still fails on logical replication slots, subscriptions, and prepared transactions. Preflight checks every planned database and every role being removed before destructive SQL runs. PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure failure still requires a retry. Keep clients stopped and avoid changing server dependencies during removal. Missing databases and users count as removed on retry.

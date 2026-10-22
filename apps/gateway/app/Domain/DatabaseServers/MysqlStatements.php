@@ -70,6 +70,33 @@ final readonly class MysqlStatements
         ]);
     }
 
+    /**
+     * @param  list<string>  $databases
+     * @param  list<string>  $usernames
+     */
+    public function removalBlockers(array $databases, array $usernames): string
+    {
+        $names = implode(', ', array_map($this->string(...), $databases)) ?: 'NULL';
+        $definers = implode(', ', array_map(fn (string $username): string => $this->string($username.'@%'), $usernames)) ?: 'NULL';
+
+        return <<<SQL
+            SELECT DISTINCT blocker FROM (
+                SELECT DB AS blocker FROM information_schema.PROCESSLIST WHERE DB IN ({$names}) AND ID <> CONNECTION_ID()
+                UNION ALL
+                SELECT TABLE_SCHEMA FROM information_schema.VIEWS WHERE DEFINER IN ({$definers}) AND TABLE_SCHEMA NOT IN ({$names})
+                UNION ALL
+                SELECT ROUTINE_SCHEMA FROM information_schema.ROUTINES WHERE DEFINER IN ({$definers}) AND ROUTINE_SCHEMA NOT IN ({$names})
+                UNION ALL
+                SELECT TRIGGER_SCHEMA FROM information_schema.TRIGGERS WHERE DEFINER IN ({$definers}) AND TRIGGER_SCHEMA NOT IN ({$names})
+                UNION ALL
+                SELECT EVENT_SCHEMA FROM information_schema.EVENTS WHERE DEFINER IN ({$definers}) AND EVENT_SCHEMA NOT IN ({$names})
+                UNION ALL
+                SELECT TABLE_SCHEMA FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA IN ({$names}) AND TABLE_SCHEMA <> REFERENCED_TABLE_SCHEMA
+            ) blockers ORDER BY blocker;
+
+            SQL;
+    }
+
     public function dropDatabase(string $database): string
     {
         return $this->lines(['DROP DATABASE IF EXISTS '.$this->database($database).';']);

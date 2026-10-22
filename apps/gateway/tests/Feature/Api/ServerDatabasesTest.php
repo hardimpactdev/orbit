@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
+use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
@@ -24,9 +25,39 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\TestCase;
+
+require_once __DIR__.'/../../Support/PostgresServer.php';
 
 const SERVER_DATABASE_ROOT_SECRET = 'server-root-secret-5d1e';
+
+// Only the privileged MySQL regression uses this disposable server.
+$mysqlRemovalContainer = 'orbit-test-destroy-mysql-'.bin2hex(random_bytes(6));
+$mysqlRemovalProcess = null;
+beforeAll(function () use ($mysqlRemovalContainer, &$mysqlRemovalProcess): void {
+    if (getenv('ORBIT_TEST_DOCKER') !== '1') {
+        return;
+    }
+    $mysqlRemovalProcess = new SymfonyProcess(['docker', 'run', '--rm', '--name', $mysqlRemovalContainer, '--log-driver=none', '--publish=127.0.0.1::3306', '--tmpfs=/var/lib/mysql', '--env=MYSQL_ALLOW_EMPTY_PASSWORD=yes', '--env=MYSQL_ROOT_HOST=%', 'mysql:8.4', '--skip-log-bin', '--innodb-buffer-pool-size=32M']);
+    $mysqlRemovalProcess->setTimeout(60)->start();
+    try {
+        if (! $mysqlRemovalProcess->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'port: 3306'))) {
+            throw new RuntimeException('The disposable MySQL server did not start.');
+        }
+    } catch (Throwable $e) {
+        (new SymfonyProcess(['docker', 'rm', '--force', '--volumes', $mysqlRemovalContainer]))->run();
+        $mysqlRemovalProcess->stop();
+        throw $e;
+    }
+});
+afterAll(function () use ($mysqlRemovalContainer, &$mysqlRemovalProcess): void {
+    if ($mysqlRemovalProcess !== null) {
+        (new SymfonyProcess(['docker', 'rm', '--force', '--volumes', $mysqlRemovalContainer]))->run();
+        $mysqlRemovalProcess->stop();
+    }
+});
 
 beforeEach(function (): void {
     $this->admin = new FakeDatabaseServerAdmin;
@@ -635,7 +666,7 @@ describe('managed PostgreSQL test databases', function (): void {
         expect($connections[0]->username)->toBe($connections[1]->username);
         expect($connections[0]->password)->toBe($connections[1]->password);
         $this->admin->statements = [];
-        $this->admin->rows['pg_database'] = ['app_test_test_99', 'unrelated'];
+        $this->admin->rows['SELECT datname FROM pg_database'] = ['app_test_test_99', 'unrelated'];
         DatabaseConnectionTarget::query()->delete();
         $this->deleteJson('/api/v1/database-connections/app')->assertOk();
         expect($this->admin->sql())->toContain('DROP DATABASE IF EXISTS "app_test_test_1";', 'DROP DATABASE IF EXISTS "app_test_test_2";')->not->toContain('app_test_test_99', 'unrelated', 'DROP ROLE', 'other');
@@ -658,3 +689,234 @@ describe('managed PostgreSQL test databases', function (): void {
         expect($schema['oneOf'][2]['properties'])->not->toHaveKey('test_processes');
     });
 });
+
+describe('managed database removal preflight', function (): void {
+    it('refuses MySQL sessions and external definers before dropping anything', function (): void {
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug])->assertCreated();
+        $this->admin->statements = [];
+        $this->admin->rows['SELECT DISTINCT blocker'] = ['app', 'external'];
+
+        $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+            ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app', 'external']);
+
+        expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP USER');
+        $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+    });
+
+    it('checks all Instance connections before dropping the first and finishes on retry', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        foreach (['app', 'other'] as $slug) {
+            $this->postJson('/api/v1/database-connections', ['slug' => $slug, 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])->assertCreated();
+        }
+        $this->admin->statements = [];
+        $this->admin->rows['SELECT DISTINCT blocker'] = ['other_test_test_2'];
+
+        expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
+            ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.in_use'));
+
+        expect($this->admin->sql())->not->toContain('DROP DATABASE', 'DROP ROLE');
+        $this->assertDatabaseCount('database_connections', 2);
+        $this->assertDatabaseCount('database_connection_targets', 1);
+        expect($this->admin->statements[0])->toContain("'app'", "'other_test_test_2'", "'dlf_feature_x'");
+        $this->admin->rows = [];
+
+        app(DropOwnedDatabasesAction::class)->execute($this->instance->id);
+
+        $this->assertDatabaseCount('database_connections', 0);
+        $this->assertDatabaseCount('database_connection_targets', 0);
+        expect($this->admin->sql())->toContain('DROP ROLE IF EXISTS "dlf_feature_x";');
+    });
+
+    it('refuses a real PostgreSQL session on any planned database without dropping anything', function (string $busy): void {
+        postgres_statements_server(function (Closure $psql, string $directory) use ($busy): void {
+            server_database_live_postgres($this, $psql);
+            $session = new PDO('pgsql:host='.$directory.';dbname='.$busy, 'orbit_test');
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', [$busy]);
+
+            server_database_assert_pool_present($psql);
+            $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            $session = null;
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+            expect($psql("SELECT count(*) FROM pg_roles WHERE rolname = 'dlf_feature_x';"))->toBe('0');
+        });
+    })->with(['app', 'app_test', 'app_test_test_2']);
+
+    it('refuses a real logical slot before any drop whether active or inactive', function (bool $active): void {
+        postgres_statements_server(function (Closure $psql, string $directory) use ($active): void {
+            server_database_live_postgres($this, $psql);
+            $psql("\\connect app_test_test_2
+CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replication_slot('orbit_removal', 'pgoutput');");
+            $receiver = null;
+            try {
+                if ($active) {
+                    $bin = rtrim(getenv('ORBIT_POSTGRES18_BIN') ?: '/usr/lib/postgresql/18/bin', '/');
+                    $receiver = new SymfonyProcess([$bin.'/pg_recvlogical', '--host='.$directory, '--username=orbit_test', '--dbname=app_test_test_2', '--slot=orbit_removal', '--start', '--file=/dev/null', '--no-loop', '--option=proto_version=1', '--option=publication_names=orbit_removal', '--verbose']);
+                    $receiver->start();
+                    $receiver->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'streaming initiated'));
+                    $psql("DO \$wait\$ BEGIN FOR attempt IN 1..100 LOOP EXIT WHEN (SELECT active FROM pg_replication_slots WHERE slot_name = 'orbit_removal'); PERFORM pg_sleep(0.01); END LOOP; END \$wait\$;");
+                    $this->assertTrue($receiver->isRunning(), $receiver->getErrorOutput());
+                    expect($psql("SELECT active::text FROM pg_replication_slots WHERE slot_name = 'orbit_removal';"))->toBe('true');
+                }
+                $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                    ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
+                server_database_assert_pool_present($psql);
+                $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            } finally {
+                $receiver?->stop();
+            }
+            $psql("SELECT pg_drop_replication_slot('orbit_removal');");
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+        });
+    })->with([false, true]);
+
+    it('refuses outside role dependencies before any drop', function (string $dependency): void {
+        postgres_statements_server(function (Closure $psql) use ($dependency): void {
+            server_database_live_postgres($this, $psql);
+            $psql($dependency);
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use');
+
+            server_database_assert_pool_present($psql);
+            $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+        });
+    })->with([
+        'database owner' => 'CREATE DATABASE outside OWNER dlf_feature_x;',
+        'table owner' => 'CREATE TABLE outside_object (id int); ALTER TABLE outside_object OWNER TO dlf_feature_x;',
+        'grant' => 'GRANT CONNECT ON DATABASE postgres TO dlf_feature_x;',
+        'prepared transaction' => "\\connect app_test_test_2\nBEGIN; SELECT 1; PREPARE TRANSACTION 'orbit_removal';",
+        'subscription' => "\\connect app_test_test_2\nCREATE SUBSCRIPTION orbit_removal CONNECTION '' PUBLICATION orbit_removal WITH (connect = false, slot_name = NONE);",
+    ]);
+
+    it('removes an Instance set with cross-database grants before dropping its distinct owners', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            server_database_live_postgres($this, $psql);
+            $this->postJson('/api/v1/database-connections', ['slug' => 'other', 'server' => $this->server->slug])->assertCreated();
+            DatabaseConnection::query()->where('slug', 'other')->update(['owner_instance_id' => $this->instance->id]);
+            $psql("\\connect other\nCREATE TABLE shared_table (id int); GRANT SELECT ON shared_table TO dlf_feature_x;");
+            $session = new PDO('pgsql:host='.$directory.';dbname=other', 'orbit_test');
+
+            expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
+                ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.in_use'));
+
+            server_database_assert_pool_present($psql);
+            $this->assertDatabaseCount('database_connections', 2);
+            $session = null;
+
+            app(DropOwnedDatabasesAction::class)->execute($this->instance->id);
+
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%' OR datname = 'other';"))->toBe('0');
+            expect($psql("SELECT count(*) FROM pg_roles WHERE rolname IN ('dlf_feature_x', 'other');"))->toBe('0');
+            $this->assertDatabaseCount('database_connections', 0);
+        });
+    });
+
+    it('finishes a real PostgreSQL removal after an injected halfway failure', function (): void {
+        postgres_statements_server(function (Closure $psql): void {
+            server_database_live_postgres($this, $psql, failHalfway: true);
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertStatus(502)
+                ->assertJsonPath('error.code', 'database.server_command_failed');
+
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname IN ('app', 'app_test');"))->toBe('0');
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname IN ('app_test_test_1', 'app_test_test_2');"))->toBe('2');
+            $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+            expect($psql("SELECT count(*) FROM pg_roles WHERE rolname = 'dlf_feature_x';"))->toBe('0');
+            $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        });
+    });
+});
+
+/** Run the real SQL against a disposable PostgreSQL server instead of SSH. */
+function server_database_live_postgres(TestCase $test, Closure $psql, bool $failHalfway = false): void
+{
+    $test->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $admin = Mockery::mock(DatabaseServerAdmin::class);
+    $admin->shouldReceive('execute')->andReturnUsing(static function (DatabaseServer $server, string $sql) use ($psql, &$failHalfway): array {
+        if ($failHalfway && str_contains($sql, 'DROP DATABASE')) {
+            $failHalfway = false;
+            $psql('DROP DATABASE IF EXISTS "app"; DROP DATABASE IF EXISTS "app_test";');
+            throw new ResourceOperationException('database.server_command_failed', 'Simulated transport failure.', 502);
+        }
+        $output = $psql($sql);
+
+        return $output === '' ? [] : explode("\n", $output);
+    });
+    app()->instance(DatabaseServerAdmin::class, $admin);
+    $test->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $test->server->slug, 'instance_id' => $test->instance->id, 'test_processes' => 2])->assertCreated();
+    DatabaseConnectionTarget::query()->delete();
+}
+
+function server_database_assert_pool_present(Closure $psql): void
+{
+    expect($psql("SELECT count(*) FROM pg_database WHERE datname IN ('app', 'app_test', 'app_test_test_1', 'app_test_test_2');"))->toBe('4');
+    expect($psql("SELECT count(*) FROM pg_roles WHERE rolname = 'dlf_feature_x';"))->toBe('1');
+}
+
+describe('MySQL removal against a real server', function () use ($mysqlRemovalContainer): void {
+    it('checks sessions, outside definers and incoming foreign keys before any drop', function () use ($mysqlRemovalContainer): void {
+        if (getenv('ORBIT_TEST_DOCKER') !== '1') {
+            $this->markTestSkipped('Set ORBIT_TEST_DOCKER=1 to run against MySQL in Docker.');
+        }
+        $container = $mysqlRemovalContainer;
+        $mysql = static function (string $sql) use ($container): array {
+            $command = new SymfonyProcess(['docker', 'exec', '-i', $container, 'mysql', '--user=root', '--batch', '--skip-column-names']);
+            $output = trim($command->setInput($sql)->mustRun()->getOutput());
+
+            return $output === '' ? [] : explode("\n", $output);
+        };
+        try {
+            $port = trim((new SymfonyProcess(['docker', 'port', $container, '3306']))->mustRun()->getOutput());
+            $admin = Mockery::mock(DatabaseServerAdmin::class);
+            $admin->shouldReceive('execute')->andReturnUsing(static fn (DatabaseServer $server, string $sql): array => $mysql($sql));
+            app()->instance(DatabaseServerAdmin::class, $admin);
+            $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id])->assertCreated();
+            DatabaseConnectionTarget::query()->delete();
+            $mysql('CREATE DATABASE app_test_test_1; CREATE DATABASE app_test_test_2; CREATE DATABASE outside; CREATE TABLE outside.source (id int PRIMARY KEY); CREATE VIEW outside.unrelated AS SELECT * FROM outside.source;');
+            $assertIntact = function () use ($mysql): void {
+                expect($mysql("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('app', 'app_test', 'app_test_test_1', 'app_test_test_2');"))->toBe(['4']);
+                expect($mysql("SELECT COUNT(*) FROM mysql.user WHERE User = 'dlf_feature_x';"))->toBe(['1']);
+                $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            };
+            $session = new PDO('mysql:host=127.0.0.1;port='.substr($port, strrpos($port, ':') + 1).';dbname=app_test_test_2', 'root');
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
+            $assertIntact();
+            $session = null;
+            $mysql("CREATE DEFINER = 'dlf_feature_x'@'%' VIEW outside.dependent AS SELECT * FROM outside.source;");
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['outside']);
+            $assertIntact();
+            $mysql('DROP VIEW outside.dependent; CREATE TABLE app_test.parent (id int PRIMARY KEY); CREATE TABLE outside.child (id int, FOREIGN KEY (id) REFERENCES app_test.parent(id));');
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['outside']);
+            $assertIntact();
+            $mysql('DROP TABLE outside.child; CREATE TABLE app_test_test_2.child (id int, FOREIGN KEY (id) REFERENCES app_test.parent(id));');
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
+            $assertIntact();
+            $mysql('DROP TABLE app_test_test_2.child;');
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+            expect($mysql("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE 'app%';"))->toBe(['0']);
+            expect($mysql("SELECT COUNT(*) FROM mysql.user WHERE User = 'dlf_feature_x';"))->toBe(['0']);
+            expect($mysql('SELECT COUNT(*) FROM outside.unrelated;'))->toBe(['0']);
+            $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        } finally {
+            $session = null;
+
+        }
+    });
+})->group('privileged');
