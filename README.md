@@ -51,9 +51,8 @@ transitive ones as well. `dev-*` and path packages are skipped. `apps/agent`
 
 ## Phase 2: the subtask factory, run locally
 
-One upgrade-plan subtask is one work item in the `orbit-subtask-factory`
-instance of `@swamp/software-factory`
-(`models/@swamp/software-factory/orbit-subtask-factory.yaml`):
+One upgrade-plan subtask is one work item of `@swamp/software-factory`. There
+are two versions; **v2 is the current one**, aligned with Swamp's practices.
 
 ```
 mechanical → handoff → review → approved
@@ -67,54 +66,78 @@ mechanical → handoff → review → approved
 | --- | --- | --- |
 | mechanical | `composer update` in the sub-project, committed with the key as a trailer | none |
 | handoff | the sub-project's `composer check` and `composer test` (full Pest suite) | none |
-| implement | one `codex exec` turn (gpt-6.1-sol) with the failing output or open findings | 1 per entry |
-| consult | the reviewer (`claude -p`, claude-opus-5-5) answers a `BLOCKED:` question | 1 per entry |
-| review | one read-only `claude -p` review; records a `code-review` findings artifact | 1 per entry |
+| implement | one Codex turn (gpt-6.1-sol, high) with the failing output, open findings or a consult answer | 1 per entry |
+| consult | the reviewer (Claude, claude-opus-5-5) answers a `BLOCKED:` question | 1 per entry |
+| review | one read-only Claude review; records a `code-review` findings artifact | 1 per entry |
 
-Both CLIs reach their models through CLIProxyAPI (AI Router) with the user's
-existing config; Swamp itself never calls an LLM.
+Both agents reach their models through CLIProxyAPI (AI Router). Swamp itself
+never calls an LLM.
 
-Orbit's caps:
+Orbit's caps (same in v1 and v2):
 
 - Consult cap 2: `consult.maxCycles: 2`. The 3rd consult parks for
   `approve gateId=cycle-override:consult`.
-- Handoff reminders 3: the handoff effect records `consecutiveFailures`,
-  computed from its own markers and reset by a pass. `fail` is open while it
-  is ≤ 3; the 4th failure only has `assist`, which needs `handoff-assistance`.
+- Handoff reminders 3: each handoff records `consecutiveFailures`, reset by a
+  pass. `fail` is open while it is ≤ 3; the 4th failure only has `assist`,
+  which needs `handoff-assistance`.
 - Max cycles: implement 6, review 3, handoff 10. A trip parks for
   `cycle-override:<stage>`; grants add one entry each.
 
-### How a work item moves
+### v2: stage workflows (`orbit-subtasks`)
 
-`workflows/workflow-subtask-driver.yaml` is one tick: `orbit-driver.tick` takes
-each active work item one short step.
-
-1. **Dispatch**: `record_dispatch` once per stage entry, then
-   `orbit-subtask.run`, which launches the effect as a detached job.
-2. **Poll**: `orbit-subtask.run` again. A running job is reported. A dead job
-   with no result (lock free) is relaunched under the same key, at most 3
-   times. A finished job is mapped to artifacts and the stage's resultEvidence,
-   which the driver records.
-3. **Advance** along the one satisfied transition, or park with what a human
-   must approve.
-
-The driver never dispatches an entry twice, so the factory's dispatch guard is
-never used up by recovery. Exactly-once lives in the effects: the key is
-`<workItem>.<stage>.c<cycle>`, a marker dir per key holds a flock and
-`result.json`, and git commits carry `Swamp-Idempotency-Key`.
+- Factory: `models/@swamp/software-factory/orbit-subtasks.yaml`. Each stage's
+  work is `mode: workflow`; every transition also needs `workflow-succeeded`,
+  verified against Swamp's own run record.
+- Stage workflows: `workflows/workflow-stage-{mechanical,handoff,implement,consult,review}.yaml`.
+  They run on `@swamp/git` (`ensure_worktree`, `commit`, `log`, `diff`),
+  `@nckrtl/composer` (`install_all`, `update`, `script`; allowlisted child
+  env) and `@swamp/agent-runner` (Claude `review`/`run`; the `run_codex`
+  extension in `extensions/behaviors/agent_runner_codex.ts` routes Codex
+  through CLIProxyAPI until lab #3769 lands). The Codex token helper is the
+  vault secret `default/CLIPROXY_CODEX_AUTH`.
+- Each run claims its key (`orbit-stage.claim`), and its last step
+  (`orbit-stage.report`) records the stage's artifacts and resultEvidence with
+  `run.id` (the factory DESIGN's self-reporting variant).
+- Exactly-once: guards check live git state with
+  `model.method("orbit-stage", "committed", …).dataHandles[0]` and skip work a
+  key already committed; commits carry `Swamp-Idempotency-Key`; `report` is a
+  no-op when the entry already has its evidence.
+- Driver: `orbit-driver-v2` (`workflows/workflow-subtasks-driver.yaml`). It
+  dispatches once per entry, starts the stage run detached
+  (`swamp workflow run --input-file`; in phase 3 a `swamp serve` call), judges
+  liveness from the claim's pid, and relaunches a dead run under the same key
+  (at most 3 launches, then it parks for assistance).
+- Crash recovery the Swamp way also works: `swamp run doctor --fix` marks a
+  killed run `interrupted`, `swamp workflow recover` auto-recovers it (the
+  in-flight steps are guarded), and `resume` repeats nothing.
+- One Composer and one agent-runner definition per work item
+  (`composer-<workItem>`, `agent-claude-<workItem>`, `agent-codex-<workItem>`):
+  a long step holds its definition's lock, and other steps on the same
+  definition fail after `SWAMP_LOCK_TIMEOUT_MS` (60 s).
 
 ```bash
-swamp model method run orbit-subtask-factory start --input workItem=bump-packages-php-sdk
-bin/tick-loop 60 bump-packages-php-sdk          # the cron stand-in
-swamp model method run orbit-subtask-factory summary --input workItem=bump-packages-php-sdk
+swamp model method run orbit-subtasks start --input workItem=bump-packages-php-sdk
+DRIVER_WORKFLOW=subtasks-driver bin/tick-loop 60 bump-packages-php-sdk
+swamp model method run orbit-subtasks summary --input workItem=bump-packages-php-sdk
+~/.swamp/deno/deno test --allow-all tests/
 ```
 
-Kill tests: `swamp model method run orbit-driver tick --input killAt=<point>`
-SIGKILLs the tick at `after-dispatch`, `after-launch`, `before-evidence`,
-`after-evidence` or `before-advance`. `bin/effects/fake.sh` replays scripted
-stage results when `/fast/apps/orbit-swamp-scratch/fake/<workItem>.json`
-exists, for engine tests with no git, Composer or LLM work.
+The stage workflows were generated once and are edited as YAML from here on.
 
-Scratch state lives outside the repo: worktrees in
-`/fast/apps/orbit-swamp-scratch/wt/<workItem>` (branch `swamp/<workItem>`, never
-pushed), markers in `.../markers/<key>`, loop logs in `.../logs`.
+### v1: detached effect jobs (`orbit-subtask-factory`)
+
+Kept for comparison. Stage work is `mode: method` on `orbit-subtask.run`,
+which launches bash effects (`bin/run-effect`, `bin/effects/*.sh`) as detached
+jobs with marker dirs and a per-key flock. Kill tests:
+`swamp model method run orbit-driver tick --input killAt=<point>`
+(`after-dispatch`, `after-launch`, `before-evidence`, `after-evidence`,
+`before-advance`). `bin/effects/fake.sh` replays scripted stage results when
+`/fast/apps/orbit-swamp-scratch/fake/<workItem>.json` exists.
+
+Scratch state lives outside the repo in `/fast/apps/orbit-swamp-scratch`:
+worktrees `wt/` (v1) and `wt2/` (v2) on `swamp/...` branches that are never
+pushed, launch inputs and logs in `launch/`, v1 markers in `markers/`, loop logs
+in `logs/`.
+
+Known gap: the `apps/docs` check needs bun installs (`apps/web/tools/...`) that
+the worktree prep does not do yet; Project 46's setup steps do.
