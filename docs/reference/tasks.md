@@ -1245,7 +1245,7 @@ A merged task that asks for assistance with `An approved commit is not on the pu
 
 A `settling` task without `pr_url` and without a `todo` subtask asks for assistance with `The settling task has no reviewed pull request URL. Cancel the task to push its approved commits to task-{id} and remove its workspace.` This happens when a subtask cancel ends the last open subtask before any pull request exists.
 
-A `settling` or `waiting_for_review` task whose `pr_url` is not a pull request in the Project's GitHub repository asks for assistance with `The task pull request URL is not in the Project repository: {pr_url} is not in {owner}/{name}. Update the Project repository_url to the repository of that pull request, or complete the task, which does not read GitHub.` Orbit reads the pull request only in the Project repository, so without this request the task would wait without a health read and start no `todo` subtask. The request clears on the first tick after `pr_url` names the Project repository again, for example after a [`repository_url` update](/reference/projects).
+Orbit reads a task pull request only in the Project's GitHub repository. A `settling` or `waiting_for_review` task can have a `pr_url` in another repository. Without a request, that task would wait without a health read and start no `todo` subtask. So Orbit asks for assistance with `The task pull request URL is not in the Project repository: {pr_url} is not in {owner}/{name}. Update the Project repository_url to the repository of that pull request, or complete the task, which does not read GitHub.` The request clears on the first tick after `pr_url` names the Project repository again, for example after a [`repository_url` update](/reference/projects).
 
 #### Trusted GitHub feedback
 
