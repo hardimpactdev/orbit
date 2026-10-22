@@ -2531,7 +2531,7 @@ export interface paths {
         head?: never;
         /**
          * process:update
-         * @description Replace an installed Process specification or one Project process definition.
+         * @description Update an installed Process specification or one Project process definition.
          */
         patch: operations["process-update"];
         trace?: never;
@@ -14604,9 +14604,9 @@ export interface operations {
                      * @description systemd or docker
                      * @enum {string}
                      */
-                    runtime: "systemd" | "docker";
+                    runtime?: "systemd" | "docker";
                     /** @description One command argument; repeat for each argv item */
-                    command: string[];
+                    command?: string[];
                     /** @description Conditionally required. */
                     image?: string | null;
                     /** @description Runtime working directory */

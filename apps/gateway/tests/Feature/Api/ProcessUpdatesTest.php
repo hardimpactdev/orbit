@@ -6,10 +6,16 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Http\Mcp\ToolManifest;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
+
+use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
@@ -36,14 +42,14 @@ it('uses the Docker image working directory without rewriting existing overrides
     expect(new DockerProcessRenderer()->createArguments($process->refresh(), $target))->toContain('--workdir', '/app');
 });
 
-it('replaces a stopped Process in place and clears omitted Docker fields', function (): void {
+it('updates a stopped Process in place and preserves omitted Docker fields', function (): void {
     $this->postJson('/api/v1/processes', [...$this->payload, 'working_directory' => '/app', 'environment' => ['OLD' => 'secret']])->assertCreated();
     $process = Process::query()->sole();
     $this->patchJson('/api/v1/processes/'.$process->id, [
         'runtime' => 'docker', 'image' => 'valkey/valkey:9', 'command' => ['valkey-server'], 'working_directory' => null,
     ])->assertOk()->assertJsonPath('data.id', $process->id)->assertJsonPath('data.name', 'cache')
         ->assertJsonPath('data.desired_state', 'stopped')->assertJsonPath('data.working_directory', null);
-    expect($process->refresh()->runtime_config)->toMatchArray(['environment' => [], 'ports' => [], 'volumes' => [], 'image' => 'valkey/valkey:9'])
+    expect($process->refresh()->runtime_config)->toMatchArray(['environment' => ['OLD' => 'secret'], 'ports' => [], 'volumes' => [], 'image' => 'valkey/valkey:9'])
         ->and(Process::query()->count())->toBe(1);
 });
 
@@ -119,6 +125,8 @@ it('defaults Process restarts on deploy and accepts an explicit opt-out in creat
     expect($process->refresh()->restart_on_deploy)->toBeFalse();
     $this->getJson('/api/v1/processes')->assertOk()->assertJsonPath('data.0.restart_on_deploy', false);
     $this->patchJson('/api/v1/processes/'.$process->id, $specification)
+        ->assertOk()->assertJsonPath('data.restart_on_deploy', false);
+    $this->patchJson('/api/v1/processes/'.$process->id, ['restart_on_deploy' => true])
         ->assertOk()->assertJsonPath('data.restart_on_deploy', true);
     $this->postJson('/api/v1/processes', [...$this->payload, 'name' => 'opt-out', 'restart_on_deploy' => false])
         ->assertCreated()->assertJsonPath('data.restart_on_deploy', false);
@@ -133,4 +141,155 @@ it('rejects invalid restart-on-deploy input before changing a Process', function
         'runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server'], 'restart_on_deploy' => null,
     ])->assertUnprocessable();
     expect($process->refresh()->restart_on_deploy)->toBeTrue();
+});
+
+it('keeps every omitted field when only ports change', function (string $transport, bool $repeatSpecification): void {
+    $this->postJson('/api/v1/processes', [...$this->payload,
+        'working_directory' => '/data', 'restart_policy' => 'unless-stopped',
+        'keep_alive' => true, 'restart_on_deploy' => false,
+        'environment' => ['LABEL' => 'retained'], 'ports' => ['6379:6379'],
+        'volumes' => [['source' => 'cache-data', 'target' => '/data', 'read_only' => false]],
+    ])->assertCreated();
+    $process = Process::query()->sole();
+    $before = $process->only(['runtime', 'working_directory', 'restart_policy', 'keep_alive', 'restart_on_deploy']);
+    $config = $process->runtime_config;
+    $config['ports'] = ['6380:6379'];
+
+    $patch = ['ports' => ['6380:6379'], ...($repeatSpecification ? [
+        'runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server'],
+    ] : [])];
+    if ($transport === 'mcp') {
+        $this->postJson('/mcp', [
+            'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+            'params' => ['name' => 'process-update', 'arguments' => ['process' => $process->id, ...$patch]],
+        ])->assertOk()->assertJsonPath('result.isError', false);
+    } else {
+        $this->json($transport, '/api/v1/processes/'.$process->id, $patch)->assertOk();
+    }
+
+    expect($process->refresh()->only(array_keys($before)))->toBe($before)
+        ->and($process->runtime_config)->toBe($config);
+})->with([
+    'PATCH ports only' => ['PATCH', false], 'PATCH repeated runtime fields' => ['PATCH', true],
+    'MCP ports only' => ['mcp', false], 'MCP repeated runtime fields' => ['mcp', true],
+]);
+
+it('keeps the systemd user and working directory when only restart policy changes', function (): void {
+    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+    mock(SshExecutor::class)->shouldReceive('execute')->once()
+        ->andReturn(new CommandResult(0, "svc-worker:x:1001:1001:worker:/home/worker:/bin/sh\n", '', 1, false));
+    $process = Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'worker',
+        'runtime' => 'systemd', 'working_directory' => '/srv/worker',
+        'runtime_config' => ['command' => ['/usr/bin/sleep', '60'], 'user' => 'svc-worker'],
+        'restart_policy' => 'always', 'keep_alive' => true, 'restart_on_deploy' => false,
+        'desired_state' => 'stopped', 'status' => 'active',
+    ]);
+
+    $this->patchJson('/api/v1/processes/'.$process->id, ['restart_policy' => 'never'])
+        ->assertOk()->assertJsonPath('data.user', 'svc-worker')->assertJsonPath('data.working_directory', '/srv/worker');
+
+    expect($process->refresh()->restart_policy)->toBe('never')
+        ->and($process->runtime_config['command'])->toBe(['/usr/bin/sleep', '60'])
+        ->and($process->keep_alive)->toBeTrue()->and($process->restart_on_deploy)->toBeFalse();
+});
+
+it('applies explicit empty lists false values and a null working directory', function (): void {
+    $this->postJson('/api/v1/processes', [...$this->payload,
+        'working_directory' => '/data', 'restart_policy' => 'unless-stopped', 'keep_alive' => true,
+        'environment' => ['LABEL' => 'retained'], 'ports' => ['6379:6379'],
+        'volumes' => [['source' => 'cache-data', 'target' => '/data']],
+    ])->assertCreated();
+    $process = Process::query()->sole();
+
+    $this->patchJson('/api/v1/processes/'.$process->id, [
+        'environment' => (object) [], 'ports' => [], 'volumes' => [],
+        'working_directory' => null, 'keep_alive' => false, 'restart_policy' => 'never', 'restart_on_deploy' => false,
+    ])->assertOk()->assertJsonPath('data.working_directory', null);
+
+    expect($process->refresh()->runtime_config)->toMatchArray(['environment' => [], 'ports' => [], 'volumes' => []])
+        ->and($process->keep_alive)->toBeFalse()->and($process->restart_on_deploy)->toBeFalse()
+        ->and($process->restart_policy)->toBe('never');
+});
+
+it('validates partial fields against the stored runtime before mutation', function (array $invalid): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $process = Process::query()->sole();
+    $before = count($this->runtime->convergedProcessIds);
+
+    $this->patchJson('/api/v1/processes/'.$process->id, $invalid)->assertUnprocessable();
+
+    expect(count($this->runtime->convergedProcessIds))->toBe($before)
+        ->and($process->refresh()->runtime_config['image'])->toBe('valkey/valkey:8');
+})->with([
+    'empty command' => [['command' => []]], 'null command' => [['command' => null]],
+    'null runtime' => [['runtime' => null]], 'null image' => [['image' => null]],
+    'invalid ports' => [['ports' => ['70000:80']]], 'Docker user' => [['user' => 'svc-worker']],
+]);
+
+it('publishes optional Process update fields without create defaults in OpenAPI and MCP', function (): void {
+    $openapi = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $body = $openapi['paths']['/api/v1/processes/{process}']['patch']['requestBody']['content']['application/json']['schema'];
+    $tool = collect(ToolManifest::default()->definitions())->first(fn ($definition): bool => $definition->name === 'process-update');
+    expect($body['required'] ?? [])->toBe([])
+        ->and($tool->inputSchema['required'] ?? [])->toBe(['process']);
+    foreach (['runtime', 'command', 'image', 'working_directory', 'restart_policy', 'keep_alive', 'environment', 'ports', 'volumes', 'user', 'restart_on_deploy'] as $field) {
+        expect($body['properties'][$field])->not->toHaveKey('default');
+        expect($tool->inputSchema['properties'][$field])->not->toHaveKey('default');
+    }
+});
+
+it('refuses runtime switches that would discard omitted Docker settings', function (array $patch, string $field): void {
+    $this->postJson('/api/v1/processes', [...$this->payload, 'command' => ['/bin/sleep', '60'],
+        'ports' => ['6379:6379'], 'volumes' => [['source' => 'cache-data', 'target' => '/data']],
+    ])->assertCreated();
+    $process = Process::query()->sole();
+    $before = $process->runtime_config;
+    $converged = count($this->runtime->convergedProcessIds);
+
+    $this->patchJson('/api/v1/processes/'.$process->id, ['runtime' => 'systemd', ...$patch])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'process.option_invalid')->assertJsonPath('error.details.field', $field);
+
+    expect($process->refresh()->runtime)->toBe(ProcessRuntime::Docker)
+        ->and($process->runtime_config)->toBe($before)
+        ->and(count($this->runtime->convergedProcessIds))->toBe($converged)
+        ->and($this->runtime->removed)->toBe([]);
+})->with([
+    'image' => [[], 'image'], 'ports' => [['image' => null], 'ports'],
+    'volumes' => [['image' => null, 'ports' => []], 'volumes'],
+]);
+
+it('switches runtime when incompatible Docker fields are explicitly cleared', function (): void {
+    $this->postJson('/api/v1/processes', [...$this->payload, 'command' => ['/bin/sleep', '60'],
+        'restart_policy' => 'unless-stopped', 'keep_alive' => true, 'restart_on_deploy' => false,
+        'working_directory' => '/data', 'ports' => ['6379:6379'],
+        'volumes' => [['source' => 'cache-data', 'target' => '/data']],
+    ])->assertCreated();
+    $process = Process::query()->sole();
+
+    $this->patchJson('/api/v1/processes/'.$process->id, [
+        'runtime' => 'systemd', 'image' => null, 'ports' => [], 'volumes' => [],
+    ])->assertOk()->assertJsonPath('data.runtime', 'systemd');
+
+    expect($process->refresh()->runtime_config['command'])->toBe(['/bin/sleep', '60'])
+        ->and($process->restart_policy)->toBe('unless-stopped')->and($process->keep_alive)->toBeTrue()
+        ->and($process->restart_on_deploy)->toBeFalse()->and($process->working_directory)->toBe('/data');
+});
+
+it('refuses a runtime switch that would discard an omitted systemd user', function (): void {
+    $process = Process::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'worker',
+        'runtime' => 'systemd', 'working_directory' => '/srv/worker',
+        'runtime_config' => ['command' => ['/bin/sleep', '60'], 'user' => 'svc-worker'],
+        'restart_policy' => 'always', 'desired_state' => 'stopped', 'status' => 'active',
+    ]);
+    $before = count($this->runtime->convergedProcessIds);
+
+    $this->patchJson('/api/v1/processes/'.$process->id, ['runtime' => 'docker', 'image' => 'alpine:3'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'process.option_invalid')->assertJsonPath('error.details.field', 'user');
+
+    expect($process->refresh()->runtime)->toBe(ProcessRuntime::Systemd)
+        ->and($process->runtime_config['user'])->toBe('svc-worker')
+        ->and(count($this->runtime->convergedProcessIds))->toBe($before);
 });

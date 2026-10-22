@@ -1320,7 +1320,7 @@ def route_key(route):
     return (route['method'], '/' + re.sub(r'\{[^}]+\}', '{}', route['uri']))
 
 
-EXAMPLE_BY_ROUTE = {'tasks:check': {'phase': 'baseline'}}
+EXAMPLE_BY_ROUTE = {'tasks:check': {'phase': 'baseline'}, 'process:update': {'ports': ['6380:6379']}}
 NAME_BY_TAG = {'Nodes': 'beast', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
     'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
@@ -1370,6 +1370,8 @@ def php_sample(sdkreq, tag, route_name):
             continue
         t, name, has_default = m.group(1), m.group(2), m.group(3)
         if has_default:
+            if route_name == 'process:update' and name == 'ports':
+                args.append("ports: ['6380:6379']")
             if sdkreq['class'] == 'RenameInstanceRequest' and name == 'branch':
                 args.append("branch: 't3code/login-redirect'")
             if sdkreq['class'] == 'UpdateInstanceRequest' and name == 'sharedPaths':
@@ -1548,7 +1550,7 @@ def bash_sample(route, path, body_schema, query, tag):
         lines[-1] += ' \\'
         body = example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}
         if route['name'] in EXAMPLE_BY_ROUTE:
-            body.update(EXAMPLE_BY_ROUTE[route['name']])
+            body = EXAMPLE_BY_ROUTE[route['name']] if route['name'] == 'process:update' else {**body, **EXAMPLE_BY_ROUTE[route['name']]}
         lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(body) + "'"]
     return '\n'.join(lines) + '\n'
 
@@ -1834,7 +1836,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if route['name'] == 'process:update':
             for field in ('target_type', 'target_id', 'name', 'preset', 'start'):
                 props.pop(field, None)
-            body_schema['required'] = ['runtime', 'command']
+            body_schema.pop('required', None)
+            for field in props.values():
+                field.pop('default', None)
+            body_schema['description'] = 'Partial update: omitted fields keep their stored values. Supplied maps and lists replace the whole field; empty values clear it. Null working_directory restores the runtime default.'
     if route['name'] in ('project:process-definition:create', 'project:process-definition:update') and body_schema:
         body_schema['properties']['spec']['properties']['environment'] = {
             'type': 'object', 'maxProperties': 100,

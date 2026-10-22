@@ -6,12 +6,14 @@ namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
 use App\Data\Processes\ProcessData;
+use App\Data\Processes\UpdateProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
@@ -38,17 +40,18 @@ final readonly class UpdateProcessAction
         private DatabaseServerProcessOwnership $databaseServers,
     ) {}
 
-    public function execute(#[SensitiveParameter] Process $process, #[SensitiveParameter] AddProcessData $data): Process
+    public function execute(#[SensitiveParameter] Process $process, #[SensitiveParameter] UpdateProcessData $update): Process
     {
         return $this->admissions->run(
             Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [],
-            fn (): Process => $this->lease->run($process, function (Process $fresh) use ($data): Process {
+            fn (): Process => $this->lease->run($process, function (Process $fresh) use ($update): Process {
                 $this->databaseServers->assertUpdatable($fresh);
                 if (isset($fresh->runtime_config['preset'])) {
                     throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
                 }
+                $data = $update->forProcess($fresh);
                 $target = $this->targets->forInstallation($fresh);
-                if ($data->user !== null) {
+                if ($data->user !== null && $data->runtime === ProcessRuntime::Systemd) {
                     $home = $this->users->home($target->node, $data->user);
                     $data = new AddProcessData(
                         $data->targetType, $data->targetId, $data->name, $data->runtime,
@@ -58,8 +61,9 @@ final readonly class UpdateProcessAction
                     );
                 }
                 $attributes = $this->specifications->attributes($data, $target);
+                $update->assertPreservesOmittedFields($fresh, $attributes['runtime_config']);
                 $this->runtime->status($fresh);
-                $retiredRuntime = $fresh->runtime !== $data->runtime ? $fresh->runtime : $fresh->retired_runtime;
+                $retiredRuntime = $fresh->runtime !== $attributes['runtime'] ? $fresh->runtime : $fresh->retired_runtime;
                 if ($retiredRuntime !== null) {
                     $retired = clone $fresh;
                     $retired->runtime = $retiredRuntime;

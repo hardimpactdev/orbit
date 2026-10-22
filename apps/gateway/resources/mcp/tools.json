@@ -6282,7 +6282,7 @@
       "name": "process-update",
       "extension": null,
       "title": "process:update",
-      "description": "Replace an installed Process specification or one Project process definition.",
+      "description": "Update an installed Process specification or one Project process definition.",
       "method": "PATCH",
       "path": "/api/v1/processes/{process}",
       "path_inputs": [
@@ -6407,9 +6407,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "process",
-          "runtime",
-          "command"
+          "process"
         ]
       }
     },

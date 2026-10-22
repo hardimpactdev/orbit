@@ -103,7 +103,7 @@ it('updates an installed Docker Process with a literal environment map and no ow
     $request = $mock->getLastRequest();
     expect($request?->resolveEndpoint())->toBe('/api/v1/processes/41')
         ->and($request?->getMethod()->value)->toBe('PATCH')
-        ->and($request?->body()->all()['working_directory'])->toBeNull()
+        ->and($request?->body()->all())->not->toHaveKey('working_directory')
         ->and((array) $request?->body()->all()['environment'])->toBe(['LABEL' => 'a=b', 'EMPTY' => ''])
         ->and($request?->body()->all())->not->toHaveKeys(['target_type', 'target_id', 'name', 'start']);
 });
@@ -1634,7 +1634,11 @@ it('sends the deploy restart opt-out through create and update', function (bool 
     $this->artisan('process:create', ['name' => 'horizon', '--instance' => '7', ...$options])->assertExitCode(0);
     expect($mock->getLastRequest()?->body()->all()['restart_on_deploy'])->toBe(! $optOut);
     $this->artisan('process:update', ['name' => '41', ...$options])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all()['restart_on_deploy'])->toBe(! $optOut);
+    if ($optOut) {
+        expect($mock->getLastRequest()?->body()->all()['restart_on_deploy'])->toBeFalse();
+    } else {
+        expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('restart_on_deploy');
+    }
 })->with([true, false]);
 
 it('refuses the installed Process deploy option on Project definitions', function (string $command): void {
@@ -1646,3 +1650,27 @@ it('refuses the installed Process deploy option on Project definitions', functio
     expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
     $mock->assertNothingSent();
 })->with(['process:create', 'process:update']);
+
+it('sends only ports for a ports-only installed update', function (): void {
+    $mock = MockClient::global([UpdateProcessRequest::class => process_cli_response()]);
+
+    $this->artisan('process:update', ['name' => '41', '--port' => ['6380:6379'], '--json' => true])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['ports' => ['6380:6379']]);
+});
+
+it('sends an explicitly selected update restart policy', function (string $policy): void {
+    $mock = MockClient::global([UpdateProcessRequest::class => process_cli_response()]);
+
+    $this->artisan('process:update', ['name' => '41', '--restart' => $policy, '--json' => true])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['restart_policy' => $policy]);
+})->with(['never', 'unless-stopped']);
+
+it('preserves explicit keep-alive and deploy restart options without supplying other update defaults', function (): void {
+    $mock = MockClient::global([UpdateProcessRequest::class => process_cli_response()]);
+
+    $this->artisan('process:update', ['name' => '41', '--keep-alive' => true, '--no-restart-on-deploy' => true, '--json' => true])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['keep_alive' => true, 'restart_on_deploy' => false]);
+});
