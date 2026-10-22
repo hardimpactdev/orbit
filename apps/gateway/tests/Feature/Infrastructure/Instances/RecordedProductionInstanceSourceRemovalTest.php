@@ -120,6 +120,7 @@ it('keeps production content until runtime cleanup and removes only an unused id
     if ($shared) {
         $other = $instance->replicate();
         $other->name = 'other';
+        $other->checkout_path = $this->sandbox.'/other';
         $other->project_id = Project::query()->create([
             'name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'root' => 'public',
         ])->id;
