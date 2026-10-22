@@ -20,7 +20,7 @@ beforeEach(function (): void {
     $this->initializeDocumentDeletionFixture();
 });
 
-it('resumes recurring children and pauses them on restart', function (): void {
+it('resumes recurring children after startup and explicit pauses', function (): void {
     deletion_provider($this, ['restored' => 'preserved body', 'next' => 'next body']);
     $restored = ProjectDocumentCleanup::query()->create(['storage_key' => 'restored', 'next_attempt_at' => now()]);
     $next = ProjectDocumentCleanup::query()->create(['storage_key' => 'next', 'next_attempt_at' => now()->addYears(20)]);
@@ -28,7 +28,6 @@ it('resumes recurring children and pauses them on restart', function (): void {
     $oldGeneration = app(CleanupGate::class)->status()->generation;
     deletion_scheduler_clock('2030-01-01T00:00:01Z');
     $consumer = deletion_scheduler();
-    $restart = deletion_scheduler();
     try {
         deletion_scheduler_start($consumer);
         $generation = app(CleanupGate::class)->status()->generation;
@@ -57,6 +56,27 @@ it('resumes recurring children and pauses them on restart', function (): void {
         expect(deletion_scheduler_tick($consumer, '2030-01-01T00:25:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $paused->generation]);
         expect($pending->fresh())->toBeNull();
         expect(deletion_requests())->toHaveCount(3);
+    } finally {
+        $consumer->process->stop(0);
+    }
+});
+
+it('fences a dead worker and pauses recurring children on restart', function (): void {
+    // Establish the same three real deletions in one child; recurrence and explicit pauses have their own case.
+    deletion_provider($this, ['restored' => 'preserved body', 'next' => 'next body', 'paused' => 'preserve after pause']);
+    foreach (['restored', 'next', 'paused'] as $key) {
+        ProjectDocumentCleanup::query()->create(['storage_key' => $key, 'next_attempt_at' => now()]);
+    }
+    deletion_resume();
+    deletion_scheduler_clock('2030-01-01T00:00:01Z');
+    $consumer = deletion_scheduler();
+    $restart = deletion_scheduler();
+    try {
+        deletion_scheduler_start($consumer);
+        deletion_resume();
+        $generationBeforeDeath = app(CleanupGate::class)->status()->generation;
+        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:25:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $generationBeforeDeath]);
+        expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next', '/fixture-bucket/paused']);
 
         $staleToken = file_get_contents($this->deletionHome.'/runtime/scheduler.session');
         $consumer->process->signal(SIGKILL);
@@ -77,7 +97,7 @@ it('resumes recurring children and pauses them on restart', function (): void {
         deletion_scheduler_clock('2030-01-01T00:30:01Z');
         deletion_scheduler_start($restart);
         $restartedGeneration = app(CleanupGate::class)->status()->generation;
-        expect($restartedGeneration)->not->toBe($paused->generation);
+        expect($restartedGeneration)->not->toBe($generationBeforeDeath);
         expect(deletion_scheduler_tick($restart, '2030-01-01T00:35:00Z'))->toMatchArray(['cleanup_state' => 'paused', 'cleanup_generation' => $restartedGeneration]);
         expect($afterDeath->fresh()->pending)->toBeTrue();
         expect(deletion_requests())->toHaveCount(3);

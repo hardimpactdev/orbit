@@ -301,9 +301,9 @@ it('finishes its walk while setup removes and replaces files under the checkout 
                 $processes[$root] = $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
                 $process->setInput($command->input)->start();
             }
-            foreach ($processes as $root => $process) {
-                $checkout = "$root/checkout";
-                foreach (['checkout' => "$checkout/vendor", 'web' => "$checkout/web/site/build"] as $phase => $directory) {
+            foreach (['checkout' => 'vendor', 'web' => 'web/site/build'] as $phase => $relative) {
+                foreach ($processes as $root => $process) {
+                    $directory = "$root/checkout/$relative";
                     expect($process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "acl-walk:$phase\n")))
                         ->toBeTrue($process->getErrorOutput());
                     new Filesystem()->deleteDirectory("$directory/vanished");
@@ -325,15 +325,20 @@ it('finishes its walk while setup removes and replaces files under the checkout 
         expect($completedWalks)->toBe(10);
         foreach ($roots as $root) {
             $checkout = "$root/checkout";
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/replaced/file"])->mustRun()->getOutput())->toBe('replacement 5')
-                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/vendor/replaced/file"])->run())->toBe(1);
             // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
             mkdir("$checkout/web/site/build/late", 0o755, true);
             file_put_contents("$checkout/web/site/build/late/app.js", 'late asset');
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/late/app.js"])->mustRun()->getOutput())->toBe('late asset')
-                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
+            $reads = development_caddy_access_reads([
+                "$checkout/web/site/build/replaced/file", "$checkout/vendor/replaced/file",
+                "$checkout/web/site/build/late/app.js", "$checkout/web/site/index.html",
+                "$checkout/.env", "$checkout/source.txt", "$checkout/web/private.txt",
+            ]);
+            expect($reads["$checkout/web/site/build/replaced/file"])->toBe('replacement 5')
+                ->and($reads["$checkout/vendor/replaced/file"])->toBeNull()
+                ->and($reads["$checkout/web/site/build/late/app.js"])->toBe('late asset')
+                ->and($reads["$checkout/web/site/index.html"])->toBe('first page');
             foreach (['.env', 'source.txt', 'web/private.txt'] as $private) {
-                expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
+                expect($reads["$checkout/$private"])->toBeNull();
             }
             mkdir("$checkout/vendor/late", 0o700, true);
             file_put_contents("$checkout/vendor/late/new.php", 'new source');
@@ -593,6 +598,30 @@ it('fails and restores access when the mode of the public storage hides it from 
 function development_caddy_access_retained(Process $process): ?string
 {
     return preg_match('/retained ACL snapshots: (\S+)/', $process->getErrorOutput(), $match) === 1 ? $match[1] : null;
+}
+
+/** @param list<string> $paths
+ * @return array<string, string|null> Actual file bodies, or null only for a kernel permission denial.
+ */
+function development_caddy_access_reads(array $paths): array
+{
+    // One identity switch, not one sudo/PAM session per read. Missing files and other errors still fail the process.
+    $reader = <<<'PYTHON'
+    import json
+    import sys
+
+    reads = {}
+    for path in sys.argv[1:]:
+        try:
+            with open(path) as file:
+                reads[path] = file.read()
+        except PermissionError:
+            reads[path] = None
+    print(json.dumps(reads))
+    PYTHON;
+    $process = new Process(['sudo', '-n', '-u', 'caddy', 'python3', '-S', '-c', $reader, ...$paths]);
+
+    return json_decode($process->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 }
 
 function development_caddy_access_fixture(?string $parent = null): string

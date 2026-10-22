@@ -37,11 +37,11 @@ use Symfony\Component\Process\Process as LocalProcess;
 
 /**
  * Runs the Valkey Database server code against a real Valkey in Docker. Each test starts a disposable server as Orbit
- * does: the ACL file comes from the records through the real `database-servers.write-valkey-acl` program, and the
- * container runs the image and command of the server's Process specification. The server listens on a random
- * loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
- * passwordless sudo. Startup and repair restarts wait for Valkey's current-boot TCP-ready log acknowledgement
- * before exercising the real admin transport; no retry sleep is needed. Containers and volumes are private to each case.
+ * does: its initial ACL is a private copy of an immutable seed made through the real remote writer and checked
+ * against its records. Repairs use the real writer. The container runs the production image, entrypoint and command.
+ * The server listens on a random loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
+ * passwordless sudo. Startup and repair restarts read TCP readiness directly from the attached start process,
+ * so no extra inspect/log-follow clients or retry sleep are needed. Containers and volumes are private to each case.
  */
 pest()->group('privileged');
 
@@ -56,21 +56,66 @@ final readonly class ValkeyDockerTestProgramRunner implements RemoteProgramRunne
         ?float $timeoutSeconds = null,
         ?Closure $cancelled = null,
     ): ProgramResult {
-        $command = SshProgramRunner::pythonCommand($program, app(RemoteProgramCatalog::class)->bootstrap(), $input);
-        $process = new LocalProcess($command->arguments);
-        $process->setInput($command->input)->setTimeout($command->timeout)->run();
-
-        return SshProgramRunner::pythonResult(
-            $program,
-            new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false),
-        );
+        return valkey_docker_program($program, app(RemoteProgramCatalog::class)->bootstrap(), $input);
     }
 }
 
-/** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
-final readonly class ValkeyDockerTestRuntime implements ProcessRuntimeManager
+/** Only immutable ACL bytes and image metadata are shared; no live server or mutable volume survives preparation. */
+final class ValkeyDockerTestSeed
 {
-    public function __construct(private string $container) {}
+    public const string TAG = '8.1';
+
+    public static self $shared;
+
+    /** @param list<string> $entrypoint */
+    public function __construct(public readonly string $acl, public readonly array $entrypoint) {}
+
+    public static function prepare(): self
+    {
+        $fixture = json_decode(file_get_contents(__DIR__.'/../../../Fixtures/valkey/acl-list.json'), true, flags: JSON_THROW_ON_ERROR);
+        $acl = array_find($fixture['closed'], static fn (string $line): bool => str_starts_with($line, 'user default '))."\n";
+        $image = DatabaseServerProcess::valkeyImage(self::TAG);
+        $volume = 'orbit-test-valkey-seed-'.bin2hex(random_bytes(6));
+        $catalog = new RemoteProgramCatalog(__DIR__.'/../../../../resources/remote');
+        try {
+            $result = valkey_docker_program($catalog->program(WriteValkeyAclFileAction::PROGRAM), $catalog->bootstrap(), [
+                'volume' => $volume, 'image' => $image, 'acl' => $acl,
+            ]);
+            if ($result->outcome !== 'written') {
+                throw new RuntimeException('Could not prepare the immutable Valkey ACL seed.');
+            }
+            $written = valkey_docker([
+                'run', '--rm', '--network', 'none', '--mount', "type=volume,source=$volume,target=/data,readonly",
+                '--entrypoint', 'cat', $image, DatabaseServerProcess::VALKEY_ACL_FILE,
+            ])."\n";
+            $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
+
+            return new self($written, $entrypoint);
+        } finally {
+            valkey_docker(['volume', 'rm', '--force', $volume]);
+        }
+    }
+}
+
+/** @param array<string, mixed> $input */
+function valkey_docker_program(RemoteProgram $program, string $bootstrap, array $input): ProgramResult
+{
+    $command = SshProgramRunner::pythonCommand($program, $bootstrap, $input);
+    $process = new LocalProcess($command->arguments);
+    $process->setInput($command->input)->setTimeout($command->timeout)->run();
+
+    return SshProgramRunner::pythonResult(
+        $program,
+        new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false),
+    );
+}
+
+/** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
+final class ValkeyDockerTestRuntime implements ProcessRuntimeManager
+{
+    private ?LocalProcess $attached = null;
+
+    public function __construct(private readonly string $container) {}
 
     public function assertCanStart(Process $process): void {}
 
@@ -91,8 +136,9 @@ final readonly class ValkeyDockerTestRuntime implements ProcessRuntimeManager
 
     public function restart(Process $process): void
     {
-        valkey_docker(['restart', $this->container]);
-        valkey_docker_ready($this->container);
+        valkey_docker(['stop', $this->container]);
+        $this->attached = new LocalProcess(['docker', 'start', '--attach', $this->container]);
+        valkey_docker_ready($this->attached);
     }
 
     public function remove(Process $process): void
@@ -147,19 +193,12 @@ function valkey_docker_free_port(): int
     return $port;
 }
 
-/** Waits for the current boot, not a previous boot's ready message left in Docker's log. */
-function valkey_docker_ready(string $container): void
+/** An attached run/start exposes only this boot's output, never an old ready message from the log. */
+function valkey_docker_ready(LocalProcess $start): void
 {
-    $startedAt = valkey_docker(['inspect', '--format', '{{.State.StartedAt}}', $container]);
-    $logs = new LocalProcess(['docker', 'logs', '--follow', '--since', $startedAt, $container]);
-    $logs->setTimeout(5)->start();
-
-    try {
-        if (! $logs->waitUntil(fn (): bool => str_contains($logs->getOutput(), 'Ready to accept connections tcp'))) {
-            throw new RuntimeException('Valkey exited before acknowledging TCP readiness: '.$logs->getOutput().$logs->getErrorOutput());
-        }
-    } finally {
-        $logs->stop(0);
+    $start->setTimeout(5)->start();
+    if (! $start->waitUntil(fn (): bool => str_contains($start->getOutput(), 'Ready to accept connections tcp'))) {
+        throw new RuntimeException('Valkey exited before acknowledging TCP readiness: '.$start->getOutput().$start->getErrorOutput());
     }
 }
 
@@ -170,6 +209,12 @@ function valkey_docker_stopped(string $container): bool
 
     return valkey_docker(['inspect', '--format', '{{.State.Running}}', $container]) === 'false';
 }
+
+beforeAll(function (): void {
+    if (getenv('ORBIT_TEST_DOCKER') === '1') {
+        ValkeyDockerTestSeed::$shared = ValkeyDockerTestSeed::prepare();
+    }
+});
 
 beforeEach(function (): void {
     if (getenv('ORBIT_TEST_DOCKER') !== '1') {
@@ -188,7 +233,7 @@ beforeEach(function (): void {
     ]);
     $this->fixture = json_decode(file_get_contents(base_path('tests/Fixtures/valkey/acl-list.json')), true, flags: JSON_THROW_ON_ERROR);
     $this->server = DatabaseServer::query()->create([
-        'slug' => $name, 'driver' => DatabaseDriver::Redis, 'node_id' => $this->node->id, 'tag' => '8.1', 'port' => valkey_docker_free_port(),
+        'slug' => $name, 'driver' => DatabaseDriver::Redis, 'node_id' => $this->node->id, 'tag' => ValkeyDockerTestSeed::TAG, 'port' => valkey_docker_free_port(),
         'root_password' => $this->fixture['admin_password'], 'status' => LifecycleStatus::Active,
     ]);
     $specification = DatabaseServerProcess::valkeyData($this->server, $this->node, $name, $this->volume);
@@ -200,14 +245,25 @@ beforeEach(function (): void {
     ]);
     $this->server->update(['process_id' => $process->id]);
 
-    app(WriteValkeyAclFileAction::class)->execute($this->server, $this->volume);
-    valkey_docker([
-        'run', '--detach', '--name', $name, '--publish', DatabaseServerProcess::publishedPort($this->node, $this->server->port, DatabaseServerProcess::VALKEY_CONTAINER_PORT),
+    $seed = ValkeyDockerTestSeed::$shared;
+    expect($seed->acl)->toBe(ValkeyAcl::file($this->server));
+    // This marker belongs to the private container, not /data. Restarts must not repair a missing or changed ACL.
+    $bootstrap = <<<'SH'
+        acl=$1
+        shift
+        if [ ! -f /tmp/orbit-valkey-fixture-seeded ]; then
+            (umask 077; cat > "$acl"; touch /tmp/orbit-valkey-fixture-seeded)
+        fi
+        exec "$@"
+        SH;
+    $this->valkeyProcess = new LocalProcess([
+        'docker', 'run', '--interactive', '--log-driver', 'none', '--name', $name, '--publish', DatabaseServerProcess::publishedPort($this->node, $this->server->port, DatabaseServerProcess::VALKEY_CONTAINER_PORT),
         '--mount', "type=volume,source={$this->volume},target=".DatabaseServerProcess::VALKEY_DATA_DIRECTORY,
-        '--workdir', (string) $specification->workingDirectory, (string) $specification->image, ...$specification->command,
+        '--workdir', (string) $specification->workingDirectory, '--entrypoint', 'sh', (string) $specification->image,
+        '-eu', '-c', $bootstrap, 'valkey-fixture', DatabaseServerProcess::VALKEY_ACL_FILE, ...$seed->entrypoint, ...$specification->command,
     ]);
-
-    valkey_docker_ready($name);
+    $this->valkeyProcess->setInput($seed->acl);
+    valkey_docker_ready($this->valkeyProcess);
 
     $this->admin = app(ValkeyServerAdmin::class);
     $this->password = $this->server->root_password;
@@ -218,6 +274,9 @@ afterEach(function (): void {
     if (isset($this->container)) {
         new LocalProcess(['docker', 'rm', '--force', '--volumes', $this->container])->run();
         new LocalProcess(['docker', 'volume', 'rm', '--force', $this->volume])->run();
+        if (isset($this->valkeyProcess)) {
+            $this->valkeyProcess->wait();
+        }
     }
 
     Sleep::assertNeverSlept();
