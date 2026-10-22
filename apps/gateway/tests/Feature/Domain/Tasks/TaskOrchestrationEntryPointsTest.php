@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Data\Tasks\UpdateTaskGroupData;
@@ -16,8 +17,10 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskTurnMode;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use PhpParser\Node;
@@ -56,7 +59,8 @@ function task_public_methods(ReflectionClass $reflection): array
     }
     $methods = [];
     foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-        if (! $method->isConstructor() && $method->getDeclaringClass()->name === $reflection->name) {
+        if (! $method->isConstructor() && $method->getDeclaringClass()->name === $reflection->name
+            && ($reflection->isAnonymous() || str_starts_with((string) $method->getFileName(), app_path().'/'))) {
             $methods[] = $method->name;
         }
     }
@@ -68,7 +72,7 @@ function task_public_methods(ReflectionClass $reflection): array
 function task_public_group_methods(): array
 {
     $found = [];
-    foreach (['Domain/Tasks', 'Actions/Tasks'] as $directory) {
+    foreach (['Domain/Tasks', 'Actions/Tasks', 'Actions/TaskVms', 'Jobs/TaskVms'] as $directory) {
         foreach (task_orchestration_sources($directory) as $class) {
             $methods = task_public_methods(new ReflectionClass($class));
             if ($methods !== []) {
@@ -86,7 +90,7 @@ function task_effect_sites(): array
     $parser = new ParserFactory()->createForNewestSupportedVersion();
     $finder = new NodeFinder;
     $sites = [];
-    foreach (['Domain/Tasks', 'Actions/Tasks'] as $directory) {
+    foreach (['Domain/Tasks', 'Actions/Tasks', 'Actions/TaskVms', 'Jobs/TaskVms'] as $directory) {
         foreach (task_orchestration_sources($directory) as $file => $class) {
             $nodes = $parser->parse(file_get_contents($file));
             foreach ($finder->findInstanceOf($nodes, ClassMethod::class) as $method) {
@@ -162,7 +166,7 @@ it('inventories every public Tasks group entry point and proves the effect entry
     $project = Project::query()->create(['name' => 'External', 'slug' => 'external', 'repository_url' => 'git@example.test:external.git']);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Waiting', 'brief' => 'Waiting.', 'orchestration' => TaskOrchestration::External,
-        'status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subDay(),
+        'status' => TaskGroupStatus::Reserved, 'reserved_at' => now()->subDay(), 'capacity_wait_reason' => 'Waiting for VM.',
     ]);
     $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'One', 'brief' => 'One.']);
     $task->setRelation('parent', $group);
@@ -227,6 +231,18 @@ it('inventories every public Tasks group entry point and proves the effect entry
                 $updated = $service->execute($created, new UpdateTaskGroupData(null, null, TaskGroupStatus::Todo));
                 expect($updated->status)->toBe(TaskGroupStatus::Todo)
                     ->and($updated->reserved_at)->toBeNull()->and($updated->taskable_id)->toBeNull();
+            } elseif ($class === FailTaskVmAction::class) {
+                $vm = TaskVm::query()->create([
+                    'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-failure-'.$name,
+                    'state' => $name === 'execute' ? TaskVmState::Provisioning : TaskVmState::Failed, 'wireguard_ip' => '10.44.0.129',
+                ]);
+                if ($name === 'execute') {
+                    expect($service->execute($vm, [TaskVmState::Provisioning], 'task_vm.job_failed', 'Failed.', 'VM failed.'))->toBeTrue();
+                    expect($vm->fresh())->state->toBe(TaskVmState::Failed)->error_code->toBe('task_vm.job_failed')->error_message->toBe('Failed.');
+                } else {
+                    $service->requestAssistance($vm, 'VM failed.');
+                }
+                $vm->delete();
             } else {
                 $arguments = $class === TaskClaimAdmission::class && $name !== 'releaseStaleReservations' ? [$scheduler] : [];
                 $result = $service->$name(...$arguments);

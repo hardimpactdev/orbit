@@ -359,16 +359,19 @@ describe('resume', function (): void {
             ->and($group->fresh()?->assistance_requested)->toBeTrue();
     });
 
-    it('preserves a start error before the deadline instead of reporting a readiness timeout', function (): void {
-        [$group, $vm] = tvm_park_waiting();
+    it('records a resume failure and asks only tick groups for assistance', function (TaskOrchestration $orchestration, bool $assistance): void {
+        [$group, $vm] = tvm_park_waiting(group: ['orchestration' => $orchestration]);
         $vm->update(['state' => TaskVmState::Parked]);
         $job = new ResumeTaskVm($vm->id);
 
         $job->failed(new TaskVmException('task_vm.start_failed', 'The provider could not start the VM.', 502));
 
-        expect($vm->fresh()?->error_code)->toBe('task_vm.start_failed')
-            ->and($group->fresh()?->assistance_reason)->toContain('task_vm.start_failed');
-    });
+        expect($vm->fresh())->state->toBe(TaskVmState::Failed)
+            ->error_code->toBe('task_vm.start_failed')->error_message->toBe('The provider could not start the VM.');
+        expect($group->fresh())->assistance_requested->toBe($assistance)
+            ->assistance_kind->toBe($assistance ? AssistanceKind::Failure : null)
+            ->assistance_reason->toBe($assistance ? 'Task VM failed: task_vm.start_failed: The provider could not start the VM. Cancel or complete the group to destroy the VM.' : null);
+    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('does nothing for a row that is not parked', function (): void {
         [, $vm] = tvm_park_waiting();

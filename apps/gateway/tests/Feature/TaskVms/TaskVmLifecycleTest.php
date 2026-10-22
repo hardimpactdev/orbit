@@ -489,8 +489,8 @@ describe(ProvisionTaskVm::class, function (): void {
         'destroying' => [TaskVmState::Destroying, false],
     ]);
 
-    it('marks only a provisioning row failed with the error code, and asks for assistance on its group', function (): void {
-        $vm = tvm_life_vm($group = tvm_life_group());
+    it('records a provision failure and asks only tick groups for assistance', function (TaskOrchestration $orchestration, bool $assistance): void {
+        $vm = tvm_life_vm($group = tvm_life_group(orchestration: $orchestration));
         $destroying = tvm_life_vm(tvm_life_group(), TaskVmState::Destroying, wireguardIp: '10.44.0.131');
         $failure = new TaskVmException('task_vm.host_command_failed', '`incus launch` failed.', 502);
 
@@ -503,11 +503,11 @@ describe(ProvisionTaskVm::class, function (): void {
             ->and($vm->fresh()?->error_message)->toBe('`incus launch` failed.')
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying)
             ->and($destroying->fresh()?->error_code)->toBeNull()
-            ->and($group->fresh()?->assistance_requested)->toBeTrue()
-            ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
-            ->and($group->fresh()?->assistance_reason)->toBe("Task VM failed: {$vm->name}: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM.")
+            ->and($group->fresh()?->assistance_requested)->toBe($assistance)
+            ->and($group->fresh()?->assistance_kind)->toBe($assistance ? AssistanceKind::Failure : null)
+            ->and($group->fresh()?->assistance_reason)->toBe($assistance ? "Task VM failed: {$vm->name}: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM." : null)
             ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
-    });
+    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);

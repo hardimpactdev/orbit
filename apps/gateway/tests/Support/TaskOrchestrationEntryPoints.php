@@ -32,6 +32,18 @@ use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
+use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Actions\TaskVms\DeleteTaskVmAction;
+use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
+use App\Actions\TaskVms\FailTaskVmAction;
+use App\Actions\TaskVms\FillPackageCacheAction;
+use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
+use App\Actions\TaskVms\ObservePackageCacheAction;
+use App\Actions\TaskVms\ParkIdleTaskVmsAction;
+use App\Actions\TaskVms\PrepareTaskVmRuntimeAction;
+use App\Actions\TaskVms\ReadPackageCacheUsageAction;
+use App\Actions\TaskVms\RecordTaskVmAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
@@ -115,6 +127,22 @@ use App\Domain\Tasks\TaskWorkspaceLeaseRecovery;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceSummary;
+use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Jobs\TaskVms\EnrollTaskVm;
+use App\Jobs\TaskVms\FillTaskVmPackageCache;
+use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
+use App\Jobs\TaskVms\ImageBuild\PromoteImage;
+use App\Jobs\TaskVms\ImageBuild\PruneRecipeImages;
+use App\Jobs\TaskVms\ParkTaskVm;
+use App\Jobs\TaskVms\PrepareTaskVmRuntime;
+use App\Jobs\TaskVms\ProvisionsTaskVm;
+use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
+use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
+use App\Jobs\TaskVms\ResumeTaskVm;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
+use App\Jobs\TaskVms\TaskVmRowJob;
 
 /**
  * Reviewed public Tasks surface. Every public method is discovered independently of its signature and
@@ -191,6 +219,10 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        PrepareTaskVmRuntimeAction::class => ['execute' => 'Starts the VM step clock, not an agent turn, check, or claim.'],
+        EnrollTaskVm::class => ['handle' => 'Starts the VM step clock during reusable VM enrollment; engine claim admission is guarded.'],
+        ProvisionTaskVm::class => ['handle' => 'Starts the VM step clock during reusable VM provisioning; engine claim admission is guarded.'],
+        ResumeTaskVm::class => ['handle' => 'Starts the VM provider during reusable VM resume; failures use the exercised FailTaskVmAction gate.'],
         LeasedAgentDriver::class => [
             'create' => 'Reusable agent driver; TaskAgentSpawner admission is exercised above.',
             'send' => 'Reusable agent driver; TaskSessionActor and TaskAgentSpawner admission is exercised above.',
@@ -209,6 +241,110 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        AllocateTaskVmAction::class => [
+            'execute' => 'Reusable VM placement; engine claim admission is guarded; does not change a group claim or send a turn.',
+        ],
+        DeleteTaskVmAction::class => [
+            'execute' => 'Allowed VM cleanup; does not send a turn, start a check, or claim work.',
+        ],
+        DestroyEndedTaskVmsAction::class => [
+            'execute' => 'Allowed ended-group VM cleanup; external cleanup requires no assistance.',
+        ],
+        FillPackageCacheAction::class => [
+            'execute' => 'Fills host package caches without changing task work.',
+        ],
+        ForgetTaskVmWorkspacesAction::class => [
+            'execute' => 'Forgets workspace records during VM cleanup without starting task work.',
+        ],
+        ObservePackageCacheAction::class => [
+            'execute' => 'Observes repository package metadata without starting task work.',
+        ],
+        ParkIdleTaskVmsAction::class => [
+            'execute' => 'Allowed idle VM parking; unfinished group operations block it.',
+        ],
+        PrepareTaskVmRuntimeAction::class => [
+            'execute' => 'Reusable VM runtime preparation; engine claim admission is guarded.',
+        ],
+        ReadPackageCacheUsageAction::class => [
+            'execute' => 'Reads package cache usage.',
+        ],
+        RecordTaskVmAction::class => [
+            'execute' => 'Reusable VM row and credential creation; engine claim admission is guarded.',
+            'piToken' => 'Reusable VM row and credential creation; engine claim admission is guarded.',
+        ],
+        WakeTaskVmAction::class => [
+            'forGroup' => 'Reusable VM wake infrastructure; engine work admission is guarded and resume failures use FailTaskVmAction.',
+            'forInstance' => 'Reusable VM wake infrastructure; engine work admission is guarded and resume failures use FailTaskVmAction.',
+            'forVm' => 'Reusable VM wake infrastructure; engine work admission is guarded and resume failures use FailTaskVmAction.',
+        ],
+        BuildRecipeImageStep::class => [
+            'step' => 'Describes a base-image build step without task work.',
+            'program' => 'Describes a base-image build step without task work.',
+        ],
+        PromoteImage::class => [
+            'step' => 'Describes a base-image build step without task work.',
+        ],
+        PruneRecipeImages::class => [
+            'step' => 'Describes a base-image build step without task work.',
+        ],
+        DestroyTaskVm::class => [
+            'handle' => 'Allowed ended-group VM cleanup; assistance writes are gated for tick ownership and tested in TaskVmLifecycleTest.',
+            'uniqueId' => 'Allowed ended-group VM cleanup; assistance writes are gated for tick ownership and tested in TaskVmLifecycleTest.',
+        ],
+        EnrollTaskVm::class => [
+            'handle' => 'Reusable VM enrollment; failure delegates to the exercised FailTaskVmAction gate.',
+            'failed' => 'Reusable VM enrollment; failure delegates to the exercised FailTaskVmAction gate.',
+            'uniqueId' => 'Reusable VM enrollment; failure delegates to the exercised FailTaskVmAction gate.',
+        ],
+        FillTaskVmPackageCache::class => [
+            'uniqueId' => 'Host package cache maintenance without task work.',
+            'middleware' => 'Host package cache maintenance without task work.',
+            'handle' => 'Host package cache maintenance without task work.',
+        ],
+        ParkTaskVm::class => [
+            'handle' => 'Allowed idle VM parking; errors stay on the VM without group assistance.',
+            'failed' => 'Allowed idle VM parking; errors stay on the VM without group assistance.',
+            'uniqueId' => 'Allowed idle VM parking; errors stay on the VM without group assistance.',
+        ],
+        PrepareTaskVmRuntime::class => [
+            'enqueue' => 'Reusable VM preparation; failure delegates to the exercised FailTaskVmAction gate.',
+            'handle' => 'Reusable VM preparation; failure delegates to the exercised FailTaskVmAction gate.',
+            'failed' => 'Reusable VM preparation; failure delegates to the exercised FailTaskVmAction gate.',
+            'uniqueId' => 'Reusable VM preparation; failure delegates to the exercised FailTaskVmAction gate.',
+        ],
+        ProvisionTaskVm::class => [
+            'handle' => 'Reusable VM provisioning; failure delegates to the exercised FailTaskVmAction gate.',
+            'failed' => 'Reusable VM provisioning; failure delegates to the exercised FailTaskVmAction gate.',
+            'uniqueId' => 'Reusable VM provisioning; failure delegates to the exercised FailTaskVmAction gate.',
+        ],
+        ProvisionsTaskVm::class => [
+            'failed' => 'Shared VM provisioning failure callback uses the exercised FailTaskVmAction gate.',
+            'uniqueId' => 'Shared VM provisioning failure callback uses the exercised FailTaskVmAction gate.',
+        ],
+        PublishTaskVmCommit::class => [
+            'handle' => 'Reusable queued commit push or failure observation; engine publication admission is guarded.',
+            'failed' => 'Reusable queued commit push or failure observation; engine publication admission is guarded.',
+        ],
+        RefreshTaskVmBaseImages::class => [
+            'handle' => 'Base-image maintenance without task work.',
+        ],
+        RefreshUpCloudTaskVmBaseImage::class => [
+            'uniqueId' => 'Base-image maintenance without task work.',
+            'handle' => 'Base-image maintenance without task work.',
+        ],
+        ResumeTaskVm::class => [
+            'retryUntil' => 'Reusable VM resume; failure delegates to the exercised FailTaskVmAction gate.',
+            'handle' => 'Reusable VM resume; failure delegates to the exercised FailTaskVmAction gate.',
+            'failed' => 'Reusable VM resume; failure delegates to the exercised FailTaskVmAction gate.',
+            'uniqueId' => 'Reusable VM resume; failure delegates to the exercised FailTaskVmAction gate.',
+        ],
+        SweepTaskVmHosts::class => [
+            'handle' => 'Observes missing VMs; failure delegates to the exercised FailTaskVmAction gate.',
+        ],
+        TaskVmRowJob::class => [
+            'uniqueId' => 'Identifies the queued VM row without changing task work.',
+        ],
+
         RequestEndedPullRequestAssistanceAction::class => [
             'isReason' => 'Recognizes an existing ended-PR assistance reason.',
         ],
@@ -772,6 +908,7 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, list<string>> */
     public const array Skips = [
+        FailTaskVmAction::class => ['execute', 'requestAssistance'],
         TaskScheduler::class => ['tick', 'claimNext', 'claimAvailable', 'releaseStaleReservations'],
         TaskClaimAdmission::class => ['claimNext', 'claimAvailable', 'releaseStaleReservations'],
         CreateTaskGroupAction::class => ['execute'],

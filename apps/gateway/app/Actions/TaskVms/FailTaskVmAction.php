@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Fails a task VM row with its error, and asks the row's group for assistance with `$reason`, so the failure shows in
+ * Fails a task VM row with its error, and asks its tick group for assistance with `$reason`, so the failure shows in
  * `tasks:status`. Only a row that is still in one of `$from` fails, so a destroy, a claim, or a resume that came first
  * wins. A pool row has no group to ask.
  */
@@ -46,7 +47,7 @@ final readonly class FailTaskVmAction
         }
         DB::transaction(function () use ($vm, $reason): void {
             $group = Task::topLevel()->lockForUpdate()->find($vm->group_id);
-            if (! $group instanceof Task) {
+            if (! $group instanceof Task || $group->groupOrchestration() === TaskOrchestration::External) {
                 return;
             }
             if ($vm->state === TaskVmState::Failed && $group->capacity_wait_reason !== null) {
