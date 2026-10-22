@@ -7,9 +7,30 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
 };
+pub mod command;
+pub mod commands;
 pub mod logs;
 pub mod workspace;
 use workspace::WorkspaceState;
+
+/// The version the observer reports in presence: the Cargo version plus the first 16 hexadecimal digits of the
+/// running binary's SHA-256, as semver build metadata. The Gateway derives the same string from its delivery
+/// manifest, so presence proves the exact pinned binary, not only its release number (ADR 0225).
+pub fn reported_version() -> &'static str {
+    static REPORTED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    REPORTED.get_or_init(|| {
+        let digest =
+            command::run::file_sha256(std::path::Path::new("/proc/self/exe")).unwrap_or_default();
+        version_with_digest(env!("CARGO_PKG_VERSION"), &digest)
+    })
+}
+
+pub fn version_with_digest(version: &str, sha256: &str) -> String {
+    match sha256.get(..16) {
+        Some(prefix) => format!("{version}+{prefix}"),
+        None => version.to_string(),
+    }
+}
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
@@ -505,6 +526,14 @@ impl Liveness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reports_the_version_with_the_binary_digest_as_build_metadata() {
+        assert_eq!(
+            version_with_digest("0.4.4", &"ab".repeat(32)),
+            "0.4.4+abababababababab"
+        );
+        assert_eq!(version_with_digest("0.4.4", ""), "0.4.4");
+    }
     #[test]
     fn loads_a_hexadecimal_secret_and_never_prints_it() {
         let secret = "0123456789abcdef".repeat(4);

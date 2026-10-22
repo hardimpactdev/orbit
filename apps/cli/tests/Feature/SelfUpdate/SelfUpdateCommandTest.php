@@ -486,11 +486,12 @@ describe('self-update agent step', function (): void {
         chmod($this->machine.'/bin/orbit-agent', 0755);
     });
 
-    it('replaces the agent that differs from the pin, keeps the previous one, and checks that it stays up', function (): void {
+    it('replaces the agent that differs from the pin through the installer of the verified candidate', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
         fake_self_update_processes($this);
 
         $result = run_self_update();
+        $digest = hash('sha256', SELF_UPDATE_AGENT_BYTES);
 
         expect($result['outcome'])->toBe('updated')
             ->and(self_update_step($result, 'agent'))->toBe([
@@ -499,47 +500,45 @@ describe('self-update agent step', function (): void {
                 'reason' => null,
                 'path' => $this->machine.'/bin/orbit-agent',
                 'before' => ['version' => null, 'sha256' => hash('sha256', "orbit-agent 0.2.0\n")],
-                'after' => ['version' => '0.4.4', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)],
+                'after' => ['version' => '0.5.0', 'sha256' => $digest],
                 'error' => null,
             ])
             ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe(SELF_UPDATE_AGENT_BYTES)
-            ->and(file_get_contents($this->machine.'/bin/orbit-agent.orbit-previous'))->toBe("orbit-agent 0.2.0\n")
-            ->and(fileperms($this->machine.'/bin/orbit-agent') & 0777)->toBe(0755)
             ->and(self_update_commands($this))->toBe([
-                'curl agent-v0.4.4/SHA256SUMS',
-                'curl agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64',
-                'systemctl restart orbit-agent.service',
-                ...array_fill(0, 6, 'systemctl show'),
-            ]);
-        Sleep::assertSleptTimes(5);
+                'curl agent-v'.SELF_UPDATE_AGENT_COMMIT.'/SHA256SUMS',
+                'curl agent-v'.SELF_UPDATE_AGENT_COMMIT.'/orbit-agent-linux-x86_64',
+                'candidate command agent.install',
+            ])
+            ->and($this->envelopes[0]['agent_sha256'])->toBe($digest)
+            ->and($this->envelopes[0]['input']['sha256'])->toBe($digest)
+            ->and(dirname($this->envelopes[0]['input']['candidate']))->toBe($this->machine.'/bin')
+            ->and($this->processes[2][0])->toBe($this->envelopes[0]['input']['candidate']);
     });
 
-    it('restores the previous agent when the new one does not stay running', function (): void {
+    it('reports the installer refusal, removes the candidate, and leaves the CLI alone', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, restarts: ['0', '0', '1']);
+        fake_self_update_processes($this, agentInstall: ['ok' => false, 'error' => ['code' => 'agent.health_check_failed', 'message' => 'The observer did not stay active on the new binary; the kept binary is back.', 'details' => []]]);
 
         $result = run_self_update(exitCode: 1);
 
         expect(self_update_step($result, 'agent'))->toMatchArray(['outcome' => 'failed', 'error' => [
-            'code' => 'agent.unhealthy',
-            'message' => 'The new orbit-agent did not stay running. The previous orbit-agent is restored and running.',
+            'code' => 'agent.health_check_failed',
+            'message' => 'The observer did not stay active on the new binary; the kept binary is back.',
         ]])
             ->and(self_update_step($result, 'agent')['after'])->toBe(self_update_step($result, 'agent')['before'])
             ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe("orbit-agent 0.2.0\n")
-            ->and(array_count_values(self_update_commands($this))['systemctl restart orbit-agent.service'])->toBe(2)
+            ->and(glob($this->machine.'/bin/orbit-agent-candidate-*'))->toBe([])
             ->and(self_update_step($result, 'cli'))->toMatchArray(['outcome' => 'skipped', 'reason' => 'previous_step_failed']);
     });
 
-    it('restores the previous agent when systemctl cannot restart the new one', function (): void {
+    it('reports an installer that printed no result as a failed installation', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, restartExit: 1);
+        fake_self_update_processes($this, agentInstall: '');
 
-        $result = run_self_update(exitCode: 1);
-
-        expect(self_update_step($result, 'agent')['error'])->toBe([
-            'code' => 'agent.restart_failed',
-            'message' => 'systemctl could not restart orbit-agent.service. The previous orbit-agent is restored, but systemctl could not restart it.',
-        ])->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe("orbit-agent 0.2.0\n");
+        expect(self_update_step(run_self_update(exitCode: 1), 'agent')['error'])->toBe([
+            'code' => 'agent.install_failed',
+            'message' => 'The orbit-agent installer returned no result.',
+        ]);
     });
 
     it('leaves the agent that matches the pin and does not restart it', function (): void {
@@ -550,7 +549,7 @@ describe('self-update agent step', function (): void {
         $result = run_self_update();
 
         expect($result['outcome'])->toBe('unchanged')
-            ->and(self_update_step($result, 'agent'))->toMatchArray(['outcome' => 'unchanged', 'before' => ['version' => '0.4.4', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)]])
+            ->and(self_update_step($result, 'agent'))->toMatchArray(['outcome' => 'unchanged', 'before' => ['version' => '0.5.0', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)]])
             ->and($this->processes)->toBe([]);
     });
 
@@ -560,32 +559,32 @@ describe('self-update agent step', function (): void {
         fake_self_update_processes($this);
 
         expect(self_update_step(run_self_update(), 'agent'))->toMatchArray(['outcome' => 'updated', 'before' => ['version' => null, 'sha256' => null]])
-            ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe(SELF_UPDATE_AGENT_BYTES)
-            ->and(file_exists($this->machine.'/bin/orbit-agent.orbit-previous'))->toBeFalse();
+            ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe(SELF_UPDATE_AGENT_BYTES);
     });
 
     it('changes nothing and restarts nothing when the agent download fails its checksum', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64' => "tampered\n"]);
+        fake_self_update_processes($this, ['agent-v'.SELF_UPDATE_AGENT_COMMIT.'/orbit-agent-linux-x86_64' => "tampered\n"]);
 
         $result = run_self_update(exitCode: 1);
 
         expect(self_update_step($result, 'agent')['error']['code'])->toBe('agent.checksum_mismatch')
             ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe("orbit-agent 0.2.0\n")
-            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.4/SHA256SUMS', 'curl agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64']);
+            ->and(glob($this->machine.'/bin/orbit-agent-candidate-*'))->toBe([])
+            ->and(self_update_commands($this))->toBe(['curl agent-v'.SELF_UPDATE_AGENT_COMMIT.'/SHA256SUMS', 'curl agent-v'.SELF_UPDATE_AGENT_COMMIT.'/orbit-agent-linux-x86_64']);
     });
 
     it('changes nothing when the agent release SHA256SUMS does not confirm the pin', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.4/SHA256SUMS' => str_repeat('0', 64)."  orbit-agent-0.4.4-linux-x86_64\n"]);
+        fake_self_update_processes($this, ['agent-v'.SELF_UPDATE_AGENT_COMMIT.'/SHA256SUMS' => str_repeat('0', 64)."  orbit-agent-linux-x86_64\n"]);
 
         expect(self_update_step(run_self_update(exitCode: 1), 'agent')['error']['code'])->toBe('agent.checksum_mismatch')
-            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.4/SHA256SUMS']);
+            ->and(self_update_commands($this))->toBe(['curl agent-v'.SELF_UPDATE_AGENT_COMMIT.'/SHA256SUMS']);
     });
 
     it('refuses an agent the Gateway names outside the Orbit release', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state(static function (array $data): array {
-            $data['agent']['assets'][0]['url'] = 'https://evil.example/orbit-agent-0.4.4-linux-x86_64';
+            $data['agent']['assets'][0]['url'] = 'https://evil.example/orbit-agent-linux-x86_64';
 
             return $data;
         })]);
@@ -599,7 +598,7 @@ describe('self-update agent step', function (): void {
         config()->set('app.version', '0.4600.0');
         file_put_contents($this->machine.'/bin/orbit', SELF_UPDATE_OLD_BINARY);
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64' => "tampered\n"]);
+        fake_self_update_processes($this, ['agent-v'.SELF_UPDATE_AGENT_COMMIT.'/orbit-agent-linux-x86_64' => "tampered\n"]);
 
         $result = run_self_update(exitCode: 1);
 

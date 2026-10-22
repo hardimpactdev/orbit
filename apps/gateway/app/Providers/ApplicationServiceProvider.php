@@ -166,6 +166,7 @@ use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -211,6 +212,11 @@ use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
@@ -574,6 +580,17 @@ final class ApplicationServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(OperationIdempotency::class);
+        $this->app->singleton(AgentContract::class, static fn (): AgentContract => new AgentContract(Config::string('orbit.agent.contract')));
+        $this->app->singleton(AgentDelivery::class, static fn (): AgentDelivery => new AgentDelivery(Config::string('orbit.agent.delivery'), Config::string('orbit.home').'/agent-artifacts'));
+        $this->app->bind(AgentTransports::class, static fn ($app): AgentTransports => new AgentTransports(
+            $app->make(NodeAccessAuthorizer::class),
+            $app->make(ProcessRunner::class),
+            $app->make(SshExecutor::class),
+            $app->make(SshKeyProvider::class),
+            $app->make(KnownHostsStore::class),
+            Config::string('orbit.home'),
+        ));
+        $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 

@@ -14,6 +14,8 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -22,7 +24,6 @@ use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -33,6 +34,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\MonotonicTime;
@@ -198,7 +200,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeReleaseCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -246,7 +248,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             clock: $probe->time->now(...),
             idleWaitSeconds: 1,
             fleet: $fleet,
-            agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
+            agent: $agent === null ? null : new GatewayNodeAgentUpdate($agent, app(AgentDelivery::class)),
             horizon: $horizon,
         ),
         $processes,
@@ -425,23 +427,21 @@ describe('gateway:release:handoff', function (): void {
         Log::shouldHaveReceived('warning')->withArgs(static fn (string $message): bool => str_contains($message, 'fleet rollout units'))->once();
     });
 
-    it('moves the Gateway Node agent to the pin after verify, in the scheduler phase, through local sudo', function (): void {
+    it('moves the Gateway Node agent to the pin after verify, in the scheduler phase, through the agent installer', function (): void {
         $gateway = handoff_gateway();
         $gateway->forceFill(['architecture' => 'x86_64'])->save();
         handoff_scheduler($gateway);
-        [$handoff, $processes] = runtime_handoff(agent: true);
-        $processes->results['sudo flock -w'] = new CommandResult(0, 'updated '.str_repeat('c', 64)."\n", '', 1, false);
-        $agentRuns = static fn (): array => array_values(array_filter($processes->ran, static fn (array $arguments): bool => array_slice($arguments, 0, 2) === ['sudo', 'flock']));
+        $runner = (new FakeAgentCommandRunner)->installReplaces();
+        [$handoff] = runtime_handoff(agent: $runner);
 
         $serve = $handoff->serve();
-        $beforeVerify = $agentRuns();
+        $beforeVerify = $runner->installs;
         $schedule = $handoff->schedule();
 
         expect($serve)->not->toHaveKey('gateway_agent')
             ->and($beforeVerify)->toBe([])
-            ->and($agentRuns())->toHaveCount(1)
-            ->and($agentRuns()[0])->toContain(NodeAgentFootprint::UpdateLockPath, NodeAgentFootprint::downloadUrl('x86_64'), NodeAgentFootprint::checksum('x86_64'))
-            ->and($schedule['gateway_agent'])->toBe(['outcome' => 'updated', 'version' => NodeAgentFootprint::Version, 'previous_sha256' => str_repeat('c', 64)])
+            ->and($runner->installs)->toBe([$gateway->name])
+            ->and($schedule['gateway_agent'])->toBe(['outcome' => 'updated', 'version' => app(AgentDelivery::class)->reportedVersion($gateway->fresh() ?? $gateway)])
             ->and($schedule['scheduler'])->toBe('restarted');
     });
 
@@ -449,12 +449,12 @@ describe('gateway:release:handoff', function (): void {
         $gateway = handoff_gateway();
         $gateway->forceFill(['architecture' => 'x86_64'])->save();
         handoff_scheduler($gateway);
-        [$handoff, $processes] = runtime_handoff(agent: true);
-        $processes->results['sudo flock -w'] = new CommandResult(24, "updated none\n", '', 1, false);
+        $runner = (new FakeAgentCommandRunner)->failInstall(new AgentCommandRefused('agent.install', 'agent.install_failed', 'The observer did not stay active.', ['cause' => 'agent.health_check_failed']));
+        [$handoff] = runtime_handoff(agent: $runner);
 
         $schedule = $handoff->schedule();
 
-        expect($schedule['gateway_agent'])->toMatchArray(['outcome' => 'failed', 'error_code' => 'agent.unhealthy'])
+        expect($schedule['gateway_agent'])->toMatchArray(['outcome' => 'failed', 'error_code' => 'agent.health_check_failed'])
             ->and($schedule['scheduler'])->toBe('restarted')
             ->and($schedule['opcache']['outcome'])->toBe('reset');
     });

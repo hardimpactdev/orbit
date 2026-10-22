@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Data\Fleet;
 
-use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** The `orbit-agent` release the Gateway pins, with the SHA-256 of each Linux binary. */
+/** The `orbit-agent` build the Gateway delivers: its Cargo version, source commit, and the SHA-256 of each binary. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class DesiredAgentData extends Data
 {
@@ -17,25 +17,30 @@ final class DesiredAgentData extends Data
      * @param  list<FleetReleaseAssetData>  $assets
      */
     public function __construct(
-        /** The pinned agent version, such as `0.3.0`. */
+        /** The Cargo version of the delivered build, such as `0.5.0`. */
         public string $version,
-        /** One binary per Linux architecture. */
+        /** The full source commit; the release tag is `agent-v<commit>`. */
+        public string $commit,
+        /** One binary per platform that has a release URL. */
         public array $assets,
     ) {}
 
-    public static function fromFootprint(): self
+    /** The agent build that this Gateway release delivers; only artifacts with a release URL can be pulled. */
+    public static function fromDelivery(AgentDelivery $delivery): self
     {
         $assets = [];
 
-        foreach (NodeAgentFootprint::Architectures as $architecture) {
-            $assets[] = new FleetReleaseAssetData(
-                platform: 'linux-'.$architecture,
-                name: NodeAgentFootprint::assetName($architecture),
-                url: NodeAgentFootprint::downloadUrl($architecture),
-                sha256: NodeAgentFootprint::checksum($architecture),
-            );
+        foreach ($delivery->artifacts() as $platform => $artifact) {
+            if (isset($artifact['url'])) {
+                $assets[] = new FleetReleaseAssetData(
+                    platform: $platform,
+                    name: basename($artifact['url']),
+                    url: $artifact['url'],
+                    sha256: $artifact['sha256'],
+                );
+            }
         }
 
-        return new self(NodeAgentFootprint::Version, $assets);
+        return new self($delivery->version(), $delivery->commit(), $assets);
     }
 }

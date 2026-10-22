@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Nodes\NodeCliFootprint;
@@ -62,6 +63,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
         private NodeFootprint $footprint,
         private FleetNodeVerification $verifier,
         private NodeUpdateLock $updateLock,
+        private AgentDelivery $delivery,
         private NodeCliState $cliState = new NodeCliState,
     ) {}
 
@@ -165,7 +167,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
 
             $step = 'verify';
             $tolerated = isset($footprint->skipped['caddy']) ? ['role.caddy_build_drift'] : [];
-            $verification = $this->verifier->verify($node, $baseline, $desired->agent->version, $tolerated);
+            $verification = $this->verifier->verify($node, $baseline, $this->delivery->reportedVersion($node), $tolerated);
             $evidence['verify'] = $verification;
         } catch (NodeUnreachable) {
             return $this->unreachable($node, $step, $evidence);
@@ -195,7 +197,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             $changed ? FleetNodeOutcome::Converged : FleetNodeOutcome::Unchanged,
             evidence: $evidence,
             cliVersion: $update['cli_version'] ?? $installation->version ?? $desired->cli->version,
-            agentVersion: $verification['agent_version'] ?? $desired->agent->version,
+            agentVersion: $verification['agent_version'] ?? $this->delivery->reportedVersion($node),
             footprintDigest: $footprint->digest,
         );
     }

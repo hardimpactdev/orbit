@@ -8,7 +8,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -16,6 +16,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use RuntimeException;
 use Throwable;
 
 final readonly class SshNodeStateInspector implements NodeStateInspector
@@ -81,6 +82,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private CommandDeadline $deadline,
+        private AgentDelivery $delivery,
     ) {}
 
     public function inspect(Node $node): NodeInspectionData
@@ -188,6 +190,11 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             'arm64', 'aarch64' => 'aarch64',
             default => null,
         };
+        try {
+            $pin = $agentArchitecture === null ? null : ($this->delivery->artifacts()['linux-'.$agentArchitecture]['sha256'] ?? null);
+        } catch (RuntimeException) {
+            $pin = null;
+        }
 
         return new NodeInspectionData(
             true,
@@ -197,9 +204,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             $binaryExists === '1',
             $unitExists === '1',
             $agentActive === '1',
-            $agentArchitecture === null
-                ? null
-                : hash_equals(NodeAgentFootprint::checksum($agentArchitecture), $checksum),
+            $pin === null ? null : hash_equals($pin, $checksum),
             $secretChecksum === '' ? null : $secretChecksum,
             $filesystems,
         );

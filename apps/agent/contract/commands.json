@@ -1,0 +1,46 @@
+{
+  "commands": [
+    {
+      "errors": [
+        "agent.digest_unreadable"
+      ],
+      "mutates": false,
+      "name": "agent.status",
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "summary": "Report the running agent binary and its observer.",
+      "timeout_seconds": 10
+    },
+    {
+      "errors": [
+        "agent.candidate_invalid",
+        "agent.candidate_missing",
+        "agent.candidate_digest_mismatch",
+        "agent.update_busy",
+        "agent.replace_failed",
+        "agent.health_check_failed"
+      ],
+      "mutates": true,
+      "name": "agent.install",
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "summary": "Install a staged, pinned agent binary and restart the observer on it.",
+      "timeout_seconds": 180
+    }
+  ],
+  "common_errors": [
+    "agent.version_mismatch",
+    "agent.envelope_invalid",
+    "agent.unknown_command",
+    "agent.invalid_input",
+    "agent.identity_mismatch",
+    "agent.privilege_unsupported",
+    "agent.platform_unsupported",
+    "agent.deadline_exceeded",
+    "agent.supervisor_failed"
+  ]
+}

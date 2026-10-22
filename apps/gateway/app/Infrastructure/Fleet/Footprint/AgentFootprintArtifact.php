@@ -10,7 +10,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 
 /**
@@ -24,6 +24,7 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
         private NodeAgentRuntime $agent,
         private ManagedNodeEligibility $eligibility,
         private LeafCertificateSigner $certificates,
+        private AgentDelivery $delivery,
     ) {}
 
     public function name(): string
@@ -38,17 +39,9 @@ final readonly class AgentFootprintArtifact implements NodeFootprintArtifact
 
     public function digest(Node $node): string
     {
-        $architecture = is_string($node->architecture) ? $node->architecture : '';
-
-        try {
-            $checksum = NodeAgentFootprint::checksum($architecture);
-        } catch (\InvalidArgumentException) {
-            $checksum = 'unsupported:'.$architecture;
-        }
-
         return hash('sha256', json_encode([
-            'version' => NodeAgentFootprint::Version,
-            'checksum' => $checksum,
+            'commit' => $this->delivery->commit(),
+            'pin' => $this->delivery->pin($node),
             'gateway' => Node::query()
                 ->where('status', LifecycleStatus::Active)
                 ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))

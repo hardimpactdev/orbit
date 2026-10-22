@@ -12,6 +12,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentRoleConverger;
@@ -31,6 +32,7 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('refuses macOS agent installation before SSH and skips removal', function (): void {
     $ssh = new AgentInstallSsh(null);
@@ -45,23 +47,6 @@ it('refuses macOS agent installation before SSH and skips removal', function ():
     $agent->remove($node);
 
     expect($ssh->commands)->toBeEmpty();
-});
-
-it('pins the current agent release for both supported architectures', function (): void {
-    expect(NodeAgentFootprint::Architectures)->toBe(['x86_64', 'aarch64']);
-
-    expect(NodeAgentFootprint::Version)->toBe('0.4.4')
-        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf')
-        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632')
-        ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64')
-        ->and(NodeAgentFootprint::downloadUrl('aarch64'))
-        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-aarch64');
-});
-
-it('rejects an architecture absent from the current agent manifest', function (): void {
-    expect(fn () => NodeAgentFootprint::checksum('armv7l'))
-        ->toThrow(InvalidArgumentException::class, 'Unsupported Node agent architecture.');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {
@@ -89,30 +74,31 @@ it('keeps the role converge going when the agent install fails', function (): vo
     Log::shouldHaveReceived('warning')->once();
 });
 
-it('skips the download when the installed checksum matches', function (): void {
-    $ssh = new AgentInstallSsh(NodeAgentFootprint::checksum('x86_64'));
-    $agent = nodeAgentExecutor($ssh);
+it('installs the pinned binary through the agent before it holds the update lock, and restarts after a replacement', function (): void {
+    $ssh = new AgentInstallStatefulSsh;
+    $runner = (new FakeAgentCommandRunner)->installReplaces();
+    $node = nodeAgentStoredNode();
+    $commandsAtInstall = null;
+    $runner->onInstall(static function () use ($ssh, &$commandsAtInstall): void {
+        $commandsAtInstall = nodeAgentArguments($ssh);
+    });
 
-    $agent->converge(nodeAgentNode());
+    nodeAgentExecutor($ssh, runner: $runner)->converge($node);
 
-    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
-        ->not->toContain([
-            'sudo', 'curl', '--fail', '--location', '--silent', '--show-error',
-            '--output', '/usr/local/bin/orbit-agent.orbit-candidate', '--', NodeAgentFootprint::downloadUrl('x86_64'),
-        ]);
+    expect($runner->installs)->toBe(['app-prod'])
+        ->and(array_filter($commandsAtInstall ?? [], static fn (array $argument): bool => in_array(NodeAgentFootprint::UpdateLockPath, $argument, true)))->toBe([])
+        ->and(nodeAgentArguments($ssh))->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent'])
+        ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]);
 });
 
-it('bounds the binary download inside the lock term', function (): void {
-    $ssh = new AgentInstallSsh(null);
-    nodeAgentExecutor($ssh)->converge(nodeAgentNode());
+it('fails the converge with agent.install_failed when the agent installer fails', function (): void {
+    $ssh = new AgentInstallStatefulSsh;
+    $runner = (new FakeAgentCommandRunner)->failInstall(new AgentCommandRefused('agent.install', 'agent.install_failed', 'health check failed', ['cause' => 'agent.health_check_failed']));
+    $node = nodeAgentStoredNode();
 
-    $downloadIndex = array_search(
-        ['sudo', 'curl', '--fail', '--location', '--silent', '--show-error', '--connect-timeout', '20', '--max-time', '120', '--output', '/usr/local/bin/orbit-agent.orbit-candidate', '--', NodeAgentFootprint::downloadUrl('x86_64')],
-        array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands),
-        true,
-    );
-
-    expect($downloadIndex)->toBeInt();
+    expect(fn () => nodeAgentExecutor($ssh, runner: $runner)->converge($node))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'agent.install_failed' && $exception->status === 502);
+    expect(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
 });
 
 it('leaves the running agent alone on an unchanged converge', function (): void {
@@ -128,7 +114,6 @@ it('leaves the running agent alone on an unchanged converge', function (): void 
     $arguments = array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
 
     expect($arguments)
-        ->not->toContain(['sudo', 'curl', '--fail', '--location', '--silent', '--show-error', '--output', '/usr/local/bin/orbit-agent.orbit-candidate', '--', NodeAgentFootprint::downloadUrl('x86_64')])
         ->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent'])
         ->toContain(['sudo', 'systemctl', 'enable', '--now', 'orbit-agent']);
 });
@@ -305,21 +290,6 @@ it('fails agent removal when a remote cleanup command fails', function (): void 
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'agent.remove_failed');
 });
 
-it('fails with agent.checksum_mismatch', function (): void {
-    $ssh = new AgentInstallSsh(null, '0000000000000000000000000000000000000000000000000000000000000000');
-    $agent = nodeAgentExecutor($ssh);
-
-    try {
-        $agent->converge(nodeAgentNode());
-        test()->fail('Expected checksum verification to fail.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe('agent.checksum_mismatch');
-    }
-
-    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
-        ->toContain(['sudo', 'rm', '-f', '--', '/usr/local/bin/orbit-agent.orbit-candidate']);
-});
-
 function nodeAgentStoredNode(): Node
 {
     return Node::query()->forceCreate([
@@ -403,23 +373,17 @@ describe('the agent secret', function (): void {
         'edited' => ['edited-by-hand'],
     ]);
 
-    it('writes the secret file before it swaps the binary, and keeps the Node exempt when the download fails', function (): void {
+    it('keeps the Node exempt and writes no secret when the binary installation fails', function (): void {
         $ssh = new AgentInstallStatefulSsh;
-        $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
+        $runner = (new FakeAgentCommandRunner)->failInstall(new RuntimeException('staging failed'));
         $node = nodeAgentStoredNode();
 
-        expect(fn () => nodeAgentExecutor($ssh)->converge($node))
-            ->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, runner: $runner)->converge($node))
+            ->toThrow(RuntimeException::class);
 
-        $arguments = nodeAgentArguments($ssh);
-        $secret = array_search(['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0600', '/dev/stdin', NodeAgentFootprint::SecretPath.'.orbit-candidate'], $arguments, true);
-        $download = array_key_first(array_filter($arguments, static fn (array $command): bool => ($command[1] ?? null) === 'curl'));
-
-        expect($secret)->toBeInt()->toBeLessThan($download)
-            ->and($ssh->file(NodeAgentFootprint::SecretPath))->toMatch('/\A[0-9a-f]{64}\z/')
-            ->and(true)->toBeTrue()
+        expect($ssh->file(NodeAgentFootprint::SecretPath))->toBeNull()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull()
-            ->and($arguments)->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
+            ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
     });
 
     it('keeps the Node exempt when the agent fails to restart after the secret file is written', function (string $failing): void {
@@ -514,7 +478,6 @@ describe('the agent secret', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
         nodeAgentExecutor($ssh)->converge($node);
-        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
         $atRestart = null;
         $ssh->before = static function (array $arguments) use (&$atRestart, $node): void {
             if ($arguments === ['sudo', 'systemctl', 'restart', 'orbit-agent']) {
@@ -524,7 +487,7 @@ describe('the agent secret', function (): void {
         $ssh->fails = $failing === null ? null : static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', $failing, 'orbit-agent'];
 
         try {
-            nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
+            nodeAgentExecutor($ssh, runner: (new FakeAgentCommandRunner)->installReplaces())->converge($node->fresh() ?? $node);
         } catch (ResourceOperationException) {
             expect($failing)->not->toBeNull();
         }
@@ -535,11 +498,11 @@ describe('the agent secret', function (): void {
 
     it('keeps the stored hash when agent installation fails', function (): void {
         $ssh = new AgentInstallStatefulSsh;
-        $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
+        $runner = (new FakeAgentCommandRunner)->failInstall(new AgentCommandRefused('agent.install', 'agent.install_failed', 'failed'));
         $node = nodeAgentStoredNode();
         $node->forceFill(['agent_secret_hash' => str_repeat('c', 64)])->save();
 
-        expect(fn () => nodeAgentExecutor($ssh)->converge($node))->toThrow(ResourceOperationException::class);
+        expect(fn () => nodeAgentExecutor($ssh, runner: $runner)->converge($node))->toThrow(ResourceOperationException::class);
 
         expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64));
     });
@@ -548,10 +511,9 @@ describe('the agent secret', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
         nodeAgentExecutor($ssh)->converge($node);
-        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
         $start = count(nodeAgentArguments($ssh));
 
-        nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
+        nodeAgentExecutor($ssh, runner: (new FakeAgentCommandRunner)->installReplaces())->converge($node->fresh() ?? $node);
 
         $arguments = array_slice(nodeAgentArguments($ssh), $start);
         $position = static function (Closure $match) use ($arguments): int {
@@ -564,32 +526,12 @@ describe('the agent secret', function (): void {
             return -1;
         };
         $acquire = $position(static fn (array $argument): bool => in_array(NodeAgentFootprint::UpdateLockPath, $argument, true) && str_starts_with((string) ($argument[4] ?? ''), 'orbit-update-lock-'));
-        $swap = $position(static fn (array $argument): bool => $argument === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]);
         $restart = $position(static fn (array $argument): bool => $argument === ['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]);
         $release = $position(static fn (array $argument): bool => ($argument[1] ?? null) === 'sh' && str_contains((string) ($argument[3] ?? ''), 'systemctl stop'));
 
         expect($acquire)->toBeGreaterThanOrEqual(0)
-            ->and($swap)->toBeGreaterThan($acquire)
-            ->and($restart)->toBeGreaterThan($swap)
+            ->and($restart)->toBeGreaterThan($acquire)
             ->and($release)->toBeGreaterThan($restart);
-    });
-
-    it('keeps the secret hash while the replacement binary is installed', function (): void {
-        $ssh = new AgentInstallStatefulSsh;
-        $node = nodeAgentStoredNode();
-        nodeAgentExecutor($ssh)->converge($node);
-        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
-        $atSwap = null;
-        $ssh->before = static function (array $arguments) use (&$atSwap, $node): void {
-            if ($arguments === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]) {
-                $atSwap = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash'])?->only(['agent_secret_hash']);
-            }
-        };
-        $ssh->fails = static fn (array $arguments): bool => $arguments === ['sudo', 'systemctl', 'daemon-reload'];
-
-        expect(fn () => nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node))->toThrow(ResourceOperationException::class);
-
-        expect($atSwap['agent_secret_hash'])->toBeString()->toHaveLength(64);
     });
 
     it('stops without touching the record when another converge took over its expired lock', function (string $step): void {
@@ -615,7 +557,27 @@ describe('the agent secret', function (): void {
         expect(true)->toBeTrue()
             ->and($node->fresh()?->agent_secret_hash)->toBeNull()
             ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
-    })->with(['install', 'curl', 'mv']);
+    })->with(['install']);
+
+    it('stops without touching the record when another converge took over the lock during the binary installation', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        $name = 'node-agent:id:'.$node->getKey();
+        $runner = (new FakeAgentCommandRunner)->installReplaces()->onInstall(static function () use ($name): void {
+            app(NodeLocks::class)->lock($name, 1)->forceRelease();
+            app(NodeLocks::class)->lock($name, 60)->get();
+        });
+
+        try {
+            expect(fn () => nodeAgentExecutor($ssh, runner: $runner)->converge($node))
+                ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'agent.converge_lock_lost');
+        } finally {
+            app(NodeLocks::class)->lock($name, 1)->forceRelease();
+        }
+
+        expect($node->fresh()?->agent_secret_hash)->toBeNull()
+            ->and(nodeAgentArguments($ssh))->not->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
+    });
 
     it('serializes converges of the same Node', function (): void {
         $node = nodeAgentStoredNode();
@@ -631,9 +593,8 @@ describe('the agent secret', function (): void {
             $lock->release();
         }
 
-        $ssh = new AgentInstallStatefulSsh;
-        $ssh->fails = static fn (array $arguments): bool => ($arguments[1] ?? null) === 'curl';
-        expect(fn () => nodeAgentExecutor($ssh, lockWaitSeconds: 0)->converge($node))->toThrow(ResourceOperationException::class);
+        $runner = (new FakeAgentCommandRunner)->failInstall(new AgentCommandRefused('agent.install', 'agent.install_failed', 'failed'));
+        expect(fn () => nodeAgentExecutor(new AgentInstallStatefulSsh, lockWaitSeconds: 0, runner: $runner)->converge($node))->toThrow(ResourceOperationException::class);
 
         nodeAgentExecutor(new AgentInstallStatefulSsh, lockWaitSeconds: 0)->converge($node);
 
@@ -659,7 +620,7 @@ it('keeps the Node locks in a file store under ORBIT_HOME, whatever CACHE_STORE 
     }
 });
 
-function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'), int $lockWaitSeconds = 120): NodeAgentSshExecutor
+function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'), int $lockWaitSeconds = 120, FakeAgentCommandRunner $runner = new FakeAgentCommandRunner): NodeAgentSshExecutor
 {
     if (! Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
         $gateway = Node::query()->create([
@@ -690,6 +651,7 @@ function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new 
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
         new NodeUpdateLock(new NodeShell($ssh, new AgentInstallKeys, new AgentInstallKnownHosts)),
+        $runner,
         app(NodeLocks::class),
         $lockWaitSeconds,
     );
@@ -721,7 +683,7 @@ final class AgentInstallSsh implements SshExecutor
         public bool $runScriptsLocally = false,
         public ?CommandResult $scriptResult = null,
     ) {
-        $this->candidateChecksum ??= NodeAgentFootprint::checksum('x86_64');
+        $this->candidateChecksum ??= str_repeat('b', 64);
     }
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -830,7 +792,7 @@ final class AgentInstallStatefulSsh implements SshExecutor
 
         if (($arguments[1] ?? null) === 'curl') {
             $candidate = $arguments[array_search('--output', $arguments, true) + 1];
-            $this->checksums[$candidate] = NodeAgentFootprint::checksum('x86_64');
+            $this->checksums[$candidate] = str_repeat('b', 64);
 
             return new CommandResult(0, '', '', 1, false);
         }

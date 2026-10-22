@@ -16,11 +16,11 @@ use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\VersionConstraint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
@@ -43,6 +43,7 @@ final readonly class ConvergeNodeRecipeAction
         private DebianVersionNormalizer $versions,
         private FleetNodeVerification $verifier,
         private RecipeMaintenanceAlerts $alerts,
+        private AgentDelivery $delivery,
     ) {}
 
     /** @return array{plan: NodeRecipePlan, applied: bool, changes: array<string, mixed>} */
@@ -83,7 +84,7 @@ final readonly class ConvergeNodeRecipeAction
                 $node->update(['settings' => $settings]);
                 $changes = $this->program->apply($node, $recipe, $tools);
                 $this->verifyTools($node);
-                $report = $this->verifier->verify($node, [], NodeAgentFootprint::Version);
+                $report = $this->verifier->verify($node, [], $this->delivery->reportedVersion($node));
                 if (! $report['passed']) {
                     throw new ResourceOperationException('node.recipe_doctor_failed', 'Recipe convergence stopped at Doctor. The Node may be partly changed. No automatic rollback was attempted. Run Doctor for this Node before continuing.', 502);
                 }

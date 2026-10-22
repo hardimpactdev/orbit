@@ -152,7 +152,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
-                agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
+                agent: $app->make(GatewayNodeAgentUpdate::class),
                 horizon: $app->make(GatewayHorizon::class),
                 recipeImages: static function () use ($app): void {
                     $app->make(RecipeImageBuilds::class)->reconcile();

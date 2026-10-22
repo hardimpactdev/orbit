@@ -19,6 +19,7 @@ use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
@@ -101,7 +102,7 @@ function fleetDesiredState(): DesiredFleetStateData
     return new DesiredFleetStateData(
         FleetFixtures::Commit,
         new FakeCliReleaseCatalog()->find(FleetFixtures::Commit, new CliReleaseName(4681)),
-        DesiredAgentData::fromFootprint(),
+        DesiredAgentData::fromDelivery(app(AgentDelivery::class)),
     );
 }
 

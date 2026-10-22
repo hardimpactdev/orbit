@@ -6,7 +6,7 @@ use App\Data\Fleet\DesiredFleetStateData;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\ReleaseHistory;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\Lock;
@@ -28,19 +28,20 @@ describe(DesiredFleetState::class, function (): void {
         expect($state['commit'])->toBe(CLI_RELEASE_FIXTURE_COMMIT)
             ->and($state['cli']['version'])->toBe('0.4681.0')
             ->and($state['agent'])->toBe([
-                'version' => NodeAgentFootprint::Version,
+                'version' => '0.5.0',
+                'commit' => '0123456789abcdef0123456789abcdef01234567',
                 'assets' => [
                     [
                         'platform' => 'linux-x86_64',
-                        'name' => 'orbit-agent-'.NodeAgentFootprint::Version.'-linux-x86_64',
-                        'url' => NodeAgentFootprint::downloadUrl('x86_64'),
-                        'sha256' => NodeAgentFootprint::checksum('x86_64'),
+                        'name' => 'orbit-agent-linux-x86_64',
+                        'url' => 'https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-x86_64',
+                        'sha256' => app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256'],
                     ],
                     [
                         'platform' => 'linux-aarch64',
-                        'name' => 'orbit-agent-'.NodeAgentFootprint::Version.'-linux-aarch64',
-                        'url' => NodeAgentFootprint::downloadUrl('aarch64'),
-                        'sha256' => NodeAgentFootprint::checksum('aarch64'),
+                        'name' => 'orbit-agent-linux-aarch64',
+                        'url' => 'https://github.com/hardimpactdev/orbit/releases/download/agent-v0123456789abcdef0123456789abcdef01234567/orbit-agent-linux-aarch64',
+                        'sha256' => app(AgentDelivery::class)->artifacts()['linux-aarch64']['sha256'],
                     ],
                 ],
             ]);
@@ -238,7 +239,7 @@ describe(DesiredFleetState::class, function (): void {
             'cli' => ['status' => 'available', 'reason' => null, 'version' => '0.4681.0', 'tag' => 'cli-v0.4681.0', 'checksums_url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS', 'assets' => [
                 ['platform' => 'linux-x86_64', 'name' => 'orbit-0.4681.0-linux-x86_64', 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64', 'sha256' => str_repeat('c', 64)],
             ]],
-            'agent' => ['version' => NodeAgentFootprint::Version, 'assets' => []],
+            'agent' => ['version' => app(AgentDelivery::class)->version(), 'commit' => app(AgentDelivery::class)->commit(), 'assets' => []],
         ]);
 
         expect($stored?->cli->commit)->toBeNull()
@@ -254,7 +255,7 @@ describe(DesiredFleetState::class, function (): void {
 
         expect($state->commit)->toBeNull()
             ->and($state->cli->toArray()['reason'])->toBe('gateway_commit_unknown')
-            ->and($state->agent->version)->toBe(NodeAgentFootprint::Version);
+            ->and($state->agent->version)->toBe(app(AgentDelivery::class)->version());
     })->with(['dev', '0.1.0', '']);
 
     it('keeps a full commit the history does not know and reports it unknown', function (): void {

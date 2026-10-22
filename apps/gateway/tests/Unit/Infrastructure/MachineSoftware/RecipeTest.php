@@ -12,7 +12,6 @@ use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\TaskVms\TaskVmCloudInit;
@@ -270,9 +269,9 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->tools['caddy']->version)->toBe(CaddyPackageProgram::RELEASE)
             ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(CaddyPackageProgram::AMD64_SHA512)
             ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(CaddyPackageProgram::ARM64_SHA512)
-            ->and($recipe->tools['orbit-agent']->version)->toBe(NodeAgentFootprint::Version)
-            ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe(NodeAgentFootprint::checksum('x86_64'))
-            ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.4')
+            ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe('b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf')
+            ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe('b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632');
     });
 
     it('names the rollback tool, the PCOV profiles and the mirror', function (): void {

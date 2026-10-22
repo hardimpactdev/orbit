@@ -7,8 +7,8 @@ use App\Data\Doctor\DoctorIssueData;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -54,7 +54,7 @@ it('maps a bounded successful SSH observation', function (): void {
                 ->toContain('sudo -n sha256sum -- /etc/orbit/agent/secret')
                 ->not->toContain('cat');
 
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\n".str_repeat('b', 64)."\nFilesystem Avail 1K-blocks IFree Inodes\n/dev/root 16384 26214400 90000 100000\n/dev/root 16384 26214400 90000 100000\n", 'secret stderr', 1, false);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256']."\n".str_repeat('b', 64)."\nFilesystem Avail 1K-blocks IFree Inodes\n/dev/root 16384 26214400 90000 100000\n/dev/root 16384 26214400 90000 100000\n", 'secret stderr', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -80,7 +80,7 @@ it('maps a bounded successful SSH observation', function (): void {
     };
     $node = new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7', 'architecture' => 'x86_64']);
 
-    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect($node);
+    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect($node);
 
     expect($result->reachable)
         ->toBeTrue()
@@ -149,7 +149,7 @@ it('reports disk low through SSH even with unavailable inode accounting or negat
         'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
 
-    $inspection = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect($node);
+    $inspection = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect($node);
     $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext($node, $inspection));
     $diskIssues = array_values(array_filter($report->issues, static fn (DoctorIssueData $issue): bool => $issue->code === 'node.disk_low'));
 
@@ -201,7 +201,7 @@ it('rejects malformed successful output and bounds architecture aliases', functi
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
+    expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect(new Node([
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.7',
     ])))
@@ -215,7 +215,7 @@ it('rejects truncated successful output', function (): void {
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\n\n", '', 1, true);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256']."\n\n", '', 1, true);
         }
     };
     expect(fn (): mixed => new SshNodeStateInspector(
@@ -242,6 +242,7 @@ it('rejects truncated successful output', function (): void {
             public function put(string $host, int $port, HostKey $key): void {}
         },
         new CommandDeadline,
+        app(AgentDelivery::class),
     )->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7'])))
         ->toThrow(DoctorInspectionException::class);
 });
@@ -277,7 +278,7 @@ it('returns reachable with a missing interface and maps arm aliases', function (
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
+    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect(new Node([
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.7',
     ]));
@@ -326,7 +327,7 @@ it('maps transport exceptions and missing addresses to unreachable', function ()
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $inspector = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline);
+    $inspector = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class));
     expect($inspector->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']))->reachable)
         ->toBeFalse()
         ->and($inspector->inspect(new Node(['user' => 'nckrtl']))->reachable)
@@ -364,7 +365,7 @@ it('maps timeouts to an unreachable bounded observation', function (): void {
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
+    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect(new Node([
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.7',
     ]));
@@ -409,7 +410,7 @@ it('maps command failures to an unreachable bounded observation', function (): v
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
+    $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect(new Node([
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.7',
     ]));
@@ -428,7 +429,7 @@ it('rejects a secret line that is not a SHA-256 hash', function (): void {
     {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::checksum('x86_64')."\nnot-a-hash\n", '', 1, false);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".app(AgentDelivery::class)->artifacts()['linux-x86_64']['sha256']."\nnot-a-hash\n", '', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -453,7 +454,7 @@ it('rejects a secret line that is not a SHA-256 hash', function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     };
 
-    expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.7'])))
+    expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline, app(AgentDelivery::class))->inspect(new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.7'])))
         ->toThrow(DoctorInspectionException::class);
 });
 
@@ -694,5 +695,6 @@ function mac_observation_inspector(SshExecutor $ssh): SshNodeStateInspector
             public function put(string $host, int $port, HostKey $key): void {}
         },
         new CommandDeadline,
+        app(AgentDelivery::class),
     );
 }

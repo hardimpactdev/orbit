@@ -27,6 +27,7 @@ use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
@@ -106,6 +107,7 @@ final class FleetServiceProvider extends ServiceProvider
                 membership: $app->make(FleetRolloutMembership::class),
                 footprint: $app->make(NodeFootprint::class),
                 versions: $app->make(AgentReportedVersions::class),
+                delivery: $app->make(AgentDelivery::class),
                 enabled: Config::boolean('fleet.rollout'),
             ),
         );

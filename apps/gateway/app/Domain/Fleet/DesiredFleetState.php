@@ -8,6 +8,7 @@ use App\Data\Fleet\DesiredAgentData;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Data\Fleet\DesiredFleetStateData;
 use App\Domain\GatewayReleases\GatewayVersion;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Cache\Repository;
@@ -64,6 +65,7 @@ final readonly class DesiredFleetState
         private ReleaseHistory $history,
         private CliReleaseCatalog $catalog,
         private Repository $cache,
+        private AgentDelivery $delivery,
     ) {}
 
     /** Resolves the state, asking Git and GitHub when the cache has no answer for this commit. */
@@ -103,7 +105,7 @@ final readonly class DesiredFleetState
         [$commit, $cli, $seconds] = $this->resolve($revision);
         $this->cache->put($this->key($revision), ['commit' => $commit, 'cli' => $cli->toArray()], $seconds);
 
-        return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromFootprint());
+        return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromDelivery($this->delivery));
     }
 
     /** The state from the cache alone, without Git or GitHub, or null when nothing is cached for this commit. */
@@ -132,7 +134,7 @@ final readonly class DesiredFleetState
             return null;
         }
 
-        return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromFootprint());
+        return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromDelivery($this->delivery));
     }
 
     /**

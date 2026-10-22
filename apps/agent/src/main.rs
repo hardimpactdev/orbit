@@ -34,6 +34,7 @@ use zbus::{
 
 const SYSTEMD_DEST: &str = "org.freedesktop.systemd1";
 const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+#[cfg(test)]
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -62,9 +63,26 @@ enum DockerUpdate {
     Absent,
 }
 
-#[tokio::main]
-async fn main() {
-    if let Err(error) = run().await {
+fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    match arguments.first().map(String::as_str) {
+        // Command mode needs no runtime, observer, secret, or Gateway connection (ADR 0225).
+        Some("command") => std::process::exit(orbit_agent::command::main(&arguments[1..])),
+        Some("contract") if arguments.len() == 1 => {
+            let contract = orbit_agent::command::registry::contract();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&contract).expect("the contract serializes")
+            );
+            return;
+        }
+        _ => {}
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("the observer runtime starts");
+    if let Err(error) = runtime.block_on(run()) {
         eprintln!("orbit-agent: {error}");
         std::process::exit(1);
     }
@@ -293,7 +311,8 @@ async fn connected_session(
     }
     parsed.set_path(&format!("/app/{key}"));
     parsed.set_query(Some(&format!(
-        "protocol=7&client=orbit-agent&version={VERSION}&flash=false"
+        "protocol=7&client=orbit-agent&version={}&flash=false",
+        orbit_agent::reported_version()
     )));
     let address = ws_address.parse::<std::net::IpAddr>()?;
     let request = parsed.as_str().into_client_request()?;
@@ -306,7 +325,14 @@ async fn connected_session(
         let (socket, _) =
             client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls)))
                 .await?;
-        protocol_handshake(socket, client, &auth_url, channel, VERSION).await
+        protocol_handshake(
+            socket,
+            client,
+            &auth_url,
+            channel,
+            orbit_agent::reported_version(),
+        )
+        .await
     };
     let (mut socket, socket_id) = tokio::time::timeout(JOIN_TIMEOUT, join)
         .await
@@ -341,7 +367,7 @@ async fn connected_session(
     // While the log channel subscription waits for an answer, a 4009 error refuses it, not the session.
     let mut log_pending = false;
     if let Some(log_channel) = log_channel {
-        match channel_auth(client, &auth_url, &socket_id, log_channel, VERSION).await {
+        match channel_auth(client, &auth_url, &socket_id, log_channel, orbit_agent::reported_version()).await {
             Ok(auth) => {
                 send_control(
                     &mut socket,

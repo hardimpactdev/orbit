@@ -33647,6 +33647,9 @@
           "version": {
             "type": "string"
           },
+          "commit": {
+            "type": "string"
+          },
           "assets": {
             "type": "array",
             "items": {
