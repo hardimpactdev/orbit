@@ -458,3 +458,11 @@ it('preserves explicit true and false attachment replacement consent and omits a
     expect(new AddInstanceDatabaseRequest(12, 'catalog', replace: $replace)->body()->all())
         ->toBe($replace === null ? [] : ['replace' => $replace]);
 })->with([null, false, true]);
+
+it('transports the PostgreSQL worker count and preserves the returned pool size', function (): void {
+    expect(new CreateDatabaseConnectionRequest(slug: 'app', server: 'pg', instanceId: 12, testProcesses: 4)->body()->all())->toBe(['slug' => 'app', 'server' => 'pg', 'instance_id' => 12, 'test_processes' => 4]);
+    expect(new CreateDatabaseConnectionRequest(slug: 'app', server: 'pg', instanceId: 12)->body()->all())->not->toHaveKey('test_processes');
+    $response = DatabaseConnectionResponse::fromGatewayData([...database_connection_sdk_data(), 'driver' => 'pgsql', 'test_processes' => 4], '11111111-1111-4111-8111-111111111111');
+    expect($response->testProcesses)->toBe(4);
+    expect($response->toArray()['test_processes'])->toBe(4);
+});

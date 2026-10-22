@@ -763,7 +763,7 @@ DESCRIPTIONS = {
     'analytics:credentials:set': 'Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.',
     'analytics:credentials:unset': 'Clears the stored Plausible Stats API key.',
     'database:user:create': 'Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants read access; otherwise MySQL grants all database privileges and PostgreSQL grants data-write access. `replication` (default false) grants PostgreSQL LOGIN REPLICATION with read-only access and owner defaults for future public tables. It requires live wal_level=logical (`database.wal_level_not_logical` otherwise); other drivers return `database.driver_unsupported`. Omitting replication on a repeat removes the attribute. App migrations own publications. User inspection returns the recorded replication boolean. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.',
-    'database:create': 'Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.',
+    'database:create': 'Registers an existing database, or with `server` creates a MySQL/PostgreSQL database and owner or a Valkey ACL user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database (plus a bounded PostgreSQL worker pool, configured by `test_processes`), and attaches the connection under prefix DB. The response never contains a password.',
     'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
     'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
     'database:server:show': 'Shows one Database server with the connections of the databases on it.',
@@ -1799,6 +1799,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 redis_schema['required'] = sorted(set(server_schema['required'] + redis_fields.get('required', [])))
                 pgsql_rules = 'return [' + server_rules.split('DatabaseDriver::Pgsql => [', 1)[1].split('DatabaseDriver::Redis =>', 1)[0]
                 pgsql_fields, _ = rules_to_schema(pgsql_rules, route['name'])
+                server_schema['properties']['test_processes'] = pgsql_fields['properties']['test_processes']
+                server_schema['properties']['test_processes']['description'] = 'PostgreSQL with instance_id only: parallel worker pool size, default 8. Leave Laravel recreate/drop options off.'
+                redis_schema['properties'].pop('test_processes', None)
                 server_schema['properties']['locale'] = pgsql_fields['properties']['locale']
                 server_schema['properties']['locale']['description'] = 'PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.'
                 redis_schema['properties'].pop('locale', None)

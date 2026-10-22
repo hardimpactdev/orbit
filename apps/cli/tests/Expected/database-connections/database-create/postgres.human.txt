@@ -1,0 +1,41 @@
+Creating database...
+
+┌  Create database
+│
+├  ● Created database
+│
+└  Created database.
+
+
+┌  Database [app_parallel] created on [beast-pg].
+│
+├  ID                  4
+│
+├  Slug                app-parallel
+│
+├  Driver              pgsql
+│
+├  Node ID             2
+│
+├  Host                10.44.0.80
+│
+├  Port                5432
+│
+├  Database            app_parallel
+│
+├  Path                —
+│
+├  Username            dlf_main
+│
+├  Password            stored
+│
+├  Server              beast-pg
+│
+├  Owner Instance ID   1
+│
+├  Test database       app_parallel_test
+│
+├  Test processes      4
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
+  - apps/gateway/database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php
   - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
@@ -56,7 +57,7 @@ PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, co
 
 A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries.
 
-Create application objects as the managed owner. Orbit-managed databases use only Orbit-managed grants, without hand-written GRANT/REVOKE SQL or bespoke roles. Managed grants cover schema `public`; custom schemas are unsupported. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
+Create application objects as the managed owner. Orbit-managed databases use only Orbit-managed grants, without hand-written GRANT/REVOKE SQL or bespoke roles. Managed grants cover schema `public`; custom schemas are unsupported. A PostgreSQL database owned by an Instance includes a fixed pool of [test databases](/reference/database-connections#test-databases). The managed owner keeps `NOCREATEDB`.
 
 [Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
 
@@ -142,13 +143,15 @@ orbit database:create dlf-leden --server=beast-mysql --instance=60
 
 The database name comes from the slug, with hyphens replaced by underscores. On MySQL, a database name longer than 64 characters, or a user name longer than 32, ends in an underscore and an 8-character hash. PostgreSQL names are limited to 63 ASCII characters and use the same hash suffix when shortened. Orbit generates the owner password.
 
-On MySQL, each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
+On MySQL and PostgreSQL, each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
 
-Orbit refuses a name with `database.name_conflict` when the server already has that database or user, or when the name starts with the test database name of another database on the server. So one Instance's user never reaches another database through its test database grant. A create that fails drops what it made and records nothing.
+Orbit refuses a name with `database.name_conflict` when the server already has that database or user. MySQL also refuses a name that starts with another database's test database name. PostgreSQL checks exact names against the primary database and the recorded test pool. So one Instance's user never reaches another database through its test database grant. A create that fails drops what it made and records nothing.
 
-On MySQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
+On MySQL and PostgreSQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
-`database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
+PostgreSQL also creates `<name>_test_test_1` through `<name>_test_test_N`, all owned by the same managed role. `--test-processes=N` sets N from 1 to 32; omission uses 8. The connection records `test_processes`. This option requires a PostgreSQL server and `--instance`; other combinations are refused. The primary name is limited to 50 characters with the same hash suffix, so the longest worker name fits PostgreSQL's 63-character limit. The selected locale applies to the primary database and every test database. Creation checks every name before mutation. Failure removes the entire planned pool; destruction drops only the recorded pool and leaves unrecorded names alone. The count is fixed at creation; create a new connection to change it.
+
+`database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, for MySQL pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
 
 PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 
@@ -293,7 +296,7 @@ The server commands return these codes.
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
-| `database.driver_unsupported` | 422 | The driver does not support this operation, including Instance-owned PostgreSQL databases. |
+| `database.driver_unsupported` | 422 | The driver does not support this operation, including automatic PostgreSQL Instance database creation and cloning. |
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
@@ -364,3 +367,7 @@ A new canonical connection owns each restored database. Existing external connec
 ### Replication follows the managed reader model
 
 Replication consumers need the same current and future table reads as a managed read-only user, plus PostgreSQL's replication attribute. Reusing those grants keeps one owner-default rule. Publications belong to app migrations because the app owns table selection and schema changes. Managing publications here would add a second schema lifecycle and require table inputs unrelated to credential management. No additional roles or custom grant SQL are needed.
+
+### PostgreSQL workers exist before tests start
+
+PostgreSQL has no database prefix grant. Giving an Instance `CREATEDB` would let it create databases outside its managed set. Orbit therefore creates a bounded pool as admin, using its normal managed ownership and public-schema grants. This serves the mission principles **One way, one name** and **Lean**. Hand-written grants, bespoke roles, a repository-specific parallel-testing provider, and a custom test runner are rejected. Stock Laravel probes each worker database and reuses it when the connection succeeds. The Instance can migrate and reset tables as owner without the right to create databases.

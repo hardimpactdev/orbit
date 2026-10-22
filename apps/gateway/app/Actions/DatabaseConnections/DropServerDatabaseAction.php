@@ -7,6 +7,7 @@ namespace App\Actions\DatabaseConnections;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -28,6 +29,7 @@ final readonly class DropServerDatabaseAction
         private DatabaseServerAdmin $admin,
         private MysqlStatements $statements,
         private ValkeyServerAdmin $valkey,
+        private PostgresTestDatabases $postgresTests,
     ) {}
 
     /** Keep the record removal inside the ACL lock when the caller removes the connection too. */
@@ -71,7 +73,9 @@ final readonly class DropServerDatabaseAction
 
         $databases = is_string($connection->database) ? [$connection->database] : [];
 
-        if (is_string($connection->test_database) && is_string($connection->database)) {
+        if ($server->driver === DatabaseDriver::Pgsql && $connection->test_database !== null && $connection->test_processes !== null) {
+            $databases = [...$databases, ...$this->postgresTests->names($connection->test_database, $connection->test_processes)];
+        } elseif (is_string($connection->test_database) && is_string($connection->database)) {
             $databases = [
                 ...$databases,
                 ...$this->admin->execute(

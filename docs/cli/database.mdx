@@ -56,9 +56,10 @@ orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE 
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
 | `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
-| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, `--locale` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, `--locale` and `--test-processes` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
 | `--locale=LOCALE` | With a PostgreSQL `--server`: builtin `C.UTF-8` or `C`. Omission inherits the image default. |
-| `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
+| `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL or PostgreSQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
+| `--test-processes=N` | PostgreSQL with `--server` and `--instance` only. Creates 1–32 parallel worker databases; default 8. See [test databases](/reference/database-connections#test-databases) for Laravel settings. |
 | `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. It starts with a literal key prefix, not a glob character. Required there. Repeat it for more patterns. |
 | `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. `@all` and `@scripting` are refused. Required there. Repeat it for more rules. |
 
@@ -75,6 +76,7 @@ orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
 orbit database:create postgres --driver=pgsql --node=beast --host=10.44.0.7 --database=app --username=app --password=secret
 orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
 orbit database:create dlf-leden --server=beast-mysql --instance=60
+orbit database:create app-dev --server=services-postgres --instance=60 --test-processes=8
 orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
 ```
 

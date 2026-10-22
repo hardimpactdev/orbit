@@ -631,7 +631,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Database connection
-         * @description Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.
+         * @description Registers an existing database, or with `server` creates a MySQL/PostgreSQL database and owner or a Valkey ACL user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database (plus a bounded PostgreSQL worker pool, configured by `test_processes`), and attaches the connection under prefix DB. The response never contains a password.
          */
         post: operations["database-create"];
         delete?: never;
@@ -4276,6 +4276,7 @@ export interface components {
             test_database?: string | null;
             lan_host?: string | null;
             locale?: string | null;
+            test_processes?: number | null;
         };
         DatabaseUser: {
             id?: number;
@@ -7617,6 +7618,8 @@ export interface operations {
                 } | {
                     slug: string;
                     server: string;
+                    /** @description PostgreSQL with instance_id only: parallel worker pool size, default 8. Leave Laravel recreate/drop options off. */
+                    test_processes?: number;
                     instance_id?: number;
                     /**
                      * @description PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.

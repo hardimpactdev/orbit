@@ -86,6 +86,16 @@ final readonly class PostgresStatements
         return 'SELECT datname FROM pg_database WHERE datname = '.$this->literal($database).";\n";
     }
 
+    /** @param non-empty-list<string> $databases */
+    public function databasesIn(array $databases): string
+    {
+        foreach ($databases as $database) {
+            $this->identifier($database);
+        }
+
+        return 'SELECT datname FROM pg_database WHERE datname IN ('.implode(', ', array_map($this->literal(...), $databases)).");\n";
+    }
+
     public function userNamed(string $username): string
     {
         $this->identifier($username);

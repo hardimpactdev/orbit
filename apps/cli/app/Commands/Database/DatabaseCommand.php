@@ -79,6 +79,10 @@ abstract class DatabaseCommand extends GatewayCommand
             $fields['Test database'] = $connection->testDatabase;
         }
 
+        if ($connection->testProcesses !== null) {
+            $fields['Test processes'] = $connection->testProcesses;
+        }
+
         if ($connection->usersCount !== null) {
             $fields['Users'] = $connection->usersCount;
         }

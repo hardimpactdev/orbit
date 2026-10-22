@@ -731,6 +731,10 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0230-precreate-managed-postgresql-test-databases",
+      "destination": "/reference/database-servers#postgresql-workers-exist-before-tests-start"
+    },
+    {
       "source": "/decisions/0217-deploy-production-instances-automatically-by-polling",
       "destination": "/reference/deployments#automatic-deployments"
     },

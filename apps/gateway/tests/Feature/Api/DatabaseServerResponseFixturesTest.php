@@ -177,6 +177,12 @@ it('records the database server and database user responses', function (): void 
         ListDatabaseUsersRequest::class,
         'GET /api/v1/database-connections/{database_connection}/users',
     );
+    record_fixture(
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app-parallel', 'server' => 'beast-pg', 'instance_id' => $instance->id, 'test_processes' => 4])->assertCreated(),
+        'database-connections/database-create/postgres',
+        CreateDatabaseConnectionRequest::class,
+        'POST /api/v1/database-connections',
+    );
 
 });
 

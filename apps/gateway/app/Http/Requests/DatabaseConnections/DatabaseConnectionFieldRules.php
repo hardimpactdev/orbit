@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\DatabaseConnections;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use Closure;
 use Illuminate\Validation\Rule;
@@ -66,6 +67,7 @@ final readonly class DatabaseConnectionFieldRules
             'patterns' => ['missing'],
             'allow' => ['missing'],
             'locale' => ['missing'],
+            'test_processes' => ['missing'],
         ];
     }
 
@@ -82,7 +84,8 @@ final readonly class DatabaseConnectionFieldRules
         $rules = [
             'slug' => ['required', 'string', 'max:63', 'regex:'.self::SLUG_PATTERN],
             'server' => ['required', 'string', 'max:63', 'regex:'.self::SLUG_PATTERN],
-            'instance_id' => ['sometimes', 'integer', 'min:1', 'exists:instances,id', self::strictInteger(...)],
+            'test_processes' => ['missing'],
+            'instance_id' => ['required_with:test_processes', 'integer', 'min:1', 'exists:instances,id', self::strictInteger(...)],
         ];
 
         foreach (self::updateKeys() as $key) {
@@ -96,7 +99,13 @@ final readonly class DatabaseConnectionFieldRules
         }
 
         return match ($serverDriver) {
-            DatabaseDriver::Pgsql => [...$rules, 'patterns' => ['missing'], 'allow' => ['missing'], 'locale' => ['sometimes', 'required', 'string', Rule::in(['C', 'C.UTF-8'])]],
+            DatabaseDriver::Pgsql => [
+                ...$rules,
+                'patterns' => ['missing'],
+                'allow' => ['missing'],
+                'locale' => ['sometimes', 'required', 'string', Rule::in(['C', 'C.UTF-8'])],
+                'test_processes' => ['sometimes', 'required', 'integer', 'min:1', 'max:'.PostgresTestDatabases::MAX_PROCESSES, self::strictInteger(...)],
+            ],
             DatabaseDriver::Redis => [
                 ...$rules,
                 'locale' => ['missing'],
@@ -124,7 +133,7 @@ final readonly class DatabaseConnectionFieldRules
     /** @return list<string> */
     public static function storeKeys(): array
     {
-        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password', 'server', 'instance_id', 'patterns', 'allow', 'locale'];
+        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password', 'server', 'instance_id', 'patterns', 'allow', 'locale', 'test_processes'];
     }
 
     /** @return list<string> */

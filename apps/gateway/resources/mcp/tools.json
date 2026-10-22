@@ -1666,7 +1666,7 @@
       "name": "database-create",
       "extension": null,
       "title": "Create a Database connection",
-      "description": "Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.",
+      "description": "Registers an existing database, or with `server` creates a MySQL/PostgreSQL database and owner or a Valkey ACL user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database (plus a bounded PostgreSQL worker pool, configured by `test_processes`), and attaches the connection under prefix DB. The response never contains a password.",
       "method": "POST",
       "path": "/api/v1/database-connections",
       "path_inputs": [],
@@ -1756,6 +1756,12 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63
+          },
+          "test_processes": {
+            "type": "integer",
+            "maximum": 32,
+            "minimum": 1,
+            "description": "PostgreSQL with instance_id only: parallel worker pool size, default 8. Leave Laravel recreate/drop options off."
           },
           "instance_id": {
             "type": "integer",
@@ -1882,6 +1888,12 @@
                 "type": "string",
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
+              },
+              "test_processes": {
+                "type": "integer",
+                "maximum": 32,
+                "minimum": 1,
+                "description": "PostgreSQL with instance_id only: parallel worker pool size, default 8. Leave Laravel recreate/drop options off."
               },
               "instance_id": {
                 "type": "integer",
