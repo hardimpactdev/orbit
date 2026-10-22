@@ -198,8 +198,9 @@ function ci_handoff(string $summary = 'Done.'): array
 /** The check starts on the first tick, and its passed result is handled from the second. */
 function ci_ticks(int $ticks = 2): void
 {
+    $scheduler = app(TaskScheduler::class);
     foreach (range(1, $ticks) as $_) {
-        app(TaskScheduler::class)->tick();
+        $scheduler->tick();
     }
 }
 
@@ -235,25 +236,33 @@ it('commits the checked tree, pushes it to task-{id}, and starts the review once
 });
 
 it('waits while CI on the pushed commit has no merge-check run yet, until it passes', function (): void {
+    $this->freezeSecond();
     $github = ci_github();
     [, $task] = ci_handoff();
+    $scheduler = app(TaskScheduler::class);
 
-    ci_ticks(4);
+    foreach (range(1, 4) as $_) {
+        $scheduler->tick();
+    }
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($github->handoffs)->toBe([CI_HANDOFF])
         ->and($github->messages)->toHaveCount(1)
+        ->and($github->reads)->toBe(3)
         ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
 
+    $this->travel(10)->seconds();
     $github->suites[CI_HANDOFF] = [ci_suite('in_progress', null)];
     $github->runs[CI_HANDOFF] = [ci_run('Gateway shards (1)', null, CI_HANDOFF, 2), ci_run('Required checks', null, CI_HANDOFF)];
-    ci_ticks(1);
+    $scheduler->tick();
     expect($task->fresh()?->status)->toBe(TaskStatus::Running);
 
+    $this->travel(10)->seconds();
     $github->runs[CI_HANDOFF] = [ci_run('Gateway shards (1)', 'success', CI_HANDOFF, 2), ci_run('Required checks', 'success', CI_HANDOFF)];
-    ci_ticks(1);
+    $scheduler->tick();
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->communication_failures)->toBe(0);
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($github->reads)->toBe(5);
 });
 
 it('waits without a failure while the push of the handoff commit runs, and reads CI only after it', function (): void {
