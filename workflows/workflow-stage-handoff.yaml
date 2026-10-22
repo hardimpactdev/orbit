@@ -1,0 +1,128 @@
+id: 9f4b267b-29ec-4ce0-b9ce-cd37fb0d9d41
+name: stage-handoff
+description: >-
+  The sub-project's composer check and full composer test on the worktree HEAD.
+tags: {}
+inputs:
+  properties:
+    workItem: { type: string }
+    key: { type: string, description: "<workItem>.<stage>.c<cycle>" }
+    worktree: { type: string }
+    branch: { type: string }
+    subProject: { type: string }
+    planCommit: { type: string }
+    baseClone: { type: string }
+  required: [workItem, key, worktree, branch, subProject, planCommit, baseClone]
+jobs:
+  - name: stage
+    dependsOn: []
+    weight: 0
+    steps:
+      - name: claim
+        description: "Record which run and process work on the key"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: handoff
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: worktree
+        description: "@swamp/git: the work item's worktree at the plan commit"
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: git-base
+          methodName: ensure_worktree
+          inputs:
+            repoPath: '${{ inputs.baseClone }}'
+            path: '${{ inputs.worktree }}'
+            branch: '${{ inputs.branch }}'
+            base: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: claim
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: install
+        description: "composer install in every Composer project (checks read across them)"
+        forEach:
+          item: dir
+          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: install
+          inputs:
+            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            key: '${{ inputs.key }}'
+        dependsOn:
+          - step: worktree
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: check
+        description: "composer check (skipped when this key already has a result)"
+        guard: >-
+          ${{ data.latest("composer", "script-" + inputs.key + "-check").?attributes.?command.orValue("") != "" }}
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: script
+          inputs:
+            dir: '${{ inputs.worktree + "/" + inputs.subProject }}'
+            key: '${{ inputs.key }}'
+            name: check
+        dependsOn:
+          - step: install
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: test
+        description: "composer test, the full suite (skipped when check failed or this key has a result)"
+        guard: >-
+          ${{ data.latest("composer", "script-" + inputs.key + "-test").?attributes.?command.orValue("") != "" || !data.latest("composer", "script-" + inputs.key + "-check").attributes.passed }}
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: script
+          inputs:
+            dir: '${{ inputs.worktree + "/" + inputs.subProject }}'
+            key: '${{ inputs.key }}'
+            name: test
+        dependsOn:
+          - step: check
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: report
+        description: "Record artifacts and resultEvidence on orbit-subtasks with this run's id"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: report
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: handoff
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn:
+          - step: test
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+version: 1

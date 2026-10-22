@@ -1,0 +1,106 @@
+id: 7e3a4af3-a48f-482d-a676-6aaa584dba5a
+name: stage-review
+description: >-
+  One read-only review of the change; findings gate the exit.
+tags: {}
+inputs:
+  properties:
+    workItem: { type: string }
+    key: { type: string, description: "<workItem>.<stage>.c<cycle>" }
+    worktree: { type: string }
+    branch: { type: string }
+    subProject: { type: string }
+    planCommit: { type: string }
+    baseClone: { type: string }
+  required: [workItem, key, worktree, branch, subProject, planCommit, baseClone]
+jobs:
+  - name: stage
+    dependsOn: []
+    weight: 0
+    steps:
+      - name: claim
+        description: "Record which run and process work on the key"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: review
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: worktree
+        description: "@swamp/git: the work item's worktree at the plan commit"
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: git-base
+          methodName: ensure_worktree
+          inputs:
+            repoPath: '${{ inputs.baseClone }}'
+            path: '${{ inputs.worktree }}'
+            branch: '${{ inputs.branch }}'
+            base: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: claim
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: prompt
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: prompt
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: review
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: worktree
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: review
+        description: "agent-runner review: verdict + findings (inline diff mode)"
+        task:
+          type: model_method
+          modelIdOrName: agent-claude
+          methodName: review
+          inputs:
+            promptFile: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.promptFile }}'
+            diff: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.diff }}'
+            readOnly: true
+        dependsOn:
+          - step: prompt
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: report
+        description: "Record artifacts and resultEvidence on orbit-subtasks with this run's id"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: report
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: review
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn:
+          - step: review
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+version: 1

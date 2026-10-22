@@ -1,0 +1,9 @@
+type: '@swamp/git'
+typeVersion: 2026.09.28.1
+id: 0e11045c-397f-4f0d-b88f-8dcec2f8b770
+name: git-wt-bump-packages-php-sdk
+version: 1
+tags: {}
+globalArguments:
+  repoPath: /fast/apps/orbit-swamp-scratch/wt2/bump-packages-php-sdk
+methods: {}

@@ -1,0 +1,236 @@
+type: '@swamp/software-factory'
+typeVersion: 2026.06.24.1
+id: 870d9817-d8e5-4fbc-9d8e-6da9a81b60ee
+name: orbit-subtasks
+version: 1
+tags: {}
+# v2 of orbit-subtask-factory: same graph and caps, but each stage's work is a
+# swamp workflow (workflows/workflow-stage-*.yaml) that records its own
+# resultEvidence with its run id; every transition also needs the
+# workflow-succeeded gate, verified against swamp's run records.
+globalArguments:
+  stages:
+    - id: mechanical
+      initial: true
+      description: composer update in the sub-project; no LLM
+      maxCycles: 1
+      work:
+        mode: workflow
+        workflow:
+          name: stage-mechanical
+          inputs:
+            workItem: '${{ self.workItem }}'
+        resultEvidence: mechanical-run
+      artifacts:
+        - name: mechanical-change
+          schema:
+            type: object
+            required: [subProject, lockfileChanged, packages]
+            properties:
+              subProject: { type: string }
+              commit: { type: string }
+              lockfileChanged: { type: boolean }
+              packages:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    name: { type: string }
+                    to: { type: string }
+      transitions:
+        - name: submit
+          to: handoff
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-mechanical } }
+            - { type: artifact-exists, config: { artifact: mechanical-change } }
+            - { type: evidence-recorded, config: { name: mechanical-run, requireField: { status: succeeded } } }
+        - name: fail
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-mechanical } }
+            - { type: evidence-recorded, config: { name: mechanical-run, requireField: { status: failed } } }
+
+    - id: handoff
+      description: the sub-project's composer check + composer test on the worktree HEAD
+      maxCycles: 10
+      work:
+        mode: workflow
+        workflow:
+          name: stage-handoff
+          inputs:
+            workItem: '${{ self.workItem }}'
+        resultEvidence: handoff-run
+      artifacts:
+        - name: handoff-result
+          schema:
+            type: object
+            required: [status, exitCode, commit, consecutiveFailures]
+            properties:
+              status: { type: string, enum: [succeeded, failed] }
+              exitCode: { type: integer }
+              commit: { type: string }
+              diffstat: { type: string }
+              consecutiveFailures: { type: integer, minimum: 0 }
+              outputTail: { type: string }
+        - name: candidate
+          description: the tree that passed the handoff; the subject of review
+          schema:
+            type: object
+            required: [commit]
+            properties:
+              commit: { type: string, minLength: 7 }
+              diffstat: { type: string }
+      transitions:
+        - name: pass
+          to: review
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-handoff } }
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+        - name: fail
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-handoff } }
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: failed } } }
+            - type: cel
+              config:
+                expr: artifacts.handoff_result.consecutiveFailures <= 3
+                message: 4th consecutive failed handoff; take 'assist' (needs approval handoff-assistance)
+        - name: assist
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-handoff } }
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: failed } } }
+            - type: cel
+              config:
+                expr: artifacts.handoff_result.consecutiveFailures > 3
+                message: fewer than 4 consecutive failed handoffs; take 'fail'
+            - { type: human-approval, config: { id: handoff-assistance } }
+
+    - id: implement
+      description: one Codex turn with the failing output, open findings, or a consult answer
+      maxCycles: 6
+      work:
+        mode: workflow
+        workflow:
+          name: stage-implement
+          inputs:
+            workItem: '${{ self.workItem }}'
+        resultEvidence: implement-run
+      artifacts:
+        - name: change-summary
+          schema:
+            type: object
+            required: [outcome]
+            properties:
+              outcome: { type: string, enum: [done, blocked, error] }
+              commit: { type: string }
+              summary: { type: string }
+              question: { type: string }
+      transitions:
+        - name: submit
+          to: handoff
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-implement } }
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: done } } }
+        - name: consult
+          to: consult
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-implement } }
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: blocked } } }
+        - name: retry
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-implement } }
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: error } } }
+
+    - id: consult
+      description: the reviewer answers the implementer's BLOCKED question
+      maxCycles: 2
+      work:
+        mode: workflow
+        workflow:
+          name: stage-consult
+          inputs:
+            workItem: '${{ self.workItem }}'
+        resultEvidence: consult-run
+      artifacts:
+        - name: consult-answer
+          schema:
+            type: object
+            required: [question, answer, needsPerson]
+            properties:
+              question: { type: string }
+              answer: { type: string }
+              needsPerson: { type: boolean }
+      transitions:
+        - name: answered
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-consult } }
+            - { type: evidence-recorded, config: { name: consult-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: '!artifacts.consult_answer.needsPerson', message: the reviewer says a person must decide } }
+        - name: escalate
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-consult } }
+            - { type: evidence-recorded, config: { name: consult-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: artifacts.consult_answer.needsPerson, message: the reviewer answered } }
+            - { type: human-approval, config: { id: consult-escalation } }
+
+    - id: review
+      description: one read-only Claude review of the change; findings gate the exit
+      maxCycles: 3
+      work:
+        mode: workflow
+        workflow:
+          name: stage-review
+          inputs:
+            workItem: '${{ self.workItem }}'
+        resultEvidence: review-run
+      artifacts:
+        - name: code-review
+          kind: findings
+          reviews: candidate
+          schema:
+            type: object
+            properties:
+              summary: { type: string }
+      transitions:
+        - name: accept
+          to: approved
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-review } }
+            - { type: artifact-fresh, config: { artifact: code-review, recordedThisCycle: true } }
+            - { type: findings-clear, config: { artifact: code-review, blocking: [critical, high] } }
+        - name: rework
+          to: implement
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-review } }
+            - { type: artifact-fresh, config: { artifact: code-review, recordedThisCycle: true } }
+            - type: cel
+              config:
+                expr: 'artifacts.code_review.findings.exists(f, !(has(f.resolved) && f.resolved) && f.severity in ["critical", "high"])'
+                message: no open critical or high findings
+        - name: retry
+          to: review
+          gates:
+            - { type: workflow-succeeded, config: { workflow: stage-review } }
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: failed } } }
+
+    - id: approved
+      terminal: true
+    - id: cancelled
+      terminal: true
+
+  globalTransitions:
+    - name: abort
+      to: cancelled
+      gates:
+        - { type: human-approval, config: { id: abort-confirmation } }
+methods: {}
+checks:
+  require: [run-started, not-terminal, graph-valid, valid-transition, gates-satisfied, stage-executed, cycle-limits]
+reports:
+  require:
+    - { name: "@swamp/software-factory/work-item-summary", methods: [summary] }

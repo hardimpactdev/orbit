@@ -1,0 +1,88 @@
+id: 774375ae-0b97-47d2-8a80-551cc5bb62d7
+name: stage-consult
+description: >-
+  The reviewer answers the implementer's BLOCKED question.
+tags: {}
+inputs:
+  properties:
+    workItem: { type: string }
+    key: { type: string, description: "<workItem>.<stage>.c<cycle>" }
+    worktree: { type: string }
+    branch: { type: string }
+    subProject: { type: string }
+    planCommit: { type: string }
+    baseClone: { type: string }
+  required: [workItem, key, worktree, branch, subProject, planCommit, baseClone]
+jobs:
+  - name: stage
+    dependsOn: []
+    weight: 0
+    steps:
+      - name: claim
+        description: "Record which run and process work on the key"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: consult
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: prompt
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: prompt
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: consult
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: claim
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: agent
+        description: "the reviewer (Claude via agent-runner) answers"
+        task:
+          type: model_method
+          modelIdOrName: agent-claude
+          methodName: run
+          inputs:
+            prompt: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.text }}'
+            readOnly: true
+        dependsOn:
+          - step: prompt
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: report
+        description: "Record artifacts and resultEvidence on orbit-subtasks with this run's id"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: report
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: consult
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn:
+          - step: agent
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+version: 1

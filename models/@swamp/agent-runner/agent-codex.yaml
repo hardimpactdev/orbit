@@ -1,0 +1,13 @@
+type: '@swamp/agent-runner'
+typeVersion: 2026.10.17.1
+id: b8055f9e-5e6a-4bcc-8b1c-0726150ac994
+name: agent-codex
+version: 1
+tags: {}
+globalArguments:
+  # Only run_codex (extensions/behaviors/agent_runner_codex.ts) is used; it runs
+  # the codex on PATH through CLIProxyAPI. The built-in provider settings below
+  # are unused until agent-runner supports a model provider (lab #3769).
+  provider: codex
+  version: 0.146.0
+methods: {}

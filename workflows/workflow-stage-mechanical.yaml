@@ -1,0 +1,164 @@
+id: 1e8c0fea-8008-4bc7-99e9-30d385cf0c2b
+name: stage-mechanical
+description: >-
+  composer update in the sub-project, committed with the key; no LLM.
+tags: {}
+inputs:
+  properties:
+    workItem: { type: string }
+    key: { type: string, description: "<workItem>.<stage>.c<cycle>" }
+    worktree: { type: string }
+    branch: { type: string }
+    subProject: { type: string }
+    planCommit: { type: string }
+    baseClone: { type: string }
+  required: [workItem, key, worktree, branch, subProject, planCommit, baseClone]
+jobs:
+  - name: stage
+    dependsOn: []
+    weight: 0
+    steps:
+      - name: claim
+        description: "Record which run and process work on the key"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: mechanical
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: worktree
+        description: "@swamp/git: the work item's worktree at the plan commit"
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: git-base
+          methodName: ensure_worktree
+          inputs:
+            repoPath: '${{ inputs.baseClone }}'
+            path: '${{ inputs.worktree }}'
+            branch: '${{ inputs.branch }}'
+            base: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: claim
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: install
+        description: "composer install in every Composer project (checks read across them)"
+        forEach:
+          item: dir
+          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: install
+          inputs:
+            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            key: '${{ inputs.key }}'
+        dependsOn:
+          - step: worktree
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: committed
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: committed
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: mechanical
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: install
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: discard
+        description: "Drop partial work of a killed attempt"
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: discard
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: mechanical
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: committed
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: update
+        description: "composer update within constraints"
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: update
+          inputs:
+            dir: '${{ inputs.worktree + "/" + inputs.subProject }}'
+            key: '${{ inputs.key }}'
+        dependsOn:
+          - step: discard
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: commit
+        description: "@swamp/git commit with the key as a trailer (nothing to commit is allowed)"
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: '${{ "git-wt-" + inputs.workItem }}'
+          methodName: commit
+          inputs:
+            repoPath: '${{ inputs.worktree }}'
+            paths: '${{ [inputs.subProject] }}'
+            message: '${{ "chore(deps): update " + inputs.subProject + " within constraints\n\nSwamp-Work-Item: " + inputs.workItem + "\nSwamp-Idempotency-Key: " + inputs.key }}'
+        dependsOn:
+          - step: update
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: true
+      - name: report
+        description: "Record artifacts and resultEvidence on orbit-subtasks with this run's id"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: report
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: mechanical
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn:
+          - step: commit
+            condition: { type: always }
+        weight: 0
+        allowFailure: false
+version: 1

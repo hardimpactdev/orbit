@@ -1,0 +1,186 @@
+id: 0c17778b-bc86-43f2-a974-6601d04d233f
+name: stage-implement
+description: >-
+  One Codex turn with the failing output, open findings or a consult answer; committed with the key.
+tags: {}
+vaults: [default]
+inputs:
+  properties:
+    workItem: { type: string }
+    key: { type: string, description: "<workItem>.<stage>.c<cycle>" }
+    worktree: { type: string }
+    branch: { type: string }
+    subProject: { type: string }
+    planCommit: { type: string }
+    baseClone: { type: string }
+  required: [workItem, key, worktree, branch, subProject, planCommit, baseClone]
+jobs:
+  - name: stage
+    dependsOn: []
+    weight: 0
+    steps:
+      - name: claim
+        description: "Record which run and process work on the key"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: claim
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: implement
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: worktree
+        description: "@swamp/git: the work item's worktree at the plan commit"
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: git-base
+          methodName: ensure_worktree
+          inputs:
+            repoPath: '${{ inputs.baseClone }}'
+            path: '${{ inputs.worktree }}'
+            branch: '${{ inputs.branch }}'
+            base: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: claim
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: install
+        description: "composer install in every Composer project (checks read across them)"
+        forEach:
+          item: dir
+          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        task:
+          type: model_method
+          modelType: "@nckrtl/composer"
+          modelName: composer
+          methodName: install
+          inputs:
+            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            key: '${{ inputs.key }}'
+        dependsOn:
+          - step: worktree
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: committed
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: committed
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: implement
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: install
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: discard
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: discard
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: implement
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: committed
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: prompt
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: prompt
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: implement
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+        dependsOn:
+          - step: discard
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: agent
+        description: "one Codex turn via CLIProxyAPI (agent-runner run_codex)"
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelIdOrName: agent-codex
+          methodName: run_codex
+          inputs:
+            key: '${{ inputs.key }}'
+            prompt: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.text }}'
+            cwd: '${{ inputs.worktree }}'
+            model: gpt-6.1-sol
+            effort: high
+            baseUrl: http://10.44.0.3:8317/v1
+            auth: '${{ vault.get(default, CLIPROXY_CODEX_AUTH) }}'
+        dependsOn:
+          - step: prompt
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: false
+      - name: commit
+        guard: >-
+          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+        task:
+          type: model_method
+          modelType: "@swamp/git"
+          modelName: '${{ "git-wt-" + inputs.workItem }}'
+          methodName: commit
+          inputs:
+            repoPath: '${{ inputs.worktree }}'
+            paths: '${{ [inputs.subProject] }}'
+            message: '${{ "fix(" + inputs.subProject + "): implement " + inputs.key + "\n\nSwamp-Work-Item: " + inputs.workItem + "\nSwamp-Idempotency-Key: " + inputs.key }}'
+        dependsOn:
+          - step: agent
+            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+        weight: 0
+        allowFailure: true
+      - name: report
+        description: "Record artifacts and resultEvidence on orbit-subtasks with this run's id"
+        task:
+          type: model_method
+          modelIdOrName: orbit-stage
+          methodName: report
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            stage: implement
+            key: '${{ inputs.key }}'
+            worktree: '${{ inputs.worktree }}'
+            subProject: '${{ inputs.subProject }}'
+            planCommit: '${{ inputs.planCommit }}'
+            runId: '${{ run.id }}'
+        dependsOn:
+          - step: commit
+            condition: { type: always }
+        weight: 0
+        allowFailure: false
+version: 1

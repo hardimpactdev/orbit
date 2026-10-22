@@ -5,12 +5,26 @@
 //             record its artifacts and resultEvidence
 //   advance   take the one satisfied transition with no human gate
 //   park      report what a human must decide (approval or cycle override)
+// Work modes:
+//   method    (v1) call the stage method; it launches/polls a detached effect job
+//   workflow  (v2) start the stage workflow detached (`swamp workflow run`); the
+//             workflow records its own resultEvidence. Liveness comes from the
+//             run's claim record (orbit-stage.claim); a dead run is relaunched
+//             under the same key and its guards skip the work already done.
 // The driver never re-dispatches an entry: recovery re-runs the idempotent
 // method under the dispatch already recorded, so the dispatch guard is not used up.
 import { z } from "npm:zod@4";
 
 const GlobalArgsSchema = z.object({
   factory: z.string().default("orbit-subtask-factory"),
+  // workflow mode only
+  repoDir: z.string().default("/fast/apps/orbit-swamp"),
+  scratchRoot: z.string().default("/fast/apps/orbit-swamp-scratch"),
+  baseClone: z.string().default("/fast/apps/orbit-swamp-scratch/base"),
+  planModel: z.string().default("orbit-deps"),
+  stageModel: z.string().default("orbit-stage"),
+  maxLaunches: z.number().int().default(3),
+  startGraceSeconds: z.number().int().default(180),
 });
 type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
@@ -44,7 +58,12 @@ interface Status {
   started: boolean;
   stage: { id: string; cycle: number; terminal: boolean };
   dispatch?: { required: boolean; executed: boolean; attempts: number; limit: number };
-  work?: { mode: string; method?: { modelIdOrName: string; methodName: string; inputs: Record<string, unknown> }; resultEvidence?: string };
+  work?: {
+    mode: string;
+    method?: { modelIdOrName: string; methodName: string; inputs: Record<string, unknown> };
+    workflow?: { name: string; inputs: Record<string, unknown> };
+    resultEvidence?: string;
+  };
   unresolvedBindings: unknown[];
   transitions: Transition[];
 }
@@ -55,6 +74,7 @@ interface RunResult {
 
 type Ctx = {
   globalArgs: GlobalArgs;
+  definitionName: string;
   runModel: (o: { definition: string; method: string; arguments?: Record<string, unknown> }) => Promise<RunResult>;
   queryData: (predicate: string, select?: string) => Promise<unknown[]>;
   writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
@@ -77,6 +97,74 @@ function killIf(point: string, killAt: string | undefined, ctx: Ctx) {
   Deno.kill(Deno.pid, "SIGKILL");
 }
 
+/** Is the swamp process that claimed a key still alive? */
+function processAlive(pid: number): boolean {
+  const r = new Deno.Command("ps", { args: ["-o", "comm=", "-p", String(pid)], stdout: "piped", stderr: "null" }).outputSync();
+  return r.success && new TextDecoder().decode(r.stdout).trim() !== "";
+}
+
+interface Launch {
+  key: string;
+  workflow: string;
+  launches: number;
+  lastLaunchedAt: string;
+  log: string;
+}
+
+/** Start one stage workflow run, detached. Phase 3 replaces this with a swamp serve API call. */
+async function launchWorkflow(ctx: Ctx, workflow: string, key: string, inputs: Record<string, unknown>, prev: Launch | null): Promise<Launch> {
+  const g = ctx.globalArgs;
+  const dir = `${g.scratchRoot}/launch`;
+  await Deno.mkdir(dir, { recursive: true });
+  const n = (prev?.launches ?? 0) + 1;
+  const inputFile = `${dir}/${key}.json`;
+  const log = `${dir}/${key}.${n}.log`;
+  await Deno.writeTextFile(inputFile, JSON.stringify(inputs));
+  const cmd = `exec swamp workflow run ${workflow} --input-file ${inputFile} --no-supersede > ${log} 2>&1`;
+  await new Deno.Command("setsid", { args: ["--fork", "sh", "-c", cmd], cwd: g.repoDir, stdin: "null", stdout: "null", stderr: "null" })
+    .spawn().status;
+  const launch = { key, workflow, launches: n, lastLaunchedAt: new Date().toISOString(), log };
+  await ctx.writeResource("launch", `launch-${key}`, launch as unknown as Record<string, unknown>);
+  return launch;
+}
+
+/** Workflow-mode work: start the stage run, or report whether the started one is alive. */
+async function workflowStep(ctx: Ctx, workItem: string, key: string, status: Status, killAt?: string) {
+  const g = ctx.globalArgs;
+  const wf = status.work!.workflow!;
+  if (status.dispatch?.required && !status.dispatch.executed) {
+    await call(ctx, g.factory, "record_dispatch", { workItem, mode: "workflow", runId: key });
+    killIf("after-dispatch", killAt, ctx);
+  }
+  const prev = await latest<Launch>(ctx, ctx.definitionName, `launch-${key}`);
+  const claim = await latest<{ pid: number; startedAt: string; runId: string }>(ctx, g.stageModel, `claim-${key}`);
+  if (prev) {
+    const claimedThisLaunch = claim !== null && claim.startedAt >= prev.lastLaunchedAt;
+    if (claimedThisLaunch && processAlive(claim.pid)) return { action: null, waiting: `stage run ${claim.runId.slice(0, 8)} for ${key} running` };
+    const age = (Date.now() - Date.parse(prev.lastLaunchedAt)) / 1000;
+    if (!claimedThisLaunch && age < g.startGraceSeconds) return { action: null, waiting: `stage run for ${key} starting (${Math.round(age)}s)` };
+    if (prev.launches >= g.maxLaunches) {
+      return { action: null, waiting: `assistance: ${prev.workflow} for ${key} ended ${prev.launches} times without recording ${status.work!.resultEvidence}; see ${prev.log}` };
+    }
+  }
+  const plan = (await latest<{ commit: string; subtasks: { id: string; subProject: string }[] }>(ctx, g.planModel, "upgrade-plan"))!;
+  const subtask = plan.subtasks.find((s) => s.id === workItem);
+  if (!subtask) throw new Error(`${workItem} is not a subtask of the current upgrade-plan`);
+  const inputs = {
+    ...wf.inputs,
+    workItem,
+    key,
+    worktree: `${g.scratchRoot}/wt2/${workItem}`,
+    branch: `swamp/v2/${workItem}`,
+    subProject: subtask.subProject,
+    planCommit: plan.commit,
+    baseClone: g.baseClone,
+  };
+  const l = await launchWorkflow(ctx, wf.name, key, inputs, prev);
+  killIf("after-launch", killAt, ctx);
+  return { action: `launched ${wf.name} for ${key} (launch ${l.launches})`, waiting: `stage run for ${key} starting` };
+}
+
 /** One guarded step for one work item. Returns what it did, or why it waits. */
 async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ status: Status; action: string | null; waiting: string | null }> {
   const f = ctx.globalArgs.factory;
@@ -87,6 +175,12 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
   const work = status.work;
   const key = `${workItem}.${stage}.c${cycle}`;
+  if (work?.mode === "workflow" && work.workflow && work.resultEvidence) {
+    const ev = await latest<{ stageId: string; cycle: number }>(ctx, f, `evidence-${workItem}-${work.resultEvidence}`);
+    if (!(ev !== null && ev.stageId === stage && ev.cycle === cycle)) {
+      return { status, ...(await workflowStep(ctx, workItem, key, status, killAt)) };
+    }
+  }
   if (work?.mode === "method" && work.method && work.resultEvidence) {
     if (status.unresolvedBindings.length > 0) {
       return { status, action: null, waiting: `unresolved bindings ${JSON.stringify(status.unresolvedBindings)}` };
@@ -152,6 +246,12 @@ export const behavior = {
   version: "2026.10.22.1",
   globalArguments: GlobalArgsSchema,
   resources: {
+    launch: {
+      description: "Detached stage workflow launches per key",
+      schema: z.object({ key: z.string(), workflow: z.string(), launches: z.number(), lastLaunchedAt: z.string(), log: z.string() }),
+      lifetime: "30d",
+      garbageCollection: 10,
+    },
     tick: { description: "What one tick did per work item", schema: TickSchema, lifetime: "30d", garbageCollection: 500 },
   },
   methods: {
@@ -164,8 +264,9 @@ export const behavior = {
       }),
       execute: async (
         args: { workItems?: string[] | null; maxSteps: number; killAt?: string },
-        ctx: Ctx,
+        rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
       ) => {
+        const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
         const f = ctx.globalArgs.factory;
         const items = args.workItems ?? ((await ctx.queryData(
           `modelName == "${f}" && name.startsWith("state-") && attributes.status == "active"`,

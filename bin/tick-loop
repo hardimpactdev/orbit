@@ -10,6 +10,6 @@ args=()
 if [ $# -gt 0 ]; then args=(--input "workItems=$(printf '%s\n' "$@" | jq -R . | jq -sc .)"); fi
 while true; do
   start=$(date +%s)
-  swamp workflow run subtask-driver "${args[@]}" 2>&1 | grep -E '   tick │ [a-z0-9-]+: |rror|failed'
+  swamp workflow run "${DRIVER_WORKFLOW:-subtask-driver}" "${args[@]}" 2>&1 | grep -E '   tick │ [a-z0-9-]+: |rror|failed'
   sleep $(( interval - ($(date +%s) - start) > 0 ? interval - ($(date +%s) - start) : 1 ))
 done

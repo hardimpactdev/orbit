@@ -1,0 +1,11 @@
+type: '@nckrtl/orbit-stage'
+typeVersion: 2026.10.22.1
+id: 77834c9b-24d2-4ce1-b41c-bc0551fd62e4
+name: orbit-stage
+version: 1
+tags: {}
+globalArguments:
+  factory: orbit-subtasks
+  composer: composer
+  scratchRoot: /fast/apps/orbit-swamp-scratch
+methods: {}
