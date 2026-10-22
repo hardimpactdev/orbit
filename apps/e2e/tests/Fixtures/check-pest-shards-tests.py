@@ -188,10 +188,46 @@ class GatewaySelectionTest(unittest.TestCase):
         workflow = read_yaml('.github/workflows/ci.yml')
         suite = next(step for step in workflow['jobs']['project']['steps'] if step.get('name') == 'Run full test suite')
         self.assertEqual("matrix.project.directory != 'apps/gateway'", suite['if'])
-        shard = next(step['run'] for step in workflow['jobs']['gateway-shards']['steps']
+        job = workflow['jobs']['gateway-shards']
+        self.assertEqual('changes', job['needs'])
+        self.assertEqual('fromJSON(needs.changes.outputs.jobs).gateway-shards', job['if'])
+        shard = next(step for step in job['steps']
                      if step.get('name') == 'Run Gateway shard ${{ matrix.shard }}')
-        self.assertIn('--exclude-group=privileged', shard.split())
-        self.assertNotIn('if', workflow['jobs']['gateway-shards'])
+        self.assertIn('--exclude-group=privileged', shard['run'].split())
+        self.assertNotIn('if', shard)
+
+    def test_shards_run_for_gateway_prs_and_every_main_push_but_not_docs_only_prs(self):
+        selector = HELPER.parent / 'ci-changes'
+        cases = (
+            ('Gateway PR', 'true', 'apps/gateway/routes/api.php', True),
+            ('Docs-only PR', 'true', 'docs/reference/implementation-loop.md', False),
+            ('Main push with only docs changed', 'false', 'docs/reference/implementation-loop.md', True),
+        )
+        for name, change_run, path, expected in cases:
+            with self.subTest(run=name), tempfile.TemporaryDirectory(prefix='orbit-shard-selection-') as directory:
+                root = Path(directory)
+
+                def git(*args):
+                    return subprocess.check_output(['git', *args], cwd=root, text=True).strip()
+
+                git('init', '--quiet', '--initial-branch=main')
+                git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+                    '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'Base')
+                base = git('rev-parse', 'HEAD')
+                changed = root / path
+                changed.parent.mkdir(parents=True)
+                changed.write_text('changed\n')
+                git('add', '.')
+                git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+                    '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Change')
+
+                result = subprocess.run(
+                    ['python3', str(selector), '--base', base], cwd=root,
+                    env={**os.environ, 'CHANGE_RUN': change_run},
+                    check=True, capture_output=True, text=True,
+                )
+
+                self.assertIs(expected, json.loads(result.stdout)['jobs']['gateway-shards'])
 
 
 if __name__ == '__main__':

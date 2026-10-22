@@ -56,6 +56,12 @@ final class WebSocketApp extends Model
         return $this->name === self::GatewayName;
     }
 
+    /** The public identifier in Pusher HTTP API paths. */
+    public function pusherId(): string
+    {
+        return $this->app_id;
+    }
+
     public function credentials(): WebSocketCredentials
     {
         return new WebSocketCredentials($this->app_id, $this->key, $this->secret);

@@ -49,6 +49,7 @@ use App\Models\InstanceTransfer;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
+use App\Models\WebSocketAppTarget;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -545,6 +546,10 @@ final readonly class DestroyInstanceAction implements InstanceRemover
                 message: "Instance [{$instance->name}] is the candidate for an incomplete clone.",
                 status: 409,
             );
+        }
+
+        if (WebSocketAppTarget::query()->where('instance_id', $instance->id)->whereNotNull('route_id')->exists()) {
+            throw new ResourceOperationException('websocket.route_in_use', 'Remove the public Reverb attachment before removing this Instance.', 409);
         }
 
         if (RouteAnalyticsTracking::query()->where('instance_id', $instance->id)->exists()) {

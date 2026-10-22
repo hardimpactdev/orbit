@@ -67,9 +67,11 @@ describe('websocket app requests', function (): void {
         'remove by domain' => [new RemoveInstanceWebSocketAppRequest('hauzer.test', 'hauzer'), Method::DELETE, '/api/v1/instances/hauzer.test/websocket-apps/hauzer'],
     ]);
 
-    it('sends only the name on create and no body on attach and detach', function (): void {
+    it('sends only the name on create and optional public selection on attach', function (): void {
         expect(new CreateWebSocketAppRequest('hauzer')->body()->all())->toBe(['name' => 'hauzer'])
-            ->and(new AddInstanceWebSocketAppRequest(7, 'hauzer'))->not->toBeInstanceOf(HasBody::class)
+            ->and(new AddInstanceWebSocketAppRequest(7, 'hauzer')->body()->all())->toBe([])
+            ->and(new AddInstanceWebSocketAppRequest(7, 'hauzer', true)->body()->all())->toBe(['public' => true])
+            ->and(new AddInstanceWebSocketAppRequest(7, 'hauzer', false)->body()->all())->toBe(['public' => false])
             ->and(new RemoveInstanceWebSocketAppRequest(7, 'hauzer'))->not->toBeInstanceOf(HasBody::class);
     });
 

@@ -137,7 +137,7 @@ These programs run on Nodes now. Each one replaced an inline script, except `dat
 
 | Program | Purpose |
 | --- | --- |
-| `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal). |
+| `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal), or the current production Laravel routes for [public Reverb collision checks](/reference/websocket-apps#publish-on-the-existing-public-app-route). |
 | `instances.check-publication` | Checks whether an origin branch or tag contains a commit. |
 | `instances.refresh-environment-config` | Rebuilds an existing current release config cache as the production Instance user, verifies it through the application's Artisan bootstrap, and atomically replaces it before env-sync resets FPM opcache. |
 | `instances.remove-source` | Checks and deletes an active checkout in one run. |

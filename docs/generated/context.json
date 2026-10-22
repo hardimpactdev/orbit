@@ -2765,6 +2765,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Route",
                 "Task",
                 "Tool"
             ],
@@ -3003,6 +3004,7 @@
             "concepts": [
                 "Access grant",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",

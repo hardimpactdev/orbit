@@ -74,7 +74,7 @@ final readonly class ChangeWebSocketRegistryAction
                     foreach ($targetIds as $id) {
                         $instance = Instance::query()->findOrFail($id);
                         $context = $this->contexts->resolve($instance, requireActiveNode: false);
-                        $this->store->putMany($context, $this->projection->project($app), 'websocket-rotate');
+                        $this->store->putMany($context, $this->projection->project($app, WebSocketAppTarget::query()->where('instance_id', $id)->sole()), 'websocket-rotate');
                     }
                     $result['instance_rollout'] = ['state' => 'configuration_stored', 'instance_ids' => $targetIds, 'requires_env_sync' => true, 'requires_reload' => true];
                 }

@@ -16,6 +16,7 @@ final class AddInstanceWebSocketCommand extends WebSocketAppCommand
     protected $signature = 'instance:websocket:add
         {app : WebSocket app name}
         {--instance= : Positive Instance ID or exact Route domain}
+        {--public : Publish Reverb on the existing public app Route}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -43,7 +44,7 @@ final class AddInstanceWebSocketCommand extends WebSocketAppCommand
 
         $attachment = $this->sendWithProgress(
             $connector,
-            new AddInstanceWebSocketAppRequest($instance, $name),
+            new AddInstanceWebSocketAppRequest($instance, $name, $this->option('public') ? true : null),
             WebSocketAppAttachmentResponse::class,
             ['Add WebSocket app', 'Adding WebSocket app', 'Added WebSocket app'],
         );

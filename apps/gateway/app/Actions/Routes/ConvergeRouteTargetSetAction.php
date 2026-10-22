@@ -17,6 +17,7 @@ use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -68,6 +69,7 @@ final readonly class ConvergeRouteTargetSetAction
             return $route;
         }
 
+        WebSocketRouteSelection::assertMutable($route);
         $step = RouteTargetSetStep::tryFrom((string) $route->target_set_step) ?? RouteTargetSetStep::Reserved;
 
         if ($this->rank($step) < $this->rank(RouteTargetSetStep::DatabaseCommitted)) {

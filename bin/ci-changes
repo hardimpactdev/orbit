@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Map changed paths to CI projects with git diff and stock Python. No test selection.
+
+This is the single dependency map for CI. Rules are additive; an unknown path
+selects everything. Main, schedules and manual dispatches always select everything.
+"""
+import argparse
+from fnmatch import fnmatchcase
+import json
+import os
+from pathlib import Path
+import subprocess
+
+ROOT = Path(__file__).resolve().parent.parent
+PROJECTS = {
+    'cli': {'name': 'CLI', 'directory': 'apps/cli'},
+    'docs': {'name': 'Docs', 'directory': 'apps/docs'},
+    'gateway': {'name': 'Gateway', 'directory': 'apps/gateway'},
+    'e2e': {'name': 'E2E', 'directory': 'apps/e2e'},
+    'php-sdk': {'name': 'PHP SDK', 'directory': 'packages/php-sdk'},
+}
+JOB_PROJECTS = {
+    'project': set(PROJECTS),
+    'gateway-shards': {'gateway'},
+    'privileged': {'gateway'},
+    'remote-programs': {'gateway'},
+    'api-reference': {'api-reference'},
+    'web': {'web'},
+    'pi-server': {'pi-server'},
+    'agent': {'agent'},
+    'desktop': {'desktop'},
+}
+ALL = set().union(*JOB_PROJECTS.values())
+RULES = [
+    # Docs' merge proof runs the real generators; E2E's bootstrap/gate tests
+    # use real Composer projects. docs-openapi reads Gateway, CLI and SDK sources.
+    ('apps/cli/*', {'cli', 'docs', 'e2e', 'api-reference'}),
+    ('apps/gateway/*', {'gateway', 'docs', 'e2e', 'api-reference'}),
+    # CLI CommandSurfaceTest checks its commands against the named Gateway routes.
+    ('apps/gateway/routes/api.php', {'cli'}),
+    ('apps/docs/*', {'docs', 'e2e', 'api-reference'}),
+    # Docs' strict covers: lint reads tracked paths in every documented project.
+    ('apps/e2e/*', {'e2e', 'docs'}),
+    # CLI has the SDK Composer path repository. Gateway and CLI response tests
+    # read SDK fixtures; Docs' api-fixtures check reads all SDK and web fixtures.
+    ('packages/php-sdk/*', {'php-sdk', 'cli', 'gateway', 'docs', 'e2e', 'api-reference'}),
+    # Web demos and API tests import SDK fixtures directly (including glob imports).
+    ('packages/php-sdk/fixtures/*', {'web'}),
+    # Desktop's Tauri config consumes web; Docs' merge proof generates web types.
+    # Docs and API reference also run repository vocabulary checks over web/Pi sources.
+    ('apps/web/*', {'web', 'desktop', 'docs', 'api-reference'}),
+    ('apps/pi-server/*', {'pi-server', 'docs'}),
+    ('apps/pi-server/src/*', {'api-reference'}),
+    ('apps/desktop/*', {'desktop', 'docs'}),
+    ('apps/agent/*', {'agent', 'docs'}),
+    # Gateway's log tests share the agent's real redaction and journal fixtures.
+    ('apps/agent/tests/*', {'gateway'}),
+    # tools/check_agent_release.py compares this pin with apps/agent/Cargo.toml.
+    ('apps/gateway/resources/machine-software/recipe.json', {'agent'}),
+    # The agent delivery check installs the remote-program tests' Python requirements.
+    ('apps/gateway/tests/Programs/requirements.txt', {'agent'}),
+    # TaskTopologyCatalogParityTest and TopologySeedContractTest read the E2E catalog/harness.
+    ('apps/e2e/resources/topology-nodes.json', {'gateway'}),
+    ('apps/e2e/app/E2E/Value/TopologyRecipe.php', {'gateway'}),
+    ('apps/e2e/app/E2E/IncusHost.php', {'gateway'}),
+    # ToolingBaselineTest and ComposerConfigurationTest inspect shared PHP tooling.
+    ('apps/*/composer.*', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/pint.json', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/rector.php', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/phpstan.neon', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/phpunit.*', {'docs', 'e2e', 'api-reference'}),
+    ('apps/*/AGENTS.md', {'docs', 'e2e', 'api-reference'}),
+    ('docs/*', {'docs'}),
+    ('docs/api/*', {'api-reference'}),
+    # CLI CommandSurfaceTest/BoostGuidanceTest read these maintained command contracts.
+    ('docs/cli/*', {'cli'}),
+    ('docs/reference/cli-command-vocabulary.md', {'cli'}),
+    ('docs/reference/cli-ux.md', {'cli'}),
+    ('docs/reference/delivery-line.md', {'e2e'}),
+    ('docs/docs.json', {'e2e', 'api-reference'}),
+    # OpenAPI feeds web schemas, SDK/CLI/E2E contracts and Gateway MCP tools.
+    ('docs/openapi.json', {'api-reference', 'web', 'php-sdk', 'cli', 'gateway', 'e2e'}),
+    # Shared workflow/actions, executables, analysis rules and root configuration.
+    ('.github/*', ALL),
+    ('bin/*', ALL),
+    ('tools/*', ALL),
+    ('.agents/*', ALL),
+    ('.codex/*', ALL),
+]
+
+
+def selection(paths, full=False):
+    selected = set(ALL) if full else set()
+    for path in paths:
+        matches = [projects for pattern, projects in RULES if fnmatchcase(path, pattern)]
+        selected.update(set().union(*matches) if matches else ALL)
+    return {
+        'matrix': {'project': [value for key, value in PROJECTS.items() if key in selected]},
+        'jobs': {job: bool(projects & selected) for job, projects in JOB_PROJECTS.items()},
+    }
+
+
+def changed_paths(base, head, root=ROOT):
+    merge_base = subprocess.check_output(['git', 'merge-base', base, head], cwd=root, text=True).strip()
+    # --no-renames includes both sides of a move, so moving out of a project tests it too.
+    paths = subprocess.check_output(
+        ['git', 'diff', '--name-only', '--no-renames', '-z', merge_base, head], cwd=root,
+    )
+    return paths.decode().rstrip('\0').split('\0') if paths else []
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base', default='origin/main')
+    parser.add_argument('--head', default='HEAD')
+    parser.add_argument('--change-run', choices=['true', 'false'], default=os.environ.get('CHANGE_RUN', 'false'))
+    parser.add_argument('--github-output', type=Path)
+    args = parser.parse_args()
+    if args.change_run not in ('true', 'false'):
+        parser.error('CHANGE_RUN must be true or false')
+    change_run = args.change_run == 'true'
+    result = selection(changed_paths(args.base, args.head, Path.cwd()) if change_run else [], full=not change_run)
+    print(json.dumps(result))
+    if args.github_output:
+        with args.github_output.open('a') as output:
+            for key, value in result.items():
+                output.write(f'{key}={json.dumps(value, separators=(",", ":"))}\n')
+
+
+if __name__ == '__main__':
+    main()
