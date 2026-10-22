@@ -53,11 +53,12 @@ final class ListDatabaseUsersCommand extends DatabaseCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Username', 'Privileges', 'Created by', 'Created'],
+            ['Username', 'Privileges', 'Replication', 'Created by', 'Created'],
             array_map(
                 fn (DatabaseUserResponse $user): array => [
                     $user->username,
                     $user->privileges,
+                    $user->replication ? 'yes' : 'no',
                     $user->createdBy ?? '—',
                     $user->createdAt,
                 ],

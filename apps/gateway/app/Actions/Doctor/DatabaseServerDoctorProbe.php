@@ -9,6 +9,7 @@ use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
+use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\DatabaseServerDoctorIssueCode;
@@ -21,6 +22,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
@@ -43,7 +45,9 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
     {
         return DatabaseServer::query()
             ->where('node_id', $node->id)
-            ->where(static fn ($query) => $query->where('driver', DatabaseDriver::Redis)->orWhere('private_endpoints_managed', true))
+            ->where(static fn ($query) => $query->where('driver', DatabaseDriver::Redis)
+                ->orWhere('private_endpoints_managed', true)
+                ->orWhere(static fn (Builder $query) => $query->where('driver', DatabaseDriver::Pgsql)->whereHas('databaseConnections.users')))
             ->whereHas('process', static fn ($query) => $query->where('desired_state', DesiredProcessState::Running))
             ->with(['node', 'databaseConnections.users'])
             ->orderBy('id')
@@ -66,13 +70,32 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
                     }
                 }
                 if ($server->driver !== DatabaseDriver::Redis) {
-                    if (! $this->sql->waitUntilReady($server, 5)) {
+                    if ($server->private_endpoints_managed && ! $this->sql->waitUntilReady($server, 5)) {
                         $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::LoginFailed,
                             'The SQL server did not accept its managed admin login.', 'authenticated', 'unavailable');
                     }
-                    if ($server->process !== null && DatabaseServerProcess::holdsRootPassword($server->process)) {
+                    if ($server->private_endpoints_managed && $server->process !== null && DatabaseServerProcess::holdsRootPassword($server->process)) {
                         $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::InitializationSecretPresent,
                             'The Process still carries its first-start password.', 'removed', 'present');
+                    }
+
+                    if ($server->driver === DatabaseDriver::Pgsql) {
+                        foreach ($server->databaseConnections as $connection) {
+                            foreach ($connection->users as $user) {
+                                $attribute = $this->sql->execute($server, new PostgresStatements()->replicationAttribute($user->username));
+                                $expected = $user->replication ? 'true' : 'false';
+                                if ($attribute !== [$expected]) {
+                                    $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::ReplicationMismatch,
+                                        "User [{$user->username}] has a different PostgreSQL replication attribute or is missing.",
+                                        $expected, match ($attribute) {
+                                            ['true'] => 'true',
+                                            ['false'] => 'false',
+                                            [] => 'missing',
+                                            default => 'unverifiable',
+                                        });
+                                }
+                            }
+                        }
                     }
 
                     continue;

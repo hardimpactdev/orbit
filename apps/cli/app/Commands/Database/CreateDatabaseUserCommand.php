@@ -20,6 +20,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         {--username= : Username, a 1-32 character identifier}
         {--password= : Password for the new user}
         {--read-only : Grant only SELECT on the database}
+        {--replication : PostgreSQL LOGIN REPLICATION with read-only grants; requires wal_level=logical}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -61,6 +62,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
                 username: $username,
                 password: $password,
                 readOnly: $this->option('read-only') === true,
+                replication: $this->option('replication') === true,
             ),
             CreatedDatabaseUserResponse::class,
             ['Create Database user', 'Creating Database user', 'Created Database user'],
@@ -79,6 +81,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Database user [{$created->user->username}] on [{$slug}].", [
             'Username' => $created->user->username,
             'Privileges' => $created->user->privileges,
+            'Replication' => $created->user->replication ? 'yes' : 'no',
             'Created by' => $created->user->createdBy,
             'Created' => $created->user->createdAt,
             'Request ID' => $created->requestId,

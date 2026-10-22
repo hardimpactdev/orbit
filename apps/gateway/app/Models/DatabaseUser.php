@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $database_connection_id
  * @property string $username
  * @property string|null $password
+ * @property bool $replication
  * @property string $privileges
  * @property string|null $created_by
  * @property-read DatabaseConnection $databaseConnection
@@ -25,6 +26,7 @@ final class DatabaseUser extends Model
         'username',
         'password',
         'privileges',
+        'replication',
         'created_by',
     ];
 
@@ -45,6 +47,7 @@ final class DatabaseUser extends Model
     {
         return [
             'password' => 'encrypted',
+            'replication' => 'boolean',
         ];
     }
 }

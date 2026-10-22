@@ -82,7 +82,13 @@ describe('database connection requests', function (): void {
                 'username' => 'reporting',
                 'password' => DATABASE_CONNECTION_SDK_SECRET,
                 'read_only' => true,
+                'replication' => false,
             ]);
+    });
+
+    it('transports replication without changing the read-only flag', function (): void {
+        expect(new CreateDatabaseUserRequest('app', 'sync_reader', DATABASE_CONNECTION_SDK_SECRET, replication: true)->body()->all())
+            ->toBe(['username' => 'sync_reader', 'password' => DATABASE_CONNECTION_SDK_SECRET, 'read_only' => false, 'replication' => true]);
     });
 
     it('sends only the slug, the server, and the Instance for a database on a server', function (): void {

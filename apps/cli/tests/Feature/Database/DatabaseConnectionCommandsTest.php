@@ -245,14 +245,15 @@ it('destroys a connection after --force', function (): void {
         ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
 });
 
-it('adds a user through the connection-scoped request and hides the password', function (): void {
+it('adds a user through the connection-scoped request and hides the password', function (bool $replication): void {
     $user = [
         'id' => 2,
         'database_connection_id' => 4,
         'username' => 'reporting',
-        'privileges' => 'SELECT ON `app`.*',
+        'privileges' => 'CONNECT, USAGE, SELECT ON "app"',
         'created_by' => 'gateway',
         'created_at' => '2026-01-01T00:00:00+00:00',
+        'replication' => $replication,
     ];
     $mockClient = database_cli_mock(CreateDatabaseUserRequest::class, $user, status: 201);
 
@@ -261,7 +262,8 @@ it('adds a user through the connection-scoped request and hides the password', f
             'slug' => 'app',
             '--username' => 'reporting',
             '--password' => DATABASE_CLI_SECRET,
-            '--read-only' => true,
+            '--read-only' => ! $replication,
+            '--replication' => $replication,
             '--json' => true,
         ])
         ->expectsOutput(json_encode([...$user, 'request_id' => database_cli_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
@@ -278,9 +280,10 @@ it('adds a user through the connection-scoped request and hides the password', f
         ->toBe([
             'username' => 'reporting',
             'password' => DATABASE_CLI_SECRET,
-            'read_only' => true,
+            'read_only' => ! $replication,
+            'replication' => $replication,
         ]);
-});
+})->with(['read-only' => [false], 'replication' => [true]]);
 
 it('creates a database on a server with only the slug, the server, and the Instance', function (): void {
     $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [

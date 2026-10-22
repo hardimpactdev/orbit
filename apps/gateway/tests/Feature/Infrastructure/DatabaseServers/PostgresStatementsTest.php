@@ -27,7 +27,7 @@ it('applies PostgreSQL statements with builtin locale, owner and current and fut
     $started = false;
     try {
         $run([$bin.'initdb', '-D', $directory.'/data', '-U', 'orbit_test', '--auth=trust', '--no-locale', '--encoding=UTF8', '--no-sync']);
-        $run([$bin.'pg_ctl', '-D', $directory.'/data', '-l', $directory.'/log', '-o', '-F -k '.$directory." -h ''", '-w', 'start']);
+        $run([$bin.'pg_ctl', '-D', $directory.'/data', '-l', $directory.'/log', '-o', '-F -k '.$directory." -h '' -c wal_level=logical", '-w', 'start']);
         $started = true;
         $sql = new PostgresStatements;
         $psql($sql->ensureUser('catalog_owner', 'fixture-password').$sql->createDatabase('catalog', 'C.UTF-8').$sql->grantAll('catalog', 'catalog_owner'));
@@ -38,7 +38,18 @@ it('applies PostgreSQL statements with builtin locale, owner and current and fut
         $psql("\\connect catalog\nSET ROLE catalog_owner; CREATE TABLE future_table (id bigint); RESET ROLE;\n");
         expect($psql("\\connect catalog\nSELECT has_table_privilege('catalog_reader','current_table','SELECT')::text || '|' || has_table_privilege('catalog_reader','current_table','INSERT')::text || '|' || has_table_privilege('catalog_reader','future_table','SELECT')::text || '|' || has_table_privilege('catalog_reader','future_table','INSERT')::text;"))->toBe('true|false|true|false');
         expect($psql("\\connect catalog\nSET ROLE catalog_reader; SELECT name FROM current_table;"))->toBe('fixture');
-        $psql($sql->dropDatabase('catalog').$sql->dropUser('catalog_reader').$sql->dropUser('catalog_owner'));
+        expect($psql('SHOW wal_level;'))->toBe('logical');
+        $psql($sql->ensureUser('catalog_sync', 'sync-password').$sql->replaceGrant('catalog', 'catalog_sync', false, 'catalog_owner'));
+        $psql($sql->ensureUser('catalog_sync', 'rotated-sync-password', replication: true).$sql->replaceGrant('catalog', 'catalog_sync', true, 'catalog_owner'));
+        $psql("\\connect catalog\nSET ROLE catalog_owner; CREATE TABLE later_table (id bigint); CREATE PUBLICATION app_sync FOR TABLE current_table, later_table; RESET ROLE;\n");
+        expect($psql("SELECT rolcanlogin::text || '|' || rolreplication::text || '|' || rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text FROM pg_roles WHERE rolname = 'catalog_sync';"))->toBe('true|true|false|false|false');
+        expect($psql("\\connect catalog\nSELECT has_database_privilege('catalog_sync','catalog','CONNECT')::text || '|' || has_schema_privilege('catalog_sync','public','USAGE')::text || '|' || has_table_privilege('catalog_sync','current_table','SELECT')::text || '|' || has_table_privilege('catalog_sync','later_table','SELECT')::text || '|' || has_table_privilege('catalog_sync','later_table','INSERT')::text;"))->toBe('true|true|true|true|false');
+        expect($psql("\\connect catalog\nSET ROLE catalog_sync; SELECT name FROM current_table;"))->toBe('fixture');
+        expect($psql("\\connect catalog\nSET ROLE catalog_sync; SELECT slot_name FROM pg_create_logical_replication_slot('orbit_sync_test', 'pgoutput');"))->toBe('orbit_sync_test');
+        $psql("\\connect catalog\nSET ROLE catalog_sync; SELECT pg_drop_replication_slot('orbit_sync_test');");
+        $psql($sql->ensureUser('catalog_sync', 'final-sync-password'));
+        expect($psql("SELECT rolreplication::text FROM pg_roles WHERE rolname = 'catalog_sync';"))->toBe('false');
+        $psql($sql->dropDatabase('catalog').$sql->dropUser('catalog_reader').$sql->dropUser('catalog_owner').$sql->dropUser('catalog_sync'));
     } finally {
         if ($started) {
             $run([$bin.'pg_ctl', '-D', $directory.'/data', '-m', 'immediate', '-w', 'stop']);

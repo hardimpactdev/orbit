@@ -56,7 +56,7 @@ PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, co
 
 A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries.
 
-Create application objects as the managed owner. Custom schemas need explicit operator grants. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
+Create application objects as the managed owner. Orbit-managed databases use only Orbit-managed grants, without hand-written GRANT/REVOKE SQL or bespoke roles. Managed grants cover schema `public`; custom schemas are unsupported. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
 
 [Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
 
@@ -197,13 +197,31 @@ Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an
 
 ## Add a user
 
-`database:user:create` adds a user to a database on a MySQL server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.
+`database:user:create` adds or updates a user on a MySQL or PostgreSQL server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.
 
 ```bash
 orbit database:user:create dlf-leden --username=reporting --password=SECRET --read-only
 ```
 
-A read-only user gets `SELECT` on the database. Any other user gets all privileges on it. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own. The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
+A read-only user gets `SELECT` on the database. A regular MySQL user gets all database privileges; a regular PostgreSQL user gets the data-write grants described above. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own. The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
+
+### Logical replication users
+
+Create a managed read login for a logical replication consumer such as PowerSync.
+
+```bash
+orbit database:user:create app --username=powersync --password=SECRET --replication
+```
+
+`--replication` (API field `replication`, boolean, default false) requires a managed PostgreSQL server with live `wal_level=logical`. Orbit checks it before changing the role or grants. It refuses another driver with `database.driver_unsupported` (422) and another WAL level with `database.wal_level_not_logical` (422). Orbit does not change server configuration.
+
+The user has `LOGIN REPLICATION`, database `CONNECT`, public-schema `USAGE`, and `SELECT` on all current tables and sequences. Default privileges give the same reads on future objects created by the connection's managed owner. Replication implies the read-only grants; adding `--read-only` is allowed and has the same result. The role has no superuser, CREATEDB, or CREATEROLE attribute. PostgreSQL's replication attribute is server-wide; publications and the database grants determine which application tables the consumer reads.
+
+Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name-conflict rules apply: Orbit refuses any connection owner on the server, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
+
+User create and list responses include the recorded `replication` boolean. Human output shows Replication. Doctor compares the live PostgreSQL role's replication attribute with that record and reports `database_server.replication_mismatch` when it differs or the role is missing. This check runs for running PostgreSQL servers with recorded users, including servers that have not opted into private endpoint checks. A role cannot be inspected without a successful admin command; that failure reports `database_server.inspection_failed`.
+
+Application migrations create and alter logical publications and select their tables. Orbit does not create publications or replication slots.
 
 ## How Orbit runs admin commands
 
@@ -240,7 +258,7 @@ The recorded users are `default` with the admin password and all rights, and one
 
 Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
 
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication).
+An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication). PostgreSQL servers with recorded users also get the [replication attribute check](#logical-replication-users).
 
 ## Repair a Valkey server
 
@@ -342,3 +360,7 @@ A shared Cluster does not prove LAN reachability. Services has no Cluster and mu
 ### Migration preserves connection identities
 
 A new canonical connection owns each restored database. Existing external connection IDs and their attachments stay intact, with their endpoints and application credentials updated. Replacing those IDs would break attachment and Vault identities. Importing source roles wholesale could carry superuser rights and stale grants. Plausible's PostgreSQL 18 target needs a disposable rehearsal because upstream does not certify that major; Services is not a compatibility test target.
+
+### Replication follows the managed reader model
+
+Replication consumers need the same current and future table reads as a managed read-only user, plus PostgreSQL's replication attribute. Reusing those grants keeps one owner-default rule. Publications belong to app migrations because the app owns table selection and schema changes. Managing publications here would add a second schema lifecycle and require table inputs unrelated to credential management. No additional roles or custom grant SQL are needed.

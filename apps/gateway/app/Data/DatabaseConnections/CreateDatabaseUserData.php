@@ -14,5 +14,6 @@ final class CreateDatabaseUserData extends Data
         #[SensitiveParameter]
         public string $password,
         public bool $readOnly,
+        public bool $replication = false,
     ) {}
 }

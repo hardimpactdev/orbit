@@ -5911,7 +5911,7 @@
             "description": "Database connection slug."
           }
         ],
-        "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
+        "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants read access; otherwise MySQL grants all database privileges and PostgreSQL grants data-write access. `replication` (default false) grants PostgreSQL LOGIN REPLICATION with read-only access and owner defaults for future public tables. It requires live wal_level=logical (`database.wal_level_not_logical` otherwise); other drivers return `database.driver_unsupported`. Omitting replication on a repeat removes the attribute. App migrations own publications. User inspection returns the recorded replication boolean. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5933,6 +5933,10 @@
                   "read_only": {
                     "type": "boolean",
                     "description": "Grant only SELECT on the database"
+                  },
+                  "replication": {
+                    "type": "boolean",
+                    "description": "PostgreSQL LOGIN REPLICATION with read-only grants; requires wal_level=logical"
                   }
                 },
                 "required": [
@@ -6034,7 +6038,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections/app/users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"username\": \"app\", \"password\": \"secret\", \"read_only\": true}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections/app/users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"username\": \"app\", \"password\": \"secret\", \"read_only\": true, \"replication\": true}'\n"
           },
           {
             "lang": "php",
@@ -32604,6 +32608,9 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "replication": {
+            "type": "boolean"
           }
         }
       },

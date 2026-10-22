@@ -26,6 +26,7 @@ final class CreateDatabaseUserRequest extends GatewayRequest implements HasBody
         #[SensitiveParameter]
         private readonly string $password,
         private readonly bool $readOnly = false,
+        private readonly bool $replication = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -41,13 +42,14 @@ final class CreateDatabaseUserRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array{username: string, password: string, read_only: bool} */
+    /** @return array{username: string, password: string, read_only: bool, replication: bool} */
     protected function defaultBody(): array
     {
         return [
             'username' => $this->username,
             'password' => $this->password,
             'read_only' => $this->readOnly,
+            'replication' => $this->replication,
         ];
     }
 }

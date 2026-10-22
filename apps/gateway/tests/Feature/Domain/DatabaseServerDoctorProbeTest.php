@@ -10,6 +10,7 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -66,3 +67,41 @@ it('keeps endpoint rollout checks off existing servers until explicitly enabled'
         expect($valkey->calls)->toContain('anonymous ping', 'config get aclfile', 'acl list');
     }
 })->with([['mysql', 3306], ['redis', 6379]]);
+
+it('compares live PostgreSQL replication attributes with recorded users before endpoint opt-in', function (?string $attribute, bool $replication, bool $drift): void {
+    $node = Node::query()->create(['name' => 'pg-host', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.17', 'wireguard_ip' => '10.44.0.3']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'pg', 'runtime' => ProcessRuntime::Docker, 'runtime_config' => [], 'desired_state' => 'running', 'status' => 'active']);
+    $server = DatabaseServer::query()->create(['slug' => 'pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5432, 'root_password' => 'doctor-pg-secret', 'status' => 'active']);
+    $connection = DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'database' => 'catalog', 'username' => 'catalog_owner']);
+    $connection->users()->create(['username' => 'sync_reader', 'privileges' => 'CONNECT, USAGE, SELECT ON "catalog"', 'replication' => $replication]);
+    $sql = new FakeDatabaseServerAdmin;
+    $sql->rows['SELECT rolreplication::text'] = $attribute === null ? [] : [$attribute];
+    $probe = new DatabaseServerDoctorProbe(new FakeValkeyServerAdmin, $sql);
+
+    $report = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
+
+    expect($report->checked)->toBe(1);
+    expect(array_map(fn ($issue): string => $issue->code, $report->issues))->toBe($drift ? ['database_server.replication_mismatch'] : []);
+    expect($sql->sql())->toBe("SELECT rolreplication::text FROM pg_roles WHERE rolname = 'sync_reader';\n");
+    expect($sql->readyChecks)->toBe([]);
+})->with([
+    'replication matches' => ['true', true, false],
+    'reader matches' => ['false', false, false],
+    'replication missing' => ['false', true, true],
+    'unexpected replication' => ['true', false, true],
+    'role missing' => [null, true, true],
+]);
+
+it('reports unverifiable replication inspection without exposing server output', function (): void {
+    $node = Node::query()->create(['name' => 'pg-host', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.17']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'pg', 'runtime' => ProcessRuntime::Docker, 'runtime_config' => [], 'desired_state' => 'running', 'status' => 'active']);
+    $server = DatabaseServer::query()->create(['slug' => 'pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5432, 'root_password' => 'doctor-pg-secret', 'status' => 'active']);
+    $connection = DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'database' => 'catalog', 'username' => 'catalog_owner']);
+    $connection->users()->create(['username' => 'sync_reader', 'privileges' => 'reader', 'replication' => true]);
+    $sql = new FakeDatabaseServerAdmin;
+    $sql->failOn = 'SELECT rolreplication';
+
+    $report = (new DatabaseServerDoctorProbe(new FakeValkeyServerAdmin, $sql))->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
+
+    expect(array_map(fn ($issue): string => $issue->code, $report->issues))->toBe(['database_server.inspection_failed']);
+});
