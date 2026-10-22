@@ -707,7 +707,7 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--netw
 | --- | --- | --- |
 | `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
 | `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
-| `--network=NETWORK` | `wireguard` | `lan` explicitly selects a managed server's LAN endpoint for an active consumer in the server LAN peer list; otherwise use the stored host. |
+| `--network=NETWORK` | `wireguard` | `lan` selects a managed server's LAN endpoint; both Nodes must be active with an IPv4 LAN address. Otherwise use the stored host. |
 
 For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. By default the Gateway writes the connection's stored host and port. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) is stored on this attachment and leaves other consumers on WireGuard.
 
