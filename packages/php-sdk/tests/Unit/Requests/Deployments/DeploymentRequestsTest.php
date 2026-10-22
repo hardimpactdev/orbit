@@ -19,6 +19,16 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('deployment requests', function (): void {
+    it('transports an optional start key in the header without changing the body', function (?string $key): void {
+        $deploy = new DeployInstanceRequest(17, idempotencyKey: $key);
+        $rollback = new RollbackInstanceRequest(17, 'initial', idempotencyKey: $key);
+
+        expect($deploy->headers()->get('Idempotency-Key'))->toBe($key);
+        expect($rollback->headers()->get('Idempotency-Key'))->toBe($key);
+        expect((string) $deploy->body())->toBe('{}');
+        expect($rollback->body()->all())->toBe(['release' => 'initial']);
+    })->with(['provided' => 'item.handoff:c2-1_A', 'empty is preserved for Gateway validation' => '']);
+
     it('uses the exact Gateway methods and paths', function (): void {
         $cases = [
             [new DeployInstanceRequest(17), Method::POST, '/api/v1/instances/17/deploy'],

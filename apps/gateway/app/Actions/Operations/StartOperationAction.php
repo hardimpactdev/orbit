@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Operations;
 
 use App\Domain\Operations\OperationDispatcher;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStore;
@@ -22,6 +23,7 @@ final readonly class StartOperationAction
         private OperationStore $store,
         private OperationDispatcher $dispatcher,
         private OperationRunner $runner,
+        private OperationIdempotency $idempotency,
     ) {}
 
     /** Refuses before anything is recorded when the Gateway has no queue. */
@@ -42,8 +44,16 @@ final readonly class StartOperationAction
      */
     public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
     {
+        if (($existing = $this->idempotency->replay($kind)) !== null) {
+            return $existing;
+        }
+
         $this->assertAvailable();
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $supersedes);
+
+        if (! $operation->wasRecentlyCreated) {
+            return $operation;
+        }
 
         try {
             $this->dispatcher->dispatch($operation);

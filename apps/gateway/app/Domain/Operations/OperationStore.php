@@ -18,7 +18,7 @@ use LogicException;
  */
 final readonly class OperationStore
 {
-    public function __construct(private OperationBroadcaster $broadcaster) {}
+    public function __construct(private OperationBroadcaster $broadcaster, private OperationIdempotency $idempotency) {}
 
     public static function lockKey(string $targetType, int $targetId): string
     {
@@ -51,6 +51,8 @@ final readonly class OperationStore
 
                 return Operation::query()->create([
                     'kind' => $kind,
+                    'idempotency_key' => $this->idempotency->kind === $kind ? $this->idempotency->key : null,
+                    'idempotency_fingerprint' => $this->idempotency->kind === $kind ? $this->idempotency->fingerprint : null,
                     'target_type' => $targetType,
                     'target_id' => $targetId,
                     'node_id' => $nodeId,
@@ -64,6 +66,10 @@ final readonly class OperationStore
                 ]);
             });
         } catch (UniqueConstraintViolationException $exception) {
+            if (($existing = $this->idempotency->replay($kind)) !== null) {
+                return $existing;
+            }
+
             $holder = Operation::query()->where('lock_key', $lockKey)->value('id');
 
             throw new ResourceOperationException(

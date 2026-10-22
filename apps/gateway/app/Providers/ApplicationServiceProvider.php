@@ -176,6 +176,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeLease;
@@ -572,6 +573,7 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->scoped(OperationIdempotency::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 

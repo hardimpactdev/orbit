@@ -26,6 +26,7 @@ final readonly class ApiDispatcher
         $arguments = $this->argumentsKeepingObjects($definition, $arguments, $caller->getContent());
         $path = $definition->path;
         $query = [];
+        $headers = [];
 
         foreach ($definition->pathInputs as $input) {
             $value = $arguments[$input] ?? null;
@@ -36,6 +37,13 @@ final readonly class ApiDispatcher
         foreach ($definition->queryInputs as $input) {
             if (array_key_exists($input, $arguments)) {
                 $query[$input] = $arguments[$input];
+                unset($arguments[$input]);
+            }
+        }
+
+        foreach ($definition->headerInputs as $input) {
+            if (array_key_exists($input, $arguments)) {
+                $headers[$input] = is_scalar($arguments[$input]) ? (string) $arguments[$input] : '';
                 unset($arguments[$input]);
             }
         }
@@ -57,6 +65,7 @@ final readonly class ApiDispatcher
             // Null content makes Symfony read php://input, which under PHP-FPM is the caller's JSON-RPC body.
             content: $sendsBody ? json_encode((object) $arguments, JSON_THROW_ON_ERROR) : '',
         );
+        $request->headers->add($headers);
 
         try {
             $response = $this->kernel->handle($request);

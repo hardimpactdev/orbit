@@ -11,12 +11,14 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\RollbackInstanceRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 final class InstanceRollbacksController extends Controller
 {
     /** Starts an `instance.rollback` operation and answers 202 with it; the rollback runs on the Gateway queue. */
+    #[StartsOperation('instance.rollback')]
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         RollbackInstanceRequest $request,

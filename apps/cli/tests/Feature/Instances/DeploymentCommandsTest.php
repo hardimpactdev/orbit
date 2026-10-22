@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -71,6 +72,21 @@ describe('retained releases', function (): void {
 });
 
 describe('deploy and rollback requests', function (): void {
+    it('passes the idempotency flag through the SDK as a header', function (string $command, string $requestClass, array $options): void {
+        $mock = MockClient::global([
+            $requestClass => MockResponse::make(['error' => ['code' => 'operation.idempotency_conflict', 'message' => 'Another input already uses this key.', 'details' => []]], 409),
+        ]);
+
+        expect(Artisan::call($command, ['instance' => '17', '--idempotency-key' => 'item.handoff:c2-1_A', '--json' => true, ...$options]))->toBe(1);
+
+        expect($mock->getLastPendingRequest()->headers()->get('Idempotency-Key'))->toBe('item.handoff:c2-1_A');
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.idempotency_conflict');
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+    })->with([
+        'deploy' => ['instance:deploy', DeployInstanceRequest::class, []],
+        'rollback' => ['instance:rollback', RollbackInstanceRequest::class, ['--release' => 'initial']],
+    ]);
+
     it('rejects a missing rollback release before sending a request', function (): void {
         $mock = MockClient::global();
 
