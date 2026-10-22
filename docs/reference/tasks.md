@@ -24,6 +24,10 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
+A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
+
+Project removal also requires every associated workspace lease to be `released`. A `held`, `queued`, or unknown lease status returns HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. All records, including lease operations, remain unchanged. A missing Instance does not prove release. Project deletion does not release leases and removes only released leases and their operations.
+
 ## Extension switch and status
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
