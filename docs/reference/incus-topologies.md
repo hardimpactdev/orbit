@@ -181,6 +181,8 @@ A topology guest needs none of these paths: it talks to its own Gateway over its
 
 ## Capacity
 
+Single-instance lookups pass the remote separately from an anchored exact-name filter, for example `incus list local: 'name=^node-template$' --format=json`. This keeps Incus 6 and 7 name parsing consistent. Ownership checks still require the declared metadata and identity.
+
 The harness counts capacity from `incus list`, never from a ledger. It counts the VMs that carry `user.orbit.e2e.owner=orbit-e2e` and the `10.232.<slot>.0/24` subnets in use.
 
 | Setting | Value |
