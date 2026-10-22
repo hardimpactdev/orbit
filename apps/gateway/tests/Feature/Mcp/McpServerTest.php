@@ -265,6 +265,25 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('jobs', 1);
     })->with(['/mcp', '/mcp/search']);
 
+    it('starts and replays task check through its generated MCP tool', function (string $endpoint): void {
+        enable_operation_queue();
+        tick_bind_defaults();
+        app(TaskExtensionState::class)->enable();
+        $group = tick_group();
+        Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
+        $arguments = ['group' => $group->id, 'subtask' => $group->tasks()->firstOrFail()->id, 'phase' => 'handoff', 'Idempotency-Key' => 'mcp.check.c1'];
+
+        $first = mcp_tool($this, $endpoint, 'tasks-check', $arguments);
+        $second = mcp_tool($this, $endpoint, 'tasks-check', $arguments);
+
+        expect($first['operation']['kind'])->toBe('tasks.check');
+        expect($first['operation']['input'])->toBe(['subtask' => $arguments['subtask'], 'phase' => 'handoff']);
+        expect($first['poll']['tool'])->toBe('operation-show');
+        expect($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('jobs', 1);
+    })->with(['/mcp', '/mcp/search']);
+
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();

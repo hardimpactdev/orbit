@@ -88,6 +88,7 @@ use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -301,6 +302,7 @@ describe('repository guidance bootstrap', function (): void {
             CreateTaskGroupRequest::class,
             UpdateTaskGroupRequest::class,
             ProvisionTaskGroupRequest::class,
+            CheckTaskGroupRequest::class,
             CancelTaskGroupRequest::class,
             CompleteTaskGroupRequest::class,
             CreateSubtaskRequest::class,
@@ -571,7 +573,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')

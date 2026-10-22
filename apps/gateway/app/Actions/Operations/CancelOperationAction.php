@@ -17,7 +17,7 @@ final readonly class CancelOperationAction
 {
     public function __construct(private OperationStore $store, private OperationRunner $runner) {}
 
-    public function execute(Operation $operation): Operation
+    public function execute(Operation $operation, bool $targetEnding = false): Operation
     {
         if ($operation->status->terminal()) {
             return $operation;
@@ -28,7 +28,7 @@ final readonly class CancelOperationAction
         }
 
         $this->store->cancelQueued($operation);
-        $this->runner->cancelWaiting($operation);
+        $this->runner->cancelWaiting($operation, $targetEnding);
 
         return $operation->refresh();
     }

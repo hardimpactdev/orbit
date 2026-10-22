@@ -390,3 +390,11 @@ Provision the numeric task `group` through the Gateway's `tasks.provision` opera
 - [`project`](/cli/project) lists the Projects that a task can belong to.
 - [`instance`](/cli/instance) shows the task workspace Instance of a running task.
 - The [tasks reference](/reference/tasks) explains Backlog preparation, the scheduler, turn receipts, review, and pull requests.
+
+## orbit tasks:check
+
+```bash
+orbit tasks:check <group> --subtask=<id> --phase=baseline|handoff [--idempotency-key=KEY] [--json]
+```
+
+Run a baseline or handoff check through `tasks.check` on the Gateway. The group must use external orchestration and have a workspace. The subtask must be its current open subtask. A terminal prompts for missing inputs; machine mode requires them. The command follows waits for VM resume, workspace ownership, and the detached check. A failed check is a successful operation with `result.outcome=failed`; inspect the result, including deliverables and redacted output. A passed handoff records its commit. Ctrl-C stops following. Use `operation:cancel` to stop the check, or `tasks:cancel` to end the group. See [Check an external group](/reference/tasks#check-an-external-group).

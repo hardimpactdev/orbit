@@ -15,7 +15,7 @@ covers:
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), runs as an operation: a record in the Gateway's database that a job on the [Gateway queue](/reference/gateway-queue) works through as named steps. The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
-Instance deploy, rollback, and [task provision](/reference/tasks#provision-an-external-group) are operations. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
+Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), and [task checks](/reference/tasks#check-an-external-group) are operations. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
@@ -71,6 +71,7 @@ Use the kind and target type to start or find the work of a command.
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
+| `tasks:check` | `tasks.check` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success.
 
@@ -96,13 +97,13 @@ When the Gateway cannot push the job, it ends the record as `failed` with `opera
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an optional `Idempotency-Key` header. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), and `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`). A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an optional `Idempotency-Key` header. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`), and `POST /api/v1/task-groups/{group}/check` (`tasks.check`). A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
 
 Concurrent starts with one new key create one operation and queue one job. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
-The CLI commands `instance:deploy`, `instance:rollback`, and `tasks:provision` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the optional `Idempotency-Key` argument, generated from the OpenAPI header.
+The CLI commands `instance:deploy`, `instance:rollback`, `tasks:provision`, and `tasks:check` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the optional `Idempotency-Key` argument, generated from the OpenAPI header.
 
 Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule until their changes become operations.
 
@@ -182,7 +183,7 @@ Each active run has a deadline of 1,600 seconds; time between waiting reads does
 
 ### A waiting step
 
-A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. `tasks.provision` waits for VM capacity and readiness; deploy and rollback keep their current execution.
+A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. `tasks.provision` waits for VM capacity and readiness, and `tasks.check` waits for VM resume, workspace ownership, and its detached check; deploy and rollback keep their current execution.
 
 A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
 
@@ -241,6 +242,10 @@ These codes belong to every operation.
 A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.
 
 ## Why it works this way
+
+### A task check returns evidence
+
+`tasks.check` holds the group while its detached check runs, without holding the operations worker. A failed check returns a successful operation with a failed outcome so the orchestrator can decide its next step. An unconfirmed stop retains the target and retries, because a cancel request alone does not prove the workspace is free. Group cancellation can end the operation when the VM is unreachable because the group's existing removal rule retains the workspace and requests assistance.
 
 These reasons explain the design. Check them before you propose a change.
 

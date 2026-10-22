@@ -152,7 +152,12 @@ trait FollowsOperations
 
         $this->settleFinishedSteps($progress, final: true);
         $progress->finish(match ($operation->status) {
-            'succeeded' => "{$verb} succeeded.",
+            'succeeded' => $operation->kind === 'tasks.check' ? match ($operation->result['outcome'] ?? null) {
+                'passed' => 'Check passed.',
+                'failed' => 'Check failed.',
+                'changed' => 'Check changed the tree.',
+                default => 'Check operation succeeded.',
+            } : "{$verb} succeeded.",
             'cancelled' => "{$verb} cancelled.",
             default => "{$verb} failed.",
         });
@@ -248,6 +253,15 @@ trait FollowsOperations
 
         if ($operation->errorCode !== null) {
             $this->writeHumanMessage('Error code: '.$operation->errorCode);
+        }
+
+        if ($operation->kind === 'tasks.check') {
+            foreach (['check_id' => 'Check', 'commit' => 'Commit'] as $field => $label) {
+                $value = $operation->result[$field] ?? null;
+                if (is_int($value) || is_string($value)) {
+                    $this->writeHumanMessage($label.': '.$value);
+                }
+            }
         }
 
         $selected = $operation->result['selected_release'] ?? null;

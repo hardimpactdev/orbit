@@ -9100,6 +9100,58 @@
       }
     },
     {
+      "name": "tasks-check",
+      "extension": "tasks",
+      "title": "Run a Task group check",
+      "description": "Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, and redacted output. A passed handoff commits without a CI push; a lost check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/check",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "subtask": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "handoff"
+            ],
+            "description": "baseline or handoff"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "subtask",
+          "phase"
+        ]
+      }
+    },
+    {
       "name": "tasks-check-cancel",
       "extension": "tasks",
       "title": "tasks:check:cancel",

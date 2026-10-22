@@ -6,6 +6,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -51,6 +52,28 @@ function operation_connector(MockClient $mock): GatewayConnector
 }
 
 describe('operation requests', function (): void {
+    it('starts a task check with typed input and preserves its result and key', function (): void {
+        $request = new CheckTaskGroupRequest(17, 21, 'handoff', 'task.check.c1');
+        $result = ['outcome' => 'failed', 'deliverables' => [['id' => 'test', 'outcome' => 'failed', 'failures' => ['Command failed.']]],
+            'check_id' => 31, 'commit' => null, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'output' => 'Failed.'];
+        $mock = new MockClient([$request::class => MockResponse::make(['data' => operation_payload([
+            'kind' => 'tasks.check', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => $result,
+        ]), 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]);
+
+        $response = operation_connector($mock)->send($request)->dto();
+
+        expect($request->getMethod())->toBe(Method::POST);
+        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/check');
+        expect($request->body()->all())->toBe(['subtask' => 21, 'phase' => 'handoff']);
+        expect($request->headers()->get('Idempotency-Key'))->toBe('task.check.c1');
+        expect(new CheckTaskGroupRequest(17, 21, 'baseline')->headers()->get('Idempotency-Key'))->toBeNull();
+        expect($response)->toBeInstanceOf(OperationResponse::class);
+        expect($response->result)->toBe($result);
+        expect($response->succeeded())->toBeTrue();
+        expect($response->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a846');
+        $mock->assertSentCount(1);
+    });
+
     it('starts task provision without a body and preserves the key and typed operation result', function (): void {
         $request = new ProvisionTaskGroupRequest(17, 'task.provision.c1');
         $mock = new MockClient([

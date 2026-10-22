@@ -102,6 +102,18 @@ To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first
 
 The remaining lifecycle and scheduler descriptions on this page describe `tick` groups unless they state otherwise.
 
+#### Check an external group
+
+`tasks:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. It uses the [shared task-operation rules](#provision-an-external-group), including the group target hold and no Gateway retries. It accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+
+A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. The current subtask is the open one with the lowest position; another returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`.
+
+A parked VM queues its resume first. The operation waits for readiness and for its own check lease, after any implementer turn releases ownership. It starts no check inside a turn's receipt scope. The detached [Project check](#project-check) runs in the workspace. A baseline runs Project setup first; a handoff verifies deliverables. Delayed reads claim the waiting operation, then reconcile the group's workspace lease to record the reading. A busy lease keeps the operation `waiting`.
+
+The result holds `outcome` (`passed`, `failed`, or `changed`), each deliverable's result, `check_id`, `commit`, `head`, `tree`, and redacted `output`. Each deliverable result holds its `id`, `outcome` (`passed`, `failed`, or `not_checked`), and `failures`. Baselines and review deliverables use `not_checked`. A failed check succeeds as an operation with outcome `failed`. The human CLI shows the check outcome and check ID, plus the commit when one exists; its exit status follows the operation status. A passed handoff commits the checked tree and records the commit on the check. It pushes no handoff CI branch: external groups cannot use review and merge. A lost check keeps the group held and the operation `waiting`; cancel the group to end it.
+
+A direct `operation:cancel` stops a waiting check as `tasks:check:cancel` does. Orbit records the cancel request first. An unconfirmed stop returns `502 tasks.check_unreachable`, keeps the operation `waiting`, and retries the stop on its next delayed read. Group cancel and complete end the open operation first. When the VM does not answer, they end it `cancelled` without that 502 and follow the existing [unreachable Node rule](#cancel-a-stuck-task).
+
 ### Task lifecycle
 
 A task moves through these statuses from preparation to its end.
@@ -136,6 +148,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:list` | `GET /api/v1/task-groups` | Any peer |
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Any peer |
 | `tasks:provision` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
+| `tasks:check` | `POST /api/v1/task-groups/{group}/check` | Gateway |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
 | `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
@@ -156,7 +169,7 @@ Create requires `project_id`, `title` (at most 160 characters), and `brief` (at 
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
-For an external group, `tasks:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but never asks the scheduler to claim. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`; provision is not available yet. Use `tasks:cancel` or `tasks:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
+For an external group, `tasks:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but never asks the scheduler to claim. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `tasks:cancel` or `tasks:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
 A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
 
@@ -951,7 +964,6 @@ The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it ove
 
 Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure.
 
-
 The check process exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Setup, the Project check, and command deliverables inherit that value, including when they invoke project-local `vp` without a login shell. An absent, conflicting, or unreadable store makes check start a communication failure, before the check launches. Orbit releases the unstarted baseline claim so the next tick can retry. Status, cancellation, and workspace snapshots do not need another Vite+ store probe.
 
 When the workspace Instance has an [assigned SSR port](/reference/assigned-ssr-ports), the check process also exports `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`. Setup, the Project check, and command deliverables inherit them, so browser and SSR gates in two workspaces on one Node reach their own SSR servers. The check still runs in the workspace on its Node.
@@ -1728,6 +1740,10 @@ New Projects have no task check until one is configured, regardless of type. Exi
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### External checks own their lease and commit
+
+A turn and its check are separate operations. The check waits for the turn to release the workspace, so a receipt scope cannot lend it the implementer's lease. Reusing detached check supervision keeps tick and external checks under one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
 
 ### Provision keeps effects separate from lifecycle decisions
 

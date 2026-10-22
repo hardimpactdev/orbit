@@ -104,7 +104,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release, and `orbit-agent` on a managed Node. |
-| `tasks` | `cancel`, `close`, `complete`, `provision`, `status` | The CLI provisions, cancels, or completes a task, cancels a running subtask with `tasks:subtask:cancel`, closes a stale question with `tasks:question:close`, or reports task assistance and state. |
+| `tasks` | `cancel`, `check`, `close`, `complete`, `provision`, `status` | The CLI provisions, checks, cancels, or completes a task, cancels a running subtask with `tasks:subtask:cancel`, closes a stale question with `tasks:question:close`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 | `vault` | `setup`, `status`, `sync`, `teardown` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
 | `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |

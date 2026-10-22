@@ -708,6 +708,7 @@ SUMMARIES = {
     'tasks:agents': 'List task agent sessions', 'tasks:agent:show': 'Show a task agent session', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:question:list': 'List task questions', 'tasks:question:close': 'Close a task question', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
     'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a todo or running subtask',
+    'tasks:check': 'Run a Task group check',
     'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
@@ -784,6 +785,7 @@ DESCRIPTIONS = {
     'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:cancel': 'For an external group, cancels a `todo`, `running`, or `reviewing` subtask in an open group. It interrupts the acting turn or check, marks the subtask `cancelled`, starts no other subtask, and never settles the group. For a tick group, cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask or group is not cancellable, and `tasks.subtask_interrupt_failed` (502) when a turn or check could not be stopped; the subtask then keeps its status.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes the unattached workspace the group owns, unless a live claim still uses it. An Instance name or branch never makes an Instance a task workspace. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.',
+    'tasks:check': 'Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, and redacted output. A passed handoff commits without a CI push; a lost check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.',
     'tasks:provision': 'Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.',
     'tasks:complete': 'Completes a settling Task group or a VM group waiting for review without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
     'conn:me': 'Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the Conn endpoints without a node access grant.',
@@ -1319,6 +1321,7 @@ def route_key(route):
     return (route['method'], '/' + re.sub(r'\{[^}]+\}', '{}', route['uri']))
 
 
+EXAMPLE_BY_ROUTE = {'tasks:check': {'phase': 'baseline'}}
 NAME_BY_TAG = {'Nodes': 'beast', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
     'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
@@ -1357,7 +1360,7 @@ def php_literal(v):
     return "'" + str(v).replace("'", "\\'") + "'"
 
 
-def php_sample(sdkreq, tag):
+def php_sample(sdkreq, tag, route_name):
     ns = 'Orbit\\Sdk\\Requests\\' + sdkreq['file'].replace('.php', '').replace('/', '\\')
     imports = ['Orbit\\Sdk\\GatewayConnector', ns]
     ctor = re.sub(r'#\[[^\]]*\]', '', sdkreq['ctor'])
@@ -1384,6 +1387,8 @@ def php_sample(sdkreq, tag):
             val = NAME_BY_TAG.get(tag, 'example')
         elif t == 'array' and name == 'command':
             val = ['/usr/bin/php', 'artisan', 'queue:work']
+        elif name in EXAMPLE_BY_ROUTE.get(route_name, {}):
+            val = EXAMPLE_BY_ROUTE[route_name][name]
         elif name in PHP_EXAMPLES:
             val = PHP_EXAMPLES[name]
         elif t.startswith('?'):
@@ -1543,6 +1548,8 @@ def bash_sample(route, path, body_schema, query, tag):
     if body_schema is not None:
         lines[-1] += ' \\'
         body = example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}
+        if route['name'] in EXAMPLE_BY_ROUTE:
+            body.update(EXAMPLE_BY_ROUTE[route['name']])
         lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(body) + "'"]
     return '\n'.join(lines) + '\n'
 
@@ -2076,7 +2083,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if body_schema is not None else None
     samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]
     if sdkreq:
-        samples.append({'lang': 'php', 'label': 'PHP SDK', 'source': php_sample(sdkreq, tag)})
+        samples.append({'lang': 'php', 'label': 'PHP SDK', 'source': php_sample(sdkreq, tag, route['name'])})
     op['x-codeSamples'] = samples
     if not op['parameters']:
         op.pop('parameters')

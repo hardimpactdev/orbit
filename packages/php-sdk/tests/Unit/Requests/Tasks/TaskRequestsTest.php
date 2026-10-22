@@ -7,6 +7,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -51,6 +52,7 @@ describe('task transport', function (): void {
         'show' => [new ShowTaskGroupRequest(13), Method::GET, '/api/v1/task-groups/13'],
         'update' => [new UpdateTaskGroupRequest(13), Method::PATCH, '/api/v1/task-groups/13'],
         'cancel' => [new CancelTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/cancel'],
+        'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
         'provision' => [new ProvisionTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/provision'],
         'complete' => [new CompleteTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/complete'],
         'subtask create' => [new CreateSubtaskRequest(13, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups/13/tasks'],

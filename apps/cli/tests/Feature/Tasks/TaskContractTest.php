@@ -53,6 +53,10 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
+    it('renders a refused check', function (): void {
+        run_task_contract('tasks/tasks-check/not-orchestrated', 'tasks:check', ['group' => '1', '--subtask' => '2', '--phase' => 'baseline'], 1);
+    });
+
     it('renders a refused provision', function (): void {
         run_task_contract('tasks/tasks-provision/not-orchestrated', 'tasks:provision', ['group' => '1'], 1);
     });

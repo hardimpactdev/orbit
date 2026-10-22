@@ -3621,6 +3621,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a Task group check
+         * @description Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, and redacted output. A passed handoff commits without a CI push; a lost check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.
+         */
+        post: operations["tasks-check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/complete": {
         parameters: {
             query?: never;
@@ -19858,6 +19878,92 @@ export interface operations {
             };
             /** @description The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay. */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-check": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Numeric subtask ID */
+                    subtask: number;
+                    /**
+                     * @description baseline or handoff
+                     * @enum {string}
+                     */
+                    phase: "baseline" | "handoff";
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

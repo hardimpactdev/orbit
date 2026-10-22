@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 235 concrete public Gateway API operations:
+The SDK models exactly 236 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -10,7 +10,7 @@ The SDK models exactly 235 concrete public Gateway API operations:
 - Project: list, show, create, update, and remove; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Operation: list, show, and cancel. Instance deploy, rollback, and task group provision return the queued operation.
+- Operation: list, show, and cancel. Instance deploy, rollback, and task group provision and check return the queued operation.
 - Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -28,7 +28,7 @@ The SDK models exactly 235 concrete public Gateway API operations:
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.
 - Vault: status, setup, sync, and teardown.
-- Tasks: enable, disable, status, group list, show, create, update, provision, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
+- Tasks: enable, disable, status, group list, show, create, update, provision, check, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
 
 The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.

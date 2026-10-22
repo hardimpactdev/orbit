@@ -28,16 +28,17 @@ final readonly class CancelTaskCheckAction
         private TaskBroadcasts $broadcasts,
     ) {}
 
-    public function execute(Task $group, Task $task): TaskCheck
+    public function execute(Task $group, Task $task, ?TaskCheck $check = null): TaskCheck
     {
         $this->requireExtension->execute();
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task), wait: false);
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task, $check), wait: false);
     }
 
-    private function cancelWithLock(Task $group, Task $task): TaskCheck
+    private function cancelWithLock(Task $group, Task $task, ?TaskCheck $check): TaskCheck
     {
-        $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
+        $statuses = $check === null ? [TaskCheckStatus::Running] : [TaskCheckStatus::Running, TaskCheckStatus::Lost];
+        $check = $check?->refresh() ?? $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
         $instance = $group->taskable;
         if (! $check instanceof TaskCheck || ! $instance instanceof Instance) {
             throw new ResourceOperationException(
@@ -66,7 +67,7 @@ final readonly class CancelTaskCheckAction
                 status: 502,
             );
         }
-        $claimed = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
+        $claimed = TaskCheck::query()->whereKey($check->id)->whereIn('status', $statuses)
             ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now()]);
         if ($claimed === 0) {
             throw new ResourceOperationException(
