@@ -121,6 +121,29 @@ second orchestrator:
 B1 does not depend on Pi Durable. B2's agent-turn operation should be built on
 it if its spike holds.
 
+## Aligned with the Pi Durable thread (2026-10-22)
+
+- Pi on Durable runs inside the task VM behind pi-server's current HTTP API
+  (option A). The send key of `POST /sessions/{id}/messages` becomes Durable's
+  `requestId`, so the Swamp key passes through unchanged. A repeat returns
+  `duplicate: true`.
+- Durable dedupes only within one VM's storage. Across a lost VM, the
+  Gateway's keyed, never-pruned operation is the guard.
+- The step 3 amendment must state three changes:
+  1. A pi-server restart no longer fails the turn; Durable resumes it. Drop
+     the Gateway's restart-resume path (2 resumes, re-orient), or it sends a
+     duplicate turn. Durable's crash-loop parking (5 restarts) surfaces as
+     failed, then assistance.
+  2. Provider retry happens in one place: Durable, set to Orbit's budget,
+     instead of the Gateway's 1/2/4/8-minute retry.
+  3. Checks stay orchestrator operations (`instance.run`). The model did not
+     rerun an interrupted check in the Pi spike.
+- Both threads stop running agents on the host: everything task-specific
+  stays in the VM.
+- Open for Nick: one workspace per work item in the task VM for every step
+  (update, checks, agent edits, publish), instead of a dev Instance first.
+  Both threads recommend one path.
+
 ## Recommendation
 
 Do **B** (chosen), in two steps:
