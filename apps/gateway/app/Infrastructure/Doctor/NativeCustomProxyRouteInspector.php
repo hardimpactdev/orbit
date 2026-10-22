@@ -10,7 +10,11 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
+use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
@@ -76,10 +80,19 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
             $edge = null;
         }
         try {
-            $dns = $this->ssh->execute($node, new RemoteCommand(['getent', 'ahostsv4', $route->domain]),
-                step: 'doctor-custom-proxy-route', errorCode: 'route.inspection_failed', commandTimeout: $this->deadline->cap(10.0));
-            $answer = preg_split('/\s+/', trim($dns->stdout))[0] ?? '';
-            $dnsMatches = $answer === $node->wireguard_ip;
+            $server = app(GatewayPrivateDnsResolver::class)->vpnDnsAddress(app(VpnSettings::class));
+            if ($server === null) {
+                throw new DoctorInspectionException;
+            }
+            $codec = new PrivateDnsMessageCodec;
+            $query = $codec->encodeQuery($route->domain, id: random_int(0, 65535));
+            $upstream = app()->makeWith(SocketPrivateDnsUpstream::class, [
+                'host' => $server,
+                'port' => 53,
+                'timeoutSeconds' => $this->deadline->cap(2.0),
+            ]);
+            $addresses = $codec->decodeAAnswer($upstream->resolve($query), $query);
+            $dnsMatches = $addresses === [$node->wireguard_ip];
         } catch (Throwable) {
             $dnsMatches = null;
         }

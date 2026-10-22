@@ -270,6 +270,8 @@ Node convergence restores the WireGuard member rule; Ingress convergence rebuild
 
 Doctor checks public Process Routes on the Ingress in the `route` family only when both Nodes are in its selected scope. Otherwise it reports nothing about that Route and does not inspect the Process Node. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
 
+The DNS check queries the recorded Orbit DNS server directly from the Gateway and expects the Ingress's WireGuard address. It bypasses system resolver routing and caches. The Ingress's system resolver may return a public address for the same hostname; that is not private DNS drift.
+
 The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on a Node backs up and stops serving any hand-placed Caddy site. Create a custom proxy Route for such a site before that build. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) shows an example.
 
 Doctor checks each custom proxy Route on its serving Node in the `route` family:
