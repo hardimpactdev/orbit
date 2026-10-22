@@ -55,9 +55,13 @@ use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
-use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\NullTaskWorkspaceDiffReader;
+use Tests\Support\StandardLibraryPython;
+use Tests\Support\TurnMetadataSshExecutor;
+
+beforeAll(fn () => TurnMetadataSshExecutor::prepare());
+afterAll(fn () => TurnMetadataSshExecutor::forget());
 
 beforeEach(function (): void {
     tick_bind_defaults();
@@ -741,7 +745,8 @@ it('supersedes an uncertain correction after completed direction without erasing
     File::ensureDirectoryExists($checkout.'/.git/orbit');
     $group->taskable->update(['checkout_path' => $checkout]);
     $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before'];
-    $dispatcher = new class($state, $checkout, $task->implementer_agent_thread_id, $failure) implements AgentCommandDispatcher
+    $pythonPath = StandardLibraryPython::path((string) getenv('PATH'));
+    $dispatcher = new class($state, $checkout, $task->implementer_agent_thread_id, $failure, $pythonPath) implements AgentCommandDispatcher
     {
         /** @var array<string, array<string, mixed>> */
         public array $accepted = [];
@@ -751,7 +756,7 @@ it('supersedes an uncertain correction after completed direction without erasing
 
         public ?string $correctionKey = null;
 
-        public function __construct(private object $state, private string $checkout, private ?int $threadId, private string $failure) {}
+        public function __construct(private object $state, private string $checkout, private ?int $threadId, private string $failure, private string $pythonPath) {}
 
         public function dispatch(Node $node, array $command): array
         {
@@ -766,7 +771,7 @@ it('supersedes an uncertain correction after completed direction without erasing
                 $turn = json_decode((string) file_get_contents($this->checkout.'/.git/orbit/turn.json'), true);
                 $arguments = [$this->checkout.'/.git/orbit/turn', '--thread='.$turn['thread'], '--summary=Authoritative direction result.'];
                 $arguments = $implementer ? [...$arguments, '--outcome=ready_for_review', '--deliverable=corrected=Implemented', '--deliverable=repro=Passed'] : [...$arguments, '--outcome=answered', '--cause=scope'];
-                (new Process($arguments, cwd: $this->checkout))->mustRun();
+                (new Process($arguments, cwd: $this->checkout, env: ['PATH' => $this->pythonPath]))->mustRun();
                 if ($implementer) {
                     $this->state->turnId = $key;
                     $this->state->messageId = $key;
@@ -789,7 +794,9 @@ it('supersedes an uncertain correction after completed direction without erasing
     $keys->shouldReceive('privateKeyPath')->andReturn('/unused-local-fixture-key');
     $hosts = Mockery::mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/unused-local-fixture-known-hosts');
-    $nativeReceipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts)));
+    $transport = new TurnMetadataSshExecutor;
+    $transport->environment['PATH'] = $pythonPath;
+    $nativeReceipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor($transport, $keys, $hosts)));
     $receipts = Mockery::mock(TaskTurnReceipts::class);
     $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null, ?string $context = null) use ($nativeReceipts, &$preparations): void {
         $preparations[] = $mode?->deliveryKey;

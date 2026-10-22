@@ -13,6 +13,7 @@ use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -159,6 +160,53 @@ describe('document hierarchy', function (): void {
         expect($root->refresh()->parent_id)->toBeNull();
         expect($root->revision)->toBe(1);
     });
+
+    it('validates the full destination chain with one archive traversal', function (?int $archivedLevel, int $subtreeDepth): void {
+        $project = domain_documents_project();
+        $tree = app(DocumentTreeAction::class);
+        $entries = DB::transaction(function () use ($project): array {
+            $entries = [];
+            $parent = null;
+            for ($level = 1; $level <= 31; $level++) {
+                $entry = ProjectDocumentEntry::query()->create([
+                    'project_id' => $project->id, 'parent_id' => $parent, 'sibling_scope' => $parent ?? 0,
+                    'name' => 'level-'.$level, 'kind' => 'folder', 'revision' => 1,
+                ]);
+                $entries[] = $entry;
+                $parent = $entry->id;
+            }
+
+            return $entries;
+        });
+        if ($archivedLevel !== null) {
+            $entries[$archivedLevel - 1]->update(['archived_at' => now()]);
+        }
+        $queries = 0;
+        DB::listen(function (QueryExecuted $event) use (&$queries): void {
+            if (str_contains($event->sql, 'project_document_entries')) {
+                $queries++;
+            }
+        });
+        $validate = fn () => DB::transaction(function () use ($tree, $project, $entries, $subtreeDepth): void {
+            $tree->lock();
+            $tree->destination($project->id, $entries[30]->id, $subtreeDepth);
+        });
+
+        if ($archivedLevel !== null) {
+            expect($validate)->toThrow(ResourceOperationException::class, 'archived');
+        } elseif ($subtreeDepth === 2) {
+            expect($validate)->toThrow(ValidationException::class, '32 entries');
+        } else {
+            $validate();
+        }
+        expect($queries)->toBeLessThanOrEqual(62);
+    })->with([
+        'depth 32' => [null, 1],
+        'depth 33' => [null, 2],
+        'archived root' => [1, 1],
+        'archived middle' => [16, 1],
+        'archived immediate parent' => [31, 1],
+    ]);
 
     it('preserves independent child archives and refuses mutations below an archived parent', function (): void {
         $project = domain_documents_project();

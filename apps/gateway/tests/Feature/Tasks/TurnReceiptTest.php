@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\StandardLibraryPython;
 use Tests\Support\TestOrbitHome;
 
 function turn_receipt_checkout(): string
@@ -59,6 +60,9 @@ function turn_receipt_instance(string $checkout, array $group = []): Instance
 
 function turn_receipts(SshExecutor $transport): object
 {
+    if ($transport instanceof LocalShellSshExecutor) {
+        $transport->environment['PATH'] = StandardLibraryPython::path((string) getenv('PATH'));
+    }
     $receipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
@@ -110,7 +114,7 @@ function turn_receipts(SshExecutor $transport): object
 /** @param list<string> $arguments */
 function turn_receipt_script(string $checkout, array $arguments): Process
 {
-    $process = new Process([$checkout.'/.git/orbit/turn', ...$arguments], $checkout);
+    $process = new Process([$checkout.'/.git/orbit/turn', ...$arguments], $checkout, ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
     $process->run();
 
     return $process;
@@ -120,25 +124,30 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
-it('preserves an accepted deliverable correction receipt when keyed preparation is replayed', function (): void {
+it('handles an accepted deliverable correction receipt when keyed preparation is replayed', function (string $deliveryKey): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);
     $receipts = turn_receipts(new LocalShellSshExecutor);
     $mode = new TaskTurnMode(deliveryKey: 'correction-delivery-identity');
     $deliverable = TaskDeliverable::fromArray(['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']);
     $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
-    turn_receipt_script($checkout, ['--thread=123', '--outcome=ready_for_review', '--summary=Done.', '--deliverable=corrected=Reviewed'])->getExitCode();
+    expect(turn_receipt_script($checkout, ['--thread=123', '--outcome=ready_for_review', '--summary=Done.', '--deliverable=corrected=Reviewed'])->getExitCode())->toBe(0);
     $receipt = $receipts->read($instance, 123);
     expect($receipt)->not->toBeNull();
     $turn = file_get_contents($checkout.'/.git/orbit/turn.json');
 
-    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: new TaskTurnMode(deliveryKey: $deliveryKey));
 
-    expect($receipts->read($instance, 123)?->hash)->toBe($receipt?->hash)
-        ->and(file_get_contents($checkout.'/.git/orbit/turn.json'))->toBe($turn);
-    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: new TaskTurnMode(deliveryKey: 'another-delivery'));
-    expect($receipts->read($instance, 123))->toBeNull();
-});
+    if ($deliveryKey === $mode->deliveryKey) {
+        expect($receipts->read($instance, 123)?->hash)->toBe($receipt?->hash)
+            ->and(file_get_contents($checkout.'/.git/orbit/turn.json'))->toBe($turn);
+    } else {
+        expect($receipts->read($instance, 123))->toBeNull();
+    }
+})->with([
+    'same delivery preserves the receipt' => ['correction-delivery-identity'],
+    'replacement delivery clears the receipt' => ['another-delivery'],
+]);
 
 describe('TaskGitHardening', function (): void {
     it('publishes turn metadata without writing through planted final or temporary links', function (string $name): void {
@@ -426,32 +435,35 @@ it('records a reviewer cause and limits a relay to answers', function (): void {
         ->and($receipt?->summary)->toBe('Use the ADR.');
 });
 
-it('requires a known cause on an answered relay and accepts every cause', function (): void {
+it('requires a known cause on an answered relay', function (array $arguments): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);
     $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
     $causeError = '--cause must be one of: brief_unclear, contract_gap, scope, environment, missed_contract.';
 
-    $missing = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.']);
-    $invalid = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.', '--cause=nope']);
+    $process = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.', ...$arguments]);
 
-    expect($missing->getExitCode())->toBe(2)
-        ->and($missing->getErrorOutput())->toBe("orbit turn: {$causeError}\n")
-        ->and($invalid->getExitCode())->toBe(2)
-        ->and($invalid->getErrorOutput())->toBe("orbit turn: {$causeError}\n")
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getErrorOutput())->toBe("orbit turn: {$causeError}\n")
         ->and($receipts->read($instance))->toBeNull();
+})->with([
+    'missing cause' => [[]],
+    'unknown cause' => [['--cause=nope']],
+]);
 
-    foreach (QuestionCause::cases() as $cause) {
-        $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
-        $process = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Noted.', '--cause='.$cause->value]);
-        $receipt = $receipts->read($instance);
+it('accepts each known cause on an answered relay', function (QuestionCause $cause): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
+    $process = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Noted.', '--cause='.$cause->value]);
+    $receipt = $receipts->read($instance);
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Answered)
-            ->and($receipt?->cause)->toBe($cause->value);
-    }
-});
+    expect($process->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Answered)
+        ->and($receipt?->cause)->toBe($cause->value);
+})->with(QuestionCause::cases());
 
 it('requires a cause on every outcome of the review after a direction resolution', function (): void {
     $checkout = turn_receipt_checkout();
@@ -502,7 +514,7 @@ it('accepts the prompted verdict after an operator resolution and stops requirin
     preg_match('/--outcome='.$outcome.' --summary="[^"]+"(?: --pr-[a-z]+="[^"]+")* --cause=CAUSE/', $prompt, $matches);
     expect($matches)->not->toBeEmpty();
     $command = str_replace(['--cause=CAUSE'], ['--cause=contract_gap'], $matches[0]);
-    $process = Process::fromShellCommandline(escapeshellarg($checkout.'/.git/orbit/turn').' --thread=123 '.$command);
+    $process = Process::fromShellCommandline(escapeshellarg($checkout.'/.git/orbit/turn').' --thread=123 '.$command, env: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
     $process->run();
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
         ->and($receipts->read($instance)?->cause)->toBe('contract_gap');

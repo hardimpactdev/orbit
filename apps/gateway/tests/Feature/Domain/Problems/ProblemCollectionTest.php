@@ -67,11 +67,23 @@ it('queues only Node observations and grouped checks before collecting signals o
 it('reduces a 390 resource Node to 28 collection jobs including orchestration', function (): void {
     config(['orbit.gateway_queue.connection' => 'services-valkey']);
     $node = Node::query()->create(['name' => 'many-routes', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.28']);
-    foreach (range(1, 390) as $index) {
-        $route = Route::query()->create(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'route-'.$index.'.test', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
-        $route->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:4788']);
-        $route->update(['status' => RouteStatus::Active]);
-    }
+    // Collection needs stored resources, not 390 repetitions of route creation and activation.
+    Route::query()->insert(array_map(static fn (int $index): array => [
+        'kind' => RouteKind::CustomProxy->value,
+        'node_id' => $node->id,
+        'domain' => 'route-'.$index.'.test',
+        'provenance' => RouteProvenance::Explicit->value,
+        'publication' => RoutePublication::Private->value,
+        'status' => RouteStatus::Pending->value,
+        'sites_published' => false,
+    ], range(1, 390)));
+    $ids = Route::query()->where('node_id', $node->id)->pluck('id')->all();
+    DB::table('route_custom_proxies')->insert(array_map(static fn (int $id): array => [
+        'route_id' => $id, 'node_id' => $node->id, 'upstream' => 'http://127.0.0.1:4788',
+    ], $ids));
+    Route::query()->whereIn('id', $ids)->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    expect($ids)->toHaveCount(390);
+    expect(DB::table('route_custom_proxies')->count())->toBe(390);
     Bus::fake();
 
     app(ProblemCollection::class)->dispatch();

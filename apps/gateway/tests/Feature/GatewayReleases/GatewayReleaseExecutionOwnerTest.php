@@ -14,7 +14,7 @@ use Tests\Support\GatewayReleasePipeline;
 pest()->group('subprocess');
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->pipeline->adopt();
     $this->pipeline->bindLeaves();
 });

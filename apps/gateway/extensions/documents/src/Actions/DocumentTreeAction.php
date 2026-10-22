@@ -213,7 +213,10 @@ final readonly class DocumentTreeAction
             if ($parent->kind !== 'folder') {
                 throw ValidationException::withMessages(['parent_id' => 'The parent must be a folder.']);
             }
-            $this->assertActive($parent);
+            // The document lock keeps the ancestry stable after this first full archive check.
+            if ($depth === $subtreeDepth) {
+                $this->assertActive($parent);
+            }
             $parentId = $parent->parent_id;
             $depth++;
         }

@@ -89,28 +89,29 @@ describe('MCP tool schemas', function (): void {
         }
     });
 
-    it('serves every generated input schema unchanged through search_tools', function (): void {
-        $generated = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), associative: false, flags: JSON_THROW_ON_ERROR);
+    it('serves every generated input schema unchanged through search_tools', function (stdClass $tool): void {
+        $response = $this->postJson('/mcp/search', [
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'search_tools',
+                'arguments' => ['query' => $tool->name, 'limit' => 1],
+            ],
+        ]);
+        $response->assertOk();
+        $document = mcp_schema_document($response);
+        expect($document->result->isError)->toBeFalse();
+        $found = json_decode($document->result->content[0]->text, associative: false, flags: JSON_THROW_ON_ERROR);
 
+        expect($found->tools)->toHaveCount(1);
+        expect($found->tools[0]->name)->toBe($tool->name);
+        expect(json_encode($found->tools[0]->inputSchema, JSON_THROW_ON_ERROR))
+            ->toBe(json_encode($tool->input_schema, JSON_THROW_ON_ERROR), $tool->name);
+    })->with(function (): iterable {
+        $generated = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/resources/mcp/tools.json'), associative: false, flags: JSON_THROW_ON_ERROR);
         foreach ($generated->tools as $tool) {
-            $response = $this->postJson('/mcp/search', [
-                'jsonrpc' => '2.0',
-                'id' => 1,
-                'method' => 'tools/call',
-                'params' => [
-                    'name' => 'search_tools',
-                    'arguments' => ['query' => $tool->name, 'limit' => 1],
-                ],
-            ]);
-            $response->assertOk();
-            $document = mcp_schema_document($response);
-            expect($document->result->isError)->toBeFalse();
-            $found = json_decode($document->result->content[0]->text, associative: false, flags: JSON_THROW_ON_ERROR);
-
-            expect($found->tools)->toHaveCount(1);
-            expect($found->tools[0]->name)->toBe($tool->name);
-            expect(json_encode($found->tools[0]->inputSchema, JSON_THROW_ON_ERROR))
-                ->toBe(json_encode($tool->input_schema, JSON_THROW_ON_ERROR), $tool->name);
+            yield $tool->name => [$tool];
         }
     });
 });

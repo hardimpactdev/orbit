@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Infrastructure\TaskVms\TaskVmScripts;
 use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 /**
  * Runs a script of `resources/task-vms` with bash, with stubs for the commands that need root, Incus, or a peer.
@@ -77,22 +79,37 @@ describe('apt lists lock waiting', function (): void {
         mkdir($work.'/sources', 0700, true);
         file_put_contents($work.'/sources.list', '');
         file_put_contents($work.'/status', '');
-        $holder = new Process(['python3', '-c', 'import fcntl,sys,time; f=open(sys.argv[1], "w"); fcntl.lockf(f, fcntl.LOCK_EX); print("locked", flush=True); time.sleep(2)', $work.'/lists/lock']);
+        $holder = new Process(['python3', '-c', 'import fcntl,sys; f=open(sys.argv[1], "w"); fcntl.lockf(f, fcntl.LOCK_EX); print("locked", flush=True); sys.stdin.read(1)', $work.'/lists/lock']);
+        $holder->setInput($release = new InputStream);
         $holder->start();
         try {
-            for ($attempt = 0; $attempt < 100 && ! str_contains($holder->getOutput(), 'locked'); $attempt++) {
-                usleep(10000);
-            }
-            expect($holder->getOutput())->toContain('locked');
-            $process = new Process(['bash', TaskVmScripts::path('apt-update.sh'), '10',
+            expect(SubprocessFixture::line($holder))->toBe('locked');
+            // Keep real apt-get and its real lock refusal; only its retry sleep is controlled.
+            $process = new Process(['bash', '-c', 'sleep() { :; }; export -f sleep; exec bash "$@"', 'apt-lock-fixture', TaskVmScripts::path('apt-update.sh'), '10',
                 '-o', 'Dir::State::lists='.$work.'/lists', '-o', 'Dir::State::status='.$work.'/status',
                 '-o', 'Dir::Cache='.$work.'/cache', '-o', 'Dir::Etc::sourcelist='.$work.'/sources.list',
                 '-o', 'Dir::Etc::sourceparts='.$work.'/sources']);
             $process->setTimeout(15);
-            $process->run();
-            expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            $errors = '';
+            $released = false;
+            $process->run(function (string $type, string $buffer) use ($holder, $release, &$errors, &$released): void {
+                if ($type !== Process::ERR) {
+                    return;
+                }
+                $errors .= $buffer;
+                if (! $released && str_contains($errors, 'Could not get lock')) {
+                    $released = true;
+                    $release->write('x');
+                    $release->close();
+                    $holder->wait();
+                }
+            });
+            expect($released)->toBeTrue()
+                ->and($holder->getExitCode())->toBe(0)
+                ->and($process->getExitCode())->toBe(0, $process->getErrorOutput())
                 ->and($process->getErrorOutput())->toContain('Could not get lock', '/lists/lock');
         } finally {
+            $release->close();
             $holder->stop();
         }
     });

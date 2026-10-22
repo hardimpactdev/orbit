@@ -6,10 +6,11 @@ use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FixtureProcessRunner;
+use Tests\Support\RootCaFixture;
 
 /*
  * Nothing renews the leaves behind a static `tls <cert> <key>` pair: Caddy never touches them, and
@@ -17,6 +18,10 @@ use Illuminate\Support\Str;
  * expired leaf and one that is about to expire. These tests pin all three outcomes for both
  * consumers of the static publication path.
  */
+
+beforeAll(function (): void {
+    RootCaFixture::prepare();
+});
 
 it('leaves a current certificate untouched', function (string $hostname): void {
     $orbitHome = renewal_orbit_home();
@@ -86,7 +91,7 @@ function renewal_openssl(): string
 
 function renewal_run(array $arguments): void
 {
-    expect(new NativeProcessRunner()->run(new ProcessInvocation($arguments, timeout: 60.0))->succeeded())
+    expect(new FixtureProcessRunner()->run(new ProcessInvocation($arguments, timeout: 60.0))->succeeded())
         ->toBeTrue();
 }
 
@@ -95,28 +100,14 @@ function renewal_orbit_home(): string
     $orbitHome = sys_get_temp_dir().'/orbit-certificate-renewal-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
     mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
-    renewal_run([renewal_openssl(), 'genrsa', '-out', $caDirectory.'/root.key', '4096']);
-    renewal_run([
-        renewal_openssl(),
-        'req',
-        '-x509',
-        '-new',
-        '-key',
-        $caDirectory.'/root.key',
-        '-out',
-        $caDirectory.'/root.pem',
-        '-days',
-        '3650',
-        '-subj',
-        '/CN=Orbit Root CA',
-    ]);
+    RootCaFixture::install($caDirectory);
 
     return $orbitHome;
 }
 
 function renewal_issuer(string $orbitHome): OpenSslGatewayCertificateIssuer
 {
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     return new OpenSslGatewayCertificateIssuer(
         processes: $processes,

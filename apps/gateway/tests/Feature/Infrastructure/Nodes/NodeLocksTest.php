@@ -14,6 +14,7 @@ use Illuminate\Cache\CacheManager;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Support\RecordingProcessRunner;
 
@@ -190,29 +191,37 @@ describe(NodeLocks::class, function (): void {
             $lock = $locks->lock('polled', 600);
             expect($lock->get())->toBeTrue();
 
-            // The other process asks for the lock every millisecond for three seconds, like an operation
-            // that waits for it, and prints how many of its attempts found the lock taken.
+            // Poll throughout 128 real renewals, and make at least 128 competing attempts.
+            // Readiness and a stop message bound the overlap; elapsed wall time is not the proof.
+            $input = new InputStream;
             $poller = new Process([PHP_BINARY, '-r', <<<'PHP'
                 require $argv[1].'/vendor/autoload.php';
                 $store = (new Illuminate\Cache\FileStore(new Illuminate\Filesystem\Filesystem, $argv[2]))->setLockDirectory($argv[2]);
+                stream_set_blocking(STDIN, false);
+                echo "ready\n";
+                fflush(STDOUT);
                 $refused = 0;
-                $until = microtime(true) + 3;
-                while (microtime(true) < $until) {
+                $stop = false;
+                while (!$stop || $refused < 128) {
                     $store->lock('orbit:polled', 600)->get() ? exit(1) : $refused++;
-                    usleep(1000);
+                    $stop = $stop || fgets(STDIN) === "stop\n";
                 }
                 echo $refused;
-                PHP, base_path(), $home.'/cache/node-locks']);
-            $poller->start();
+                PHP, base_path(), $home.'/cache/node-locks'], timeout: 5);
+            $poller->setInput($input)->start();
+            expect($poller->waitUntil(static fn (string $type, string $output): bool => str_contains($output, "ready\n")))->toBeTrue();
 
             $commands = 0;
-            while ($poller->isRunning()) {
+            foreach (range(1, 128) as $_) {
                 $runner->run(node_locks_command());
                 $commands++;
             }
+            $input->write("stop\n");
+            $input->close();
+            $poller->wait();
 
             expect($poller->getExitCode())->toBe(0)
-                ->and((int) $poller->getOutput())->toBeGreaterThan(100)
+                ->and((int) substr($poller->getOutput(), strlen("ready\n")))->toBeGreaterThan(100)
                 ->and($commands)->toBeGreaterThan(100)
                 ->and($lock->release())->toBeTrue();
         } finally {

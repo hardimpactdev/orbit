@@ -34,7 +34,7 @@ use Tests\Support\WebArtifactFixture;
 pest()->group('subprocess');
 
 beforeEach(function (): void {
-    $this->fixture = new GatewayReleaseFixture;
+    $this->fixture = GatewayReleaseFixture::create();
     $this->current = $this->fixture->layout->currentPath();
     $this->sha = $this->fixture->inPlaceCheckout();
     $this->id = substr($this->sha, 0, 12);

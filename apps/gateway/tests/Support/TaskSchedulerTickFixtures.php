@@ -62,6 +62,32 @@ use Tests\Support\UnreachableSshExecutor;
 
 use function Pest\Laravel\mock;
 
+/** Share immutable construction within one graph, never across scheduler resolutions. */
+function test_share_scheduler_graph(): void
+{
+    $app = app();
+    $building = false;
+    $owned = false;
+    $app->resolving(TaskSubtaskRunner::class, function (TaskSubtaskRunner $runner) use ($app, &$building, &$owned): void {
+        if ($building && ! $app->isShared(TaskSubtaskRunner::class)) {
+            $app->instance(TaskSubtaskRunner::class, $runner);
+            $owned = true;
+        }
+    });
+    $app->bind(TaskScheduler::class, function ($app) use (&$building, &$owned): TaskScheduler {
+        $building = true;
+        try {
+            return $app->build(TaskScheduler::class);
+        } finally {
+            $building = false;
+            if ($owned) {
+                $app->forgetInstance(TaskSubtaskRunner::class);
+                $owned = false;
+            }
+        }
+    });
+}
+
 /** Scheduler fixtures supply ready workspaces; provisioning and Route repair have their own integration tests. */
 function test_ready_workspace_services(): void
 {
@@ -69,18 +95,6 @@ function test_ready_workspace_services(): void
     $routes = mock(TaskWorkspaceRoute::class);
     $routes->shouldReceive('pending')->andReturnFalse();
     $routes->shouldNotReceive('complete');
-
-    // Share this immutable graph only while constructing one scheduler. A later resolution must
-    // see fresh collaborators: tests deliberately rebind them between ticks.
-    app()->bind(TaskScheduler::class, function ($app): TaskScheduler {
-        $app->singleton(TaskSubtaskRunner::class);
-        try {
-            return $app->build(TaskScheduler::class);
-        } finally {
-            $app->forgetInstance(TaskSubtaskRunner::class);
-            $app->bind(TaskSubtaskRunner::class);
-        }
-    });
 }
 
 function tick_bind_defaults(): void

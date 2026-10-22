@@ -25,7 +25,6 @@ use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
@@ -45,6 +44,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FixtureProcessRunner;
 use Tests\Support\UnixSocketDirectory;
 
 it('checks only selected-node app projections through the fixed SSH boundary', function (): void {
@@ -403,7 +403,7 @@ it('accepts the initial pool only before selection and rejects the old productio
     }
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
-it('rejects pending or unacknowledged FPM generations but accepts a master restarted after confirmation', function (string $root, string $suffix): void {
+it('rejects pending or unacknowledged FPM generations but accepts a master restarted after confirmation', function (string $root, string $suffix, string $state, string $expected): void {
     $directory = sys_get_temp_dir().'/orbit-doctor-generation-'.bin2hex(random_bytes(8));
     $files = new Filesystem;
     $files->ensureDirectoryExists($directory.'/runtime/generated');
@@ -457,26 +457,23 @@ it('rejects pending or unacknowledged FPM generations but accepts a master resta
 
     try {
         $program = application_production_observation_program('php_fpm_matches', $setup, $root);
-        $states = [
-            'applied' => '1',
-            'pending' => '0',
-            'missing' => '0',
-            'rebooted' => '1',
-            'restarted' => '1',
-            'older-master' => '0',
-            'malformed' => '0',
-            'other-generation' => '0',
-            'restarted-other-generation' => '0',
-            'malformed-boot' => '0',
-            'recovered' => '1',
-        ];
-        foreach ($states as $state => $expected) {
-            expect(application_run(['bash', '-s', '--', $state], $program)->stdout)->toBe($expected."\n", $state);
-        }
+        expect(application_run(['bash', '-s', '--', $state], $program)->stdout)->toBe($expected."\n", $state);
     } finally {
         $files->deleteDirectory($directory);
     }
-})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']])->with([
+    'applied' => ['applied', '1'],
+    'pending' => ['pending', '0'],
+    'missing' => ['missing', '0'],
+    'rebooted' => ['rebooted', '1'],
+    'restarted' => ['restarted', '1'],
+    'older-master' => ['older-master', '0'],
+    'malformed' => ['malformed', '0'],
+    'other-generation' => ['other-generation', '0'],
+    'restarted-other-generation' => ['restarted-other-generation', '0'],
+    'malformed-boot' => ['malformed-boot', '0'],
+    'recovered' => ['recovered', '1'],
+]);
 
 it('expects the actual production renderer application directory for selected and initial releases', function (string $root, string $suffix): void {
     $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private-production-value');
@@ -1394,7 +1391,7 @@ it('fails app inspection for a checkout outside the effective apps root', functi
     application_app_inspector($ssh)->inspect($project, $node);
 
     try {
-        $result = new NativeProcessRunner()->run(
+        $result = new FixtureProcessRunner()->run(
             new ProcessInvocation($ssh->commands[0]->arguments, input: $ssh->commands[0]->input),
         );
 
@@ -1510,7 +1507,7 @@ function application_timeout(string $sentinel): ProcessTimedOutException
 /** @param non-empty-list<string> $arguments */
 function application_run(array $arguments, ?string $input = null): CommandResult
 {
-    $result = new NativeProcessRunner()->run(new ProcessInvocation($arguments, input: $input));
+    $result = new FixtureProcessRunner()->run(new ProcessInvocation($arguments, input: $input));
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;

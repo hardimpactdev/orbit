@@ -69,19 +69,20 @@ function assistance_write_lines(string $source): array
     return array_values(array_unique($lines));
 }
 
-it('keeps query-builder assistance writes inside TaskAssistance', function (): void {
-    $violations = [];
+it('keeps query-builder assistance writes inside TaskAssistance', function (string $path): void {
+    expect(assistance_write_lines((string) file_get_contents($path)))->toBe([], $path);
+})->with(function (): iterable {
     $appPath = dirname(__DIR__, 3).'/app';
+    $files = [];
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($appPath)) as $file) {
-        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php' || $file->getPathname() === $appPath.'/Domain/Tasks/TaskAssistance.php') {
-            continue;
-        }
-        foreach (assistance_write_lines((string) file_get_contents($file->getPathname())) as $line) {
-            $violations[] = $file->getPathname().':'.$line;
+        if ($file instanceof SplFileInfo && $file->getExtension() === 'php' && $file->getPathname() !== $appPath.'/Domain/Tasks/TaskAssistance.php') {
+            $files[] = $file->getPathname();
         }
     }
-
-    expect($violations)->toBe([]);
+    sort($files);
+    foreach ($files as $path) {
+        yield substr($path, strlen($appPath) + 1) => [$path];
+    }
 });
 
 it('detects model, relation and raw table assistance write bypasses', function (string $write): void {

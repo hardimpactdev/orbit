@@ -7,9 +7,13 @@ use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\MachineSoftware\UbuntuReleaseSignature;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+beforeEach(fn () => Sleep::fake());
+afterEach(fn () => Sleep::fake(false));
 
 function snapshot_fixture_recipe(string $version = '1.2.3-1ubuntu1'): MachineRecipe
 {
@@ -87,6 +91,7 @@ describe('authenticated Ubuntu snapshot availability', function (): void {
         expect(fn () => snapshot_fixture_probe()->verify(snapshot_fixture_recipe()))
             ->toThrow(RuntimeException::class, 'HTTP 504');
         Http::assertSentCount(3);
+        Sleep::assertSequence([Sleep::for(500)->milliseconds(), Sleep::for(500)->milliseconds()]);
         expect(Http::recorded()->map(fn ($pair) => $pair[0]->url())->unique()->values()->all())
             ->toBe(['https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/dists/resolute/InRelease']);
     });

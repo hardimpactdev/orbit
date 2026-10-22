@@ -20,6 +20,7 @@ use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
     $this->sandbox = sys_get_temp_dir().'/orbit-lifecycle-'.Str::uuid();
@@ -254,11 +255,31 @@ it('reports other teardown command failures as failed', function (): void {
 });
 
 it('kills the timed-out command group before returning failure', function (): void {
+    $clock = <<<'PYTHON'
+        fixture_clock_started = False
+        def fixture_monotonic():
+            global fixture_clock_started
+            if not fixture_clock_started:
+                fixture_clock_started = True
+                return 0.0
+            return 60.0 if os.path.isfile(os.path.join(payload['checkout'], 'start-marker')) else 0.0
+        time.monotonic = fixture_monotonic
+        PYTHON;
+    $this->transport->transformProgram = static function (string $program) use ($clock): string {
+        $program = str_replace("import time\n", "import time\n".$clock."\n", $program, $replacements);
+        expect($replacements)->toBe(1);
+
+        return $program;
+    };
     $this->steps->create($this->instance->project, LifecyclePhase::Setup,
-        new LifecycleStep('slow', "(sleep 2; touch escaped) &\nwait", 1), null, null);
+        new LifecycleStep('slow', 'bash -c '.escapeshellarg(SubprocessFixture::DelayedHook)." &\nwait", 1), null, null);
     expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))->toThrow(ResourceOperationException::class);
-    usleep(1_200_000);
-    expect(file_exists($this->sandbox.'/escaped'))->toBeFalse();
+    expect(file_get_contents($this->sandbox.'/start-marker'))->toBe('start');
+    SubprocessFixture::assertExited(
+        (int) file_get_contents($this->sandbox.'/hook-pid'),
+        (int) file_get_contents($this->sandbox.'/child-pid'),
+    );
+    expect(file_exists($this->sandbox.'/later-marker'))->toBeFalse();
 });
 
 it('refuses setup for an unfinished instance before executing commands', function (): void {

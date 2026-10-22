@@ -57,13 +57,14 @@ it('captures stdout stderr and nonzero exits without poisoning the next invocati
 });
 
 it('bounds a hung real program and can execute another program afterwards', function (): void {
-    $host = new ForkedPythonPrograms(timeoutSeconds: 1);
+    $host = new ForkedPythonPrograms(timeoutSeconds: 0.1);
     $bootstrap = file_get_contents(__DIR__.'/../../../resources/remote/bootstrap.py');
     try {
-        $hung = $host->run($bootstrap, 'timeout-proof', "import time\ntime.sleep(30)\0{}");
+        $hung = $host->run($bootstrap, 'timeout-proof', "import time\nprint('started', flush=True)\ntime.sleep(30)\0{}");
         $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
 
         expect($hung->exitCode)->toBe(124)
+            ->and($hung->stdout)->toBe("started\n")
             ->and($hung->stderr)->toContain('timed out')
             ->and($passed->exitCode)->toBe(0)->and($passed->stdout)->toBe("recovered\n");
     } finally {

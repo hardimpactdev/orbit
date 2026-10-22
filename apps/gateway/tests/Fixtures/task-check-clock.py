@@ -43,3 +43,20 @@ def stop_child_process():
         _stop_child_process()
     finally:
         time = deadline_clock
+
+
+_auth_chunk_ack = __CHUNK_ACK__
+if _auth_chunk_ack is not None:
+    _read_auth_chunk = os.read
+
+    def read_with_auth_ack(fd, size):
+        chunk = _read_auth_chunk(fd, size)
+        if b'ghs_set' in chunk:
+            ack = os.open(_auth_chunk_ack, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(ack, b'1')
+            finally:
+                os.close(ack)
+        return chunk
+
+    os.read = read_with_auth_ack

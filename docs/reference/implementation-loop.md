@@ -9,7 +9,7 @@ covers:
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/setup.sh}
   - .github/{workflows/*.yml,actions/{php,no-sudo}/action.yml}
-  - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/ForkedPythonPrograms.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
+  - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/ForkedPythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Domain/ScheduleValidationTest.php,tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php}
 ---
 
 # Feature delivery
@@ -680,7 +680,17 @@ Gateway uses stock Pest time-balanced shards to keep the full PR run short. Comm
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="42"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. All cases remain unsized. The installed Pest cannot declare PHPUnit sizes; do not substitute size-named groups or add a custom sizing mechanism.
 
-The 42-second default is the smallest whole number at least three times the slowest unsized case in a full parallel run on the four-CPU task VM under CPU contention: 13.979728 seconds. Remeasure the full parallel suite on a loaded host before changing the default, and keep that minimum three-times margin. Fix unexpectedly slow or risky cases at their cause rather than weakening the tests or bypassing the limit.
+The agreed limit is two seconds per test through stock `defaultTimeLimit`, without a suite-time target or a headroom requirement. The current value stays at 42 until the full Gateway suite passes at two seconds. Do not exempt slow tests with size attributes or separate timeout budgets. Record each remaining case over two seconds with its measured time and cause so it can be fixed in a focused change.
+
+Fix slow cases at their cause: control clocks and transports, share expensive read-only setup, and keep a real subprocess or deadline only when it is the proof. Preserve every behaviour assertion. Finite local fixture commands may use `Tests\Support\FixtureProcessRunner`, which waits on pipes instead of polling for production cancellation. It rejects streaming and cancellation callbacks; those proofs use the native runner.
+
+Read-only fixtures are prepared once per file or worker, then copied into private writable directories. Gateway release fixtures share the initial Git origin and adopted release; each case still owns its working repositories, database, runtime and cleanup. The fixture that snapshots a live WAL shares only its initial database, not the writer, snapshot, transfer or import. It keeps all 200 rows and the 64 MiB BLOB. The real writer runs without a delay.
+
+A scheduler proof with fixed collaborators can reuse its real scheduler graph within one case. Resolve a fresh graph after rebinding a collaborator. The fixture shares the immutable subtask runner only while building one graph and preserves caller-owned bindings. It does not cache the scheduler across cases.
+
+Fixtures for Python programs that use only the standard library can use `StandardLibraryPython` to omit host site-package startup. Arguments, binary stdin, environment, exit status and execution in a fresh process remain real. `LocalShellSshExecutor` buffers finite `bash -seu` stdin programs in private temporary files; other command arguments remain data. Protected inputs keep their caller-owned lifetime.
+
+Selected authentication, SSR and repeated-check cases can inspect actual local check artifacts after the real check exits. Dedicated status and output transport cases still use the remote reader. Do not use local artifact helpers for streaming or cancellation proofs.
 
 Timeouts fail the run. `stopOnRisky` prevents later cases in the same worker from consuming state left by interrupted cleanup; it does not guarantee cleanup completes. The Gateway PHP recipe requires `pcntl`, and the shared CI PHP action verifies the recipe before running suites. Keep that requirement in the recipe, not individual jobs.
 

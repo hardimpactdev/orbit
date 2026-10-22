@@ -56,7 +56,9 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
+use Tests\Support\LocalInstanceTransferTransport;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\RealStorageGuard;
 use Tests\Support\SshGuardedProcessRunner;
@@ -85,19 +87,9 @@ require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 require_once __DIR__.'/Helpers/DevelopmentDefaultFixtures.php';
 require_once __DIR__.'/Helpers/OperationFixtures.php';
 
-uses(WithCachedConfig::class, WithCachedRoutes::class)
-    ->in(
-        'Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
-        'Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
-        'Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerPrivilegedTest.php',
-        'Feature/Domain/Tasks/TaskSchedulerTest.php',
-        'Feature/Domain/Tasks/TaskSettlingTickTest.php',
-        'Feature/Fleet/NightlyRecipeAutoMergeTest.php',
-    );
-
 uses(GuardsSudo::class)->in('Feature', 'Unit', 'Fixtures', 'Rehearsal');
 
-uses(TestCase::class, LazilyRefreshDatabase::class)
+uses(TestCase::class, LazilyRefreshDatabase::class, WithCachedConfig::class, WithCachedRoutes::class)
     ->beforeEach(function (): void {
         $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
         // Direct-file staging must be isolated too, not just writes through the Storage facade.
@@ -116,6 +108,7 @@ uses(TestCase::class, LazilyRefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        test_share_scheduler_graph();
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
@@ -139,6 +132,29 @@ uses(TestCase::class, LazilyRefreshDatabase::class)
         }
     })
     ->in('Feature');
+
+uses()
+    ->beforeAll(fn () => GatewayReleaseFixture::prepare())
+    ->afterAll(fn () => GatewayReleaseFixture::forget())
+    ->in('Feature/GatewayReleases');
+
+uses()
+    ->beforeAll(fn () => GatewayReleaseFixture::prepareAdopted())
+    ->in(
+        'Feature/GatewayReleases/AbandonGatewayReleaseTest.php',
+        'Feature/GatewayReleases/FinalizeGatewayReleaseTest.php',
+        'Feature/GatewayReleases/GatewayReleaseExecutionOwnerTest.php',
+        'Feature/GatewayReleases/GatewayReleaseOperationsWiringTest.php',
+        'Feature/GatewayReleases/GatewayReleaseProcessDeclarationTest.php',
+        'Feature/GatewayReleases/GatewayReleaseTickConfirmationTest.php',
+        'Feature/GatewayReleases/GatewayReleaseFixtureTest.php',
+        'Feature/GatewayReleases/SystemdGatewayReleaseDrainTest.php',
+    );
+
+uses()
+    ->beforeAll(fn () => LocalInstanceTransferTransport::prepare())
+    ->afterAll(fn () => LocalInstanceTransferTransport::forget())
+    ->in('Feature/Api/TransferInstanceTest.php', 'Feature/Infrastructure/Instances/TransferEnvironmentModeTest.php', 'Feature/Infrastructure/Instances/RemoteInstanceTransferSourceTest.php');
 
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()

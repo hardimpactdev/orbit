@@ -33,8 +33,37 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\EnvironmentConcurrencySchemaFixture;
 
 pest()->group('subprocess');
+
+beforeAll(fn () => EnvironmentConcurrencySchemaFixture::prepare(orb207_concurrency_worker_script()));
+afterAll(fn () => EnvironmentConcurrencySchemaFixture::forget());
+
+it('copies the complete migrated concurrency schema and reference rows without sharing writes', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-env-schema-copies-'.bin2hex(random_bytes(12));
+    mkdir($directory, 0700);
+    try {
+        EnvironmentConcurrencySchemaFixture::copyTo($directory.'/first.sqlite');
+        EnvironmentConcurrencySchemaFixture::copyTo($directory.'/second.sqlite');
+        $first = new PDO('sqlite:'.$directory.'/first.sqlite');
+        $second = new PDO('sqlite:'.$directory.'/second.sqlite');
+        $schema = 'SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name';
+        expect($first->query($schema)->fetchAll(PDO::FETCH_ASSOC))->toBe($second->query($schema)->fetchAll(PDO::FETCH_ASSOC))
+            ->and((int) $second->query('SELECT COUNT(*) FROM migrations')->fetchColumn())->toBeGreaterThan(0)
+            ->and($second->query('SELECT id FROM project_document_storages')->fetchColumn())->toBe(1)
+            ->and($second->query('SELECT id FROM task_vm_image_recipe')->fetchColumn())->toBe(1);
+        $first->exec('CREATE TABLE private_case (body BLOB)');
+        $first->exec("INSERT INTO private_case VALUES (X'0001FF')");
+        EnvironmentConcurrencySchemaFixture::copyTo($directory.'/third.sqlite');
+        $third = new PDO('sqlite:'.$directory.'/third.sqlite');
+        foreach ([$second, $third] as $copy) {
+            expect((int) $copy->query("SELECT COUNT(*) FROM sqlite_master WHERE name = 'private_case'")->fetchColumn())->toBe(0);
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
+    }
+});
 
 it('serializes concurrent complete-result validation through SQLite immediate transactions', function (): void {
     $directory = sys_get_temp_dir().'/orbit-env-concurrency-'.bin2hex(random_bytes(8));
@@ -43,6 +72,8 @@ it('serializes concurrent complete-result validation through SQLite immediate tr
     $script = "{$directory}/worker.php";
     $barrier = "{$directory}/go";
     file_put_contents($script, orb207_concurrency_worker_script());
+    EnvironmentConcurrencySchemaFixture::copyTo($database);
+    $setup = $import = $update = null;
 
     try {
         $setup = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup']);
@@ -92,18 +123,20 @@ it('serializes concurrent complete-result validation through SQLite immediate tr
             ->and(collect($results)->firstWhere('status', 'invalid')['code'] ?? null)
             ->toBe('env.configuration_invalid');
 
-        $inspect = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'inspect']);
-        $inspect->mustRun();
-        $stored = json_decode($inspect->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        $inspect = new PDO('sqlite:'.$database);
+        $stored = [
+            'count' => (int) $inspect->query('SELECT COUNT(*) FROM instance_environment_values')->fetchColumn(),
+            'keys' => $inspect->query("SELECT env_key FROM instance_environment_values WHERE env_key IN ('EXTRA', 'KEY_0', 'KEY_1023') ORDER BY env_key")->fetchAll(PDO::FETCH_COLUMN),
+        ];
         expect($stored['count'])
             ->toBeIn([1, 1_024])
             ->and($stored['keys'])
             ->toBeIn([['EXTRA'], ['KEY_0', 'KEY_1023']]);
     } finally {
-        foreach (glob("{$directory}/*") ?: [] as $path) {
-            unlink($path);
-        }
-        rmdir($directory);
+        $setup?->stop(0);
+        $import?->stop(0);
+        $update?->stop(0);
+        new Filesystem()->deleteDirectory($directory);
     }
 });
 
@@ -113,9 +146,12 @@ it('holds one cross-process owner through synchronization so a later update rema
     $database = "{$directory}/gateway.sqlite";
     $script = "{$directory}/worker.php";
     file_put_contents($script, orb212_sync_concurrency_worker_script());
+    EnvironmentConcurrencySchemaFixture::copyTo($database);
+    $setup = $sync = $update = null;
 
     try {
-        new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup'])->mustRun();
+        $setup = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup']);
+        $setup->mustRun();
         $sync = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'sync']);
         $sync->start();
         orb212_wait_for_file("{$directory}/sync.ready", $sync);
@@ -154,14 +190,10 @@ it('holds one cross-process owner through synchronization so a later update rema
         expect(json_decode($inspect->getOutput(), true, flags: JSON_THROW_ON_ERROR))
             ->toBe(['INITIAL' => 'before-sync', 'PENDING' => 'after-sync']);
     } finally {
-        foreach (glob("{$directory}/*") ?: [] as $path) {
-            if (is_dir($path)) {
-                new Filesystem()->deleteDirectory($path);
-            } else {
-                unlink($path);
-            }
-        }
-        rmdir($directory);
+        $setup?->stop(0);
+        $sync?->stop(0);
+        $update?->stop(0);
+        new Filesystem()->deleteDirectory($directory);
     }
 });
 
@@ -461,10 +493,15 @@ function orb207_concurrency_worker_script(): string
         }
         require "{$base}/vendor/autoload.php";
         $app = require "{$base}/bootstrap/app.php";
+        $app->useStoragePath("{$directory}/storage");
         $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-        if ($mode === 'setup') {
+        if ($mode === 'schema') {
             Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
+            exit(0);
+        }
+
+        if ($mode === 'setup') {
             $orbitApp = App\Models\Project::query()->create([
                 'name' => 'Concurrent worker',
                 'slug' => 'concurrent-worker',
@@ -502,14 +539,6 @@ function orb207_concurrency_worker_script(): string
             $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
             $route->update(['status' => 'active']);
             $instance->update(['status' => 'active']);
-            exit(0);
-        }
-
-        if ($mode === 'inspect') {
-            $query = App\Models\InstanceEnvironmentValue::query();
-            $count = $query->count();
-            $keys = $query->whereIn('env_key', ['EXTRA', 'KEY_0', 'KEY_1023'])->orderBy('env_key')->pluck('env_key')->all();
-            echo json_encode(['count' => $count, 'keys' => $keys], JSON_THROW_ON_ERROR);
             exit(0);
         }
 
@@ -581,6 +610,7 @@ function orb212_sync_concurrency_worker_script(): string
         }
         require "{$base}/vendor/autoload.php";
         $app = require "{$base}/bootstrap/app.php";
+        $app->useStoragePath("{$directory}/storage");
         $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
         final class Orb212Preflight implements App\Domain\Instances\Environment\InstanceOperationPreflight
@@ -623,7 +653,6 @@ function orb212_sync_concurrency_worker_script(): string
         }
 
         if ($mode === 'setup') {
-            Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
             $orbitApp = App\Models\Project::query()->create([
                 'name' => 'Concurrent sync worker',
                 'slug' => 'concurrent-sync-worker',

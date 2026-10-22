@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
@@ -92,3 +93,28 @@ it('rejects a process without a timeout before checking readiness', function ():
         ->toThrow(RuntimeException::class, 'Fixture server must have a timeout');
     expect($checked)->toBeFalse();
 });
+
+it('rejects executable fixture processes and accepts them only after exit', function (): void {
+    $input = new InputStream;
+    $server = new Process([PHP_BINARY, '-r', 'echo "ready\n"; fflush(STDOUT); fread(STDIN, 1);'], input: $input, timeout: 5);
+    $server->start();
+
+    try {
+        expect(SubprocessFixture::line($server))->toBe('ready');
+        $pid = $server->getPid() ?? throw new RuntimeException('Fixture has no PID.');
+        expect(fn () => SubprocessFixture::assertExited($pid))
+            ->toThrow(ExpectationFailedException::class, 'still executable');
+        $input->write('x');
+        $input->close();
+        $server->wait();
+        SubprocessFixture::assertExited($pid);
+    } finally {
+        $input->close();
+        $server->stop();
+    }
+});
+
+it('rejects empty or invalid fixture PID lists before querying the process table', function (array $pids): void {
+    expect(fn () => SubprocessFixture::assertExited(...$pids))
+        ->toThrow(ExpectationFailedException::class);
+})->with(['empty' => [[]], 'invalid' => [[0]]]);

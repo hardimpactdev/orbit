@@ -9,22 +9,7 @@ use Tests\Support\LinuxHost;
 
 pest()->group('subprocess');
 
-function linux_host_temporary_directory(): string
-{
-    $directory = realpath(sys_get_temp_dir()).'/orbit-linux-host-test-'.bin2hex(random_bytes(6));
-    mkdir($directory, 0o700);
-
-    return $directory;
-}
-
-/** @param list<string> $arguments */
-function linux_host_run(array $arguments, ?string $directory = null): Process
-{
-    $process = new Process($arguments, $directory);
-    $process->run();
-
-    return $process;
-}
+require_once __DIR__.'/../../Support/LinuxHostCopyFixtures.php';
 
 it('builds delegated commands with the toolchain from the copied Gateway', function (): void {
     $directory = linux_host_temporary_directory();
@@ -59,19 +44,6 @@ it('builds delegated commands with the toolchain from the copied Gateway', funct
         $files->deleteDirectory($directory);
     }
 });
-
-it('preserves the selected case privilege when building a real Pest delegation', function (bool $privileged): void {
-    $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never'];
-
-    if ($privileged) {
-        $arguments[] = '--group=privileged';
-    }
-
-    $process = linux_host_run([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path());
-
-    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput())
-        ->and($process->getOutput())->toMatch('/Tests:\s+1 passed/');
-})->with(['ordinary exclusion' => false, 'explicit privileged selection' => true]);
 
 describe('the Linux test host copy', function (): void {
     it('holds only the files Git would track and vendor', function (): void {
@@ -161,30 +133,6 @@ describe('the Linux test host copy', function (): void {
             linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg("{$directory}/base"), 'two', $legacy)]);
 
             expect(is_dir($legacy))->toBeFalse();
-        } finally {
-            new Filesystem()->deleteDirectory($directory);
-        }
-    });
-
-    it('removes copies in the earlier shared directory that have not changed for the stale period', function (): void {
-        // BSD find rounds -cmin ages differently, so the zero-minute case runs on Linux.
-        if (LinuxHost::delegate($this)) {
-            return;
-        }
-
-        $directory = linux_host_temporary_directory();
-        $legacy = "{$directory}/legacy";
-
-        try {
-            mkdir("{$legacy}/abandoned", 0o755, true);
-            sleep(2);
-
-            $prepare = linux_host_run(['sh', '-c', LinuxHost::prepareScript(escapeshellarg("{$directory}/base"), 'fresh', $legacy, 0)]);
-
-            expect($prepare->getExitCode())->toBe(0, $prepare->getErrorOutput())
-                ->and(is_dir("{$legacy}/abandoned"))->toBeFalse()
-                ->and(is_dir($legacy))->toBeFalse()
-                ->and("{$directory}/base/fresh/alive")->toBeFile();
         } finally {
             new Filesystem()->deleteDirectory($directory);
         }

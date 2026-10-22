@@ -15,7 +15,7 @@ pest()->group('subprocess');
 
 beforeEach(function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-08T06:05:10Z'));
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     app(TaskExtensionState::class)->enable();
 });
 

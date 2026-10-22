@@ -57,6 +57,19 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     /** @var array<string, string> */
     private array $snapshots = [];
 
+    private static ?ForkedPythonPrograms $python = null;
+
+    public static function prepare(): void
+    {
+        self::$python = new ForkedPythonPrograms;
+    }
+
+    public static function forget(): void
+    {
+        self::$python?->close();
+        self::$python = null;
+    }
+
     public function __construct(private readonly string $sandbox) {}
 
     public function source(): RemoteInstanceTransferSource
@@ -159,9 +172,22 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
             }
         }
 
-        $process = new Process($arguments, input: $command->input);
-        $process->run();
-        $stdout = $process->getOutput();
+        if ($command->output !== null || $command->cancelled !== null || $command->protectedInput !== null) {
+            throw new \LogicException('Finite transfer proofs do not replace streaming, cancellation, or protected-input transports.');
+        }
+        if (array_slice($arguments, 0, 2) === ['python3', '-c']) {
+            $python = self::$python ?? throw new \LogicException('Prepare the transfer fixture host in beforeAll.');
+            $result = $python->runCommand($arguments[2], array_slice($arguments, 3), $command->input ?? '', timeoutSeconds: $command->timeout);
+        } else {
+            $input = $command->input;
+            if ($arguments[0] === 'bash' && $input !== null) {
+                $input = BufferedBashProgram::stdinPrelude($this->sandbox).$input;
+            }
+            $process = new Process($arguments, input: $input, timeout: $command->timeout ?? 60);
+            $process->run();
+            $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+        }
+        $stdout = $result->stdout;
 
         if ($snapshot !== null && $actualSnapshot !== null) {
             $stdout = str_replace($actualSnapshot, $snapshot, $stdout);
@@ -170,12 +196,12 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         if ($role === 'target' && $mode === 'prepare' && str_starts_with($stdout, "READY\t")) {
             $this->incomingPaths[] = trim(substr($stdout, 6));
         }
-        if ($process->isSuccessful() && str_contains($command->input ?? '', 'destination=$1')) {
+        if ($result->exitCode === 0 && str_contains($command->input ?? '', 'destination=$1')) {
             ($this->onDiscard)?->__invoke();
         }
         $lostCleanupResponse = $mode === 'cleanup' && ($role === 'source' ? $this->lostSourceCleanupResponse : $this->lostTargetCleanupResponse);
         $lostDiscardResponse = $this->lostDiscardResponse && str_contains($command->input ?? '', 'destination=$1');
-        if ($process->isSuccessful() && ($lostCleanupResponse || $lostDiscardResponse)) {
+        if ($result->exitCode === 0 && ($lostCleanupResponse || $lostDiscardResponse)) {
             if ($lostDiscardResponse) {
                 $this->lostDiscardResponse = false;
             } elseif ($role === 'source') {
@@ -187,7 +213,7 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
             return new CommandResult(1, '', 'Injected lost response after successful cleanup.', 1, false);
         }
 
-        return new CommandResult((int) $process->getExitCode(), $stdout, $process->getErrorOutput(), 1, false);
+        return new CommandResult($result->exitCode, $stdout, $result->stderr, $result->durationMs, $result->truncated);
     }
 
     private function localPath(string $path): string

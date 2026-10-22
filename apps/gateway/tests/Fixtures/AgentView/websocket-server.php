@@ -256,14 +256,11 @@ for ($connection = 1; $connection <= $connections; $connection++) {
             fwrite($client, text(['event' => 'pusher_internal:subscription_succeeded', 'channel' => $channel, 'data' => json_encode(['presence' => ['ids' => ["agent.{$nodeId}"], 'hash' => [], 'count' => 1]])]));
             fwrite($client, text(['event' => 'client-snapshot', 'channel' => $channel, 'user_id' => "agent.{$nodeId}", 'data' => ['sequence' => 1, 'at' => '2026-09-25T10:00:00Z', 'docker' => 'available', 'part' => 1, 'parts' => 1, 'units' => [['name' => 'orbit-process-7-web', 'runtime' => 'systemd', 'runtime_status' => 'active']]]]));
 
-            if ($connection === 1) {
-                // Let the client read the snapshot, then drop the connection like a Reverb restart.
-                usleep(1_500_000);
+            // The test acknowledges snapshot consumption before asking for a Reverb-style restart.
+            if (fgets(STDIN) === "drop\n") {
                 fwrite($client, frame(0x8, pack('n', 1001)));
-                break;
+                say('dropped='.$connection);
             }
-
-            usleep(3_000_000);
             break;
         }
 

@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
+use Tests\Support\MonotonicTime;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
@@ -178,6 +179,8 @@ function handoff_scheduler(Node $node, string $directory = HANDOFF_APP, string $
 
 final class SchedulerDrainProbe
 {
+    public MonotonicTime $time;
+
     public int $cleared = 0;
 
     /** @var list<string> */
@@ -199,6 +202,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
+    $probe->time = new MonotonicTime;
     $cleanup = new FakeReleaseCleanup;
     $builds = new FakeNodeCaddyBuilds;
     $units = new RecordingHandoffUnits('units');
@@ -220,18 +224,15 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
                 HANDOFF_APP,
                 tickWaitSeconds: 1,
                 startWaitSeconds: 1,
-                sleep: static function (): void {
-                    usleep(50_000);
-                },
+                sleep: $probe->time->sleep(...),
+                clock: $probe->time->now(...),
                 drainSeconds: $drainSeconds,
                 clearMutexes: static function () use ($probe): void {
                     $probe->cleared++;
                 },
                 members: static fn (): array => $probe->members,
             ),
-            cleanup: new GatewayCleanupHandoff([$cleanup], generationWaitSeconds: 1, sleep: static function (): void {
-                usleep(50_000);
-            }),
+            cleanup: new GatewayCleanupHandoff([$cleanup], generationWaitSeconds: 1, sleep: $probe->time->sleep(...), clock: $probe->time->now(...)),
             applicationPath: HANDOFF_APP,
             orbitHome: $orbitHome,
             readLivePool: static fn (): string => $livePool ?? $rendered,
@@ -241,9 +242,8 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
                 return json_encode(['reset' => $query === '', 'before' => ['restart_pending' => $probe->pending, 'cache_full' => false]], JSON_THROW_ON_ERROR);
             },
             fpmConnections: static fn (): int => count($probe->connections) > 1 ? array_shift($probe->connections) : $probe->connections[0],
-            sleep: static function (): void {
-                usleep(20_000);
-            },
+            sleep: $probe->time->sleep(...),
+            clock: $probe->time->now(...),
             idleWaitSeconds: 1,
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
@@ -367,7 +367,8 @@ describe('gateway:release:handoff', function (): void {
             ->and($probe->opcacheCalls[0])->toEndWith('/resources/fpm/opcache-reset.php?')
             ->and($probe->opcacheCalls[1])->toEndWith('/resources/fpm/opcache-reset.php?status=1')
             ->and($busy['opcache'])->toBe(['outcome' => 'deferred'])
-            ->and($busyProbe->opcacheCalls)->toBe([]);
+            ->and($busyProbe->opcacheCalls)->toBe([])
+            ->and($busyProbe->time->now())->toBeGreaterThanOrEqual(1_000_000_000);
     });
 
     it('leaves the OPcache reset, which may wait for idle pools, out of the serving phase that verify waits for', function (): void {

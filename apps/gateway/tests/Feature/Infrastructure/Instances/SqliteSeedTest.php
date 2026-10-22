@@ -20,6 +20,76 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Symfony\Component\Process\Process;
+use Tests\Support\StandardLibraryPython;
+
+beforeAll(function (): void {
+    sqlite_seed_large_database_seed();
+});
+
+it('keeps the full WAL database seed and its writable copies independent', function (): void {
+    $sandbox = sqlite_seed_sandbox();
+    $firstPath = "{$sandbox}/source/first.sqlite";
+    $secondPath = "{$sandbox}/source/second.sqlite";
+    $thirdPath = "{$sandbox}/source/third.sqlite";
+
+    try {
+        sqlite_seed_copy_large_database($firstPath);
+        sqlite_seed_copy_large_database($secondPath);
+        $first = new PDO("sqlite:{$firstPath}");
+        $first->exec("UPDATE seed_events SET value = 'changed' WHERE id = 1");
+        expect($first->query('SELECT value FROM seed_events WHERE id = 1')->fetchColumn())->toBe('changed');
+        unset($first);
+        sqlite_seed_copy_large_database($thirdPath);
+        $second = new PDO("sqlite:{$secondPath}");
+        $third = new PDO("sqlite:{$thirdPath}");
+
+        expect(array_unique([fileinode($firstPath), fileinode($secondPath), fileinode($thirdPath)]))->toHaveCount(3)
+            ->and(fileperms(sqlite_seed_large_database_seed()) & 0o777)->toBe(0o400)
+            ->and(fileperms($firstPath) & 0o777)->toBe(0o600)
+            ->and($second->query('SELECT value FROM seed_events WHERE id = 1')->fetchColumn())->toBe('seed-row-1')
+            ->and($third->query('SELECT value FROM seed_events WHERE id = 1')->fetchColumn())->toBe('seed-row-1')
+            ->and(sqlite_seed_row_count($secondPath))->toBe(200)
+            ->and(sqlite_seed_row_count($thirdPath))->toBe(200)
+            ->and((int) $second->query('SELECT length(content) FROM seed_payload')->fetchColumn())->toBe(67_108_864)
+            ->and(sqlite_seed_journal_mode($secondPath))->toBe('wal');
+        unset($second, $third);
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+});
+
+it('omits ambient Python startup without changing fixed seed commands', function (): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = "{$sandbox}/source/database.sqlite";
+    sqlite_seed_create_database($sourcePath);
+    $anchor = 'manager_uid = os.geteuid()';
+    $guard = 'assert sys.flags.no_site == 1'."\n".$anchor;
+    $ssh = new SqliteSeedLocalSshExecutor(
+        new NativeProcessRunner,
+        $sandbox,
+        sourceProgramReplacements: [$anchor => $guard],
+        targetProgramReplacements: [$anchor => $guard],
+    );
+
+    try {
+        $result = sqlite_seed_seeder($ssh, new SqliteSeedLocalTransfer($ssh))->seed(
+            sqlite_seed_source_placement($sandbox),
+            sqlite_seed_target_placement(),
+            $sourcePath,
+        );
+
+        expect($result->confirmed)->toBeTrue()
+            ->and($ssh->commandModes())->toBe(['source:prepare', 'target:prepare', 'target:install', 'source:cleanup'])
+            ->and($ssh->hasOnlyFixedPythonCommands())->toBeTrue()
+            ->and(sqlite_seed_row_count("{$sandbox}/target/database.sqlite"))->toBe(5);
+
+        foreach ($ssh->commands as $command) {
+            expect($command['arguments'][5])->toContain($anchor);
+        }
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+});
 
 it('refuses invalid sources and insufficient capacity before target replacement', function (string $case): void {
     $sandbox = sqlite_seed_sandbox();
@@ -318,11 +388,7 @@ it('completes a large live WAL snapshot within a bounded command deadline', func
     $sandbox = sqlite_seed_sandbox();
     $sourcePath = "{$sandbox}/source/database.sqlite";
     $stopPath = "{$sandbox}/stop-writer";
-    sqlite_seed_create_database($sourcePath, rows: 200, wal: true);
-    $source = new PDO("sqlite:{$sourcePath}");
-    $source->exec('CREATE TABLE seed_payload (content BLOB NOT NULL)');
-    $source->exec('INSERT INTO seed_payload (content) VALUES (zeroblob(67108864))');
-    unset($source);
+    sqlite_seed_copy_large_database($sourcePath);
     $writer = sqlite_seed_wal_writer($sourcePath, $stopPath, delayMicroseconds: 0);
     $deadline = new CommandDeadline;
     $deadline->start(10);
@@ -403,7 +469,7 @@ it('streams the protected snapshot through bounded scp invocations and removes t
                 ->toBeNull();
         }
 
-        $localStagingPath = $processes->invocations[0]->arguments[array_key_last($processes->invocations[0]->arguments)];
+        $localStagingPath = array_last($processes->invocations[0]->arguments);
 
         expect(file_exists($localStagingPath))
             ->toBeFalse()
@@ -446,7 +512,7 @@ it('redacts protected transfer failures and removes their local staging file', f
                 ->toBeNull();
         }
 
-        $localStagingPath = $processes->invocations[0]->arguments[array_key_last($processes->invocations[0]->arguments)];
+        $localStagingPath = array_last($processes->invocations[0]->arguments);
 
         expect(file_exists($localStagingPath))
             ->toBeFalse();
@@ -1013,6 +1079,37 @@ function sqlite_seed_remove_directory(string $directory): void
     rmdir($directory);
 }
 
+function sqlite_seed_large_database_seed(): string
+{
+    static $seed = null;
+
+    if ($seed === null) {
+        $directory = sys_get_temp_dir().'/orbit-sqlite-large-seed-'.bin2hex(random_bytes(6));
+        mkdir($directory, 0o700);
+        $path = $directory.'/database.sqlite';
+        sqlite_seed_create_database($path, rows: 200, wal: true);
+        $source = new PDO("sqlite:{$path}");
+        $source->exec('CREATE TABLE seed_payload (content BLOB NOT NULL)');
+        $source->exec('INSERT INTO seed_payload (content) VALUES (zeroblob(67108864))');
+        unset($source);
+
+        if (! chmod($path, 0o400)) {
+            throw new RuntimeException('Could not protect the large SQLite fixture seed.');
+        }
+
+        $seed = $path;
+    }
+
+    return $seed;
+}
+
+function sqlite_seed_copy_large_database(string $path): void
+{
+    if (! copy(sqlite_seed_large_database_seed(), $path) || ! chmod($path, 0o600)) {
+        throw new RuntimeException('Could not copy the large SQLite fixture seed.');
+    }
+}
+
 function sqlite_seed_create_database(string $path, int $rows = 5, bool $wal = false): void
 {
     $database = new PDO("sqlite:{$path}");
@@ -1070,7 +1167,7 @@ function sqlite_seed_wal_writer(string $databasePath, string $stopPath, int $del
         database.close()
         PYTHON;
 
-    return new Process(['python3', '-c', $program, $databasePath, $stopPath, (string) $delayMicroseconds]);
+    return new Process([StandardLibraryPython::executable(), '-c', $program, $databasePath, $stopPath, (string) $delayMicroseconds]);
 }
 
 function sqlite_seed_source_placement(string $sandbox): SqliteSeedPlacement
@@ -1307,6 +1404,7 @@ final class SqliteSeedLocalSshExecutor implements SshExecutor
 
         $result = $this->runner->run(new ProcessInvocation(
             arguments: $arguments,
+            environment: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))],
             input: $command->input,
             protectedInput: $command->protectedInput,
             maxOutputBytes: $command->maxOutputBytes,
@@ -1348,13 +1446,7 @@ final class SqliteSeedLocalSshExecutor implements SshExecutor
 
     public function hasOnlyFixedPythonCommands(): bool
     {
-        foreach ($this->commands as $command) {
-            if (array_slice($command['arguments'], 0, 5) !== ['sudo', '-n', '--', 'python3', '-c']) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($this->commands, static fn (array $command): bool => array_slice($command['arguments'], 0, 5) === ['sudo', '-n', '--', 'python3', '-c']);
     }
 }
 
@@ -1376,7 +1468,7 @@ final class SqliteSeedScpProcessRunner implements ProcessRunner
         }
 
         $source = $invocation->arguments[array_key_last($invocation->arguments) - 1];
-        $target = $invocation->arguments[array_key_last($invocation->arguments)];
+        $target = array_last($invocation->arguments);
         $sourcePath = $this->localPath($source);
         $targetPath = $this->localPath($target);
 

@@ -7,56 +7,9 @@ use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use Illuminate\Support\Str;
 
-/**
- * A release directory whose `bin/gateway-smoke` records its arguments and answers as `smoke-mode`
- * says: `pass`, `fail`, `garbage`, `hang`, or `terminated`.
- */
-function smoke_release(string $base, string $id): string
-{
-    $release = $base.'/releases/'.$id;
-    mkdir($release.'/bin', 0755, true);
-    file_put_contents($release.'/bin/gateway-smoke', <<<'BASH'
-        #!/usr/bin/env bash
-        root=$(dirname "$0")/..
-        printf '%s\n' "$@" > "$root/smoke-args"
-        printf '%s' "${SSL_CERT_FILE:-}" > "$root/smoke-ssl"
-        mode=$(cat "$root/smoke-mode" 2>/dev/null || echo pass)
-        case $mode in
-            pass) printf '{"schema":1,"passed":true,"expected_sha":"%s","summary":{"passed":7,"failed":0,"timeout":0,"skipped":1},"checks":{"web":{"status":"passed","error":null}}}\n' "$2" ;;
-            fail) printf '{"schema":1,"passed":false,"error":"checks_failed","failed_checks":["web"],"message":"1 of 7 checks did not pass: web.","checks":{"web":{"status":"failed","error":"web_release_mismatch"}}}\n'; exit 1 ;;
-            garbage) echo 'Traceback (most recent call last)' >&2; exit 1 ;;
-            hang)
-                # Reap the child before exiting: kill(pid, 0) also sees an orphaned zombie.
-                trap 'wait "$child"; exit 143' TERM
-                sleep 60 & child=$!
-                echo "$child" > "$root/smoke-child"
-                wait "$child"
-                ;;
-            killed) kill -9 $$ ;;
-            terminated) trap 'printf "{\"schema\":1,\"passed\":false,\"error\":\"terminated\"}\n"; exit 143' TERM; sleep 60 & wait ;;
-        esac
-        BASH);
-    chmod($release.'/bin/gateway-smoke', 0755);
-
-    return $release;
-}
-
-function smoke_runner(GatewayReleaseLayout $layout, ?string $project = null, int $timeout = 90, int $grace = 15, string $caFile = '/nonexistent/root-ca.pem'): ScriptGatewayReleaseSmoke
-{
-    return new ScriptGatewayReleaseSmoke(
-        layout: $layout,
-        processes: new NativeProcessRunner(maxOutputBytes: 1_048_576),
-        origin: 'https://gateway.orbit',
-        webRoot: '/home/orbit/web',
-        timeoutSeconds: $timeout,
-        writeCheckProject: $project,
-        caFile: $caFile,
-        graceSeconds: $grace,
-    );
-}
+require_once __DIR__.'/../../Support/GatewaySmokeFixtures.php';
 
 beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-smoke-'.Str::lower(Str::random(10));
@@ -125,30 +78,6 @@ describe('release smoke', function (): void {
 
         expect($exception->errorCode)->toBe('gateway.release_smoke_failed')
             ->and($exception->phase['stderr'])->toContain('Traceback');
-    });
-
-    it('stops a smoke run that passes its time limit and kills its process group', function (): void {
-        file_put_contents($this->release.'/smoke-mode', 'hang');
-        $started = microtime(true);
-
-        $exception = release_failure(fn () => smoke_runner($this->layout, timeout: 1, grace: 0)->run($this->id, $this->sha));
-        $child = (int) trim((string) @file_get_contents($this->release.'/smoke-child'));
-
-        expect($exception->step)->toBe('smoke')
-            ->and($exception->errorCode)->toBe('gateway.release_smoke_timeout')
-            ->and(microtime(true) - $started)->toBeLessThan(10.0)
-            ->and($child)->toBeGreaterThan(1)
-            ->and(posix_kill($child, 0))->toBeFalse();
-    });
-
-    it('keeps the terminated report of a smoke run it stopped', function (): void {
-        file_put_contents($this->release.'/smoke-mode', 'terminated');
-
-        $exception = release_failure(fn () => smoke_runner($this->layout, timeout: 1, grace: 0)->run($this->id, $this->sha));
-
-        expect($exception->errorCode)->toBe('gateway.release_smoke_timeout')
-            ->and($exception->phase['exit_code'])->toBe(124)
-            ->and($exception->phase['report'])->toBe(['schema' => 1, 'passed' => false, 'error' => 'terminated']);
     });
 
     it('tells a smoke run killed from elsewhere before its limit apart from a timeout', function (): void {

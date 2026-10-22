@@ -29,6 +29,22 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\FixtureProcessRunner;
+use Tests\Support\RootCaFixture;
+
+beforeAll(function (): void {
+    RootCaFixture::prepare();
+    RootCaFixture::prepare('alternate');
+});
+
+function bootstrap_gateway_ca_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    mkdir($home.'/ca', 0o700, true);
+    RootCaFixture::install($home.'/ca');
+
+    return $home;
+}
 
 it('initializes the portable gateway authority idempotently', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
@@ -135,7 +151,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
 });
 
 it('activates private DNS after the VPN backend so the first peer can resolve ordinary names', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $events = [];
     $vpn = new class($events) implements GatewayVpnConverger
     {
@@ -185,7 +201,7 @@ it('activates private DNS after the VPN backend so the first peer can resolve or
 });
 
 it('reports a private DNS activation failure as a typed bootstrap step', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $dns = new class implements PrivateDnsManager
     {
         public function converge(?Node $pendingNode = null): void
@@ -221,7 +237,7 @@ it('reports a private DNS activation failure as a typed bootstrap step', functio
 });
 
 it('activates only bootstrap roles while preserving colocated role outcomes', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
         'role' => RoleName::Router,
@@ -376,38 +392,12 @@ it('fails closed without mutating a partial root CA containing only :filename', 
 ]);
 
 it('rejects a mismatched complete root CA pair without replacing it', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $ca = $orbitHome.'/ca';
-    mkdir(directory: $ca, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
-    $processes->run(new ProcessInvocation([
-        'openssl',
-        'genrsa',
-        '-out',
-        $ca.'/root.key',
-        '4096',
-    ]));
-    $processes->run(new ProcessInvocation([
-        'openssl',
-        'genrsa',
-        '-out',
-        $ca.'/other.key',
-        '4096',
-    ]));
-    $processes->run(new ProcessInvocation([
-        'openssl',
-        'req',
-        '-x509',
-        '-new',
-        '-key',
-        $ca.'/other.key',
-        '-out',
-        $ca.'/root.pem',
-        '-days',
-        '3650',
-        '-subj',
-        '/CN=Orbit Mismatched Root CA',
-    ]));
+    mkdir($orbitHome.'/alternate-ca', 0o700);
+    RootCaFixture::install($orbitHome.'/alternate-ca', 'alternate');
+    copy($orbitHome.'/alternate-ca/root.pem', $ca.'/root.pem');
+    $processes = new FixtureProcessRunner;
     $originalKey = file_get_contents($ca.'/root.key');
     $originalCertificate = file_get_contents($ca.'/root.pem');
     $action = new BootstrapGatewayAction(
@@ -602,7 +592,7 @@ it('accepts the shared WireGuard endpoint forms at the bootstrap boundary', func
 ]);
 
 it('records provisioning and failed host convergence state and activates an idempotent retry', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
         'role' => RoleName::Router,
@@ -765,7 +755,7 @@ it('records provisioning and failed host convergence state and activates an idem
 });
 
 it('records stable gateway failure state when bootstrap throws an unexpected exception', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
         'role' => RoleName::Metrics,
@@ -847,7 +837,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
 });
 
 it('fails only bootstrap roles when VPN convergence fails', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $orbitHome = bootstrap_gateway_ca_home();
     $node = bootstrap_gateway_existing_node();
     $node->roles()->create([
         'role' => RoleName::Router,

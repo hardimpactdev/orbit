@@ -38,9 +38,15 @@ use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\CachedLaravelApplicationFixture;
 use Tests\Support\HostBinary;
+use Tests\Support\StandardLibraryPython;
 
 pest()->group('subprocess');
+
+beforeAll(function (): void {
+    CachedLaravelApplicationFixture::prepare();
+});
 
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
     $project = Project::query()->create([
@@ -263,66 +269,66 @@ it('recovers a killed release publication and keeps confirmed convergence a no-o
     $setup = 'fixture='.escapeshellarg($directory)."\n"
         .'main_configuration='.escapeshellarg(base64_encode($configuration->main))."\n"
         .'master_ini='.escapeshellarg(base64_encode($configuration->masterIni))."\n"
-        .'unit_configuration='.escapeshellarg(base64_encode($configuration->unit))."\n".<<<'BASH'
-            operation=converge
-            user=orbit-fixture
-            version=8.5
-            service=orbit-fixture-php8.5-fpm.service
-            runtime_directory="$fixture/runtime"
-            generated_directory="$runtime_directory/generated"
-            work_directory="$fixture/work"
-            unit_path="$fixture/units/fpm.service"
-            local_tuning="$runtime_directory/local.conf"
-            expected_marker="$fixture/marker"
-            socket="$fixture/socket"
-            proc_root="$fixture/proc"
-            was_active=1
-            was_enabled=1
-            had_generated=1
-            had_unit=1
-            local_before=$(sha256sum "$local_tuning" | awk '{print $1}')
-            rm -rf -- "$work_directory/generated.backup"
-            cp -a "$generated_directory" "$work_directory/generated.backup"
-            cp -a "$unit_path" "$work_directory/unit.backup"
-            stat() {
-                case "${!#}" in
-                    */socket) printf '%s:caddy:660\n' "$user" ;;
-                    *) printf 'root:root:%s\n' "$(command stat -c %a -- "${!#}")" ;;
-                esac
-            }
-            chown() { :; }
-            install() {
-                local args=()
-                while [ "$#" -gt 0 ]; do
-                    case "$1" in
-                        -o|-g) shift 2 ;;
-                        *) args+=("$1"); shift ;;
-                    esac
-                done
-                command install "${args[@]}"
-            }
-            readlink() { printf '/usr/sbin/php-fpm8.5\n'; }
-            mv() {
-                command mv "$@"
-                if [ "${fault:-}" = after-pool ] && [ "${!#}" = "$generated_directory/pool.conf" ]; then kill -KILL "$BASHPID"; fi
-            }
-            systemctl() {
+        .'unit_configuration='.escapeshellarg(base64_encode($configuration->unit))."\n".<<<'BASH_WRAP'
+        operation=converge
+        user=orbit-fixture
+        version=8.5
+        service=orbit-fixture-php8.5-fpm.service
+        runtime_directory="$fixture/runtime"
+        generated_directory="$runtime_directory/generated"
+        work_directory="$fixture/work"
+        unit_path="$fixture/units/fpm.service"
+        local_tuning="$runtime_directory/local.conf"
+        expected_marker="$fixture/marker"
+        socket="$fixture/socket"
+        proc_root="$fixture/proc"
+        was_active=1
+        was_enabled=1
+        had_generated=1
+        had_unit=1
+        local_before=$(sha256sum "$local_tuning" | awk '{print $1}')
+        rm -rf -- "$work_directory/generated.backup"
+        cp -a "$generated_directory" "$work_directory/generated.backup"
+        cp -a "$unit_path" "$work_directory/unit.backup"
+        stat() {
+            case "${!#}" in
+                */socket) printf '%s:caddy:660\n' "$user" ;;
+                *) printf 'root:root:%s\n' "$(command stat -c %a -- "${!#}")" ;;
+            esac
+        }
+        chown() { :; }
+        install() {
+            local args=()
+            while [ "$#" -gt 0 ]; do
                 case "$1" in
-                    is-active|is-enabled) return 0 ;;
-                    show) cat "$fixture/pid" ;;
-                    restart)
-                        if [ "${fault:-}" = before-restart ]; then kill -KILL "$BASHPID"; fi
-                        printf 'restart\n' >> "$fixture/calls"
-                        next=$(($(cat "$fixture/pid") + 1))
-                        mkdir -p "$proc_root/$next"
-                        cp "$proc_root/620/stat" "$proc_root/$next/stat"
-                        touch "$proc_root/$next/exe"
-                        printf '%s' "$next" > "$fixture/pid"
-                        ;;
-                    *) printf '%s\n' "$1" >> "$fixture/calls" ;;
+                    -o|-g) shift 2 ;;
+                    *) args+=("$1"); shift ;;
                 esac
-            }
-            BASH;
+            done
+            command install "${args[@]}"
+        }
+        readlink() { printf '/usr/sbin/php-fpm8.5\n'; }
+        mv() {
+            command mv "$@"
+            if [ "${fault:-}" = after-pool ] && [ "${!#}" = "$generated_directory/pool.conf" ]; then kill -KILL "$BASHPID"; fi
+        }
+        systemctl() {
+            case "$1" in
+                is-active|is-enabled) return 0 ;;
+                show) cat "$fixture/pid" ;;
+                restart)
+                    if [ "${fault:-}" = before-restart ]; then kill -KILL "$BASHPID"; fi
+                    printf 'restart\n' >> "$fixture/calls"
+                    next=$(($(cat "$fixture/pid") + 1))
+                    mkdir -p "$proc_root/$next"
+                    cp "$proc_root/620/stat" "$proc_root/$next/stat"
+                    touch "$proc_root/$next/exe"
+                    printf '%s' "$next" > "$fixture/pid"
+                    ;;
+                *) printf '%s\n' "$1" >> "$fixture/calls" ;;
+            esac
+        }
+        BASH_WRAP;
     $functions = ProductionRuntimeGenerationProgram::functions()."\n";
 
     try {
@@ -878,25 +884,23 @@ it('prepares production config before resetting opcache and reports refresh skip
     $programs = Mockery::mock(RemoteProgramRunner::class);
     $prepared = false;
     if ($php) {
-        $programs->shouldReceive('run')->once()->withArgs(function (Node $node, RemoteProgram $program, array $input) use ($instance): bool {
-            return $node->id === $instance->node_id && $program->name === 'instances.refresh-environment-config'
-                && $input === [
-                    'user' => $instance->production_user,
-                    'home' => $instance->production_home,
-                    'version' => '8.5',
-                    'application' => $instance->production_home.'/current/'.($instance->root === null ? 'apps/from-project' : 'apps/site'),
-                ];
-        })->andReturnUsing(function () use ($exit, $receipt, &$prepared): ProgramResult {
-            if ($exit === 2) {
-                throw new RuntimeException('SECRET SSH failure');
-            }
-            if ($exit !== 0) {
-                throw new RemoteProgramFailed('instances.refresh-environment-config', RemoteProgramFailure::NoResult);
-            }
-            $prepared = true;
+        $programs->shouldReceive('run')->once()->withArgs(fn (Node $node, RemoteProgram $program, array $input): bool => $node->id === $instance->node_id && $program->name === 'instances.refresh-environment-config'
+            && $input === [
+                'user' => $instance->production_user,
+                'home' => $instance->production_home,
+                'version' => '8.5',
+                'application' => $instance->production_home.'/current/'.($instance->root === null ? 'apps/from-project' : 'apps/site'),
+            ])->andReturnUsing(function () use ($exit, $receipt, &$prepared): ProgramResult {
+                if ($exit === 2) {
+                    throw new RuntimeException('SECRET SSH failure');
+                }
+                if ($exit !== 0) {
+                    throw new RemoteProgramFailed('instances.refresh-environment-config', RemoteProgramFailure::NoResult);
+                }
+                $prepared = true;
 
-            return new ProgramResult($receipt, [], '');
-        });
+                return new ProgramResult($receipt, [], '');
+            });
     } else {
         $programs->shouldNotReceive('run');
     }
@@ -970,7 +974,7 @@ it('runs config cache as the production user only for an existing cached current
     chmod($directory.'/bin/php8.5', 0700);
     $catalog = new RemoteProgramCatalog;
     $program = $catalog->program('instances.refresh-environment-config');
-    $process = new Process(['python3', '-I', '-c', $catalog->bootstrap(), $program->name], env: [
+    $process = new Process([StandardLibraryPython::executable(), '-I', '-c', $catalog->bootstrap(), $program->name], env: [
         'PATH' => $directory.'/bin:'.getenv('PATH'), 'TRACE' => $directory.'/trace', 'HOME_FIXTURE' => $directory, 'APPLICATION_SUFFIX' => $suffix, 'FAIL_CONFIG' => (string) $fail,
     ]);
     $process->setInput($program->source."\0".json_encode(['user' => 'production-user', 'home' => $directory, 'version' => '8.5', 'application' => $directory.'/current'.$suffix], JSON_THROW_ON_ERROR));
@@ -998,56 +1002,82 @@ it('runs config cache as the production user only for an existing cached current
     }
 })->with([[true, true, 0], [true, false, 0], [false, false, 0], [true, true, 1], [true, true, 2], [true, true, 3]])->with(['release root' => [''], 'nested application' => ['/apps/site']]);
 
+it('keeps copied Laravel caches and their application paths private', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-env-laravel-copies-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $mask = umask();
+    try {
+        $first = CachedLaravelApplicationFixture::install($directory.'/first', 'null', 'vendor');
+        $second = CachedLaravelApplicationFixture::install($directory.'/second', 'null', 'dependencies');
+        expect((require $first.'/bootstrap/cache/config.php')['filesystems']['disks']['local']['root'])
+            ->toBe($first.'/storage/app/private');
+        $secondHashes = [];
+        $secondModes = [];
+        foreach ($files->files($second.'/bootstrap/cache') as $cacheFile) {
+            $secondHashes[$cacheFile->getFilename()] = hash_file('sha256', $cacheFile->getPathname());
+            $secondModes[$cacheFile->getFilename()] = $cacheFile->getPerms() & 0o777;
+        }
+        foreach ($files->files($first.'/bootstrap/cache') as $cacheFile) {
+            $files->put($cacheFile->getPathname(), '<?php return ["changed" => true];');
+            chmod($cacheFile->getPathname(), 0400);
+        }
+        $files->put($directory.'/first/.env', "QUEUE_CONNECTION=redis\n");
+        umask(0077);
+        $third = CachedLaravelApplicationFixture::install($directory.'/third', 'null', '../../vendor');
+        umask($mask);
+        $secondConfiguration = require $second.'/bootstrap/cache/config.php';
+        $thirdConfiguration = require $third.'/bootstrap/cache/config.php';
+        expect(array_unique(array_map(static fn (string $application): int|false => fileinode($application.'/bootstrap/cache/config.php'), [$first, $second, $third])))
+            ->toHaveCount(3)
+            ->and($secondConfiguration['queue']['default'])->toBe('database')
+            ->and($thirdConfiguration['queue']['default'])->toBe('database')
+            ->and($secondConfiguration['filesystems']['disks']['local']['root'])->toBe($second.'/storage/app/private')
+            ->and($thirdConfiguration['filesystems']['disks']['local']['root'])->toBe($third.'/storage/app/private')
+            ->and(readlink($first.'/.env'))->toBe($directory.'/first/.env')
+            ->and(readlink($second.'/.env'))->toBe($directory.'/second/.env')
+            ->and(readlink($third.'/.env'))->toBe($directory.'/third/.env')
+            ->and($files->get($second.'/.env'))->toBe("QUEUE_CONNECTION=database\n")
+            ->and($files->get($third.'/.env'))->toBe("QUEUE_CONNECTION=database\n");
+        foreach ($secondHashes as $name => $hash) {
+            expect(hash_file('sha256', $second.'/bootstrap/cache/'.$name))->toBe($hash)
+                ->and(fileperms($second.'/bootstrap/cache/'.$name) & 0o777)->toBe($secondModes[$name])
+                ->and(fileperms($third.'/bootstrap/cache/'.$name) & 0o777)->toBe($secondModes[$name]);
+        }
+    } finally {
+        umask($mask);
+        $files->deleteDirectory($directory);
+    }
+});
+
 it('rebuilds real Laravel cached configuration in a nested application from the changed environment', function (string $cachedValue, string $vendorDirectory): void {
     $directory = sys_get_temp_dir().'/orbit-env-laravel-'.bin2hex(random_bytes(8));
-    $application = $directory.'/release/apps/site';
     $files = new Filesystem;
     try {
-        foreach (['bootstrap/cache', 'config', 'storage/logs', 'storage/framework/views', $vendorDirectory] as $path) {
-            $files->ensureDirectoryExists($application.'/'.$path);
-        }
-        $files->ensureDirectoryExists($directory.'/bin');
-        symlink($directory.'/release', $directory.'/current');
-        symlink($directory.'/.env', $application.'/.env');
-        symlink(PHP_BINARY, $directory.'/bin/php8.5');
-        $files->put($directory.'/bin/sudo', "#!/bin/bash\n[[ \$1 == -u && \$2 == production-user && \$3 == -H ]] || exit 99\nshift 3\nexec \"\$@\"\n");
-        chmod($directory.'/bin/sudo', 0700);
-        $files->put($directory.'/.env', "QUEUE_CONNECTION=database\n");
-        $files->put($application.'/bootstrap/providers.php', '<?php return [];');
-        $files->put($application.'/bootstrap/app.php', '<?php return Illuminate\\Foundation\\Application::configure(basePath: dirname(__DIR__))->create();');
-        $files->put($application.'/'.$vendorDirectory.'/autoload.php', '<?php return require '.var_export(base_path('vendor/autoload.php'), true).';');
-        $files->put($application.'/artisan', '<?php require __DIR__.'.var_export('/'.$vendorDirectory.'/autoload.php', true).'; $app = require __DIR__."/bootstrap/app.php"; exit($app->handleCommand(new Symfony\\Component\\Console\\Input\\ArgvInput));');
-        $files->put($application.'/composer.json', json_encode([
-            'name' => 'orbit/env-refresh-fixture', 'config' => ['vendor-dir' => $vendorDirectory],
-        ], JSON_THROW_ON_ERROR));
-        $files->put($application.'/config/queue.php', "<?php return ['default' => env('QUEUE_CONNECTION', 'database'), 'typed' => ".$cachedValue.'];');
+        $application = CachedLaravelApplicationFixture::install($directory, $cachedValue, $vendorDirectory);
         $environment = ['QUEUE_CONNECTION' => false, 'APP_CONFIG_CACHE' => false];
-        (new Process([PHP_BINARY, 'artisan', 'config:cache'], $application, $environment))->mustRun();
         $cache = $application.'/bootstrap/cache/config.php';
         $initial = (require $cache)['queue'];
         expect($initial['default'])->toBe('database');
         $files->put($directory.'/.env', "QUEUE_CONNECTION=redis\n");
         $catalog = new RemoteProgramCatalog;
         $program = $catalog->program('instances.refresh-environment-config');
-        $process = new Process(['python3', '-I', '-c', $catalog->bootstrap(), $program->name], env: [
+        $process = new Process([StandardLibraryPython::executable(), '-I', '-c', $catalog->bootstrap(), $program->name], env: [
             ...$environment, 'PATH' => $directory.'/bin:'.getenv('PATH'),
         ]);
         $process->setInput($program->source."\0".json_encode([
             'user' => 'production-user', 'home' => $directory, 'version' => '8.5', 'application' => $directory.'/current/apps/site',
         ], JSON_THROW_ON_ERROR));
         $process->mustRun();
+        $refreshed = require $cache;
         expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['outcome'])->toBe('config_cached')
             ->and($process->getErrorOutput())->toBe('')
-            ->and((require $cache)['queue']['default'])->toBe('redis')
-            ->and((require $cache)['queue']['typed'])->toEqual($initial['typed']);
+            ->and($refreshed['queue']['default'])->toBe('redis')
+            ->and($refreshed['queue']['typed'])->toEqual($initial['typed'])
+            ->and($refreshed['filesystems']['disks']['local']['root'])->toBe($application.'/storage/app/private');
     } finally {
         $files->deleteDirectory($directory);
     }
-})->with([
-    'scalar' => ['null'],
-    'autoloaded enum' => ['Symfony\\Component\\String\\TruncateMode::WordBefore'],
-    'autoloaded class' => ['new Carbon\\CarbonImmutable("2026-01-01T00:00:00+00:00")'],
-])->with([
+})->with(CachedLaravelApplicationFixture::cachedValues())->with([
     'application vendor' => ['vendor'],
     'custom Composer vendor-dir' => ['dependencies'],
     'shared repository autoloader' => ['../../vendor'],
@@ -1189,7 +1219,6 @@ function orb214_run_monitoring_pool_convergence(
     string $bin,
 ): Process {
     $method = new ReflectionMethod(RemoteProductionPhpRuntimeManager::class, 'monitoringPoolConvergenceFunction');
-    $method->setAccessible(true);
     $function = (string) $method->invoke(null);
     $process = new Process(
         ['bash', '-seu', '--', $pool, $desired, $runtime, $service, (string) $wasActive],
@@ -1204,7 +1233,6 @@ function orb214_run_monitoring_pool_convergence(
 function orb214_run_monitoring_pool_preflight(string $generated, string $runtime): Process
 {
     $method = new ReflectionMethod(RemoteProductionPhpRuntimeManager::class, 'cleanupInterruptedMonitoringCandidateFunction');
-    $method->setAccessible(true);
     $function = (string) $method->invoke(null);
     $process = new Process(['bash', '-seu', '--', $generated, $runtime]);
     $process->setInput(orb214_pool_recovery_test_shell()."\n".$function."\n".<<<'BASH'

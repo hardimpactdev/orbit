@@ -15,7 +15,7 @@ use Tests\Support\GatewayReleasePipeline;
 pest()->group('subprocess');
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->source = $this->pipeline->adopt();
     $this->target = $this->pipeline->fixture->commit('Refusing destructive migration');
     $this->pipeline->bindLeaves();
@@ -23,6 +23,7 @@ beforeEach(function (): void {
     file_put_contents($this->pipeline->home.'/annotations/retained.txt', 'retained attachment');
     $this->databasePath = $this->pipeline->home.'/gateway.sqlite';
     $copy = new PDO('sqlite:'.$this->databasePath);
+    $copy->beginTransaction();
     foreach (DB::select("SELECT sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'") as $table) {
         $copy->exec($table->sql);
     }
@@ -33,6 +34,7 @@ beforeEach(function (): void {
     $copy->exec('CREATE TABLE recovery_annotations (id INTEGER PRIMARY KEY, owner_id INTEGER REFERENCES recovery_owners(id), body BLOB)');
     $copy->exec('INSERT INTO recovery_owners VALUES (3)');
     $copy->exec("INSERT INTO recovery_annotations VALUES (1, 3, X'00')");
+    $copy->commit();
     $copy = null;
     chmod($this->databasePath, 0600);
     $this->oldDefault = config('database.default');

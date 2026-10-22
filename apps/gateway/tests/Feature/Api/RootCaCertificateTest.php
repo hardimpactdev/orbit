@@ -5,10 +5,17 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
 use App\Models\Activity;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\RootCaFixture;
+
+beforeAll(function (): void {
+    RootCaFixture::prepare('root-ca-endpoint', '/CN=Orbit Test Root CA', 1, [
+        'basicConstraints=critical,CA:TRUE',
+        'keyUsage=critical,keyCertSign,cRLSign',
+    ]);
+});
 
 it('returns only the current public root CA with request correlation', function (): void {
     [$directory, , $certificate] = root_ca_endpoint_certificate();
@@ -123,38 +130,7 @@ function root_ca_endpoint_certificate(): array
     $orbitHome = $directory.'/orbit';
     $ca = $orbitHome.'/ca';
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
-    $key = $ca.'/root.key';
-    $certificate = $ca.'/root.pem';
-    $keyResult = $processes->run(new ProcessInvocation([
-        'openssl',
-        'genrsa',
-        '-out',
-        $key,
-        '4096',
-    ]));
-    $certificateResult = $processes->run(new ProcessInvocation([
-        'openssl',
-        'req',
-        '-x509',
-        '-new',
-        '-key',
-        $key,
-        '-out',
-        $certificate,
-        '-days',
-        '1',
-        '-subj',
-        '/CN=Orbit Test Root CA',
-        '-addext',
-        'basicConstraints=critical,CA:TRUE',
-        '-addext',
-        'keyUsage=critical,keyCertSign,cRLSign',
-    ]));
+    RootCaFixture::install($ca, 'root-ca-endpoint');
 
-    if (! $keyResult->succeeded() || ! $certificateResult->succeeded()) {
-        throw new RuntimeException('Could not create the endpoint root CA test fixture.');
-    }
-
-    return [$directory, $orbitHome, (string) file_get_contents($certificate)];
+    return [$directory, $orbitHome, (string) file_get_contents($ca.'/root.pem')];
 }

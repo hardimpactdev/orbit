@@ -28,6 +28,9 @@ final class LifecycleSshExecutor implements SshExecutor
     /** @var list<string> */
     public array $shells = [];
 
+    /** @var (Closure(string): string)|null */
+    public ?Closure $transformProgram = null;
+
     /** @param (Closure(array{checkout: string, command: string, environment: array<string, string>, timeout: int|float}): int)|null $result */
     public function __construct(public ?Closure $result = null, public bool $local = false) {}
 
@@ -43,6 +46,10 @@ final class LifecycleSshExecutor implements SshExecutor
                 static fn (string $argument): string => str_replace("'/usr/bin/bash'", var_export(TestToolchain::bash(), true), $argument),
                 $command->arguments,
             );
+
+            if ($this->transformProgram !== null) {
+                $arguments[2] = ($this->transformProgram)($arguments[2]);
+            }
 
             return (new NativeProcessRunner)->run(new ProcessInvocation(
                 arguments: $arguments,

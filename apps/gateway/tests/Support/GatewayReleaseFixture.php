@@ -6,13 +6,20 @@ namespace Tests\Support;
 
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Settings\SettingRepository;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use FilesystemIterator;
 use Illuminate\Support\Str;
+use Mockery;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 
 /**
@@ -32,6 +39,9 @@ final class GatewayReleaseFixture implements ProcessRunner
 
     public readonly string $composer;
 
+    /** Real PHP without host INI startup, for the core-only Artisan stand-in. */
+    public readonly string $php;
+
     public readonly GatewayReleaseLayout $layout;
 
     /** @var list<list<string>> */
@@ -40,17 +50,28 @@ final class GatewayReleaseFixture implements ProcessRunner
     /** @var list<list<string>> */
     public array $commands = [];
 
-    private readonly NativeProcessRunner $native;
+    private readonly FixtureProcessRunner $native;
 
-    public function __construct()
+    private static ?self $seed = null;
+
+    private static ?self $adoptedSeed = null;
+
+    private function __construct()
     {
         $this->base = sys_get_temp_dir().'/orbit-release-'.Str::lower(Str::random(10));
         $this->origin = $this->base.'/origin';
         $this->composer = $this->base.'/bin/composer';
-        $this->native = new NativeProcessRunner(maxOutputBytes: 1_048_576);
+        $this->php = $this->base.'/bin/php';
+        $this->native = new FixtureProcessRunner;
         $this->layout = new GatewayReleaseLayout($this->base.'/orbit/apps/gateway');
 
         mkdir($this->base.'/bin', 0700, true);
+    }
+
+    private function initialize(): void
+    {
+        file_put_contents($this->php, "#!/bin/sh\nexec ".escapeshellarg(PHP_BINARY)." -n \"\$@\"\n");
+        chmod($this->php, 0500);
         file_put_contents($this->composer, <<<'BASH'
             #!/usr/bin/env bash
             set -eu
@@ -64,7 +85,6 @@ final class GatewayReleaseFixture implements ProcessRunner
             esac
             BASH);
         chmod($this->composer, 0700);
-
         $this->git($this->base, 'init', '--quiet', '--initial-branch=main', $this->origin);
         $this->write('.gitignore', "/vendor/\n/REVISION\napps/*/vendor/\napps/gateway/.env\n");
         $this->write('apps/cli/composer.json', '{}');
@@ -93,15 +113,107 @@ final class GatewayReleaseFixture implements ProcessRunner
         file_put_contents($this->layout->environmentPath(), "APP_ENV=production\n");
     }
 
-    public function builder(?GatewayReleaseWebBuild $web = null, float $freeBytes = 1e12, int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes, int $reservedBytes = 0, ?string $stepLock = null): GatewayReleaseBuilder
+    public static function prepare(): void
+    {
+        if (self::$seed !== null) {
+            return;
+        }
+
+        $seed = new self;
+        $seed->initialize();
+        self::$seed = $seed;
+    }
+
+    public static function prepareAdopted(): void
+    {
+        if (self::$adoptedSeed !== null) {
+            return;
+        }
+        self::prepare();
+        $seed = self::create();
+        $sha = $seed->commit('Adopted release');
+        // This local origin must never ask for credentials. No application is booted in beforeAll.
+        $readAccess = new RepositoryReadAccess(
+            new GitHubAppStore(new SettingRepository),
+            Mockery::mock(GitHubApi::class),
+            Mockery::mock(GitHubCliToken::class),
+        );
+        $seed->builder(readAccess: $readAccess)->prepare($sha);
+        symlink($seed->layout->linkTarget(substr($sha, 0, 12)), $seed->layout->currentPath());
+        self::$adoptedSeed = $seed;
+    }
+
+    public static function create(bool $adopted = false): self
+    {
+        $seed = ($adopted ? self::$adoptedSeed : self::$seed)
+            ?? throw new RuntimeException('Prepare the requested release fixture in beforeAll.');
+        $fixture = new self;
+        $copied = $fixture->native->run(new ProcessInvocation(['cp', '-a', '--', $seed->base.'/.', $fixture->base]));
+        if (! $copied->succeeded()) {
+            throw new RuntimeException('Could not copy the release fixture seed: '.$copied->stderr);
+        }
+        $fixture->relocateLinks($seed);
+        $fixture->git($fixture->layout->repositoryPath(), 'remote', 'set-url', 'origin', $fixture->origin);
+        if ($adopted) {
+            $administrativePaths = glob($fixture->layout->repositoryPath().'/worktrees/*');
+            if (! is_array($administrativePaths) || count($administrativePaths) !== 1) {
+                throw new RuntimeException('The adopted seed must contain exactly one Git worktree.');
+            }
+            foreach ($administrativePaths as $administrativePath) {
+                $original = trim((string) file_get_contents($administrativePath.'/gitdir'));
+                if (! str_starts_with($original, $seed->base.'/')) {
+                    throw new RuntimeException('The adopted seed worktree must be inside its own tree.');
+                }
+                $gitFile = $fixture->base.substr($original, strlen($seed->base));
+                file_put_contents($administrativePath.'/gitdir', $gitFile."\n");
+                $permissions = fileperms($gitFile) & 0777;
+                chmod($gitFile, $permissions | 0200);
+                file_put_contents($gitFile, 'gitdir: '.$administrativePath."\n");
+                chmod($gitFile, $permissions);
+            }
+        }
+
+        return $fixture;
+    }
+
+    private function relocateLinks(self $seed): void
+    {
+        // Do not follow directory links: changing a copy must never write into its seed.
+        $entries = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->base, FilesystemIterator::SKIP_DOTS));
+        foreach ($entries as $entry) {
+            if (! $entry->isLink()) {
+                continue;
+            }
+            $target = $entry->getLinkTarget();
+            if (! str_starts_with($target, $seed->base.'/')) {
+                continue;
+            }
+            $parent = $entry->getPath();
+            $permissions = fileperms($parent) & 07777;
+            chmod($parent, $permissions | 0200);
+            unlink($entry->getPathname());
+            symlink($this->base.substr($target, strlen($seed->base)), $entry->getPathname());
+            chmod($parent, $permissions);
+        }
+    }
+
+    public static function forget(): void
+    {
+        self::$adoptedSeed?->cleanup();
+        self::$adoptedSeed = null;
+        self::$seed?->cleanup();
+        self::$seed = null;
+    }
+
+    public function builder(?GatewayReleaseWebBuild $web = null, float $freeBytes = 1e12, int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes, int $reservedBytes = 0, ?string $stepLock = null, ?RepositoryReadAccess $readAccess = null): GatewayReleaseBuilder
     {
         return new GatewayReleaseBuilder(
             layout: $this->layout,
             processes: $this,
-            readAccess: app(RepositoryReadAccess::class),
+            readAccess: $readAccess ?? app(RepositoryReadAccess::class),
             web: $web ?? new NoWebBuild,
             composer: $this->composer,
-            php: PHP_BINARY,
+            php: $this->php,
             freeSpace: static fn (): float => $freeBytes,
             checkoutAccess: function (string $application): void {
                 $this->privileged[] = ['grant-access', $application];
@@ -172,7 +284,7 @@ final class GatewayReleaseFixture implements ProcessRunner
     public function cleanup(): void
     {
         if (is_dir($this->base)) {
-            exec('chmod -R u+w '.escapeshellarg($this->base).' && rm -rf '.escapeshellarg($this->base));
+            exec('find -P '.escapeshellarg($this->base).' -type d -exec chmod u+wx {} + && rm -rf -- '.escapeshellarg($this->base));
         }
     }
 

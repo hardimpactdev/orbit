@@ -46,7 +46,7 @@ use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
 
-it('installs and executes the FPM pre-start gate before accepting traffic and refuses startup on gate failure', function (string $ambientEnvironment): void {
+it('installs and executes the FPM pre-start gate for a restart or refusal', function (string $ambientEnvironment, string $boundary): void {
     $previousEnvironment = $_ENV['APP_ENV'] ?? null;
     [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
     $root = sys_get_temp_dir().'/orbit-cleanup-startup-'.Str::uuid();
@@ -91,26 +91,28 @@ it('installs and executes the FPM pre-start gate before accepting traffic and re
         $gate = app(CleanupGate::class);
         $first = $gate->status()->generation;
         expect($gate->status()->state)->toBe('paused');
-        $state = json_decode(file_get_contents($runtime.'/generation.json'), true, flags: JSON_THROW_ON_ERROR);
-        $state['report_id'] = str_repeat('b', 64);
-        $state['report_sha256'] = str_repeat('c', 64);
-        file_put_contents($runtime.'/generation.json', json_encode($state));
-        file_put_contents($runtime.'/permit.json', json_encode($state));
-        chmod($runtime.'/permit.json', 0600);
-        expect($gate->status()->state)->toBe('running');
-        expect($start->run())->toBe(0, $start->getErrorOutput());
-        expect($gate->status()->generation)->not->toBe($first);
-        expect($gate->status()->reportId)->toBeNull();
-        expect(file_exists($runtime.'/permit.json'))->toBeFalse();
-        chmod($root.'/run', 0775);
-        expect($start->run())->toBe(1);
-        expect($start->getOutput())->not->toContain('api-started');
-        expect($start->getOutput())->toContain('project_documents.cleanup_state_unavailable');
-        chmod($root.'/run', 0755);
-        chmod($runtime.'/execution.lock', 0000);
-        expect($start->run())->toBe(1);
-        expect($start->getOutput())->not->toContain('api-started');
-        expect($start->getOutput())->toContain('project_documents.cleanup_state_unavailable');
+        if ($boundary === 'permit') {
+            $state = json_decode(file_get_contents($runtime.'/generation.json'), true, flags: JSON_THROW_ON_ERROR);
+            $state['report_id'] = str_repeat('b', 64);
+            $state['report_sha256'] = str_repeat('c', 64);
+            file_put_contents($runtime.'/generation.json', json_encode($state));
+            file_put_contents($runtime.'/permit.json', json_encode($state));
+            chmod($runtime.'/permit.json', 0600);
+            expect($gate->status()->state)->toBe('running');
+            expect($start->run())->toBe(0, $start->getErrorOutput());
+            expect($gate->status()->generation)->not->toBe($first);
+            expect($gate->status()->reportId)->toBeNull();
+            expect(file_exists($runtime.'/permit.json'))->toBeFalse();
+        } else {
+            [$path, $mode] = match ($boundary) {
+                'parent' => [$root.'/run', 0775],
+                'lock' => [$runtime.'/execution.lock', 0000],
+            };
+            chmod($path, $mode);
+            expect($start->run())->toBe(1);
+            expect($start->getOutput())->not->toContain('api-started');
+            expect($start->getOutput())->toContain('project_documents.cleanup_state_unavailable');
+        }
     } finally {
         umask($previousUmask);
         $filesystem->deleteDirectory($root);
@@ -121,7 +123,11 @@ it('installs and executes the FPM pre-start gate before accepting traffic and re
             $_ENV['APP_ENV'] = $previousEnvironment;
         }
     }
-})->with(['testing', 'production']);
+})->with(['testing', 'production'])->with([
+    'valid permit' => 'permit',
+    'unsafe parent' => 'parent',
+    'unreadable lock' => 'lock',
+]);
 
 it('refuses FPM reload or restart when cleanup invalidation fails during convergence', function (): void {
     [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'cleanup-invalidation');
@@ -429,7 +435,7 @@ it('publishes one complete gateway file from distinct candidates under contentio
         }
 
         $candidates = protected_file_writer_candidates($path);
-        $candidateContents = array_map(static fn (string $candidate): string|false => file_get_contents($candidate), $candidates);
+        $candidateContents = array_map(file_get_contents(...), $candidates);
         sort($candidateContents);
 
         expect($candidates)->toHaveCount(4)

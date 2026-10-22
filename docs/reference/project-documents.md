@@ -71,6 +71,8 @@ Search matches entry names and computed paths only, using a case-insensitive lit
 
 Every mutation of an existing entry requires `expected_revision`, including metadata update, content write, restore-version, archive, restore, and removal. The Gateway atomically compares it with the stored revision under the same lock as the mutation. A stale revision returns HTTP 409 `project_documents.revision_conflict`, with `entry_id` and `current_revision` in error details, and commits no change.
 
+Destination validation holds the document lock while it checks effective archive state, verifies that every ancestor is a folder, and counts the full destination chain plus the moved subtree against the 32-entry depth limit. The lock keeps that ancestry stable. The validator traverses it once for archive state, rather than repeating that scan at every ancestor.
+
 Missing or invalid revisions return validation errors. Versions cannot be edited directly. Clients never force overwrite or automatically retry a conflict with a fresh revision.
 
 On conflict, read current metadata and content, preserve the caller's draft, then merge or deliberately submit a replacement with the newly read revision. The web app offers reload or copy of the unsaved draft; it does not silently discard it. A lost success response followed by a retry with the old revision is a conflict, not another version.

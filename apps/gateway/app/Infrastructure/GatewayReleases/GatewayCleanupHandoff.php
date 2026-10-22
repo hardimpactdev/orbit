@@ -21,15 +21,21 @@ final readonly class GatewayCleanupHandoff
     /** @var Closure(int): void */
     private Closure $sleep;
 
+    /** @var Closure(): float */
+    private Closure $clock;
+
     /**
      * @param  iterable<int, GatewayReleaseCleanup>  $cleanups
      * @param  (Closure(int): void)|null  $sleep  microseconds
+     * @param  (Closure(): float)|null  $clock  monotonic nanoseconds
      */
     public function __construct(
         #[Tag(GatewayReleaseCleanup::class)] private iterable $cleanups,
         private int $generationWaitSeconds = 30,
         ?Closure $sleep = null,
+        ?Closure $clock = null,
     ) {
+        $this->clock = $clock ?? static fn (): float => hrtime(true);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -119,7 +125,7 @@ final readonly class GatewayCleanupHandoff
     /** @return array{cleanup_state: string, cleanup_generation: string|null}|null */
     private function awaitNewGeneration(GatewayReleaseCleanup $cleanup, ?string $before): ?array
     {
-        $deadline = hrtime(true) + $this->generationWaitSeconds * 1_000_000_000;
+        $deadline = ($this->clock)() + $this->generationWaitSeconds * 1_000_000_000;
 
         do {
             $status = $cleanup->status();
@@ -129,7 +135,7 @@ final readonly class GatewayCleanupHandoff
             }
 
             ($this->sleep)(500_000);
-        } while (hrtime(true) < $deadline);
+        } while (($this->clock)() < $deadline);
 
         return null;
     }

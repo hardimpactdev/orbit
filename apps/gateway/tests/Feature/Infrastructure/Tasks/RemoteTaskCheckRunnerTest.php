@@ -38,6 +38,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\StandardLibraryPython;
 use Tests\Support\TiaBaselineTestSource;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
@@ -87,21 +88,25 @@ function check_runner_capture(Instance $instance, ?string $command, ?array $deli
     return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree']);
 }
 
-function check_runner_clock_program(?string $trigger = null, bool $advanceDrain = false): string
+function check_runner_clock_program(?string $trigger = null, bool $advanceDrain = false, ?string $chunkAck = null): string
 {
-    $clock = str_replace(['__DEADLINE_TRIGGER__', '__ADVANCE_DRAIN__'], [$trigger === null ? 'None' : json_encode($trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $advanceDrain ? 'True' : 'False'], file_get_contents(__DIR__.'/../../../Fixtures/task-check-clock.py'));
+    $clock = str_replace(
+        ['__DEADLINE_TRIGGER__', '__ADVANCE_DRAIN__', '__CHUNK_ACK__'],
+        [$trigger === null ? 'None' : json_encode($trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $advanceDrain ? 'True' : 'False', $chunkAck === null ? 'None' : json_encode($chunkAck, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)],
+        file_get_contents(__DIR__.'/../../../Fixtures/task-check-clock.py'),
+    );
 
     return str_replace("\nif __name__ == '__main__':", "\n".$clock."\nif __name__ == '__main__':", TaskUnitProgram::read('tasks/check'));
 }
 
-function check_runner_controlled_transport(?string $trigger = null, bool $advanceDrain = false): LocalShellSshExecutor
+function check_runner_controlled_transport(?string $trigger = null, bool $advanceDrain = false, ?string $chunkAck = null): LocalShellSshExecutor
 {
     $transport = check_runner_shell(new LocalShellSshExecutor);
-    $transport->transformInput = fn (string $input): string => preg_replace_callback("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| workspace_metadata/", function (array $match) use ($trigger, $advanceDrain): string {
+    $transport->transformInput = fn (string $input): string => preg_replace_callback("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| workspace_metadata/", function (array $match) use ($trigger, $advanceDrain, $chunkAck): string {
         $payload = json_decode(base64_decode($match[1]), true, flags: JSON_THROW_ON_ERROR);
         if (isset($payload['script'])) {
             expect($payload['script'])->toBe(base64_encode(TaskUnitProgram::read('tasks/check')));
-            $payload['script'] = base64_encode(check_runner_clock_program($trigger, $advanceDrain));
+            $payload['script'] = base64_encode(check_runner_clock_program($trigger, $advanceDrain, $chunkAck));
         }
 
         return "printf '%s' '".base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))."' | base64 -d | workspace_metadata";
@@ -171,7 +176,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     {
         public int $calls = 0;
 
-        public function __construct(private ProcessTimedOutException $timeout) {}
+        public function __construct(private readonly ProcessTimedOutException $timeout) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
@@ -221,7 +226,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
     $exception = $failure === 'timeout'
         ? new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL)
         : new RuntimeException('SSH transport failed');
-    $failing = new class($exception) implements SshExecutor
+    $failing = new readonly class($exception) implements SshExecutor
     {
         public function __construct(private Throwable $exception) {}
 
@@ -307,7 +312,7 @@ describe('TaskGitHardening', function (): void {
         $monitor = $checkout.'/.git/planted-monitor';
         file_put_contents($monitor, "#!/bin/sh\nprintf ran >> '$checkout/.git/fsmonitor-ran'\n");
         chmod($monitor, 0755);
-        (new Process(['git', '-C', $checkout, 'config', 'core.fsmonitor', $monitor]))->mustRun();
+        new Process(['git', '-C', $checkout, 'config', 'core.fsmonitor', $monitor])->mustRun();
         $runner = check_runner(new LocalShellSshExecutor);
         $instance = check_runner_instance($checkout);
 
@@ -340,12 +345,12 @@ it('runs login shells with the fixture account home and profile', function (): v
 });
 
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
-    $checkout = check_runner_checkout('read -r release < ignored/release; '.$check);
+    $checkout = check_runner_checkout('read -r release < ignored/release; '.$check, realComposer: true);
     File::ensureDirectoryExists($checkout.'/ignored');
     expect(posix_mkfifo($checkout.'/ignored/release', 0600))->toBeTrue();
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $status = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
+    $status = new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput();
 
     $process = $runner->start($instance, 'composer check');
     $first = $runner->read($instance, $process);
@@ -354,7 +359,7 @@ it('runs composer check detached and reports running, then the exit code and out
 
     expect(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775);
     expect($process->pid)->toBeGreaterThan(1)
-        ->and($process->head)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput()))
+        ->and($process->head)->toBe(trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput()))
         ->and($first->state)->toBe('running')
         ->and($reading->state)->toBe('finished')
         ->and($reading->exitCode)->toBe($exitCode)
@@ -363,7 +368,7 @@ it('runs composer check detached and reports running, then the exit code and out
         ->and($reading->changedPaths)->toBe([])
         ->and($reading->finishedAt)->toBeFloat()
         ->and($reading->finishedAt)->toBeLessThanOrEqual(microtime(true))
-        ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
+        ->and(new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput())->toBe($status);
 })->with([
     'passing' => ['echo all checks passed', 0, 'all checks passed'],
     'failing' => ['echo PHPStan found 2 errors && exit 2', 2, 'PHPStan found 2 errors'],
@@ -383,11 +388,11 @@ it('reports the paths a check changed in the working tree, but not ignored files
 it('snapshots same-size edits whose timestamp matches the original index without changing that index', function (): void {
     $checkout = check_runner_checkout('true');
     $timestamp = 1_700_000_000;
-    (new Process(['git', 'config', 'core.trustctime', 'false'], $checkout))->mustRun();
+    new Process(['git', 'config', 'core.trustctime', 'false'], $checkout)->mustRun();
     file_put_contents($checkout.'/state', "old\n");
     touch($checkout.'/state', $timestamp);
-    (new Process(['git', 'add', '--all'], $checkout))->mustRun();
-    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
+    new Process(['git', 'add', '--all'], $checkout)->mustRun();
+    new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout)->mustRun();
     file_put_contents($checkout.'/state', "new\n");
     touch($checkout.'/state', $timestamp);
     // Reproduce Git's racy-clean window without waiting for a clock boundary.
@@ -398,7 +403,7 @@ it('snapshots same-size edits whose timestamp matches the original index without
 
     $snapshot = $runner->snapshot($instance);
 
-    expect((new Process(['git', 'show', $snapshot->tree.':state'], $checkout))->mustRun()->getOutput())->toBe("new\n");
+    expect(new Process(['git', 'show', $snapshot->tree.':state'], $checkout)->mustRun()->getOutput())->toBe("new\n");
     expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
         ->and(filemtime($checkout.'/.git/index'))->toBe($timestamp);
 });
@@ -423,11 +428,11 @@ it('keeps an untracked directory symlink in snapshots and reports one created du
         ->and($reading->failedStep)->toBeNull()
         ->and($reading->changedPaths)->toBe(['created-link'])
         ->and($reading->treeAfter)->not->toBe($snapshot->tree);
-    expect((new Process(['git', 'ls-tree', $snapshot->tree, '--', 'existing-link'], $checkout))->mustRun()->getOutput())
+    expect(new Process(['git', 'ls-tree', $snapshot->tree, '--', 'existing-link'], $checkout)->mustRun()->getOutput())
         ->toStartWith('120000 blob ')->toContain("\texisting-link\n");
-    expect((new Process(['git', 'ls-tree', $reading->treeAfter, '--', 'created-link'], $checkout))->mustRun()->getOutput())
+    expect(new Process(['git', 'ls-tree', $reading->treeAfter, '--', 'created-link'], $checkout)->mustRun()->getOutput())
         ->toStartWith('120000 blob ')->toContain("\tcreated-link\n");
-    expect((new Process(['git', 'ls-files', '--others', '--exclude-standard', '-z'], $checkout))->mustRun()->getOutput())
+    expect(new Process(['git', 'ls-files', '--others', '--exclude-standard', '-z'], $checkout)->mustRun()->getOutput())
         ->toContain("existing-link\0", "created-link\0")->not->toContain('not-in-checkout.txt');
     expect(file_get_contents($checkout.'/.git/index'))->toBe($index);
 });
@@ -475,7 +480,7 @@ it('reads a finished status larger than the 64 KiB process default', function ()
         'deliverables' => ['commands' => ['repro' => ['exit_code' => 0, 'output' => implode("\n", array_column($cases, 'name'))]]],
     ]], JSON_THROW_ON_ERROR);
     expect(strlen($status))->toBeGreaterThan(65_536);
-    $transport = new class($status) implements SshExecutor
+    $transport = new readonly class($status) implements SshExecutor
     {
         public function __construct(private string $status) {}
 
@@ -495,7 +500,7 @@ it('reads the same working tree as the check without touching the index', functi
     $checkout = check_runner_checkout('echo ok');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $status = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
+    $status = new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput();
 
     $process = $runner->start($instance, 'echo ok');
     $runner->cancel($instance, $process);
@@ -507,11 +512,11 @@ it('reads the same working tree as the check without touching the index', functi
     expect($snapshot->head)->toBe($process->head)
         ->and($snapshot->tree)->toBe($process->tree)
         ->and($snapshot->parent)->toBeNull()
-        ->and($snapshot->commitTree)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $checkout))->mustRun()->getOutput()))
-        ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
+        ->and($snapshot->commitTree)->toBe(trim(new Process(['git', 'rev-parse', 'HEAD^{tree}'], $checkout)->mustRun()->getOutput()))
+        ->and(new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput())->toBe($status);
 
     file_put_contents($checkout.'/extra.txt', "extra\n");
-    $written = (new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput();
+    $written = new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput();
     $changed = $runner->snapshot($instance);
     File::ensureDirectoryExists($checkout.'/ignored');
     file_put_contents($checkout.'/ignored/cache', "cache\n");
@@ -521,7 +526,7 @@ it('reads the same working tree as the check without touching the index', functi
         ->and($changed->tree)->not->toBe($snapshot->tree)
         ->and($ignored->head)->toBe($changed->head)
         ->and($ignored->tree)->toBe($changed->tree)
-        ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($written);
+        ->and(new Process(['git', 'status', '--porcelain'], $checkout)->mustRun()->getOutput())->toBe($written);
 });
 
 it('reports an unreachable workspace when the review tree cannot be read', function (CommandResult $result, string $message): void {
@@ -733,9 +738,9 @@ function check_runner_deliverables_checkout(string $check = 'echo checks passed'
     File::ensureDirectoryExists($checkout.'/app/tests');
     file_put_contents($checkout.'/app/tests/OldTest.php', "<?php\n");
     file_put_contents($checkout.'/README.md', "# Shop\n");
-    (new Process(['git', 'add', '--all'], $checkout))->mustRun();
-    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'project'], $checkout))->mustRun();
-    $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    new Process(['git', 'add', '--all'], $checkout)->mustRun();
+    new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'project'], $checkout)->mustRun();
+    $start = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
     file_put_contents($checkout.'/app/tests/ExportTest.php', "<?php\n");
     file_put_contents($checkout.'/README.md', "# Shop\n\nExports.\n");
     unlink($checkout.'/app/tests/OldTest.php');
@@ -746,7 +751,7 @@ function check_runner_deliverables_checkout(string $check = 'echo checks passed'
 describe('topology diff evidence', function (): void {
     it('records only the group changes against main, including the candidate working tree', function (bool $merge, string $own): void {
         [$checkout, $start] = check_runner_deliverables_checkout();
-        $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+        $git = static fn (array $arguments): string => trim(new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout)->mustRun()->getOutput());
         $git(['add', '--all']);
         $git(['commit', '--quiet', '-m', 'Group documentation']);
         $git(['branch', 'task']);
@@ -852,9 +857,9 @@ describe('deliverable evidence', function (): void {
         File::ensureDirectoryExists($checkout.'/tests');
         file_put_contents($checkout.'/state', "old\n");
         file_put_contents($checkout.'/tests/check.sh', "mkdir -p ignored; echo run >> ignored/runs; echo checked; grep -q new state\n");
-        (new Process(['git', 'add', '--all'], $checkout))->mustRun();
-        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
-        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+        new Process(['git', 'add', '--all'], $checkout)->mustRun();
+        new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout)->mustRun();
+        $start = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
         file_put_contents($checkout.'/state', "new\n");
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
@@ -929,12 +934,12 @@ describe('deliverable evidence', function (): void {
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
         $deliverables = ['start' => $start, 'commands' => []];
-        check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+        check_runner_local_result($checkout, $runner->start($instance, 'composer check', deliverables: $deliverables));
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+        $completed = check_runner_local_result($checkout, $runner->start($instance, 'composer check', deliverables: $deliverables));
 
         expect(file_get_contents($checkout.'/ignored/runs'))->toBe("run\nrun\n")
-            ->and($reading->deliverables['commands'])->toBe([]);
+            ->and($completed['result']['deliverables']['commands'])->toBe([]);
     });
 
     it('fails on base command when the base tree does not satisfy the overlaid command paths', function (): void {
@@ -943,9 +948,9 @@ describe('deliverable evidence', function (): void {
         file_put_contents($checkout.'/app/state', "old\n");
         file_put_contents($checkout.'/app/tests/check.sh', "#!/usr/bin/env bash\necho base-script\ngrep -q old state\n");
         chmod($checkout.'/app/tests/check.sh', 0755);
-        (new Process(['git', 'add', '--all'], $checkout))->mustRun();
-        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
-        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+        new Process(['git', 'add', '--all'], $checkout)->mustRun();
+        new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout)->mustRun();
+        $start = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
         file_put_contents($checkout.'/app/state', "new\n");
         file_put_contents($checkout.'/app/tests/check.sh', "#!/usr/bin/env bash\necho overlay-script\ngrep -q new state\n");
         $instance = check_runner_instance($checkout);
@@ -970,9 +975,9 @@ describe('deliverable evidence', function (): void {
         file_put_contents($checkout.'/status', "missing\n");
         File::ensureDirectoryExists($checkout.'/tests');
         file_put_contents($checkout.'/tests/check.sh', "#!/usr/bin/env bash\ncd \"$(dirname \"$0\")/..\"\nif grep -q missing status; then command-that-does-not-exist; else exit 0; fi\n");
-        (new Process(['git', 'add', '--all'], $checkout))->mustRun();
-        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
-        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+        new Process(['git', 'add', '--all'], $checkout)->mustRun();
+        new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout)->mustRun();
+        $start = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
         file_put_contents($checkout.'/status', "available\n");
         $instance = check_runner_instance($checkout);
         $runner = check_runner(new LocalShellSshExecutor);
@@ -1178,7 +1183,7 @@ describe('fails_on_base command deliverables', function (): void {
 
 it('cleans stale base archive directories without registering worktrees or removing unrelated files', function (): void {
     $checkout = check_runner_checkout('echo ok');
-    $gitDir = trim((new Process(['git', 'rev-parse', '--absolute-git-dir'], $checkout))->mustRun()->getOutput());
+    $gitDir = trim(new Process(['git', 'rev-parse', '--absolute-git-dir'], $checkout)->mustRun()->getOutput());
     File::ensureDirectoryExists($gitDir.'/orbit/bases/orbit-base-leftover');
     file_put_contents($gitDir.'/orbit/bases/orbit-base-leftover/marker', "x\n");
     File::ensureDirectoryExists($gitDir.'/orbit/bases/notes');
@@ -1190,7 +1195,7 @@ it('cleans stale base archive directories without registering worktrees or remov
     expect($reading->exitCode)->toBe(0)
         ->and(is_dir($gitDir.'/orbit/bases/orbit-base-leftover'))->toBeFalse()
         ->and(is_dir($gitDir.'/orbit/bases/notes'))->toBeTrue()
-        ->and(substr_count((string) (new Process(['git', 'worktree', 'list'], $checkout))->mustRun()->getOutput(), "\n"))->toBe(1);
+        ->and(substr_count((string) new Process(['git', 'worktree', 'list'], $checkout)->mustRun()->getOutput(), "\n"))->toBe(1);
 });
 
 /**
@@ -1223,10 +1228,10 @@ it('runs no project command when start and run omit the command file, and still 
     ], JSON_THROW_ON_ERROR));
     $resultPath = dirname($script).'/check.json';
     $logPath = dirname($script).'/check.log';
-    $snapshot = json_decode((new Process(['python3', $script, 'snapshot', $checkout]))->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    $snapshot = json_decode(new Process(['python3', $script, 'snapshot', $checkout])->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
     expect($snapshot)->toBeArray();
 
-    (new Process(['python3', $script, 'run', $checkout, $snapshot['head'], $snapshot['tree'], '-', $deliverables]))->mustRun();
+    new Process(['python3', $script, 'run', $checkout, $snapshot['head'], $snapshot['tree'], '-', $deliverables])->mustRun();
     $ran = json_decode((string) file_get_contents($resultPath), true, flags: JSON_THROW_ON_ERROR);
     $ranLog = (string) file_get_contents($logPath);
 
@@ -1242,7 +1247,7 @@ it('runs no project command when start and run omit the command file, and still 
         ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
 
     File::delete([$resultPath, $logPath, $checkout.'/deliverable-ran']);
-    (new Process(['python3', $script, 'start', $checkout, '-', $deliverables]))->mustRun();
+    new Process(['python3', $script, 'start', $checkout, '-', $deliverables])->mustRun();
     $started = omitted_command_check_result($resultPath);
     $startedLog = (string) file_get_contents($logPath);
 
@@ -1302,14 +1307,14 @@ describe('ssr port', function (): void {
         $instance->forceFill(['ssr_port' => 13722])->save();
         $runner = check_runner(new LocalShellSshExecutor);
 
-        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        $completed = check_runner_local_result($checkout, $runner->start($instance, 'composer check', [
             ['name' => 'ssr setup', 'command' => 'printf "%s" "$INERTIA_SSR_URL" > setup-ssr', 'timeout_seconds' => 10],
         ], ['commands' => [['id' => 'ssr', 'command' => 'printf "%s" "$ORBIT_SSR_PORT"', 'directory' => '.', 'fails_on_base' => false, 'paths' => []]]]));
 
-        expect($reading->exitCode)->toBe(0)
+        expect($completed['result']['exit_code'])->toBe(0)
             ->and(file_get_contents($checkout.'/setup-ssr'))->toBe('http://127.0.0.1:13722')
             ->and(file_get_contents($checkout.'/check-ssr'))->toBe('13722 http://127.0.0.1:13722')
-            ->and($reading->deliverables['commands']['ssr']['output'] ?? null)->toBe('13722');
+            ->and($completed['result']['deliverables']['commands']['ssr']['output'] ?? null)->toBe('13722');
     });
 });
 
@@ -1320,13 +1325,16 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
     ]);
-    $checkout = check_runner_checkout('true');
+    $checkout = check_runner_checkout('true', realComposer: true);
     $instance = check_runner_instance($checkout);
-    $transport = new class(check_runner_controlled_transport($checkout.'/ignored/deadline')) implements SshExecutor
+    File::ensureDirectoryExists($checkout.'/ignored');
+    $chunkAck = $checkout.'/ignored/auth-chunk-ack';
+    expect(posix_mkfifo($chunkAck, 0600))->toBeTrue();
+    $transport = new class(check_runner_controlled_transport($checkout.'/ignored/deadline', chunkAck: $chunkAck)) implements SshExecutor
     {
         public array $commands = [];
 
-        public function __construct(private LocalShellSshExecutor $local) {}
+        public function __construct(private readonly SshExecutor $local) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
@@ -1345,9 +1353,15 @@ it('authenticates task VM setup through protected input and redacts tokens befor
                     || str_contains(file_get_contents('/proc/'.posix_getppid().'/environ'), $token)) {
                     throw new \RuntimeException('Composer inherited the secret in its environment.');
                 }
+                $ack = fopen(__DIR__.'/ignored/auth-chunk-ack', 'r+');
                 echo substr($token, 0, 7);
                 flush();
-                usleep(150000);
+                $read = [$ack];
+                $write = $except = null;
+                if (stream_select($read, $write, $except, 1) !== 1 || fread($ack, 1) !== '1') {
+                    throw new \RuntimeException('The check did not acknowledge the first authentication chunk.');
+                }
+                fclose($ack);
                 echo substr($token, 7)."\n";
                 echo base64_encode($token.':x-oauth-basic')."\n";
                 passthru('php -r \'exit(getenv("COMPOSER_AUTH") === false ? 0 : 1);\'', $exit);
@@ -1380,15 +1394,19 @@ it('authenticates task VM setup through protected input and redacts tokens befor
     $process = $runner->start($instance, 'test -z "${COMPOSER_AUTH:-}" && test -z "${ORBIT_SETUP_COMPOSER_AUTH:-}" && echo checked', [
         ['name' => 'install-apps-cli', 'command' => $setup."\n".($exitCode === 124 ? 'mkdir -p ignored; touch ignored/deadline; ' : '').$ending, 'timeout_seconds' => $exitCode === 124 ? 5 : 10],
     ]);
-    $reading = check_runner_wait($runner, $instance, $process);
-
-    expect($reading->exitCode)->toBe($exitCode);
-    if ($exitCode === 0) {
-        expect($reading->output)->toContain('checked');
+    try {
+        ['result' => $result, 'output' => $output, 'gitDirectory' => $git] = check_runner_local_result($checkout, $process);
+    } catch (Throwable $failure) {
+        $runner->cancel($instance, $process);
+        throw $failure;
     }
-    expect($reading->output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
-    expect($reading->output)->toContain('nested-composer-ok');
-    $git = trim((new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir']))->mustRun()->getOutput());
+
+    expect($result['exit_code'])->toBe($exitCode);
+    if ($exitCode === 0) {
+        expect($output)->toContain('checked');
+    }
+    expect($output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
+    expect($output)->toContain('nested-composer-ok');
     expect(file_get_contents($git.'/orbit/check.log'))->not->toContain('ghs_setup_sentinel');
     expect(file_get_contents($git.'/orbit/setup.json'))->not->toContain('ghs_setup_sentinel');
     foreach ($transport->commands as $command) {
@@ -1475,7 +1493,7 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
             touch($trigger);
             expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(124);
         }
-        $probe = new Process(['python3', '-c', <<<'PYTHON'
+        $probe = new Process([StandardLibraryPython::executable(), '-c', <<<'PYTHON'
             import pathlib, sys
             stat = pathlib.Path('/proc/' + sys.argv[1] + '/stat')
             assert not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z'
@@ -1499,7 +1517,7 @@ it('bounds output draining after an escaped grandchild outlives the setup shell'
         mkdir -p ignored
         python3 - <<'PY'
         import pathlib, subprocess, sys
-        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+        child = subprocess.Popen([sys.executable, '-S', '-c', 'import time; time.sleep(30)'], start_new_session=True)
         pathlib.Path('ignored/escaped-child').write_text(str(child.pid))
         PY
         BASH;
@@ -1520,14 +1538,14 @@ it('bounds output draining after an escaped grandchild outlives the setup shell'
     } finally {
         $runner->cancel($instance, $process);
         if (is_file($checkout.'/ignored/escaped-child')) {
-            (new Process(['kill', '-TERM', trim(file_get_contents($checkout.'/ignored/escaped-child'))]))->run();
+            new Process(['kill', '-TERM', trim(file_get_contents($checkout.'/ignored/escaped-child'))])->run();
         }
     }
 })->with(['configured timeout' => [30], 'no configured timeout' => [null]]);
 
 it('reads both merge parents and the parent tree for historical mutation proof', function (): void {
     $checkout = check_runner_checkout('echo ok');
-    $git = static fn (array $args): string => trim((new Process(['git', '-C', $checkout, ...$args]))->mustRun()->getOutput());
+    $git = static fn (array $args): string => trim(new Process(['git', '-C', $checkout, ...$args])->mustRun()->getOutput());
     $git(['add', '--all']);
     $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'clean baseline']);
     $parent = $git(['rev-parse', 'HEAD']);
@@ -1564,7 +1582,7 @@ it('keeps secret-bearing output records intact until the shared builder runs at 
         default => "'TOKEN=' + 's' * ".$secretBytes,
     };
     $command = 'python3 -c '.escapeshellarg('print('.$secret.'); print("Last line"); raise SystemExit(1)');
-    $head = (new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput();
+    $head = new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput();
     $deliverables = $source === 'check' ? null : [
         'start' => trim($head),
         'commands' => [['id' => 'probe', 'command' => $command, 'directory' => '.', 'fails_on_base' => $source === 'base', 'paths' => ['uncommitted.php']]],
@@ -1636,7 +1654,7 @@ it('keeps the failing tail of ordinary large output through the real check trans
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
     $command = 'python3 -c '.escapeshellarg('print("PASS ordinary test output expected 200 got 200\\n" * '.$lines.'); print("FAILED expected 200, got 500"); raise SystemExit(1)');
-    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
     $mainCheck = $source === 'check';
     $deliverables = $mainCheck ? null : [
         'start' => $head,
@@ -1685,9 +1703,9 @@ it('keeps every command and base tail within the real status transport budget', 
     $instance = check_runner_instance($checkout);
     $local = new LocalShellSshExecutor;
     $local->environment['HOME'] = $this->directory.'/home';
-    $transport = new class($local) implements SshExecutor
+    $transport = new readonly class($local) implements SshExecutor
     {
-        public function __construct(private readonly LocalShellSshExecutor $local) {}
+        public function __construct(private LocalShellSshExecutor $local) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
@@ -1699,7 +1717,7 @@ it('keeps every command and base tail within the real status transport budget', 
     };
     $runner = check_runner($transport);
     $command = 'python3 -c '.escapeshellarg('print("START"); print("ordinary output\\n" * 65536); print("END")');
-    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $checkout)->mustRun()->getOutput());
     $commands = array_map(static fn (int $id): array => [
         'id' => 'probe-'.$id, 'command' => $command, 'directory' => '.', 'fails_on_base' => true, 'paths' => ['uncommitted.php'],
     ], range(1, 5));

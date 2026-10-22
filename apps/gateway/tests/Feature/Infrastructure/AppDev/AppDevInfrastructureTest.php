@@ -39,7 +39,6 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
@@ -59,7 +58,11 @@ use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeNodeCaddyBuilds;
+use Tests\Support\FixtureProcessRunner;
 use Tests\Support\FpmPublishHarness;
+use Tests\Support\RootCaFixture;
+
+beforeAll(fn () => RootCaFixture::prepare('app-dev', '/CN=Orbit Test Root', 3650, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']));
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -1618,7 +1621,7 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
         $command->input ?? '',
     );
 
-    return new NativeProcessRunner()->run(new ProcessInvocation(
+    return new FixtureProcessRunner()->run(new ProcessInvocation(
         arguments: $arguments,
         input: $input,
     ));
@@ -1631,7 +1634,7 @@ function create_app_dev_certificate_reuse_fixture(
     string $keyUsage,
     string $keyAlgorithm,
 ): string {
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
     $ca = "{$root}/ca";
     $current = "{$root}/.orbit/certificates/{$scope}/current";
     $caddyCurrent = "{$root}/etc/caddy/orbit-certificates/{$scope}/current";
@@ -1648,26 +1651,12 @@ function create_app_dev_certificate_reuse_fixture(
     }
 
     $leafKeyArguments = [...$leafKeyArguments, '-out', "{$current}/key.pem"];
+    RootCaFixture::install($ca, 'app-dev');
+    $rootKey = openssl_pkey_get_private(file_get_contents("{$ca}/root.key"));
+    expect($rootKey)->not->toBeFalse();
+    expect(openssl_pkey_get_details($rootKey)['bits'])->toBe(4096)
+        ->and(openssl_x509_check_private_key(file_get_contents("{$ca}/root.pem"), $rootKey))->toBeTrue();
     $commands = [
-        [$openssl, 'genrsa', '-out', "{$ca}/root.key", '4096'],
-        [
-            $openssl,
-            'req',
-            '-x509',
-            '-new',
-            '-key',
-            "{$ca}/root.key",
-            '-out',
-            "{$ca}/root.pem",
-            '-days',
-            '3650',
-            '-subj',
-            '/CN=Orbit Test Root',
-            '-addext',
-            'basicConstraints=critical,CA:TRUE',
-            '-addext',
-            'keyUsage=critical,keyCertSign,cRLSign',
-        ],
         $leafKeyArguments,
         [
             $openssl,

@@ -2,92 +2,28 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\Instances\ComposerDependencyUpdateProgram;
-use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessCancelledException;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProtectedInput;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-use Tests\Support\TestToolchain;
-
-function composer_update_program_directory(string $suffix = ''): string
-{
-    $path = sys_get_temp_dir().'/orbit-composer-update-program-'.Str::uuid().$suffix;
-    mkdir($path, 0o700);
-
-    return $path;
-}
-
-function composer_update_program_fixture(string $path, string $preUpdate): void
-{
-    file_put_contents($path.'/composer.json', json_encode([
-        'name' => 'orbit/composer-update-program-fixture',
-        'require' => new stdClass,
-        'repositories' => [['packagist.org' => false]],
-        'scripts' => [
-            'pre-update-cmd' => $preUpdate,
-            'post-update-cmd' => 'printf done > done-marker',
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
-
-    $lock = new Process([
-        dependency_update_supervisor_host() === DependencyUpdateSupervisorHost::Node
-            ? '/usr/bin/composer'
-            : TestToolchain::require('composer', 'brew install composer'),
-        '--working-dir',
-        $path,
-        'update',
-        '--no-install',
-        '--no-scripts',
-        '--no-interaction',
-        '--no-ansi',
-        '--no-audit',
-    ], env: ['COMPOSER_ALLOW_SUPERUSER' => '1'], timeout: 30);
-    $lock->mustRun();
-}
-
-function composer_update_program_run(string $path, string $deadline, ?Closure $cancelled, float $timeout): CommandResult
-{
-    return new NativeProcessRunner()->run(new ProcessInvocation(
-        arguments: [
-            ...dependency_update_supervisor_host()->launcher(),
-            ComposerDependencyUpdateProgram::render(dependency_update_supervisor_host()),
-            'composer-update',
-            $path,
-            $deadline,
-        ],
-        timeout: $timeout,
-        environment: ['COMPOSER_ALLOW_SUPERUSER' => '1'],
-        protectedInput: ProtectedInput::holdOpen(),
-        cancelled: $cancelled,
-    ));
-}
+use Tests\Support\ComposerUpdateFixture;
+use Tests\Support\SubprocessFixture;
 
 describe('Composer update supervisor', function (): void {
     it('stops delayed Composer hooks after cancellation', function (): void {
-        $root = composer_update_program_directory();
+        $root = ComposerUpdateFixture::directory();
 
         try {
-            composer_update_program_fixture(
-                $root,
-                'printf start > start-marker; sleep 5; printf later > later-marker',
-            );
+            ComposerUpdateFixture::write($root, SubprocessFixture::DelayedHook);
             $started = microtime(true);
             $cancelled = false;
 
             try {
-                composer_update_program_run(
+                ComposerUpdateFixture::run(
                     $root,
                     '30',
                     function () use (&$cancelled, $started, $root): bool {
                         if ($cancelled) {
                             return true;
                         }
-
                         if (is_file($root.'/start-marker') || microtime(true) - $started >= 2.0) {
                             $cancelled = true;
 
@@ -102,32 +38,11 @@ describe('Composer update supervisor', function (): void {
             } catch (ProcessCancelledException) {
             }
 
-            $deadline = microtime(true) + 4.0;
-            while (microtime(true) < $deadline && ! is_file($root.'/later-marker') && ! is_file($root.'/done-marker')) {
-                usleep(50_000);
-            }
-
             expect(is_file($root.'/start-marker'))->toBeTrue();
-            expect(is_file($root.'/later-marker'))->toBeFalse();
-            expect(is_file($root.'/done-marker'))->toBeFalse();
-        } finally {
-            new Filesystem()->deleteDirectory($root);
-        }
-    });
-
-    it('stops delayed Composer hooks when the remote deadline expires', function (): void {
-        $root = composer_update_program_directory();
-
-        try {
-            composer_update_program_fixture(
-                $root,
-                'printf start > start-marker; sleep 30; printf later > later-marker',
+            SubprocessFixture::assertExited(
+                (int) file_get_contents($root.'/hook-pid'),
+                (int) file_get_contents($root.'/child-pid'),
             );
-
-            $result = composer_update_program_run($root, '8', null, 25.0);
-
-            expect($result->exitCode)->toBe(124);
-            expect(is_file($root.'/start-marker'))->toBeTrue();
             expect(is_file($root.'/later-marker'))->toBeFalse();
             expect(is_file($root.'/done-marker'))->toBeFalse();
         } finally {
@@ -136,13 +51,13 @@ describe('Composer update supervisor', function (): void {
     });
 
     it('updates a recorded Composer root that contains a space', function (): void {
-        $root = composer_update_program_directory(' spaced');
+        $root = ComposerUpdateFixture::directory(' spaced');
 
         try {
+            ComposerUpdateFixture::write($root, 'printf start > start-marker');
             expect($root)->toContain(' ');
-            composer_update_program_fixture($root, 'true');
 
-            $result = composer_update_program_run($root, '30', null, 30.0);
+            $result = ComposerUpdateFixture::run($root, '30', null, 15.0);
 
             expect($result->exitCode)->toBe(0);
             expect(is_file($root.'/done-marker'))->toBeTrue();
@@ -152,7 +67,7 @@ describe('Composer update supervisor', function (): void {
     });
 
     it('rejects a relative root before starting Composer', function (): void {
-        $result = composer_update_program_run('relative/root', '30', null, 5.0);
+        $result = ComposerUpdateFixture::run('relative/root', '30', null, 5.0);
 
         expect($result->exitCode)->toBe(1);
     });

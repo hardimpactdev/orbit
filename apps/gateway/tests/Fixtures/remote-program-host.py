@@ -32,7 +32,7 @@ def prepare(source, filename):
 
 for line in sys.stdin:
     request = json.loads(line)
-    source, _, _ = base64.b64decode(request['input']).partition(b'\0')
+    source = base64.b64decode(request['source'])
     program = prepare(source, request['name'])
     bootstrap = prepare(request['bootstrap'].encode(), '<bootstrap>')
     with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
@@ -44,17 +44,20 @@ for line in sys.stdin:
             try:
                 os.setsid()
                 os.chdir(request['cwd'])
-                os.environ.update(request['environment'])
+                os.environ.clear()
+                os.environb.update({base64.b64decode(key): base64.b64decode(value)
+                                    for key, value in request['environment'].items() if value is not False})
+                tempfile.tempdir = None
                 for number, stream in enumerate((stdin, stdout, stderr)):
                     os.dup2(stream.fileno(), number)
                 sys.stdin = io.TextIOWrapper(os.fdopen(os.dup(0), 'rb'), encoding='utf-8')
                 sys.stdout = io.TextIOWrapper(os.fdopen(os.dup(1), 'wb'), encoding='utf-8')
                 sys.stderr = io.TextIOWrapper(os.fdopen(os.dup(2), 'wb'), encoding='utf-8')
-                sys.argv = ['-c', request['name']]
+                sys.argv = request['arguments']
                 def compile_program(value, filename, mode):
                     assert value == source and filename == request['name'] and mode == 'exec'
                     return program
-                exec(bootstrap, {'__name__': '__main__', 'compile': compile_program})
+                exec(bootstrap, {'__name__': '__main__', 'compile': compile_program, '__program__': program})
             except SystemExit as error:
                 code = error.code if isinstance(error.code, int) else (0 if error.code is None else 1)
                 if isinstance(error.code, str):

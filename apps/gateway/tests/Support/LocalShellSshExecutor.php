@@ -13,7 +13,9 @@ use Closure;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs the real remote program locally. SSH does not forward local Composer credentials.
+ * Runs finite remote programs locally. SSH does not forward local Composer credentials.
+ * bash -seu programs, optionally with -- and arguments, are complete source; other command inputs remain data.
+ * Protected inputs remain owned by the caller.
  */
 final class LocalShellSshExecutor implements SshExecutor
 {
@@ -23,7 +25,7 @@ final class LocalShellSshExecutor implements SshExecutor
     /** @var (Closure(string): string)|null */
     public ?Closure $transformInput = null;
 
-    public function __construct(private readonly ?string $workingDirectory = null) {}
+    public function __construct(private readonly ?string $workingDirectory = null, private readonly ?string $programDirectory = null) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
@@ -31,6 +33,10 @@ final class LocalShellSshExecutor implements SshExecutor
         HostPathGuardedProcessRunner::assertSafe($command->arguments, is_string($input) ? $input : null);
         if ($this->transformInput !== null) {
             $input = ($this->transformInput)($input ?? '');
+        }
+        if ($command->arguments === ['bash', '-seu']
+            || array_slice($command->arguments, 0, 3) === ['bash', '-seu', '--']) {
+            $input = BufferedBashProgram::stdinPrelude($this->programDirectory ?? sys_get_temp_dir()).($input ?? '');
         }
         $process = new Process($command->arguments, $this->workingDirectory, [...$this->environment, 'COMPOSER_AUTH' => false], $input);
         $process->run();

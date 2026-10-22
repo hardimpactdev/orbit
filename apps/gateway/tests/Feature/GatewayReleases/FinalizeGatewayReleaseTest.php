@@ -19,7 +19,7 @@ use Tests\Support\GatewayReleasePipeline;
 pest()->group('subprocess');
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->source = $this->pipeline->adopt();
     $this->target = $this->pipeline->fixture->commit('Staged recovery');
     $this->pipeline->bindLeaves();
