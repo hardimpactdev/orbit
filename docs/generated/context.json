@@ -1265,6 +1265,40 @@
             ]
         },
         {
+            "path": "docs/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations.md",
+            "title": "ADR 0229: Let an orchestrator drive task work through Gateway operations",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0218",
+                "0224",
+                "0225",
+                "0229"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1327,7 +1361,8 @@
                 "0223",
                 "0224",
                 "0225",
-                "0226"
+                "0226",
+                "0229"
             ]
         },
         {
