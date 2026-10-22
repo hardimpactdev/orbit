@@ -85,6 +85,7 @@ describe('tasks contract', function (): void {
 
     it('renders a created group and a refused todo create', function (): void {
         run_task_contract('tasks-create/created', 'tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
+        run_task_contract('tasks/tasks-create/external', 'tasks:create', ['title' => 'External work', '--project' => '1', '--brief' => 'An orchestrator drives it.', '--orchestration' => 'external'], 0);
         run_task_contract('tasks-create/no-subtasks', 'tasks:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
     });
 

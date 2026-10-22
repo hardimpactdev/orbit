@@ -46,7 +46,7 @@ final readonly class TaskClaimAdmission
         // Failed rows from an earlier tick still need assistance, but never another reservation.
         foreach (TaskVm::query()->where('state', TaskVmState::Failed)
             ->whereHas('group', static fn ($group) => $group
-                ->where('status', TaskGroupStatus::Todo)->where('assistance_requested', false))->get() as $vm) {
+                ->where('orchestration', TaskOrchestration::Tick)->where('status', TaskGroupStatus::Todo)->where('assistance_requested', false))->get() as $vm) {
             $this->failedVms->requestAssistance($vm, new TaskVmFailedException($vm)->getMessage());
         }
         $resumed = $this->resumeWaitingSandbox($scheduler, $skipped);
@@ -55,7 +55,7 @@ final readonly class TaskClaimAdmission
         }
         while (true) {
             $reserved = DB::transaction(function () use ($scheduler, $skipped): ?Task {
-                $group = Task::topLevel()
+                $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)
                     ->where('status', TaskGroupStatus::Todo)
                     ->whereNotIn('id', TaskVm::query()->where('state', TaskVmState::Failed)->select('group_id')->whereNotNull('group_id'))
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
@@ -143,7 +143,7 @@ final readonly class TaskClaimAdmission
     /** @param list<int> $skipped */
     private function resumeWaitingSandbox(TaskScheduler $scheduler, array &$skipped): ?Task
     {
-        $groups = Task::topLevel()
+        $groups = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)
             ->where('status', TaskGroupStatus::WaitingForReview)
             ->whereNull('watched_pr_completion')
             ->whereHas('tasks', fn ($tasks) => $tasks->where('status', TaskStatus::Todo))
@@ -175,7 +175,7 @@ final readonly class TaskClaimAdmission
      */
     private function startReserved(TaskScheduler $scheduler, Task $reserved, Instance $instance): ?Task
     {
-        $group = Task::topLevel()
+        $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)
             ->with(['tasks', 'project', 'taskable'])
             ->lockForUpdate()
             ->findOrFail($reserved->id);
@@ -220,7 +220,7 @@ final readonly class TaskClaimAdmission
     {
         try {
             DB::transaction(function () use ($reserved, $instance): void {
-                $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+                $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->lockForUpdate()->find($reserved->id);
                 if (! $group instanceof Task) {
                     return;
                 }
@@ -254,7 +254,7 @@ final readonly class TaskClaimAdmission
     private function releaseProvisioningFailure(TaskScheduler $scheduler, Task $reserved, ?InstanceProvisionFailure $failure, ?Throwable $error = null): void
     {
         DB::transaction(function () use ($scheduler, $reserved, $failure, $error): void {
-            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
             }
@@ -299,7 +299,7 @@ final readonly class TaskClaimAdmission
     private function releaseFailedTaskVm(Task $reserved, TaskVm $vm): void
     {
         DB::transaction(function () use ($reserved, $vm): void {
-            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
             }
@@ -318,7 +318,7 @@ final readonly class TaskClaimAdmission
     private function releaseReservation(Task $reserved, string $reason): void
     {
         DB::transaction(function () use ($reserved, $reason): void {
-            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
             }
@@ -340,7 +340,7 @@ final readonly class TaskClaimAdmission
     {
         $this->removeEndedWorkspace($reserved);
 
-        Task::topLevel()->whereKey($reserved->id)
+        Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->whereKey($reserved->id)
             ->where('status', '!=', TaskGroupStatus::Reserved)
             ->where('reserved_at', $reserved->reserved_at)
             ->update(['reserved_at' => null]);
@@ -353,7 +353,7 @@ final readonly class TaskClaimAdmission
      */
     private function removeEndedWorkspace(Task $reserved): void
     {
-        $group = Task::topLevel()->find($reserved->id);
+        $group = Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->find($reserved->id);
         if (! $group instanceof Task || ! self::hasEnded($group) || $group->taskable_id !== null) {
             return;
         }
@@ -393,9 +393,9 @@ final readonly class TaskClaimAdmission
             ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
         $released = 0;
 
-        foreach ($stale(Task::topLevel())->orderBy('id')->pluck('id') as $id) {
+        foreach ($stale(Task::topLevel()->where('orchestration', TaskOrchestration::Tick))->orderBy('id')->pluck('id') as $id) {
             $updated = DB::transaction(function () use ($stale, $id): bool {
-                $group = $stale(Task::topLevel()->whereKey($id))->lockForUpdate()->first();
+                $group = $stale(Task::topLevel()->where('orchestration', TaskOrchestration::Tick)->whereKey($id))->lockForUpdate()->first();
                 if (! $group instanceof Task) {
                     return false;
                 }

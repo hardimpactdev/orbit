@@ -1,0 +1,46 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateTaskGroupRequest",
+    "route": "POST /api/v1/task-groups",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "project": "orbit",
+            "project_code": "ORB",
+            "taskable_type": null,
+            "taskable_id": null,
+            "title": "External work",
+            "brief": "An orchestrator drives it.",
+            "status": "backlog",
+            "reviewer_agent_thread_id": null,
+            "pr_url": null,
+            "watched_pr_url": null,
+            "watched_pr_number": null,
+            "watched_pr_state": null,
+            "assistance_requested": false,
+            "assistance_kind": null,
+            "assistance_question": null,
+            "assistance_reason": null,
+            "implementer_model": "gpt-5.6-luna",
+            "reviewer_model": "gpt-5.6-luna",
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
+            "tasks": [],
+            "capacity_wait_reason": null,
+            "vm_power": null,
+            "preview": false,
+            "review_and_merge": null,
+            "orchestration": "external"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -24,6 +24,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--project= : Numeric Project ID}
         {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
+        {--orchestration= : tick (default) or external}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--preview : Keep the sandbox running during review}
         {--json : Return machine-readable JSON}';
@@ -33,6 +34,10 @@ final class CreateTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $orchestration = $this->option('orchestration');
+        if ($orchestration !== null && ! in_array($orchestration, ['tick', 'external'], true)) {
+            return $this->renderGatewayFailure('tasks.orchestration_invalid', 'Orchestration must be tick or external.');
+        }
         $status = $this->option('status');
 
         if ($status !== null && ! in_array($status, self::PLANNING_STATUSES, true)) {
@@ -87,6 +92,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 status: is_string($status) ? $status : null,
                 tasks: $subtasks,
                 preview: $this->option('preview') === true ? true : null,
+                orchestration: is_string($orchestration) ? $orchestration : null,
             ),
             TaskGroupResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

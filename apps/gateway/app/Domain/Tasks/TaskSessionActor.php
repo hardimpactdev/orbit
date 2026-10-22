@@ -16,6 +16,7 @@ final readonly class TaskSessionActor
 
     public function execute(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
+        TaskGroupGuard::requireTick($group);
         TaskExecutionHold::run($group, fn () => $this->executeAdmitted($group, $observation, $decision));
     }
 
@@ -64,18 +65,21 @@ final readonly class TaskSessionActor
 
     public function relayAnswer(Task $group, TaskThreadObservation $observed, string $summary, ?string $key = null): void
     {
+        TaskGroupGuard::requireTick($group);
         $thread = $this->thread($group, $observed);
         $this->drivers->get($thread->driver)->send($thread, $summary."\n\n".TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id), $key);
     }
 
     public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body, ?string $key = null): void
     {
+        TaskGroupGuard::requireTick($group);
         $thread = $this->thread($group, $observed);
         TaskExecutionHold::run($group, fn () => $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, 'Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body, $key), $key));
     }
 
     public function remindRubric(Task $group, TaskThreadObservation $observed, string $message, ?string $key = null): void
     {
+        TaskGroupGuard::requireTick($group);
         TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
             $thread = $this->thread($group, $observed);
             $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, $message, $key), $key);
@@ -88,6 +92,7 @@ final readonly class TaskSessionActor
      */
     public function resumeInterruptedTurn(Task $group, TaskThreadObservation $observed, string $message, string $key): void
     {
+        TaskGroupGuard::requireTick($group);
         TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
             $thread = $this->thread($group, $observed);
             $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, $message, $key), $key);

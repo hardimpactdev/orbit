@@ -11,6 +11,7 @@ use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
@@ -152,10 +153,10 @@ function tvm_sweep_node(string $name, string $address): Node
     ]);
 }
 
-function tvm_sweep_vm(Node $host, TaskVmState $state, string $wireguardIp): TaskVm
+function tvm_sweep_vm(Node $host, TaskVmState $state, string $wireguardIp, TaskOrchestration $orchestration = TaskOrchestration::Tick): TaskVm
 {
     $group = Task::topLevel()->create([
-        'project_id' => test()->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
+        'orchestration' => $orchestration, 'project_id' => test()->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
     ]);
     $vm = TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-pending-'.$group->id,
@@ -249,8 +250,8 @@ describe(SweepTaskVmHosts::class, function (): void {
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('fails a ready or parked row whose VM is gone on two sweeps in a row and asks its group for assistance', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
+    it('records a missing VM after two sweeps and asks only tick groups for assistance', function (TaskOrchestration $orchestration, bool $assistance): void {
+        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129', $orchestration);
         $parked = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.130');
         $provisioning = tvm_sweep_vm($this->beast, TaskVmState::Provisioning, '10.44.0.131');
         $destroying = tvm_sweep_vm($this->beast, TaskVmState::Destroying, '10.44.0.132');
@@ -263,12 +264,13 @@ describe(SweepTaskVmHosts::class, function (): void {
         app()->call([new SweepTaskVmHosts, 'handle']);
 
         expect($ready->fresh())->state->toBe(TaskVmState::Failed)->error_code->toBe('task_vm.vm_missing')
-            ->and($ready->group->fresh())->assistance_requested->toBeTrue()
-            ->assistance_reason->toStartWith('Task VM failed: task_vm.vm_missing: Task VM ['.$ready->name.'] is gone from its host.')
+            ->error_message->toBe('Task VM ['.$ready->name.'] is gone from its host.')
+            ->and($ready->group->fresh())->assistance_requested->toBe($assistance)
+            ->assistance_reason->toBe($assistance ? 'Task VM failed: task_vm.vm_missing: Task VM ['.$ready->name.'] is gone from its host. Cancel or complete the group to destroy the VM.' : null)
             ->and($parked->fresh()?->state)->toBe(TaskVmState::Parked)
             ->and($provisioning->fresh()?->state)->toBe(TaskVmState::Provisioning)
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying);
-    });
+    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('forgets a miss when the next sweep finds the VM again', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');

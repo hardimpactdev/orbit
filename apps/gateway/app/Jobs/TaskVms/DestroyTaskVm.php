@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -36,7 +37,8 @@ use Throwable;
  * the VM. Once that removal has failed for an ended group and the VM is absent or stays stopped, the job
  * starts a stopped ready VM to preserve unpublished reviewed work. Only a recorded failed row gives up that work:
  * the host sweep confirms missing VMs, and resume fails a VM that cannot start. The lost SHA and failure stay in the
- * group's evidence and assistance. Failed is final; destruction never retries its wake.
+ * group's evidence and assistance. External groups keep the evidence without raising assistance and qualify for
+ * cleanup once ended. Failed is final; destruction never retries its wake.
  *
  * The unique lock has no expiry, so the tick never queues a second copy while one waits or runs.
  */
@@ -67,9 +69,9 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 return;
             }
             $commit = TaskFinalReview::reconcileRemovalPush($group);
-            // Only an eligible group whose normal removal failed may lose its workspace offline.
+            // Tick groups require a removal failure; ended external groups never raise that assistance.
             if ($vm->state !== TaskVmState::Destroying) {
-                if (! Task::topLevel()->whereKey($group->id)->workspaceRemovalRetry()->removalFailure()->exists()) {
+                if (! Task::topLevel()->whereKey($group->id)->workspaceDestructionRetry()->exists()) {
                     return;
                 }
                 if ($vm->state !== TaskVmState::Failed) {
@@ -98,7 +100,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 }
             }
             $lostCommit = $commit;
-            if ($lostCommit !== null && $vm->state === TaskVmState::Failed) {
+            if ($lostCommit !== null && $vm->state === TaskVmState::Failed && $group->orchestration === TaskOrchestration::Tick) {
                 TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: "Reviewed work lost: commit [{$lostCommit}] was never pushed and task VM [{$vm->name}] cannot preserve it. Recorded VM failure: [{$vm->error_code}] {$vm->error_message} Waiting cannot recover the lost work.", replaceFailure: true);
             }
         }
@@ -130,7 +132,9 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         if ($vm->hostSweepWaitReason() !== $reason) {
             $vm->update(['error_code' => TaskVmError::AwaitingHostSweep->value, 'error_message' => $reason]);
         }
-        TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $reason, replaceFailure: true);
+        if ($group->orchestration === TaskOrchestration::Tick) {
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: $reason, replaceFailure: true);
+        }
     }
 
     private function hostSweepPause(TaskVm $vm): string

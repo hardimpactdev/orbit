@@ -44,6 +44,7 @@ final readonly class TaskGroupResponse
         public ?string $vmPower = null,
         public bool $preview = false,
         public ?TaskReviewAndMergeResponse $reviewAndMerge = null,
+        public string $orchestration = 'tick',
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -57,6 +58,7 @@ final readonly class TaskGroupResponse
             title: TaskFields::text($data, 'title', 'task group', $requestId),
             brief: TaskFields::text($data, 'brief', 'task group', $requestId),
             status: TaskFields::text($data, 'status', 'task group', $requestId),
+            orchestration: TaskFields::text($data, 'orchestration', 'task group', $requestId),
             taskableType: TaskFields::nullableText($data, 'taskable_type'),
             taskableId: TaskFields::nullableInt($data, 'taskable_id'),
             reviewerAgentThreadId: TaskFields::nullableInt($data, 'reviewer_agent_thread_id'),
@@ -107,6 +109,7 @@ final readonly class TaskGroupResponse
             'title' => $this->title,
             'brief' => $this->brief,
             'status' => $this->status,
+            'orchestration' => $this->orchestration,
             'taskable_type' => $this->taskableType,
             'taskable_id' => $this->taskableId,
             'reviewer_agent_thread_id' => $this->reviewerAgentThreadId,

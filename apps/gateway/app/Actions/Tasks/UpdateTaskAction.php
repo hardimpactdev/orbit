@@ -31,6 +31,9 @@ final readonly class UpdateTaskAction
         $this->requireExtension->execute();
 
         $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($group->id);
+        if ($data->topology !== null) {
+            TaskGroupGuard::supportOrchestration($group->groupOrchestration(), false, [$data->topology]);
+        }
         $task = Task::query()->findOrFail($task->id);
         if ($task->parent_id !== $group->id) {
             throw TaskGroupGuard::deliverablesLocked();

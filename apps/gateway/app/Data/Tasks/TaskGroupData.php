@@ -7,6 +7,7 @@ namespace App\Data\Tasks;
 use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Task;
@@ -54,6 +55,7 @@ final class TaskGroupData extends Data
         public ?VmPower $vmPower = null,
         public bool $preview = false,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
+        public TaskOrchestration $orchestration = TaskOrchestration::Tick,
     ) {}
 
     /** @return array<string, mixed> */
@@ -73,6 +75,7 @@ final class TaskGroupData extends Data
         $status = $group->groupStatus();
 
         return new self(
+            orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
             preview: $group->preview ?? false,

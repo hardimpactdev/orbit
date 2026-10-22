@@ -201,6 +201,7 @@ final readonly class TaskConsultation
      */
     public function remindOrAssist(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $thread, array $items, ?TaskCheck $failedCheck = null): bool
     {
+        TaskGroupGuard::requireTick($group);
         $failures = $this->failedItems($items);
         $implementer = $thread->role === TaskThreadRole::Implementer;
         $attempt = $implementer ? 'completion_attempt' : 'review_attempt';
@@ -262,6 +263,7 @@ final readonly class TaskConsultation
 
     public function recordCommunicationFailure(Task $task, Task $group, string $reason): void
     {
+        TaskGroupGuard::requireTick($group);
         $task->increment('communication_failures');
         $task->refresh();
         if ($task->communication_failures >= 5) {
@@ -275,6 +277,7 @@ final readonly class TaskConsultation
      */
     public function beginConsult(Task $group, Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
     {
+        TaskGroupGuard::requireTick($group);
         if (TaskQuestions::consultCount($task) >= TaskQuestions::ConsultLimit) {
             $this->requestAssistance($task, $group, $this->thirdBlockReason($task, $receipt), $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id], $receipt);
 
@@ -438,6 +441,7 @@ final readonly class TaskConsultation
     /** Reads the consult receipt. `answered` continues the implementer. `blocked` asks for direction. */
     public function handleConsult(TaskScheduler $scheduler, Task $group, Task $task): void
     {
+        TaskGroupGuard::requireTick($group);
         $observation = $this->observer->observe($group, $task);
         if (! $observation->available) {
             $scheduler->unavailableDecision($group);
@@ -618,6 +622,7 @@ final readonly class TaskConsultation
     /** Starts the reviewer and sends the operator's resolution as a relay, not as a review packet. */
     public function beginDirectionRelay(Task $group, Task $task, TaskComment $resolution): void
     {
+        TaskGroupGuard::requireTick($group);
         $instance = $group->taskable;
         if (! $instance instanceof Instance || ! $this->spawner instanceof TaskAgentSpawner) {
             return;
@@ -667,6 +672,7 @@ final readonly class TaskConsultation
     /** Reads the relay receipt. `answered` records the operator's answer. `blocked` keeps the same question. */
     public function handleDirectionRelay(TaskScheduler $scheduler, Task $group, Task $task): void
     {
+        TaskGroupGuard::requireTick($group);
         $observation = $this->observer->observe($group, $task);
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         if (! $observation->available || $reviewer === null || $this->isWorking($reviewer)) {
@@ -807,6 +813,7 @@ final readonly class TaskConsultation
     /** Finishes a reviewing direction hold from the resolution comment already stored. */
     public function replayHeldDirectionReview(Task $task): void
     {
+        TaskGroupGuard::requireTick($task);
         $opened = TaskQuestion::query()
             ->where('subtask_id', $task->id)
             ->where('status', QuestionStatus::Escalated)
@@ -829,6 +836,7 @@ final readonly class TaskConsultation
      */
     public function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
+        TaskGroupGuard::requireTick($group);
         DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source): void {
             if ($handled !== []) {
                 $task->update($handled);
@@ -888,6 +896,7 @@ final readonly class TaskConsultation
     /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
     public function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
     {
+        TaskGroupGuard::requireTick($group);
         if (! in_array($acting->providerError, ['overloaded', 'rate_limited', 'server_error'], true)
             || ! is_string($acting->turnId) || $acting->turnId === ''
             || AgentThread::query()->find($acting->threadId)?->driver !== 'pi') {
@@ -953,6 +962,7 @@ final readonly class TaskConsultation
      */
     public function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
     {
+        TaskGroupGuard::requireTick($group);
         $record = AgentThread::query()->find($acting->threadId);
         if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
             return 'skip';

@@ -44,6 +44,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | --- | --- | --- |
 | `title`, `brief` | both | Short name, and the goal and acceptance |
 | `status` | both | Lifecycle state |
+| `orchestration` | task | `tick` by default, or `external`. Create sets it; it never changes |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
 | `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. See the [assistance lifecycle](#assistance-and-resolution) for ended tasks and cleanup failures |
 | `assistance_kind`, `assistance_question` | both | The typed [assistance cause](#direction-requests) and the one question for a `direction` request. Other kinds have no question |
@@ -76,6 +77,16 @@ Typed comments record the workflow. A stored turn receipt is a comment whose typ
 `GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `tasks-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
 
 `GET /api/v1/task-groups` and `GET /api/v1/task-groups/{group}`, and their MCP tools `tasks-list` and `tasks-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
+
+### External orchestration
+
+An `external` group leaves lifecycle decisions to its orchestrator. Create refuses it with HTTP 422 `tasks.orchestration_unsupported` when any subtask declares a topology or the Project uses review and merge. Subtask create and update give the same refusal when they would add a topology to an external group. An empty topology is allowed.
+
+For an external group, `tasks:tick` only parks an idle VM, records whether its pull request merged or closed, and saves transcripts and destroys the VM after the group ends. Parking skips a group while any operation on it is unfinished. This rule applies to every operation kind. The operation target is `task_group` with the group ID. A pull request observation does not complete or settle the group, fast-forward its workspace, or start a fixup.
+
+The tick never claims, starts, sends, advances, reviews, consults, reminds, settles, or raises assistance for an external group. Every existing Tasks entry point that sends a turn, starts a check, or changes a claim skips the group or refuses with HTTP 409 `tasks.orchestrated_externally`. This includes comment sends, direction answers, deliverable correction resumes, and operator baseline retries. A resolution is refused before it changes assistance. Stale-reservation release skips the group, so a claim waiting for a VM keeps its reservation. Group cancel and complete remain available.
+
+The remaining lifecycle and scheduler descriptions on this page describe `tick` groups unless they state otherwise.
 
 ### Task lifecycle
 
@@ -126,7 +137,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` asks the scheduler to claim at once for a `tick` group. Create also accepts `orchestration`: `tick` (the default) or `external`. The API, PHP SDK, CLI option `tasks:create --orchestration`, and MCP expose this field. Update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -174,6 +185,8 @@ The task and subtask operations return these errors.
 
 | Error | HTTP | When |
 | --- | --- | --- |
+| `tasks.orchestration_unsupported` | 422 | An external group uses review and merge or would declare a topology |
+| `tasks.orchestrated_externally` | 409 | An existing Tasks path would drive work owned by an external orchestrator |
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
@@ -1709,6 +1722,12 @@ New Projects have no task check until one is configured, regardless of type. Exi
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### One owner of external work
+
+An external orchestrator owns the lifecycle and every retry. Letting the tick or an operator resolution also send a turn would give the group two senders. The immutable mode keeps that ownership fixed from creation. Existing paths refuse or skip external work, including stale claims that may be waiting for capacity. Topologies and review and merge stay on the tick until their orchestration contracts are defined.
+
+Parking, pull request observations, and ended-group cleanup are resource maintenance and recorded facts. They make no lifecycle decision for an external group. A non-terminal operation keeps its VM awake because the operation still owns work, including time spent waiting between jobs. The board, task records, assistance, and saved sessions remain useful whoever drives the work.
 
 ### An optional, generic extension
 

@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
@@ -80,6 +81,7 @@ use LogicException;
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
+ * @property TaskOrchestration|null $orchestration
  * @property TaskStatus|TaskGroupStatus $status
  * @property int $project_id
  * @property string|null $taskable_type
@@ -134,6 +136,7 @@ final class Task extends Model
 {
     /** @var list<string> */
     private const array TOP_LEVEL_COLUMNS = [
+        'orchestration',
         'watched_pr_completion',
         'watched_pr_url',
         'watched_pr_number',
@@ -211,6 +214,7 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'orchestration',
         'watched_pr_completion',
         'watched_pr_url',
         'watched_pr_number',
@@ -330,6 +334,15 @@ final class Task extends Model
         return $status;
     }
 
+    public function groupOrchestration(): TaskOrchestration
+    {
+        $mode = array_key_exists('orchestration', $this->attributes)
+            ? $this->orchestration
+            : self::topLevel()->whereKey($this->getKey())->value('orchestration');
+
+        return $mode instanceof TaskOrchestration ? $mode : throw new LogicException('A task group must have an orchestration mode.');
+    }
+
     public function requireGroupId(): int
     {
         $groupId = $this->resolvedParentId();
@@ -383,8 +396,16 @@ final class Task extends Model
             ->where(static fn (Builder $eligible) => $eligible
                 ->whereIn('status', TaskGroupStatus::endedStatuses())
                 ->orWhere(static fn (Builder $published) => $published
+                    ->where('orchestration', TaskOrchestration::Tick)
                     ->whereNotNull('pr_url')->where('pr_url', '!=', '')->removalFailure()
                     ->whereDoesntHave('tasks', static fn (Builder $subtasks) => $subtasks->whereIn('status', [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing]))));
+    }
+
+    /** @param Builder<Task> $query */
+    public function scopeWorkspaceDestructionRetry(Builder $query): void
+    {
+        $query->workspaceRemovalRetry()->where(static fn (Builder $eligible) => $eligible
+            ->removalFailure()->orWhere('orchestration', TaskOrchestration::External));
     }
 
     /** @return BelongsTo<Task, $this> */
@@ -543,6 +564,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'orchestration' => TaskOrchestration::class,
             'type' => TaskType::class,
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,
@@ -592,6 +614,9 @@ final class Task extends Model
     #[\Override]
     public function save(array $options = []): bool
     {
+        if ($this->exists && $this->isDirty('orchestration')) {
+            throw new LogicException('A task group cannot change its orchestration.');
+        }
         if ($this->isDirty(TaskAssistance::Fields)) {
             throw new LogicException('Assistance can only be changed through TaskAssistance::apply.');
         }
@@ -602,6 +627,9 @@ final class Task extends Model
     private function applyLevelDefaults(): void
     {
         if ($this->parentKey() === null) {
+            if (! $this->exists) {
+                $this->fillIfMissing(['orchestration' => TaskOrchestration::Tick->value]);
+            }
             $this->fillIfMissing([
                 'status' => TaskGroupStatus::Backlog->value,
                 'implementer_agent_driver' => 'pi',

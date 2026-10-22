@@ -4979,6 +4979,8 @@ export interface components {
             vm_power?: "running" | "stopped" | "destroyed" | null;
             preview?: boolean;
             review_and_merge?: components["schemas"]["TaskReviewAndMerge"] | null;
+            /** @enum {string} */
+            orchestration?: "tick" | "external";
         };
         Task: {
             id?: number;
@@ -19178,6 +19180,11 @@ export interface operations {
                      * @enum {string}
                      */
                     status?: "backlog" | "todo";
+                    /**
+                     * @description tick (default) or external
+                     * @enum {string}
+                     */
+                    orchestration?: "tick" | "external";
                     /** @description Keep the sandbox running during review */
                     preview?: boolean;
                     tasks?: {

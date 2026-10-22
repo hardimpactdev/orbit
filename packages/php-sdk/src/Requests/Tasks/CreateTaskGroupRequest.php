@@ -26,6 +26,7 @@ final class CreateTaskGroupRequest extends GatewayRequest implements HasBody
         private readonly ?string $status = null,
         private readonly ?array $tasks = null,
         private readonly ?bool $preview = null,
+        private readonly ?string $orchestration = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -53,6 +54,7 @@ final class CreateTaskGroupRequest extends GatewayRequest implements HasBody
                 'brief' => $this->brief,
                 'status' => $this->status,
                 'preview' => $this->preview,
+                'orchestration' => $this->orchestration,
                 'tasks' => $this->tasks === null ? null : array_map(static fn (SubtaskInput $task): array => $task->toArray(), $this->tasks),
             ],
             static fn (mixed $value): bool => $value !== null,

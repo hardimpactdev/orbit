@@ -9,6 +9,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
@@ -39,6 +40,7 @@ final readonly class ResumeDeliverableCorrectionAction
     /** Reserve with the resolution comment, before any remote effects. The first resolution owns retries. */
     public function reserve(Task $task, TaskComment $comment, ?Node $actor = null, ?string $requestId = null): void
     {
+        TaskGroupGuard::requireTick($task);
         $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
         if ($locked->deliverable_correction_resume !== null) {
             return;
@@ -56,6 +58,7 @@ final readonly class ResumeDeliverableCorrectionAction
     /** Called both after the resolution write and by the scheduler while assistance still holds progress. */
     public function execute(Task $task): void
     {
+        TaskGroupGuard::requireTick($task);
         TaskExecutionHold::run($task->parent, function () use ($task): void {
             $task = Task::query()->findOrFail($task->id);
             $resume = $task->deliverable_correction_resume;

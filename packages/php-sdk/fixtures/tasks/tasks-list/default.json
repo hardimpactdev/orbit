@@ -64,7 +64,8 @@
                 "capacity_wait_reason": null,
                 "vm_power": null,
                 "preview": false,
-                "review_and_merge": null
+                "review_and_merge": null,
+                "orchestration": "tick"
             },
             {
                 "id": 1,
@@ -179,7 +180,8 @@
                 "capacity_wait_reason": null,
                 "vm_power": null,
                 "preview": false,
-                "review_and_merge": null
+                "review_and_merge": null,
+                "orchestration": "tick"
             }
         ],
         "meta": {

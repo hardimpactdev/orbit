@@ -49,8 +49,22 @@ final readonly class TaskSettling
         private TaskPullRequestCheckOutput $checkOutput,
     ) {}
 
+    public function observeExternalPullRequest(Task $group): void
+    {
+        $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
+        $number = is_string($group->pr_url) ? $repository?->pullRequestNumber($group->pr_url) : null;
+        if ($number === null) {
+            return;
+        }
+        $state = $this->pullRequestWatcher->status($group);
+        if (in_array($state, ['open', 'merged', 'closed'], true)) {
+            $group->update(['watched_pr_url' => $group->pr_url, 'watched_pr_number' => $number, 'watched_pr_state' => $state]);
+        }
+    }
+
     public function tickPullRequest(TaskScheduler $scheduler, Task $group): void
     {
+        TaskGroupGuard::requireTick($group);
         $this->reportMissingReviewFixups($group);
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
             && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
@@ -208,7 +222,9 @@ final readonly class TaskSettling
                 $prefix = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
                     ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
-                $this->workspaces->recordFailure($group, $exception, $prefix);
+                if ($group->orchestration === TaskOrchestration::Tick) {
+                    $this->workspaces->recordFailure($group, $exception, $prefix);
+                }
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
         }
@@ -360,6 +376,7 @@ final readonly class TaskSettling
      */
     public function cancelRunningSubtask(TaskScheduler $scheduler, Task $parent, Task $task, Closure $stop): Task
     {
+        TaskGroupGuard::requireTick($parent);
         $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
@@ -478,6 +495,8 @@ final readonly class TaskSettling
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
     ): Task {
+        TaskGroupGuard::requireTick($group);
+
         return app(TaskWorkspaceLease::class)->run($group, 'settle', 'settle:'.$group->id, fn () => $this->settleWithLease($scheduler, $group, $requestMissingPullRequest, $checkReturningPullRequest));
     }
 
@@ -869,6 +888,7 @@ final readonly class TaskSettling
      */
     public function queueBaselineRetryOnGreenTip(Task $group, Task $task): bool
     {
+        TaskGroupGuard::requireTick($group);
         $check = $this->retryBaseline->unrequested($task);
         if (! $check instanceof TaskCheck || ! Cache::add('tasks.baseline-green-tip.'.$check->id, true, 300)) {
             return false;
@@ -1033,6 +1053,7 @@ final readonly class TaskSettling
      */
     public function resumeStrandedSubtask(TaskScheduler $scheduler, Task $group): void
     {
+        TaskGroupGuard::requireTick($group);
         if ($this->progressBlockedByAssistance($group) || $this->hasBusyTask($group->tasks)) {
             return;
         }
@@ -1052,6 +1073,7 @@ final readonly class TaskSettling
      */
     public function resumeWaitingSubtask(TaskScheduler $scheduler, Task $group): void
     {
+        TaskGroupGuard::requireTick($group);
         TaskExecutionHold::run($group, fn () => $this->resumeAdmittedSubtask($scheduler, $group));
     }
 

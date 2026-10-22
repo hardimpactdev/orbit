@@ -523,7 +523,7 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'orchestration' => 'tick', 'status' => $status, 'tasks' => [],
     ];
 
     return MockClient::global([
@@ -865,4 +865,18 @@ describe('declared topology', function (): void {
         expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.invalid_topology');
         $mock->assertNothingSent();
     })->with(['[""]', '["app-dev","app-dev"]', '[1]', '{}', 'null', 'app-dev']);
+});
+
+it('sends the requested orchestration mode when creating a group', function (string $mode): void {
+    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+    expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => $mode, '--json' => true]))->toBe(0);
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
+        && json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR)['orchestration'] === $mode);
+})->with(['tick', 'external']);
+
+it('refuses an unknown orchestration mode before contacting the Gateway', function (): void {
+    $mock = MockClient::global([]);
+    expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => 'other', '--json' => true]))->toBe(1);
+    expect(Artisan::output())->toContain('tasks.orchestration_invalid');
+    $mock->assertNothingSent();
 });

@@ -13,6 +13,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
@@ -55,9 +56,11 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
         }
 
+        TaskGroupGuard::supportOrchestration($data->orchestration, Project::query()->findOrFail($data->projectId)->reviewsAndMerges(), array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
         TaskTopology::assertFits(array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
 
         $group = Task::topLevel()->create([
+            'orchestration' => $data->orchestration,
             'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,
@@ -81,7 +84,7 @@ final readonly class CreateTaskGroupAction
             ]);
         }
 
-        if ($data->status === TaskGroupStatus::Todo) {
+        if ($data->status === TaskGroupStatus::Todo && $data->orchestration === TaskOrchestration::Tick) {
             $this->scheduler->claimNext();
         }
 

@@ -150,6 +150,12 @@ describe('task response fixtures', function (): void {
         ])->assertUnprocessable(), 'tasks/tasks-create/no-subtasks', CreateTaskGroupRequest::class, 'POST /api/v1/task-groups');
     });
 
+    it('records an externally orchestrated group', function (): void {
+        record_fixture($this->postJson('/api/v1/task-groups', [
+            'project_id' => $this->project->id, 'title' => 'External work', 'brief' => 'An orchestrator drives it.', 'orchestration' => 'external',
+        ])->assertCreated(), 'tasks/tasks-create/external', CreateTaskGroupRequest::class, 'POST /api/v1/task-groups');
+    });
+
     it('records the group list, an empty list, and one group', function (): void {
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/empty', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
 

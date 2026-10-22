@@ -34,6 +34,7 @@ final readonly class TaskReviewOutcome
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
     {
+        TaskGroupGuard::requireTick($group);
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
         // subtask's thread. A Pi restart of that turn is not this review. Request the review
@@ -314,6 +315,8 @@ final readonly class TaskReviewOutcome
      */
     public function retryCommittedApproval(TaskScheduler $scheduler, Task $group, Task $task): bool
     {
+        TaskGroupGuard::requireTick($group);
+
         return TaskExecutionHold::run($group, fn (): bool => $this->retryAdmittedApproval($scheduler, $group, $task)) ?? true;
     }
 
@@ -389,6 +392,8 @@ final readonly class TaskReviewOutcome
      */
     public function replaceFinalReviewWithFixup(Task $group, Task $task, TaskComment $receipt, string $title, string $brief): ?Task
     {
+        TaskGroupGuard::requireTick($group);
+
         return DB::transaction(function () use ($group, $task, $receipt, $title, $brief): ?Task {
             $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
@@ -434,6 +439,7 @@ final readonly class TaskReviewOutcome
      */
     public function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
     {
+        TaskGroupGuard::requireTick($group);
         $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or complete the task.';
         DB::transaction(function () use ($group, $task, $receipt, $reason): void {
             $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
@@ -457,6 +463,7 @@ final readonly class TaskReviewOutcome
      */
     public function beginFinalReview(TaskScheduler $scheduler, Task $group, ?string $head = null): void
     {
+        TaskGroupGuard::requireTick($group);
         $appended = DB::transaction(function () use ($group, $head): bool {
             $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked)
@@ -494,6 +501,7 @@ final readonly class TaskReviewOutcome
      */
     public function startFinalReview(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
+        TaskGroupGuard::requireTick($group);
         app(TaskWorkspaceLease::class)->run($group, 'verdict', 'final-review:'.$task->id, fn () => $this->startFinalReviewWithLease($scheduler, $group, $task, $alreadyFetched), taskId: $task->id);
     }
 
@@ -814,6 +822,7 @@ final readonly class TaskReviewOutcome
      */
     public function nudgeReviewer(TaskScheduler $scheduler, Task $task, ?TaskThreadObservation $reviewer): void
     {
+        TaskGroupGuard::requireTick($task);
         if ($task->review_notified_attempt === $task->review_attempt) {
             return;
         }
@@ -883,6 +892,7 @@ final readonly class TaskReviewOutcome
 
     public function settleImplementer(TaskScheduler $scheduler, Task $task, ?TaskThreadObservation $reviewer = null): Task
     {
+        TaskGroupGuard::requireTick($task);
         $group = DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = Task::topLevel()
@@ -916,6 +926,7 @@ final readonly class TaskReviewOutcome
 
     public function acceptReview(TaskScheduler $scheduler, Task $task): Task
     {
+        TaskGroupGuard::requireTick($task);
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);

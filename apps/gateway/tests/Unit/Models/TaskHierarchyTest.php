@@ -100,7 +100,7 @@ it('refuses a subtask that would have children', function (): void {
         'preview' => null,
     ]);
 
-    expect(fn () => $task->save())->toThrow(TaskHierarchyException::class, 'cannot have subtasks');
+    expect(fn () => $task->save())->toThrow(TaskHierarchyException::class, 'A subtask cannot set orchestration.');
 });
 
 it('decides the level from a loaded parent_id for topLevel() and a partial select', function (): void {

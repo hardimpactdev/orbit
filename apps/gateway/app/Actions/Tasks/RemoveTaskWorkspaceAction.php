@@ -18,6 +18,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
@@ -198,7 +199,8 @@ final readonly class RemoveTaskWorkspaceAction
      *
      * A handoff pushed `task-{id}-handoff` for CI ([Handoff CI](/reference/tasks#handoff-ci)). The branch holds
      * nothing to keep, so a failed delete never holds the removal. It asks for assistance instead and leaves that
-     * request open. Only a repeated cancel or completion, which ends here again, tries the delete once more.
+     * request open for tick groups. External groups report the failure without assistance. Only a repeated cancel
+     * or completion, which ends here again, tries the delete once more.
      */
     public function finishRemoval(Task $group): void
     {
@@ -206,6 +208,11 @@ final readonly class RemoveTaskWorkspaceAction
             try {
                 $this->publisher->deleteHandoffBranch($group);
             } catch (TaskPullRequestException $exception) {
+                if ($group->groupOrchestration() === TaskOrchestration::External) {
+                    report($exception);
+
+                    return;
+                }
                 TaskAssistance::apply($group, AssistanceKind::RemovalFailure, null, self::HandoffBranchLeftPrefix.$exception->getMessage()
                     .' Delete '.TaskRemoteBranch::handoff($group).' on GitHub or restore the App access, then cancel or complete the task again.',
                     replaceFailure: true, replaceDirection: true);

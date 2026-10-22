@@ -31,6 +31,7 @@ final readonly class TaskPublication
      */
     public function publishApprovedCommit(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
     {
+        TaskGroupGuard::requireTick($group);
         app(TaskWorkspaceLease::class)->run($group, 'publication', 'approval:'.$receipt->id, fn () => $this->publishApprovedCommitWithWorkspace($scheduler, $group, $task, $receipt), taskId: $task->id);
     }
 
@@ -208,6 +209,7 @@ final readonly class TaskPublication
      */
     public function mergeWhenReady(TaskScheduler $scheduler, Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
+        TaskGroupGuard::requireTick($group);
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         $head = $health->headSha;
         if ($group->assistance_requested && TaskFinalReview::isUnreviewedHeadReason($group->assistance_reason)
@@ -363,6 +365,7 @@ final readonly class TaskPublication
      */
     public function checkReturningPullRequest(Task $group, ?TaskPullRequestHealth $health = null): bool
     {
+        TaskGroupGuard::requireTick($group);
         $health ??= $this->pullRequestWatcher->health($group);
         if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
             return false;

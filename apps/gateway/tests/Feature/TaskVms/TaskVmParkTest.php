@@ -10,6 +10,8 @@ use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -17,6 +19,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
@@ -38,6 +41,7 @@ use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -355,16 +359,19 @@ describe('resume', function (): void {
             ->and($group->fresh()?->assistance_requested)->toBeTrue();
     });
 
-    it('preserves a start error before the deadline instead of reporting a readiness timeout', function (): void {
-        [$group, $vm] = tvm_park_waiting();
+    it('records a resume failure and asks only tick groups for assistance', function (TaskOrchestration $orchestration, bool $assistance): void {
+        [$group, $vm] = tvm_park_waiting(group: ['orchestration' => $orchestration]);
         $vm->update(['state' => TaskVmState::Parked]);
         $job = new ResumeTaskVm($vm->id);
 
         $job->failed(new TaskVmException('task_vm.start_failed', 'The provider could not start the VM.', 502));
 
-        expect($vm->fresh()?->error_code)->toBe('task_vm.start_failed')
-            ->and($group->fresh()?->assistance_reason)->toContain('task_vm.start_failed');
-    });
+        expect($vm->fresh())->state->toBe(TaskVmState::Failed)
+            ->error_code->toBe('task_vm.start_failed')->error_message->toBe('The provider could not start the VM.');
+        expect($group->fresh())->assistance_requested->toBe($assistance)
+            ->assistance_kind->toBe($assistance ? AssistanceKind::Failure : null)
+            ->assistance_reason->toBe($assistance ? 'Task VM failed: task_vm.start_failed: The provider could not start the VM. Cancel or complete the group to destroy the VM.' : null);
+    })->with(['tick' => [TaskOrchestration::Tick, true], 'external' => [TaskOrchestration::External, false]]);
 
     it('does nothing for a row that is not parked', function (): void {
         [, $vm] = tvm_park_waiting();
@@ -546,4 +553,27 @@ describe('park failure races', function (): void {
 
         expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBeNull();
     })->with(['failure' => AssistanceKind::Failure, 'direction' => AssistanceKind::Direction]);
+});
+
+it('parks an external VM only after every operation on its group is terminal', function (OperationStatus $status): void {
+    Queue::fake();
+    [$group, $vm] = tvm_park_waiting(group: ['orchestration' => TaskOrchestration::External]);
+    Operation::query()->create([
+        'kind' => 'future.work', 'target_type' => OperationKinds::TaskGroupTarget,
+        'target_id' => $group->id, 'status' => $status, 'input' => [], 'sequence' => 1, 'attempts' => 0,
+    ]);
+    expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe($status->terminal() ? 1 : 0);
+    expect($vm->fresh()->state)->toBe($status->terminal() ? TaskVmState::Parked : TaskVmState::Ready);
+})->with(OperationStatus::cases());
+
+it('does not confuse another operation target with the external group', function (): void {
+    Queue::fake();
+    [$group, $vm] = tvm_park_waiting(group: ['orchestration' => TaskOrchestration::External]);
+    foreach ([['instance', $group->id], [OperationKinds::TaskGroupTarget, $group->id + 100]] as [$type, $id]) {
+        Operation::query()->create([
+            'kind' => 'future.work', 'target_type' => $type, 'target_id' => $id,
+            'status' => OperationStatus::Running, 'input' => [], 'sequence' => 1, 'attempts' => 0,
+        ]);
+    }
+    expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)->and($vm->fresh()->state)->toBe(TaskVmState::Parked);
 });

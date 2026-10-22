@@ -26427,6 +26427,14 @@
                     ],
                     "description": "backlog (default) or todo"
                   },
+                  "orchestration": {
+                    "type": "string",
+                    "enum": [
+                      "tick",
+                      "external"
+                    ],
+                    "description": "tick (default) or external"
+                  },
                   "preview": {
                     "type": "boolean",
                     "description": "Keep the sandbox running during review"
@@ -35366,6 +35374,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "orchestration": {
+            "type": "string",
+            "enum": [
+              "tick",
+              "external"
             ]
           }
         }
