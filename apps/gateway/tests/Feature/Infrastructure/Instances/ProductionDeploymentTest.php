@@ -34,7 +34,6 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\BufferedBashProgram;
 use Tests\Support\LinuxHost;
-use Tests\Support\ScriptedBashCommand;
 
 pest()->group('privileged');
 
@@ -55,6 +54,7 @@ it('sources the fake sudo without executing its wrapper and preserves real comma
         $head = new Process(['git', '-C', $sandbox.'/repository', 'rev-parse', 'HEAD'])->mustRun()->getOutput();
         $script = <<<'BASH'
             sudo -u fixture -H git -C "$1" rev-parse HEAD
+            PATH="$1/bin" sudo -u fixture -H test -d "$1"
             if sudo -u fixture -H bash -c 'printf "<%s>\n" "$@"; exit 7' -- 'space arg' 'slash\arg' ''; then
                 status=0
             else
@@ -905,7 +905,7 @@ function orb219_fake_sudo(string $sandbox): void
         #!/usr/bin/env bash
         if [ "${1:-}" = -u ]; then shift 2; fi
         if [ "${1:-}" = -H ]; then shift; fi
-        exec "$@"
+        "$@"
         BASH);
     chmod($sandbox.'/bin/sudo', 0755);
 }
@@ -913,7 +913,7 @@ function orb219_fake_sudo(string $sandbox): void
 function orb219_scripted_sudo_input(string $sandbox, string $script): string
 {
     return BufferedBashProgram::stdinPrelude($sandbox)
-        .ScriptedBashCommand::define('sudo', $sandbox.'/bin/sudo')
+        .'sudo() { source '.escapeshellarg($sandbox.'/bin/sudo').' "$@"; }'."\n"
         .$script;
 }
 
