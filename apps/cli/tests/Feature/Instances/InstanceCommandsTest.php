@@ -546,12 +546,13 @@ describe('instance:update', function (): void {
     it('shows the accepted deployment branch separately from the unchanged source branch', function (): void {
         $payload = instance_payload();
         $payload['selected_branch'] = 'main';
+        $payload['deployment_branch'] = 'stored-release';
         $mock = MockClient::global([
             UpdateInstanceRequest::class => instance_mock_response(payload: $payload),
         ]);
 
         expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release/next']))->toBe(0);
-        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release/next Selected branch main');
+        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch stored-release Selected branch main');
         expect($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
     });
 
@@ -645,7 +646,9 @@ describe('instance:update --auto-deploy', function (): void {
     });
 
     it('turns automatic deployment off together with the branch', function (): void {
-        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+        $payload = instance_payload();
+        $payload['deployment_branch'] = 'release';
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
 
         expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--auto-deploy' => 'false']))->toBe(0);
 
@@ -690,7 +693,9 @@ describe('instance:show', function (): void {
     });
 
     it('shows Instance source details for humans', function (): void {
-        MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
+        $payload = instance_payload();
+        $payload['deployment_branch'] = 'release/next';
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -702,6 +707,7 @@ describe('instance:show', function (): void {
             'Root override —',
             'Effective root public',
             'Selected branch dev',
+            'Deployment branch release/next',
             'Branch override —',
             'Domain dev.orbit.test',
             'URL https://dev.orbit.test',

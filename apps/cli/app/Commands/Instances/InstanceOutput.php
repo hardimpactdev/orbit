@@ -25,6 +25,7 @@ trait InstanceOutput
             'Root override' => $instance->root,
             'Effective root' => $instance->effectiveRoot,
             'Selected branch' => $instance->selectedBranch,
+            ...($instance->deploymentBranch === null ? [] : ['Deployment branch' => $instance->deploymentBranch]),
             'Branch override' => $instance->branchOverride,
             'Domain' => $instance->domain,
             'URL' => $instance->url,

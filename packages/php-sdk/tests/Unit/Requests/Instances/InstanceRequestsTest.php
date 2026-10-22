@@ -416,6 +416,7 @@ function instance_gateway_data(): array
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'main',
+        'deployment_branch' => null,
         'branch_override' => null,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'seed_path' => null,

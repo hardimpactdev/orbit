@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Activity;
 use App\Models\InstanceDeployment;
 use Illuminate\Support\Facades\DB;
 
@@ -14,6 +15,52 @@ beforeEach(function (): void {
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->patchJson("/api/v1/instances/{$this->instance->id}", $body);
 });
+
+it('returns the stored deployment branch through API and MCP updates and reads', function (bool $mcp): void {
+    $branch = 'cutover-test';
+    if ($mcp) {
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+            ->postJson('/mcp', [
+                'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+                'params' => ['name' => 'instance-update', 'arguments' => ['instance' => $this->instance->id, 'branch' => $branch]],
+            ])->assertOk()->assertJsonPath('result.isError', false);
+        $data = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR)['data'];
+        expect($data['deployment_branch'] ?? null)->toBe($branch);
+        expect($data['selected_branch'])->toBe('main');
+    } else {
+        ($this->update)(['branch' => $branch])->assertOk()
+            ->assertJsonPath('data.deployment_branch', $branch)
+            ->assertJsonPath('data.selected_branch', 'main');
+    }
+
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'deployment_branch' => $branch, 'branch' => 'main']);
+    expect(Activity::query()->where('command', 'instance:update')->sole()->properties?->get('input'))->toBe(['branch' => $branch]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->getJson("/api/v1/instances/{$this->instance->id}")->assertOk()
+        ->assertJsonPath('data.deployment_branch', $branch)
+        ->assertJsonPath('data.selected_branch', 'main');
+})->with(['API' => false, 'MCP' => true]);
+
+it('records a valid branch on a refused update and omits other deployment input', function (): void {
+    $this->owner->roles()->where('role', RoleName::AppProd->value)->delete();
+    $this->owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+    ($this->update)(['branch' => 'release/next', 'shared_paths' => ['private-uploads'], 'auto_deploy' => true])
+        ->assertConflict()->assertJsonPath('error.code', 'deployment_config.unavailable');
+
+    expect(Activity::query()->where('command', 'instance:update')->sole()->properties?->get('input'))->toBe(['branch' => 'release/next']);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id, 'deployment_branch' => null]);
+});
+
+it('omits malformed branch input and unknown fields from Activity', function (array $body): void {
+    ($this->update)($body)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+
+    expect(Activity::query()->where('command', 'instance:update')->sole()->properties?->get('input'))->toBe([]);
+})->with([
+    'invalid branch' => [['branch' => 'private value']],
+    'object' => [['branch' => ['private' => 'value']]],
+    'unknown field' => [['branch' => 'release', 'command' => 'private-command']],
+]);
 
 describe('setting automatic deployment of an Instance', function (): void {
     it('turns automatic deployment on behind the merge check and resumes after the newest deployment', function (): void {

@@ -92,7 +92,7 @@ final class UpdateInstanceCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,
-            ...($branch === null ? [] : ['Deployment branch' => $branch]),
+            ...($branch === null ? [] : ['Deployment branch' => $instance->deploymentBranch]),
             ...($sharedPathsProvided ? ['Shared paths' => $instance->sharedPaths === null ? null : ($instance->sharedPaths === [] ? 'None' : implode(', ', $instance->sharedPaths))] : []),
             'Selected branch' => $instance->selectedBranch,
             ...($autoDeploy === null ? [] : InstanceAutoDeployFields::of($instance)),

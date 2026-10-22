@@ -475,7 +475,7 @@ Cloning ends with an active Instance and no release. The result shows key-only w
 
 Change the deployment branch, shared paths, or automatic deployment of a production Instance. The Gateway stores these settings. It does not change deploy steps or start a deployment. Supply at least one option.
 
-The human result shows the supplied deployment branch, the effective shared paths when changed, automatic deployment when changed, and the currently selected source branch. JSON includes effective `shared_paths` when the Gateway returns them, and `auto_deploy`; its `selected_branch` describes the source, not the newly stored deployment setting.
+The human result shows the stored deployment branch, the effective shared paths when changed, automatic deployment when changed, and the currently selected source branch. API, MCP, and CLI JSON responses include `deployment_branch`, the stored override for future deployments. A null override uses `selected_branch`. `selected_branch` describes the source checkout and does not change when you update deployment settings. Use `instance:show` to verify the stored setting before deploying.
 
 ```bash
 orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--auto-deploy=true|false] [--json]

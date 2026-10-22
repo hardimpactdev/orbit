@@ -80,7 +80,7 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `instance-update` accepts `shared_paths` for a production Instance. Supply the numeric `instance` and a directory list; `[]` disables sharing and `null` restores the default. The [shared paths contract](/reference/deployments#shared-paths) describes seeding, public storage, and replacing a hand-made link step.
 
-`instance-update` sets the deployment branch, `auto_deploy`, or both, of a production Instance. Send `instance` and at least one of `branch` or `auto_deploy`, a JSON boolean. `auto_deploy: true` also resumes [automatic deployment](/reference/deployments#automatic-deployments) after a manual deployment or a rollback paused it. `instance-show` returns the state under `auto_deploy`.
+`instance-update` sets the deployment branch, `auto_deploy`, or both, of a production Instance. Send `instance` and at least one of `branch` or `auto_deploy`, a JSON boolean. `auto_deploy: true` also resumes [automatic deployment](/reference/deployments#automatic-deployments) after a manual deployment or a rollback paused it. `instance-show` returns the state under `auto_deploy` and the stored branch override under `deployment_branch`. `selected_branch` describes the source checkout.
 
 ### Operations
 
