@@ -24,3 +24,9 @@ The first independent review found that a pool update could move an Instance awa
 The reviewer confirmed the four branch-local documentation waivers and found no new extension plug-in point. Incus reproduction remains outstanding. The second independent review approved PR preparation at `59408a4bae3fbc8fe7f0805a1540209817b3f4d6`, against base `120e4eda2da02dab929ff854a830994986abad8a`, with no new blocking defects.
 
 An extra standalone PHPStan run on `bin/docs-nav` reports two existing CLI-entry-point type findings. The same check on the pinned base script reports the same two findings. The changed application sources pass their project PHPStan checks.
+
+## CI contract fixtures
+
+The first CI run found three exhaustive Gateway expectations that omitted the new path proxy contracts. The expectations now include its Doctor codes, its Route-owned model, and its three endpoint scopes. The Docs merge fixture now includes this required status page and refreshed context snapshots. The original failing cases were reproduced locally before the fixes.
+
+The affected Gateway group passes 53 tests and 2,438 assertions. All 29 generated-merge checks pass. Scoped Pint and Rector pass. An extra PHPStan run on the changed tests reports ten existing findings in the node scope test, which is outside the project's configured analysis paths. The unchanged test at `b151a17faf5cb5ee84a26c97cbbda60ea3da89fd` reports the same ten findings.

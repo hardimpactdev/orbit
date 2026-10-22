@@ -151,6 +151,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         for folder in ('decisions', 'domains', 'solutions'):
             (cls.tree / 'docs' / folder).mkdir(parents=True, exist_ok=True)
         for page in ('README', 'mission', 'architecture', 'tech-stack', 'concepts',
+                     'powersync-path-proxy-STATUS',
                      'decisions/README', 'domains/README', 'solutions/README'):
             (cls.tree / f'docs/{page}.md').write_text('# Documentation\n\nOrbit checks documentation.\n')
         (cls.tree / 'docs/mission.md').write_text(

@@ -85,6 +85,14 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/powersync-path-proxy-STATUS.md",
+            "title": "Documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/solutions/README.md",
             "title": "Documentation",
             "kind": "solution",
