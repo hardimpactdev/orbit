@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Infrastructure\Processes\ProcessInvocation;
 use Tests\Support\GatewayReleaseFixture;
 
+pest()->group('subprocess');
+
 it('omits host INI startup only for the core-only Artisan interpreter', function (): void {
     $fixture = GatewayReleaseFixture::create();
     $input = str_repeat(implode('', array_map(chr(...), range(0, 255))), 257)."\0\n\n";

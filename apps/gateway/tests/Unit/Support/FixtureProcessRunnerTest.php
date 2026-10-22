@@ -6,6 +6,8 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProtectedInput;
 use Tests\Support\FixtureProcessRunner;
 
+pest()->group('subprocess');
+
 it('runs isolated fixture commands with bounded output and protected input', function (): void {
     $input = ProtectedInput::fromString('fixture input');
     $result = (new FixtureProcessRunner)->run(new ProcessInvocation(
