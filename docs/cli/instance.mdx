@@ -336,8 +336,10 @@ orbit instance:destroy 12 --force
 ```
 
 <Warning>
-Production removal keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning. Repeat the same command to resume an interrupted removal. A failed teardown step keeps the Instance, and the next `instance:destroy` runs the teardown list again.
+Production removal deletes the production account, source state, and whole home, including `releases/`, `.env`, shared data, and `database.sqlite`. Back up any application data you need before removal. Only the local PHP-FPM tuning stays.
 </Warning>
+
+Repeat the same command to resume an interrupted removal. A failed development teardown step keeps the Instance, and the next `instance:destroy` runs the teardown list again.
 
 ## orbit instance:setup
 
