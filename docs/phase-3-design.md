@@ -140,9 +140,11 @@ it if its spike holds.
      rerun an interrupted check in the Pi spike.
 - Both threads stop running agents on the host: everything task-specific
   stays in the VM.
-- Open for Nick: one workspace per work item in the task VM for every step
-  (update, checks, agent edits, publish), instead of a dev Instance first.
-  Both threads recommend one path.
+- Decided (Nick, 2026-10-22): every step runs in the group's task VM. ADR
+  0229 was amended on #1455 (fd9aa1e5e): four operations on externally
+  orchestrated groups (`tasks.provision`, `tasks.check`, `tasks.turn`,
+  `tasks.publish`) wrap code Tasks already has. The dev-Instance operations
+  in the table above are dropped.
 
 ## Recommendation
 
