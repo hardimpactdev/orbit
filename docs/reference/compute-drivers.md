@@ -774,10 +774,10 @@ Orbit uses complete CLI command names and explicit archive destinations, compati
 
 Roll out Shark first, then Beast, then Sabre. Services needs a separate maintenance plan if its inventory contains an Incus server; its current roles do not select Incus. Deploying the Incus 7 recipe does not require pausing task VMs or clearing host settings: fleet convergence holds the Incus change for explicit convergence. Recipe convergence skips Docker CE hosts.
 
-Before deploying the Incus 7 recipe, the operator must complete Shark's first convergence with a Gateway release and recipe that still pin Ubuntu Incus, as a separate maintenance operation approved by Nick. Without a recorded `machine_recipe`, its first convergence may include unrelated changes. Resolve those changes from its dry run, converge, and verify Doctor. The Incus 7 dry run must then isolate the Incus upgrade and deliberate pin removals. Automatic Gateway releases make this a pre-merge prerequisite.
+Before deploying the Incus 7 recipe, the operator must complete Shark's first convergence with a Gateway release and recipe that still pin Ubuntu Incus, as a separate maintenance operation approved by Nick. Check the recorded recipe with `php artisan node:converge-recipe shark --status` on that Gateway release before merging. Without a recorded `machine_recipe`, its first convergence may include unrelated changes. Resolve those changes from its dry run, converge, and verify Doctor. The Incus 7 dry run must then isolate the Incus upgrade and deliberate pin removals. Automatic Gateway releases make this a pre-merge prerequisite.
 
 1. Drain Shark with the admission procedure below. Inventory every project with `incus list --all-projects`.
-2. Stop all instances and finish live task VM rows through normal lifecycle operations. Take the stopped-state backup below.
+2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
 3. Restart Incus 6 with guests stopped. Inspect `php artisan node:converge-recipe shark --dry-run`, then run `php artisan node:converge-recipe shark`.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
@@ -794,7 +794,58 @@ The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task
 
 The drain includes every `orbit-ci` container on the host, task VMs, builders, and parked task VMs. Inventory names at rollout time; do not rely on a fixed runner list. Preserve parked guest data and configurations before finishing their rows; retain an offline representative old-image guest for compatibility checks. Do not delete unrelated workloads. Beast's drain also includes every operator-owned VM in every project, including any remaining `adr0223-memory-20261019` VMs. Never clear Beast's task VM settings for this upgrade.
 
-The existing admission control is global: set `ORBIT_TASK_VMS_ENABLED=false` (`task_vms.enabled`) on the Gateway and reload its configuration and workers. Keep it false through convergence and rollback; there is no per-host maintenance switch. New claims are blocked while existing rows can finish and be destroyed. Wait for all rows on this host to end, including parked rows, and for image builds to finish. Stop CI dispatch before shutting down runner containers. Do not start a manual build, instance, or resume during this window.
+The existing admission control is global: set `ORBIT_TASK_VMS_ENABLED=false` (`task_vms.enabled`) on the Gateway and reload its configuration and workers. Keep it false through convergence and rollback; there is no per-host maintenance switch. New claims are blocked while existing rows can finish and be destroyed. Wait for all rows on this host to end, including parked rows, and for image builds to finish. Stop CI dispatch before shutting down runner containers.
+
+Save and disable instance autostart across every project before stopping guests; daemon restarts during package installation must leave them stopped. Keep these per-instance overrides through upgrade verification or rollback verification. Do not edit profiles: Doctor compares the runner profile exactly. Do not start a manual build, instance, or resume during this window.
+
+Save this script as `/root/incus-upgrade-autostart.py` on the maintenance host. Run `python3 /root/incus-upgrade-autostart.py hold /root/rollback/autostart.json` as root while Incus 6 is still running, before stopping guests or taking the backup. It records each affected instance's original local value, including an absent value inherited from a profile, before any mutation. A failed hold leaves the manifest for inspection; do not continue until every recorded instance has `boot.autostart=false`. Keep the manifest outside the Incus storage backup and retain it through rollback.
+
+```python
+# incus-upgrade-autostart
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+action, filename, *selection = sys.argv[1:]
+manifest = Path(filename)
+if action == "hold":
+    if selection:
+        raise SystemExit("hold does not accept an instance selection")
+    instances = json.loads(subprocess.check_output(
+        ["incus", "list", "--all-projects", "--format=json"], text=True))
+    saved = [
+        {"project": item["project"], "name": item["name"],
+         "value": item["config"].get("boot.autostart")}
+        for item in instances
+    ]
+    manifest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with manifest.open("x") as stream:
+        json.dump(saved, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    for item in saved:
+        subprocess.check_call(["incus", "--project", item["project"], "config", "set",
+                               item["name"], "boot.autostart=false"])
+elif action == "restore":
+    saved = json.loads(manifest.read_text())
+    if selection:
+        saved = [item for item in saved if f'{item["project"]}/{item["name"]}' in selection]
+        if len(saved) != len(set(selection)):
+            raise SystemExit("selection is missing from the manifest")
+    for item in saved:
+        command = ["incus", "--project", item["project"], "config"]
+        if item["value"] is None:
+            command += ["unset", item["name"], "boot.autostart"]
+        else:
+            command += ["set", item["name"], "boot.autostart=" + item["value"]]
+        subprocess.check_call(command)
+else:
+    raise SystemExit("expected hold or restore")
+```
+
+After host verification, keep CI dispatch paused and manually start one inventoried runner with `incus --project orbit-ci start NAME`. Verify it before restoring its value with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json orbit-ci/NAME`. After the host's topology and runner gates pass, restore the remaining values with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json`, then resume CI dispatch and admission. Restoring autostart does not start stopped instances; start the remaining guests deliberately. Use the same one-runner verification and restore sequence after rollback. The stopped database backup already contains the disabled overrides, so restoring it keeps guests stopped when Incus 6 starts.
 
 The installer repeats the active-instance preflight immediately before package installation, so an instance started since the first preflight refuses the upgrade. Inventory with `incus project list`, `incus list --all-projects --format=json`, `incus project show orbit-tasks`, `incus storage show POOL`, `incus storage volume list POOL --project orbit-tasks`, and `zfs list -t all -r DATASET`. Compare the before and after records.
 
@@ -807,6 +858,10 @@ dataset=i7pool/incus
 install -d -m 0700 "$backup/debs"
 # Install dpkg-repack before the maintenance window if the old debs are unavailable.
 for package in incus incus-base incus-client incus-agent; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    if [ "$package" = incus-agent ]; then continue; fi
+    echo "Required rollback package is not installed: $package" >&2; exit 1
+  fi
   version=$(dpkg-query -W -f='${Version}' "$package")
   (cd "$backup/debs" && apt-get download "$package=$version") ||
     (cd "$backup/debs" && dpkg-repack "$package")
@@ -888,7 +943,7 @@ systemctl start incus.socket incus.service incus-user.socket
 incus version
 ```
 
-The retained files must include `incus`, `incus-base`, `incus-client`, and `incus-agent` at `6.0.5-8`. `--allow-downgrades` crosses Zabbly's `1:` epoch. This release creates no agent override, udev rule, or copied helper. Compare these paths with the backup and restore any pre-existing unit overrides before unmasking. Restore the recorded unit activation state after verification.
+The retained files must include `incus`, `incus-base`, and `incus-client` at `6.0.5-8`, plus `incus-agent` at that version if it was installed. `--allow-downgrades` crosses Zabbly's `1:` epoch. This release creates no agent override, udev rule, or copied helper. Compare these paths with the backup and restore any pre-existing unit overrides before unmasking. Restore the recorded unit activation state after verification.
 
 The [earlier rehearsal](https://github.com/nckrtl/orbit/pull/1358#issuecomment-6261395054) upgraded to 7.0.1, then downgraded to 6.0.5 with all five units masked. Package hooks, explicit starts, and an API query could not start the old daemon; the migrated database files stayed byte-identical. Restoring the database and recursive ZFS snapshot recovered the project, VM, and custom volume. The VM booted and read both original data markers; writes made after the upgrade were absent. Clearing the AppArmor cache is required: an overlay restore alone left a compiled 7.0 policy that denied the old QEMU binary. Repeat these inventory, boot, agent, and data checks on the real host before resuming admission.
 
