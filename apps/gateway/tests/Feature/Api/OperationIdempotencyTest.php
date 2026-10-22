@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Operations\OperationDispatcher;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
@@ -125,14 +128,35 @@ describe('operation start keys', function (): void {
 
     it('scopes the key across calling Nodes but still checks access', function (): void {
         $id = keyed_operation_start($this)->assertAccepted()->json('data.id');
-        $this->fixture->owner->accessibleNodes()->attach($this->fixture->caller->id);
-        $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->owner->wireguard_ip]);
+        $caller = Node::query()->create([
+            'name' => 'other-operator', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.222', 'wireguard_ip' => '10.44.0.222', 'user' => 'orbit',
+        ]);
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+
+        keyed_operation_start($this)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('jobs', 1);
+
+        $caller->accessibleNodes()->attach($this->fixture->owner->id);
 
         keyed_operation_start($this)->assertAccepted()->assertJsonPath('data.id', $id);
 
-        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.199']);
-        keyed_operation_start($this)->assertForbidden();
+        $this->assertDatabaseCount('operations', 1);
         $this->assertDatabaseCount('jobs', 1);
+    });
+
+    it('refuses to record an operation when the start marker names another kind', function (): void {
+        $identity = app(OperationIdempotency::class);
+        $identity->kind = OperationKinds::InstanceRollback;
+        $identity->key = 'wrong-kind';
+        $identity->fingerprint = str_repeat('a', 64);
+
+        expect(fn () => app(StartInstanceDeployAction::class)->execute($this->fixture->instance, 'test', null))
+            ->toThrow(LogicException::class, 'Operation start [instance.deploy] does not match its StartsOperation kind [instance.rollback].');
+
+        $this->assertDatabaseCount('operations', 0);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('settles the concurrent insert race with one operation and one dispatch', function (bool $conflict): void {

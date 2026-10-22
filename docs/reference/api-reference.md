@@ -73,6 +73,8 @@ The Project development deploy step operations publish typed step responses from
 
 The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It publishes HTTP 202 and the queued [operation](/reference/operations) for each controller action that answers `202` with an operation, `instance:deploy` and `instance:rollback`, and the operation with its steps for `operation:show`. It also maps the automatic release controller to its state schema.
 
+A controller method that starts an operation declares its kind, such as `#[StartsOperation(OperationKinds::InstanceDeploy)]`. This marker enables the shared idempotency check and the generated `Idempotency-Key` header. Generation fails if a method answers `202` with `OperationData` without the marker. The operation store refuses a keyed start whose kind differs from its marker.
+
 `database:create` publishes three request variants: register an existing connection, create a MySQL database on a server, or create a Valkey ACL user on a server. Registration keeps `database` as a string. Valkey user creation takes an integer index and requires the `patterns` and `allow` lists. Server creation limits `driver` to `mysql` or `redis`. These variants also feed the MCP manifest and web API types.
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.

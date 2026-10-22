@@ -39,6 +39,10 @@ final readonly class OperationStore
      */
     public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
     {
+        if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
+            throw new LogicException("Operation start [{$kind}] does not match its StartsOperation kind [{$this->idempotency->kind}].");
+        }
+
         $lockKey = self::lockKey($targetType, $targetId);
         $superseded = null;
 
@@ -51,8 +55,8 @@ final readonly class OperationStore
 
                 return Operation::query()->create([
                     'kind' => $kind,
-                    'idempotency_key' => $this->idempotency->kind === $kind ? $this->idempotency->key : null,
-                    'idempotency_fingerprint' => $this->idempotency->kind === $kind ? $this->idempotency->fingerprint : null,
+                    'idempotency_key' => $this->idempotency->key,
+                    'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType,
                     'target_id' => $targetId,
                     'node_id' => $nodeId,

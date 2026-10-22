@@ -8,6 +8,7 @@ use App\Actions\Instances\ListInstanceDeploymentsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Data\Instances\InstanceDeploymentData;
 use App\Data\Operations\OperationData;
+use App\Domain\Operations\OperationKinds;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -49,7 +50,7 @@ final class InstanceDeploymentsController extends Controller
     }
 
     /** Starts an `instance.deploy` operation and answers 202 with it; the deploy runs on the Gateway queue. */
-    #[StartsOperation('instance.deploy')]
+    #[StartsOperation(OperationKinds::InstanceDeploy)]
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         DeployInstanceRequest $request,

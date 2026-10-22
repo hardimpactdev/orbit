@@ -205,6 +205,19 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('jobs', 1);
     })->with(['deploy' => ['instance-deploy', []], 'rollback' => ['instance-rollback', ['release' => 'initial']]]);
 
+    it('replays a WebSocket app tool through its generated header argument', function (): void {
+        $arguments = ['name' => 'mcp-app', 'Idempotency-Key' => 'mcp.websocket.create'];
+
+        $first = mcp_tool($this, '/mcp', 'websocket-app-create', $arguments);
+        $second = mcp_tool($this, '/mcp', 'websocket-app-create', $arguments);
+
+        expect($first['operation']['id'])->toBeString()
+            ->and($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseHas('websocket_registry_operations', ['id' => $first['operation']['id'], 'idempotency_key' => 'mcp.websocket.create']);
+        $this->assertDatabaseCount('websocket_apps', 1);
+        $this->assertDatabaseCount('websocket_registry_operations', 1);
+    });
+
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();
