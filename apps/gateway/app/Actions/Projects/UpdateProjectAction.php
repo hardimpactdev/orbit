@@ -627,7 +627,7 @@ final readonly class UpdateProjectAction
 
     /**
      * @param  array<mixed, mixed>  $origins
-     * @return list<array{path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>
      */
     private function originMutations(array $origins): array
     {
@@ -640,6 +640,7 @@ final readonly class UpdateProjectAction
                 || ! is_string($origin['previous_url'] ?? null)
                 || ! is_string($origin['current_url'] ?? null)
                 || ! is_bool($origin['mutated'] ?? null)
+                || (array_key_exists('instance_id', $origin) && ! is_int($origin['instance_id']))
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'project.update_failed',
@@ -649,6 +650,7 @@ final readonly class UpdateProjectAction
             }
 
             $mutations[] = [
+                ...(isset($origin['instance_id']) ? ['instance_id' => $origin['instance_id']] : []),
                 'path' => $origin['path'],
                 'previous_url' => $origin['previous_url'],
                 'current_url' => $origin['current_url'],

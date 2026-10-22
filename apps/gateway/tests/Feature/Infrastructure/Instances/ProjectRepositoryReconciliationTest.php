@@ -18,6 +18,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProjectUpdate;
+use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -264,6 +265,55 @@ describe('App repository reconciliation', function (): void {
             ->toContain('remote set-url origin')
             ->and($ssh->commands[0]->input)
             ->toContain('test ! -f "$path/.git"');
+    });
+
+    it('preflights, changes and restores task VM workspaces that share a path without a credential', function (): void {
+        $workspaces = [];
+        foreach (['10.44.0.131', '10.44.0.132'] as $index => $address) {
+            $node = Node::query()->create(['name' => 'tvm-'.$index, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $address, 'wireguard_ip' => $address]);
+            $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'running']);
+            test_task_vm($group, $node);
+            $workspaces[] = Instance::query()->create([
+                'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+                'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+                'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+                'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+            ]);
+        }
+        $ssh = new AppDevFakeSshExecutor([
+            ...array_fill(0, 2, new CommandResult(0, '', '', 1, false)),
+            ...array_fill(0, 2, new CommandResult(0, 'https://github.com/acme/site.git', '', 1, false)),
+        ]);
+        $this->app->instance(SshExecutor::class, $ssh);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+
+        $mutator->preflightRepository($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git');
+        $evidence = $mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', []);
+        $mutator->restoreOrigins($evidence);
+
+        expect($ssh->commands)->toHaveCount(6)
+            ->and(array_map(static fn ($connection): string => $connection->host, $ssh->connections))
+            ->toBe(['10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132', '10.44.0.131', '10.44.0.132'])
+            ->and(array_map(static fn ($command): ?bool => $command->protectedInput?->carriesGitCredential(), $ssh->commands))
+            ->toBe(array_fill(0, 6, null))
+            ->and($ssh->commands[0]->arguments)->toContain('0')
+            ->and(array_column($evidence, 'instance_id'))->toBe([$workspaces[0]->id, $workspaces[1]->id]);
+        // A retry with that evidence changes nothing again.
+        expect($mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', $evidence))->toBe($evidence)
+            ->and($ssh->commands)->toHaveCount(6);
+    });
+
+    it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        $this->app->instance(SshExecutor::class, $ssh);
+
+        $this->app->make(RemoteProjectUpdateSourceMutator::class)->preflightRepository(
+            [$this->fixture->defaultInstance], 'git@github.com:acme/site.git', 'https://github.com/acme/site.git',
+        );
+
+        expect($ssh->commands)->toHaveCount(1)
+            ->and($ssh->commands[0]->arguments)->toContain('1')
+            ->and($ssh->commands[0]->input)->toContain('ls-remote --heads');
     });
 
     it('re-binds every production home when the URL moves from SSH to HTTPS', function (): void {

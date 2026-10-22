@@ -14,6 +14,7 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\TaskVm;
 
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
 {
@@ -27,42 +28,51 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $read = null;
 
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
-            $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
+            // A task VM gets no token; the Gateway's mirror reads the repository for it.
+            $network = ! TaskVm::forNode($checkout->node_id) instanceof TaskVm;
+            if ($network) {
+                $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
+            }
             $this->run(
                 $checkout,
-                [$checkout->checkout_path, $currentUrl, $proposedUrl],
+                [$checkout->checkout_path, $currentUrl, $proposedUrl, $network ? '1' : '0'],
                 <<<'BASH'
                     path=$1
                     current=$2
                     proposed=$3
+                    network=$4
                     test -d "$path"
                     test -d "$path/.git"
                     test ! -f "$path/.git"
                     origin=$(git -C "$path" config --get remote.origin.url)
                     test "$origin" = "$current"
                     git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
-                    # Outside the checkout, so its config cannot shape a credentialed call.
-                    git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --heads -- "$proposed" >/dev/null
+                    if [ "$network" = 1 ]; then
+                        # Outside the checkout, so its config cannot shape a credentialed call.
+                        git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --heads -- "$proposed" >/dev/null
+                    fi
                     BASH,
                 'app-update-repository-preflight',
                 'project.repository_preflight_failed',
-                read: $read,
+                read: $network ? $read : null,
             );
         }
     }
 
     public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array
     {
-        $byPath = [];
+        $byKey = [];
 
         foreach ($evidence as $row) {
-            $byPath[$row['path']] = $row;
+            $byKey[self::evidenceKey($row)] = $row;
         }
 
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
             $path = rtrim($checkout->checkout_path, '/');
+            $key = 'instance:'.$checkout->id;
 
-            if (($byPath[$path]['mutated'] ?? false) === true) {
+            // Evidence from before rows named their Instance carries only the path.
+            if (($byKey[$key]['mutated'] ?? $byKey['path:'.$path]['mutated'] ?? false) === true) {
                 continue;
             }
 
@@ -81,7 +91,8 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 'project.repository_origin_failed',
             );
 
-            $byPath[$path] = [
+            $byKey[$key] = [
+                'instance_id' => $checkout->id,
                 'path' => $path,
                 'previous_url' => $previousUrl,
                 'current_url' => $newUrl,
@@ -89,7 +100,13 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             ];
         }
 
-        return array_values($byPath);
+        return array_values($byKey);
+    }
+
+    /** @param  array{instance_id?: int, path: string}  $row */
+    private static function evidenceKey(array $row): string
+    {
+        return isset($row['instance_id']) ? 'instance:'.$row['instance_id'] : 'path:'.$row['path'];
     }
 
     public function restoreOrigins(array $mutations): void
@@ -99,9 +116,9 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 continue;
             }
 
-            $checkout = Instance::query()
-                ->where('checkout_path', $mutation['path'])
-                ->first();
+            $checkout = isset($mutation['instance_id'])
+                ? Instance::query()->find($mutation['instance_id'])
+                : Instance::query()->where('checkout_path', $mutation['path'])->first();
 
             if (! $checkout instanceof Instance) {
                 continue;
@@ -186,7 +203,8 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $unique = [];
 
         foreach ($checkouts as $checkout) {
-            $unique[rtrim($checkout->checkout_path, '/')] = $checkout;
+            // Task VMs share one checkout path, so the Node is part of a checkout's identity.
+            $unique[$checkout->node_id.':'.rtrim($checkout->checkout_path, '/')] = $checkout;
         }
 
         return array_values($unique);

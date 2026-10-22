@@ -15,13 +15,13 @@ interface ProjectUpdateSourceMutator
 
     /**
      * @param  list<Instance>  $checkouts
-     * @param  list<array{path: string, previous_url: string, current_url: string, mutated: bool}>  $evidence
-     * @return list<array{path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>  $evidence
+     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>
      */
     public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array;
 
     /**
-     * @param  list<array{path: string, previous_url: string, current_url: string, mutated: bool}>  $mutations
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>  $mutations
      */
     public function restoreOrigins(array $mutations): void;
 
