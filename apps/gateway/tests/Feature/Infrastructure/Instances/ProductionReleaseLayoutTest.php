@@ -338,7 +338,27 @@ it('removes production data and account after pruning and can resume partial cle
     } finally {
         new Filesystem()->deleteDirectory($sandbox);
     }
-})->with(['deployed', 'home-removed', 'account-removed', 'completed']);
+})->with(['deployed', 'home-removed', 'account-removed', 'completed', 'terminal-marker-removed']);
+
+it('resumes final state deletion after an interruption removes the marker', function (): void {
+    [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([new CommandResult(0, '', '', 1, false)]);
+    $user = "orbit-app-{$instance->project_id}";
+    $instance->update(['production_user' => $user, 'production_home' => "/home/$user"]);
+    $layout->remove($instance);
+    [$sandbox, $process] = production_cleanup_program($ssh->commands[0], 'state-rm-interrupted');
+
+    try {
+        expect($process->run())->not->toBe(0);
+        expect(is_dir("$sandbox/home"))->toBeFalse();
+        expect(file_exists("$sandbox/account"))->toBeFalse();
+        expect(is_dir("$sandbox/state"))->toBeTrue();
+        expect(file_exists("$sandbox/state/release-layout"))->toBeFalse();
+        $process->mustRun();
+        expect(is_dir("$sandbox/state"))->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+});
 
 it('fails production cleanup without deleting its evidence when a resource remains or ownership differs', function (string $state): void {
     [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([new CommandResult(0, '', '', 1, false)]);
@@ -351,13 +371,13 @@ it('fails production cleanup without deleting its evidence when a resource remai
         expect($process->run())->not->toBe(0);
         expect(is_dir("$sandbox/state"))->toBeTrue();
         expect(file_get_contents("$sandbox/foreign/upload"))->toBe('foreign-data');
-        if (in_array($state, ['wrong-marker', 'home-symlink', 'live-process'], true)) {
+        if (in_array($state, ['wrong-marker', 'missing-marker', 'home-symlink', 'live-process'], true)) {
             expect(file_exists("$sandbox/account"))->toBeTrue();
         }
     } finally {
         new Filesystem()->deleteDirectory($sandbox);
     }
-})->with(['wrong-marker', 'home-symlink', 'live-process', 'userdel-fails', 'userdel-lies', 'rm-lies', 'state-rm-lies']);
+})->with(['wrong-marker', 'home-symlink', 'live-process', 'userdel-fails', 'userdel-lies', 'rm-lies', 'state-rm-lies', 'missing-marker']);
 
 /** @return array{string, Process} */
 function production_cleanup_program(RemoteCommand $command, string $state): array
@@ -377,14 +397,17 @@ function production_cleanup_program(RemoteCommand $command, string $state): arra
     file_put_contents("$home/.env", 'secret');
     file_put_contents("$home/database.sqlite", 'application-data');
     symlink("$sandbox/foreign", "$home/shared-link");
-    if ($state === 'home-removed' || $state === 'completed') {
+    if (in_array($state, ['home-removed', 'completed', 'terminal-marker-removed'], true)) {
         new Filesystem()->deleteDirectory($home);
     }
-    if ($state === 'account-removed' || $state === 'completed') {
+    if (in_array($state, ['account-removed', 'completed', 'terminal-marker-removed'], true)) {
         unlink("$sandbox/account");
     }
     if ($state === 'completed') {
         new Filesystem()->deleteDirectory("$sandbox/state");
+    }
+    if (in_array($state, ['terminal-marker-removed', 'missing-marker'], true)) {
+        unlink("$sandbox/state/release-layout");
     }
     if ($state === 'wrong-marker') {
         file_put_contents("$sandbox/state/release-layout", 'foreign-marker');
@@ -416,6 +439,10 @@ function production_cleanup_program(RemoteCommand $command, string $state): arra
             fi
             if [ "$1" = rm ] && [ "$state" = rm-lies ]; then return 0; fi
             if [ "$1" = rm ] && [ "$state" = state-rm-lies ] && [ "${@: -1}" = "$sandbox/state" ]; then return 0; fi
+            if [ "$1" = rm ] && [ "$state" = state-rm-interrupted ] && [ "${@: -1}" = "$sandbox/state" ] && [ -f "$sandbox/state/release-layout" ]; then
+                rm -- "$sandbox/state/release-layout"
+                return 1
+            fi
             "$@"
         }
         BASH;

@@ -572,6 +572,15 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     sudo test -d "$state_directory"
                     sudo test ! -L "$state_directory"
                     test "$(sudo stat -c %U:%G:%a -- "$state_directory")" = root:root:700
+                    remove_state() {
+                        sudo rm -r --one-file-system -- "$state_directory"
+                        sudo test ! -e "$state_directory"
+                        sudo test ! -L "$state_directory"
+                    }
+                    if ! getent passwd "$user" >/dev/null && sudo test ! -e "$home" && sudo test ! -L "$home"; then
+                        remove_state
+                        exit 0
+                    fi
                     sudo test -f "$marker"
                     sudo test ! -L "$marker"
                     test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
@@ -604,9 +613,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     if getent passwd "$user" >/dev/null; then exit 1; fi
                     sudo test ! -e "$home"
                     sudo test ! -L "$home"
-                    sudo rm -r --one-file-system -- "$state_directory"
-                    sudo test ! -e "$state_directory"
-                    sudo test ! -L "$state_directory"
+                    remove_state
                     BASH,
             ),
             step: 'production-source-cleanup',

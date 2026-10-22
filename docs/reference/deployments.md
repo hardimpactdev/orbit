@@ -387,7 +387,7 @@ Releases that only stopped Processes used can be removed once they fall outside 
 
 Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. Cleanup deletes the release's own files and shared-path links. It does not follow those links or delete persistent shared directories in the Instance home. Files in unshared directories go with the release. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
 
-[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+[Instance removal](/reference/instance-removal) removes the serving setup, production account, home, and source state. Releases, environment files, and SQLite data in that home are deleted with it. Back up any application data you need before removal.
 
 ## Why it works this way
 

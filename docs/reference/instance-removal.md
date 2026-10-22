@@ -186,7 +186,7 @@ Closed transfer records stay after removal, with their Instance references clear
 
 Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. After runtime cleanup it removes the production user, the whole production home (including releases, environment files, shared data, and SQLite files), and `/var/lib/orbit/app-instance-sources/<instance-id>`. Removal authenticates the source marker owned by root without requiring the prunable `initial` release.
 
-It verifies that the account, home, and state directory are gone before completing removal. A failure leaves the Instance `removing` for retry; it never reports completed while these resources remain. Another Instance using the same production identity on the Node blocks deletion. `/etc/orbit/php-fpm/<production-user>/local.conf` stays. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
+It verifies that the account, home, and state directory are gone before completing removal. A failure leaves the Instance `removing` for retry; it never reports completed while these resources remain. If final state deletion stops after removing the marker, a retry authenticates the state directory and finishes deleting it only after confirming the account and home are absent. Another Instance using the same production identity on the Node blocks deletion. `/etc/orbit/php-fpm/<production-user>/local.conf` stays. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
 
 ## Progress and retry
 
@@ -245,9 +245,9 @@ Forced removal accepts losing uncommitted or unpushed work. It never accepts a p
 
 A completed transfer is history, so it survives removal. An unfinished or failed transfer holds recovery state, so it blocks removal. Deleting all transfer rows or clearing every reference was rejected: both would drop that recovery state silently.
 
-### Production keeps its content
+### Production removal owns its resources
 
-Production data and releases are hard to rebuild. Removal stops serving the Instance but leaves its home for recovery.
+A production Instance owns its account, home, and source state. Removal deletes them after stopping its workloads and withdrawing serving configuration. Back up any application data you need before removal.
 
 ### The owner check is the directory
 
