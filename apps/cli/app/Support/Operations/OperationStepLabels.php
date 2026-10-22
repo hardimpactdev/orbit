@@ -11,6 +11,10 @@ final class OperationStepLabels
     public static function for(string $name): array
     {
         $labels = match ($name) {
+            'provision' => ['Claim task VM', 'Claiming task VM', 'Claimed task VM'],
+            'workspace' => ['Create workspace', 'Creating workspace', 'Created workspace'],
+            'workspace_lease' => ['Acquire workspace', 'Acquiring workspace', 'Acquired workspace'],
+            'route' => ['Finish workspace', 'Finishing workspace', 'Finished workspace'],
             'source_preparation' => ['Prepare source', 'Preparing source', 'Prepared source'],
             'environment_sync' => ['Sync environment', 'Syncing environment', 'Synced environment'],
             'rollback' => ['Find retained release', 'Finding retained release', 'Found retained release'],

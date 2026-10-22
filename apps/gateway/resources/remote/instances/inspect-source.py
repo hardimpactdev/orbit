@@ -5,7 +5,7 @@
 # Input: {"checkout": path, "root": apps root, "user": managed user, "group": managed group,
 #   "layout": "checkout" or "worktree", "branch": expected branch or "", "inspect_content": bool,
 #   "unresolved": bool, "allow_absent": bool, "origin": the Project origin, "prepare_id": source preparation ID or ""}
-# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable}; runs as the production user.
+# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable, "prefixes": reserved top-level paths}; runs as the production user.
 # Result: routes_inspected: {"collision": bool}; failed: Laravel inspection failed without application output.
 # Result: inspected: base64 of "top", "common", "origin", "branch", "commit", "dirty" ("", "0", or "1"),
 #   "source_identity" ("<device>:<inode>" or "absent"), and "worktrees" (`git worktree list --porcelain -z`).
@@ -14,10 +14,25 @@
 import base64
 import os
 import pathlib
+import re
 
 
 def encoded(value):
     return base64.b64encode(value if isinstance(value, bytes) else os.fsencode(value)).decode()
+
+
+def first_segment_pattern(segment):
+    pattern = ''
+    position = 0
+    for parameter in re.finditer(r'\{[^{}]+\}', segment):
+        literal = segment[position:parameter.start()]
+        # Laravel's optional parameters can also omit their preceding Symfony separator.
+        if parameter.group().endswith('?}') and literal and literal[-1] in ',;.:-_~+*=@|':
+            pattern += re.escape(literal[:-1]) + '(?:' + re.escape(literal[-1]) + '[^/]*)?'
+        else:
+            pattern += re.escape(literal) + '[^/]*'
+        position = parameter.end()
+    return pattern + re.escape(segment[position:])
 
 
 def inspect_laravel_routes(payload):
@@ -36,11 +51,12 @@ def inspect_laravel_routes(payload):
         routes = json.loads(completed.stdout)
         if not isinstance(routes, list) or any(not isinstance(route, dict) or not isinstance(route.get('uri'), str) for route in routes):
             return 'failed', {}
-        # Root fallback runs after explicit routes; the edge reserves its Pusher paths.
-        # Any other leading parameter can consume either reserved prefix.
+        # Root fallback runs after explicit routes. Parameter constraints are unavailable, so match conservatively.
+        prefixes = {prefix.strip('/').lower() for prefix in payload['prefixes']}
         uris = [route['uri'].strip('/') for route in routes]
-        collision = any(uri.split('/')[0].lower() in ('app', 'apps')
-                        or (uri.startswith('{') and uri != '{fallbackPlaceholder}') for uri in uris)
+        patterns = [first_segment_pattern(uri.split('/')[0].lower())
+                    for uri in uris if uri != '{fallbackPlaceholder}']
+        collision = any(re.fullmatch(pattern, prefix) is not None for pattern in patterns for prefix in prefixes)
         return 'routes_inspected', {'collision': collision}
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         return 'failed', {}

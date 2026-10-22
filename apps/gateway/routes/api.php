@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\InstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\InstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
+use App\Http\Controllers\Api\InstancePathProxyController;
 use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
@@ -471,6 +472,10 @@ Route::prefix('v1')->group(function (): void {
         )
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('instance:database:remove');
+        Route::put('instances/{instance}/path-proxy', [InstancePathProxyController::class, 'store'])->name('instance:path-proxy:set');
+        Route::get('instances/{instance}/path-proxy', [InstancePathProxyController::class, 'show'])->name('instance:path-proxy:show');
+        Route::delete('instances/{instance}/path-proxy', [InstancePathProxyController::class, 'destroy'])->name('instance:path-proxy:unset');
+
         Route::put(
             'instances/{instance}/websocket-apps/{websocket_app}',
             [WebSocketAppAttachmentsController::class, 'store'],
@@ -669,6 +674,8 @@ Route::prefix('v1')->group(function (): void {
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
             Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
+            Route::post('task-groups/{group}/provision', [TaskGroupsController::class, 'provision'])
+                ->whereNumber('group')->name('tasks:provision');
             Route::post('task-groups/{group}/cancel', [TaskGroupsController::class, 'cancel'])
                 ->whereNumber('group')
                 ->name('tasks:cancel');

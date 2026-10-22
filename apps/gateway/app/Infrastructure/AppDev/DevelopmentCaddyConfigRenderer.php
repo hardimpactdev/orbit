@@ -32,7 +32,7 @@ final readonly class DevelopmentCaddyConfigRenderer
             $sites
                 ->sortBy('domain')
                 ->map(function (DevelopmentSite $site) use ($bind, $publicBind): string {
-                    $handler = $this->websocketHandler($site).$this->handler($site);
+                    $handler = $this->pathProxyHandler($site).$this->websocketHandler($site).$this->handler($site);
                     $internal = $this->localUnixSite($site);
 
                     // Orbit disables certificate management Node-wide; only a public listener opts back
@@ -56,6 +56,34 @@ final readonly class DevelopmentCaddyConfigRenderer
                     return $internal === null ? $siteBlock : $internal.PHP_EOL.PHP_EOL.$siteBlock;
                 })
                 ->implode(PHP_EOL.PHP_EOL).PHP_EOL;
+    }
+
+    private function pathProxyHandler(DevelopmentSite $site): string
+    {
+        if ($site->pathProxyPrefix === null) {
+            return '';
+        }
+        $prefix = $site->pathProxyPrefix;
+        $handler = $site->pathProxyUpstream === null ? 'respond "Orbit path proxy unavailable" 503' : <<<CADDY
+            uri strip_prefix {$prefix}
+            reverse_proxy http://{$site->pathProxyUpstream} {
+                flush_interval -1
+                transport http {
+                    read_timeout 1h
+                    response_header_timeout 1h
+                }
+            }
+            CADDY;
+
+        return <<<CADDY
+            route {
+                @orbit_path_proxy path {$prefix} {$prefix}/*
+                handle @orbit_path_proxy {
+                    {$handler}
+                }
+            }
+
+            CADDY;
     }
 
     /**

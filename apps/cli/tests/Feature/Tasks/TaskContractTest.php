@@ -53,6 +53,10 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
+    it('renders a refused provision', function (): void {
+        run_task_contract('tasks/tasks-provision/not-orchestrated', 'tasks:provision', ['group' => '1'], 1);
+    });
+
     it('renders a declared workload node', function (): void {
         run_task_contract('tasks/tasks-subtask-create/topology', 'tasks:subtask:create', [
             'group' => '1', 'title' => 'Use a workload node', '--brief' => 'Verify the private app-dev node.', '--topology' => '["app-dev"]',

@@ -36,6 +36,7 @@ final readonly class ServingNodeResolver
             ServingNode::OperationOwning => $this->operationOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
+            ServingNode::PathProxyInstanceOwning => $this->pathProxyInstanceOwning($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
@@ -266,6 +267,21 @@ final readonly class ServingNodeResolver
         }
 
         return [$sourceNode, $destinationNode];
+    }
+
+    /** @return list<Node> */
+    private function pathProxyInstanceOwning(Request $request): array
+    {
+        $nodes = $this->environmentInstanceOwning($request);
+        if ($request->isMethod('PUT')) {
+            $id = $this->positiveInteger($request->input('process_id'));
+            $process = $id === null ? null : Process::query()->find($id);
+            if ($process instanceof Process && $process->owner_type === Node::class) {
+                $nodes[] = Node::query()->findOrFail($process->owner_id);
+            }
+        }
+
+        return $nodes;
     }
 
     /** @return list<Node> */

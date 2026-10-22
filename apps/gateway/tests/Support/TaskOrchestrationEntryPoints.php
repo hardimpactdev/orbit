@@ -25,6 +25,7 @@ use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
+use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
@@ -80,8 +81,10 @@ use App\Domain\Tasks\TaskHandoffCi;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskObservationAvailability;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskPromptRenderer;
+use App\Domain\Tasks\TaskProvisionOperation;
 use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestDescription;
@@ -218,6 +221,13 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared claim provisioning; tasks.provision admits external groups and never starts a subtask or check.'],
+        StartTaskProvisionAction::class => ['execute' => 'tasks.provision is the explicit external operation; shared admission requires an open external group.'],
+        TaskProvisionOperation::class => [
+            'read' => 'tasks.provision validates orchestration and reserves the group while it observes VM readiness.',
+            'finishWorkspace' => 'tasks.provision ends its reservation only after the nonresumable workspace and Route effects.',
+            'releaseReservation' => 'tasks.provision clears its reservation after stop or failure for existing cleanup.',
+        ],
         PrepareTaskVmRuntimeAction::class => ['execute' => 'Starts the VM step clock, not an agent turn, check, or claim.'],
         EnrollTaskVm::class => ['handle' => 'Starts the VM step clock during reusable VM enrollment; engine claim admission is guarded.'],
         ProvisionTaskVm::class => ['handle' => 'Starts the VM step clock during reusable VM provisioning; engine claim admission is guarded.'],
@@ -248,6 +258,21 @@ final class TaskOrchestrationEntryPoints
             'execute' => 'External cancel interrupts work and records cancellation without advancing or settling; TaskExternalStateTest covers it.',
         ],
 
+        TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared provisioning for tick claim and tasks.provision; the operation owns external admission.'],
+        StartTaskProvisionAction::class => ['execute' => 'tasks.provision admits only open external todo groups through shared admission.'],
+        TaskOperations::class => [
+            'start' => 'Shared admission requires an open external group and one operation hold.',
+            'requireOpenExternal' => 'Shared operation-only external group guard.',
+            'cancelOpen' => 'Group cancel and complete stop the open operation before cleanup.',
+        ],
+        TaskProvisionOperation::class => [
+            'run' => 'tasks.provision owns external claim effects; no subtask or check starts.',
+            'requireTodo' => 'Provision-only readiness validation shared by start admission and worker execution.',
+            'waitingStep' => 'tasks.provision waiting read and stop hooks.',
+            'read' => 'tasks.provision capacity/readiness observation and shared claim provisioning.',
+            'stop' => 'tasks.provision cancellation clears the reservation for cleanup.',
+            'abandon' => 'tasks.provision failure ends the group; cancellation clears the reservation.',
+        ],
         AllocateTaskVmAction::class => [
             'execute' => 'Reusable VM placement; engine claim admission is guarded; does not change a group claim or send a turn.',
         ],

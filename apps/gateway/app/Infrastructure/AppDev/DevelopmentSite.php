@@ -50,7 +50,14 @@ final readonly class DevelopmentSite
         public ?string $poolSuffix = null,
         public ?string $websocketKey = null,
         public ?string $websocketAppId = null,
+        public ?string $pathProxyPrefix = null,
+        public ?string $pathProxyUpstream = null,
     ) {}
+
+    public function withPathProxy(string $prefix, ?string $upstream): self
+    {
+        return clone ($this, ['pathProxyPrefix' => $prefix, 'pathProxyUpstream' => $upstream]);
+    }
 
     public function withWebSocket(string $key, string $websocketAppId): self
     {

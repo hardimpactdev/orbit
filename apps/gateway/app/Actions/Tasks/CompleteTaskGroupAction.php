@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Task;
@@ -41,6 +42,13 @@ final readonly class CompleteTaskGroupAction
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
+        if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
+            $this->authorizeEndedPullRequest($group);
+        } elseif ($group->status !== TaskGroupStatus::Completed && ! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            throw $this->notReady();
+        }
+        app(TaskOperations::class)->cancelOpen($group);
+
         if ($group->status === TaskGroupStatus::Completed) {
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
@@ -48,16 +56,11 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
-            $this->authorizeEndedPullRequest($group);
             $this->completeOpenSubtasks($group);
 
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        }
-
-        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            throw $this->notReady();
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {

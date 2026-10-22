@@ -56,8 +56,11 @@ use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UnsetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
@@ -95,6 +98,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
@@ -296,6 +300,7 @@ describe('repository guidance bootstrap', function (): void {
             ShowTaskGroupRequest::class,
             CreateTaskGroupRequest::class,
             UpdateTaskGroupRequest::class,
+            ProvisionTaskGroupRequest::class,
             CancelTaskGroupRequest::class,
             CompleteTaskGroupRequest::class,
             CreateSubtaskRequest::class,
@@ -354,7 +359,12 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $pathProxyRequests = [
+            SetInstancePathProxyRequest::class,
+            ShowInstancePathProxyRequest::class,
+            UnsetInstancePathProxyRequest::class,
+        ];
+        $expectedOperationCount = count($pathProxyRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -460,6 +470,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$aiRouterSwitchRequests)
             ->toContain(...$fleetRequests)
             ->toContain(...$operationRequests)
+            ->toContain(...$pathProxyRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
@@ -560,7 +571,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
