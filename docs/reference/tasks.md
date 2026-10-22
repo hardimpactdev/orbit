@@ -132,7 +132,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
 
-A group left in `reviewing` with no active subtask resumes its first queued subtask on the next tick. A final review that has not started waits behind queued implementation work, including work added after Orbit appended that review.
+A group left in `running` or `reviewing` with no active subtask resumes its first queued subtask on the next tick, including a subtask at position 1. A final review that has not started waits behind queued implementation work, including work added after Orbit appended that review.
 
 Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliverables` value replaces the whole list. Positions stay gapless from 1.
 

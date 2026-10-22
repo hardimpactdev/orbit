@@ -1222,6 +1222,33 @@ describe('merge on green', function (): void {
 });
 
 describe('incoming pull requests', function (): void {
+    it('resumes operator work at position one after deferring the first incoming final review', function (): void {
+        $group = rm_group([[TaskFinalReview::Title, TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running, prUrl: RM_PR_URL, prBranch: 'feature/login');
+        $final = $group->tasks->sole();
+        $final->update(['fixup_head_sha' => RM_PR_HEAD]);
+        TaskCheck::query()->create([
+            'task_id' => $final->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Passed,
+            'pid' => 4001, 'process_started' => 'Wed Sep 23 12:00:01 2026', 'head_before' => RM_BASE, 'tree_before' => str_repeat('b', 40),
+            'started_at' => now(), 'finished_at' => now(),
+        ]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_PR_HEAD));
+        $runtime->beforeMergeBase = fn (): Task => app(CreateTaskAction::class)->execute($group, new CreateTaskData('Implement', 'Build the feature.',
+            [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']]));
+
+        app(TaskScheduler::class)->startFinalReview($group, $final, false);
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        $operator = $group->tasks()->first();
+        expect($operator)->title->toBe('Implement')->position->toBe(1)->status->toBe(TaskStatus::Running);
+        expect($final->fresh())->position->toBe(2)->status->toBe(TaskStatus::Todo)->implementer_agent_thread_id->toBeNull();
+        expect($runtime->implementers)->toBe([$operator->id]);
+        expect($runtime->reviewers)->toBe([]);
+        expect(app(TaskCheckRunner::class)->starts)->toBe(0);
+        expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
+    });
+
     it('reviews a new head on an incoming pull request again instead of merging it', function (): void {
         $group = rm_settled('feature/login');
         $runtime = rm_runtime();
