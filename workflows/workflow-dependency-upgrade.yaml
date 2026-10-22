@@ -1,0 +1,106 @@
+id: 00e7b9ff-4117-499d-9b7d-a482ecd3f6b7
+name: dependency-upgrade
+description: >-
+  Read-only plan for Orbit dependency upgrades: scan the inventory, compare it
+  with Packagist and npm, assert the plan is sound, and stop for approval when
+  a major upgrade is planned.
+tags: {}
+inputs:
+  properties:
+    requireApproval:
+      type: boolean
+      default: false
+      description: Stop at the approval gate even when no major upgrade is planned
+jobs:
+  - name: plan
+    description: scan → plan → assert
+    steps:
+      - name: scan
+        description: Gateway inventory, with the scratch checkout where it is stale
+        task:
+          type: model_method
+          modelIdOrName: orbit-deps
+          methodName: scan
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+      - name: plan
+        description: dependency-planner records the upgrade-plan
+        task:
+          type: model_method
+          modelIdOrName: orbit-deps
+          methodName: plan
+        dependsOn:
+          - step: scan
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: plan-matches-scan
+        task:
+          type: assert
+          expr: >-
+            data.latest("orbit-deps", "upgrade-plan").attributes.commit
+            == data.latest("orbit-deps", "inventory").attributes.commit
+          message: The plan was built from a different commit than the scan
+          severity: high
+        dependsOn:
+          - step: plan
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: every-subtask-has-packages
+        task:
+          type: assert
+          expr: >-
+            data.latest("orbit-deps", "upgrade-plan").attributes.subtasks.all(s, size(s.packages) > 0)
+          message: A subtask has no packages
+          severity: high
+        dependsOn:
+          - step: plan
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+      - name: registries-answered
+        task:
+          type: assert
+          expr: >-
+            data.latest("orbit-deps", "upgrade-plan").attributes.counts.unknown == 0
+          message: >-
+            ${{ data.latest("orbit-deps", "upgrade-plan").?attributes.?counts.?unknown.orValue(0) }}
+            packages could not be looked up in their registry
+          severity: medium
+        dependsOn:
+          - step: plan
+            condition:
+              type: succeeded
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+  - name: approve
+    description: Approval gate when the plan has a major upgrade (stub)
+    dependsOn:
+      - job: plan
+        condition:
+          type: succeeded
+    steps:
+      - name: approve-majors
+        description: A human approves the major upgrades before any subtask starts
+        guard: >-
+          ${{ !inputs.requireApproval
+              && !data.latest("orbit-deps", "upgrade-plan").attributes.majorsExist }}
+        task:
+          type: manual_approval
+          prompt: >-
+            The upgrade plan contains major upgrades. Review it with
+            swamp data query 'modelName == "orbit-deps" && name == "upgrade-plan"'
+            --select 'attributes.subtasks.filter(s, s.major)' --json
+          timeout: 604800
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    weight: 0
+version: 1

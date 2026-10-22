@@ -1,0 +1,15 @@
+type: '@nckrtl/orbit-deps'
+typeVersion: 2026.10.22.1
+id: f9acccd1-c74f-4d87-a383-84c2924da698
+name: orbit-deps
+version: 1
+tags: {}
+globalArguments:
+  gatewayUrl: https://gateway.orbit
+  caCertPath: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+  # Orbit Project 46 (hardimpactdev/orbit); Instance 315 is the `default`
+  # development Instance on beast that tracks main.
+  instanceId: 315
+  checkoutDir: /fast/apps/orbit-swamp-scratch/base
+  branch: main
+methods: {}
