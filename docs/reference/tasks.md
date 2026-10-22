@@ -142,7 +142,7 @@ Direct operation cancellation interrupts the held subtask turn and confirms that
 
 The check must be a passed handoff check belonging to a subtask of this group, with its recorded commit. Otherwise admission returns `422 tasks.commit_not_checked`. HEAD must still be that commit (`409 tasks.head_moved`). A parked VM queues its resume first; HEAD is checked after readiness as well as at admission when the VM is ready.
 
-The operation reuses the approval push: `PublishTaskVmCommit` imports the checked commit into the Gateway mirror and pushes it to `task-{id}`. A delayed operation read claims `waiting` as `running`, then reads the job record; it never polls the VM.
+The operation reuses the approval push: `PublishTaskVmCommit` imports the checked commit into the Gateway mirror and pushes it to `task-{id}`. A delayed operation read claims `waiting` as `running`, then reads the job record; it never polls the VM. If a started job is redelivered after losing its outcome, it fetches the remote branch through the Gateway mirror. An identical tip records success without another transfer or push; an ancestor allows the unforced push, and a divergent tip fails with `tasks.not_fast_forward`. A pending cancel resolves after that outcome is recorded.
 
 A divergent remote branch fails with `tasks.not_fast_forward`. An identical remote tip succeeds without a push. A refusal for missing `Workflows: write` fails with `tasks.workflows_permission`. Other push failures use `tasks.push_failed`. The Gateway never forces a push, sends a GitHub token to the VM, or retries a failed effect. A new operation with a new key queues one new attempt after a recorded failure; replaying the old key returns its failure.
 

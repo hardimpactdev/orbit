@@ -247,7 +247,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     {
         $queued = static fn () => TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)
             ->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued);
-        if (($vm->group?->groupOrchestration() === TaskOrchestration::External ? $queued()->whereNull('publish_started_at') : $queued())->update(['publish_started_at' => now()]) !== 1) {
+        if ($queued()->update(['publish_started_at' => now()]) !== 1) {
             return;
         }
         try {

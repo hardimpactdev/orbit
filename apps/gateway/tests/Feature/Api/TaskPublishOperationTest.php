@@ -12,6 +12,12 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Jobs\TaskVms\ResumeTaskVm;
@@ -25,7 +31,11 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
+use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\GitRemoteRedirect;
+use Tests\Support\StreamingLocalShellSshExecutor;
+use Tests\Support\TestOrbitHome;
 
 beforeEach(function (): void {
     enable_operation_queue();
@@ -100,6 +110,87 @@ it('queues the approval push once and reads success without polling the VM', fun
     expect($group->settled_at)->toBeNull();
     Queue::assertPushed(PublishTaskVmCommit::class, 1);
 });
+
+it('recovers a lost push outcome before completing publication or a waiting cancel', function (bool $cancel): void {
+    [$group, $check] = publish_operation_group();
+    publish_operation_github();
+    $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+    {
+        public int $pushes = 0;
+
+        public function __construct(private ProcessRunner $runner) {}
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            if (in_array('push', $invocation->arguments, true)) {
+                $this->pushes++;
+            }
+
+            return $this->runner->run($invocation);
+        }
+    };
+    app()->instance(ProcessRunner::class, $runner);
+    $this->mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+    $this->mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+    $transport = new StreamingLocalShellSshExecutor;
+    app()->instance(SshExecutor::class, $transport);
+    $root = TestOrbitHome::scratch('publish-lost-outcome');
+    mkdir($root, 0700, true);
+    $git = static fn (string $directory, string ...$arguments): string => trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
+    (new Process(['git', 'init', '--quiet', '--bare', '-b', 'main', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'main', $root.'/vm']))->mustRun();
+    $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+    $git($root.'/vm', 'push', '--quiet', $root.'/origin.git', 'main');
+    $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Checked');
+    $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
+    $check->update(['commit_sha' => $commit]);
+    app(TaskCheckRunner::class)->head = $commit;
+    $group->taskable->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
+    GitRemoteRedirect::global($root.'/origin.git', 'https://github.com/acme/shop.git');
+    Queue::fake([PublishTaskVmCommit::class]);
+
+    try {
+        $operation = publish_operation_start($group, $check, ['pull_request' => ['title' => 'Title', 'body' => 'Body']]);
+        app(OperationRunner::class)->run($operation->id);
+        $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
+        $publisher = app(GitHubTaskPullRequestPublisher::class);
+        $job->handle($publisher);
+        $vm = TaskVm::forGroup($group);
+        expect($vm->publish_state)->toBe(TaskVmPublishState::Pushed);
+        // GitHub accepted the push, but the worker disappeared before saving its outcome.
+        $vm->update(['publish_state' => TaskVmPublishState::Queued]);
+        expect($vm->publish_started_at)->not->toBeNull();
+        if ($cancel) {
+            $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()->assertJsonPath('data.status', 'waiting');
+            $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+        }
+        $transfers = count($transport->sent);
+
+        $job->handle($publisher);
+        publish_operation_read($operation);
+
+        expect($vm->refresh()->publish_state)->toBe(TaskVmPublishState::Pushed);
+        expect($runner->pushes)->toBe(1);
+        expect($transport->sent)->toHaveCount($transfers);
+        expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit);
+        expect($operation->refresh()->status)->toBe($cancel ? OperationStatus::Cancelled : OperationStatus::Succeeded);
+        expect($operation->lock_key)->toBeNull();
+        $opened = static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls';
+        expect(Http::recorded($opened))->toHaveCount($cancel ? 0 : 1);
+        if ($cancel) {
+            expect($group->refresh()->pr_url)->toBeNull();
+            $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertSuccessful();
+            expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+        } else {
+            expect($operation->result['pull_request_number'])->toBe(12);
+            publish_operation_read($operation);
+            expect(Http::recorded($opened))->toHaveCount(1);
+        }
+    } finally {
+        GitRemoteRedirect::clear();
+        TestOrbitHome::clearScratch();
+    }
+})->with(['finish publication' => [false], 'finish cancellation' => [true]]);
 
 it('opens or updates the watched pull request without coverage or reviewers', function (bool $existing): void {
     [$group, $check] = publish_operation_group();

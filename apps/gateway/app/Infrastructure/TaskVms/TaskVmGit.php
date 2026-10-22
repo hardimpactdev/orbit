@@ -339,6 +339,10 @@ final readonly class TaskVmGit
         }
         $url = $this->url($project, $errorCode);
         $mirror = $this->mirror($project, $errorCode);
+        $tip = $checkedPublish ? trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout) : '';
+        if ($tip === $commit) {
+            return;
+        }
         $scratch = $this->scratch($errorCode);
         try {
             $pack = $scratch.'/receive.pack';
@@ -355,14 +359,8 @@ final readonly class TaskVmGit
                 throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
             }
             $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
-            if ($checkedPublish) {
-                $tip = trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout);
-                if ($tip === $commit) {
-                    return;
-                }
-                if ($tip !== '' && ! $this->git($mirror, ['merge-base', '--is-ancestor', $tip, $commit])->succeeded()) {
-                    throw new RuntimeConvergenceException('task-pull-request-push', 'tasks.not_fast_forward', 'The task branch is not an ancestor of the checked commit.');
-                }
+            if ($checkedPublish && $tip !== '' && ! $this->git($mirror, ['merge-base', '--is-ancestor', $tip, $commit])->succeeded()) {
+                throw new RuntimeConvergenceException('task-pull-request-push', 'tasks.not_fast_forward', 'The task branch is not an ancestor of the checked commit.');
             }
             $lease = $replace
                 ? ['--force-with-lease=refs/heads/'.$branch.':'.trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout)]
