@@ -731,7 +731,7 @@
   },
   "redirects": [
     {
-      "source": "/decisions/0230-precreate-managed-postgresql-test-databases",
+      "source": "/decisions/0232-precreate-managed-postgresql-test-databases",
       "destination": "/reference/database-servers#postgresql-workers-exist-before-tests-start"
     },
     {

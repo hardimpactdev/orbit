@@ -215,5 +215,5 @@ return [
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
     '0227' => ['0227-manage-postgresql-and-private-database-endpoints'],
     '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
-    '0230' => ['0230-precreate-managed-postgresql-test-databases'],
+    '0232' => ['0232-precreate-managed-postgresql-test-databases'],
 ];
