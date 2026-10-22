@@ -16,6 +16,7 @@ final class AttachDatabaseConnectionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'replace' => ['sometimes', 'boolean:strict'],
             'network' => ['sometimes', 'string', 'in:wireguard,lan'],
             'prefix' => ['sometimes', 'string', 'regex:'.DatabaseConnectionPrefix::Pattern],
         ];
@@ -25,7 +26,7 @@ final class AttachDatabaseConnectionRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['prefix', 'network']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['prefix', 'network', 'replace']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -36,6 +37,13 @@ final class AttachDatabaseConnectionRequest extends FormRequest
         $validated = $this->validated();
 
         return is_string($validated['prefix'] ?? null) ? $validated['prefix'] : null;
+    }
+
+    public function shouldReplace(): bool
+    {
+        $validated = $this->validated();
+
+        return ($validated['replace'] ?? false) === true;
     }
 
     public function network(): string

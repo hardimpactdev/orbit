@@ -10423,6 +10423,8 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description Allow changing or removing existing stored connection keys */
+                    replace?: boolean;
                     /**
                      * @description Connection network: wireguard (default) or lan
                      * @enum {string}

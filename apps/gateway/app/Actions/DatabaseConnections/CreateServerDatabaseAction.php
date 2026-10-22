@@ -173,7 +173,7 @@ final readonly class CreateServerDatabaseAction
         );
 
         if ($instance instanceof Instance) {
-            $this->attach->execute($instance, $connection, self::ATTACH_PREFIX);
+            $this->attach->execute($instance, $connection, self::ATTACH_PREFIX, replace: true);
         }
 
         return $connection;

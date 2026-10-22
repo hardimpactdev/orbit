@@ -447,3 +447,8 @@ it('transports and preserves a chosen PostgreSQL builtin locale', function (): v
     ], 'request-1');
     expect($response->locale)->toBe('C.UTF-8')->and($response->toArray()['locale'])->toBe('C.UTF-8');
 });
+
+it('preserves explicit true and false attachment replacement consent and omits absence', function (?bool $replace): void {
+    expect(new AddInstanceDatabaseRequest(12, 'catalog', replace: $replace)->body()->all())
+        ->toBe($replace === null ? [] : ['replace' => $replace]);
+})->with([null, false, true]);

@@ -34,6 +34,7 @@ final readonly class AttachDatabaseConnectionAction
         ?string $prefix,
         bool $forClone = false,
         string $network = 'wireguard',
+        bool $replace = false,
     ): DatabaseConnectionAttachmentData {
         $normalizedPrefix = DatabaseConnectionPrefix::normalize($prefix);
 
@@ -43,6 +44,7 @@ final readonly class AttachDatabaseConnectionAction
             $normalizedPrefix,
             $forClone,
             $network,
+            $replace,
         ): DatabaseConnectionAttachmentData {
             $instance->refresh();
 
@@ -66,7 +68,19 @@ final readonly class AttachDatabaseConnectionAction
                 $context,
                 $projected,
                 $network,
+                $replace,
             ): DatabaseConnectionAttachmentData {
+                $stored = $this->store->values($instance);
+                $conflicts = array_intersect($this->projection->driftedKeys($stored, $projected), array_keys($stored));
+
+                if (! $replace && $conflicts !== []) {
+                    throw new ResourceOperationException(
+                        errorCode: 'database.environment_conflict',
+                        message: 'The attachment would change stored connection keys. Set replace to true to allow it.',
+                        status: 409,
+                    );
+                }
+
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     [
                         'instance_id' => $instance->id,

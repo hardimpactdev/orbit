@@ -124,7 +124,7 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 
 ## Add a connection on an Instance
 
-`PUT /api/v1/instances/{instance}/database-connections/{slug}` writes the connection into the Instance's stored environment configuration. `{instance}` is an Instance ID or an exact Route domain. The body can hold `prefix`, an uppercase name of at most 32 characters that starts with a letter. The default is `DB`. The route needs an access grant to the Instance's Node.
+`PUT /api/v1/instances/{instance}/database-connections/{slug}` writes the connection into the Instance's stored environment configuration. `{instance}` is an Instance ID or an exact Route domain. The body can hold `prefix`, an uppercase name of at most 32 characters that starts with a letter. The default is `DB`. The optional `replace` field is a strict boolean and defaults to false. The route needs an access grant to the Instance's Node.
 
 | Driver | Keys with prefix `DB` |
 | --- | --- |
@@ -134,7 +134,7 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 
 A SQLite connection can only be attached to an Instance on the connection's registered Node. A different or absent Node returns `database.node_mismatch` before any environment values or attachment mappings change.
 
-The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
+The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. An add that would change or remove an existing stored key returns `database.environment_conflict` (409) and leaves the keys and mapping unchanged. Pass `replace: true` in the API or `--replace` in the CLI to allow that change. An unchanged add is idempotent. This applies to every prefix, including the active `DB` connection.
 
 The Gateway writes the stored host and port by default. A database on a [Database server](/reference/database-servers) stores the Node's WireGuard address and the published port. The response also exposes `lan_host` for a managed connection whose server Node has a LAN address. External records keep their explicit host.
 
@@ -161,7 +161,7 @@ Before selecting LAN on an existing server, retry `database:server:create` to pu
 | `database_connection.env_mismatch` | Drift | A mapping's stored keys are missing, left over, or different. |
 | `database_connection.inspection_failed` | Unverifiable | Doctor could not read the password or the stored configuration. |
 
-To repair an `env_mismatch`, add the connection again with the same prefix, then synchronize.
+To repair an `env_mismatch`, add the connection again with the same prefix, with `--replace`, then synchronize.
 
 ## Why it works this way
 

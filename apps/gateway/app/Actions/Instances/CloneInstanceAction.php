@@ -378,7 +378,7 @@ final readonly class CloneInstanceAction
                     $target,
                     rtrim((string) $target->production_home, '/').'/database.sqlite',
                 );
-                $this->attachDatabase->execute($target, $connection, 'DB', forClone: true);
+                $this->attachDatabase->execute($target, $connection, 'DB', forClone: true, replace: true);
                 $this->synchronizeEnvironment->execute($target, forClone: true);
             }
 
