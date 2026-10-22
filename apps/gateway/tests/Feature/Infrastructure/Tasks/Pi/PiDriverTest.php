@@ -810,3 +810,17 @@ describe('agent thread read route', function (): void {
             ->assertJsonPath('data.archived', false)->assertJsonCount(2, 'data.entries');
     });
 });
+
+it('sends an external turn once and preserves the Pi refusal code', function (): void {
+    $thread = pi_thread(pi_node());
+    Task::topLevel()->whereKey($thread->task_group_id)->update(['orchestration' => 'external']);
+    Http::fake([PI_BASE.'/sessions/session-1/messages' => Http::response(['error' => ['code' => 'model.unavailable', 'message' => 'Unknown model.']], 422)]);
+
+    try {
+        pi_driver()->send($thread, 'One external turn.', 'external.c1');
+        test()->fail('The refused send must fail.');
+    } catch (AgentDriverException $exception) {
+        expect($exception->errorCode)->toBe('model.unavailable');
+    }
+    Http::assertSentCount(1);
+});

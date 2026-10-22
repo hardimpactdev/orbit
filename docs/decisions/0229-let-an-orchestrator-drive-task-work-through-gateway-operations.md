@@ -12,7 +12,7 @@ An external orchestrator owns the lifecycle of task work: its stages, gates, bud
 
 In progress.
 
-The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The shared waiting status, delayed step reads, and stop hooks are built; [Operations](/reference/operations#a-waiting-step) owns their contract and reasons. The first task operation, `tasks.provision`, uses them to wait for VM capacity and readiness. `tasks.check` is also built: [Check an external group](/reference/tasks#check-an-external-group) owns its contract and reasons. Turn and publish remain to be built.
+The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The shared waiting status, delayed step reads, and stop hooks are built; [Operations](/reference/operations#a-waiting-step) owns their contract and reasons. The first task operation, `tasks.provision`, uses them to wait for VM capacity and readiness. `tasks.check` is also built: [Check an external group](/reference/tasks#check-an-external-group) owns its contract and reasons. The turn operation, `tasks.turn`, records one Pi turn without choosing the next step. Publish remains to be built.
 
 Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick, so step 1 does not wait for ADR 0224.
 
@@ -107,7 +107,7 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 - A check, a turn, or a publish on a group without a workspace answers `409 tasks.no_workspace`.
 - A subtask that is not in the group answers `404`. The current subtask is the open subtask with the lowest position. Any other subtask answers `409 tasks.subtask_not_current`, so at most one subtask runs at a time.
 - An operation on a parked VM first queues its resume, as [Park and resume](/reference/compute-drivers#park-and-resume) does for work of the group, and waits for it.
-- The Gateway retries no effect for an external group. A retry is the orchestrator's decision.
+- The Gateway retries no effect for an external group. A retry is the orchestrator's decision. Durable owns restart resume and provider retries within a Pi turn.
 
 #### Provision
 
@@ -147,7 +147,7 @@ The commit moves the point where Orbit commits. Today an approval commits the re
 
 The [turn receipt](/reference/tasks#turn-receipt) still ends a turn. The result holds the stored receipt: the outcome, the deliverable confirmations, and a question with its cause. It also holds the thread, its final state, HEAD and the tree before and after the turn, and the token metrics. A turn that ends without a receipt has `receipt: null`. The operation reads, clears, and stores the receipt, and does nothing else: a `blocked` receipt starts no consult and creates no question. The orchestrator reads the receipt, not the agent's prose.
 
-In step 1, a Pi server restart that cuts off a turn fails the operation with the restart reason. A transient provider error fails it with its category. The orchestrator decides what comes next.
+A Pi server restart leaves the turn `working` while Durable resumes it, and the operation keeps waiting. Durable retries transient provider errors inside the turn; the Gateway retries nothing. A crash-loop park or a provider error after Durable exhausts its budget ends the turn `failed`, and the operation fails with that error. The orchestrator raises any assistance; Orbit raises none for an external group.
 
 #### Publish
 
@@ -213,11 +213,13 @@ Orbit records the cancel request before it answers `502`. The operation stays `w
 
 ### Step 2: Pi on Durable in the task VM
 
-Pi on the Durable harness replaces the session internals of the Pi server inside the task VM. The server's HTTP API stays, so `tasks.turn` does not change. The model key stays in the VM, per group, as today. Its own ADR decides the server change. It changes both modes, because one Pi server serves both.
+Built in [#1464](https://github.com/hardimpactdev/orbit/pull/1464). New task VMs need a binary built from the Durable revision, pinned with both `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; existing groups keep their binary. See [Roll out a new binary](/reference/pi-server#roll-out-a-new-binary).
+
+Pi on the Durable harness replaces the session internals of the Pi server inside the task VM. The server's HTTP API stays, so `tasks.turn` does not change. The model key stays in the VM, per group. The change applies to both modes, because one Pi server serves both.
 
 - The send key stays the submission key. It becomes Durable's request ID, so a repeat still starts no turn.
-- A Pi server restart no longer fails the turn: the server resumes it. Orbit removes its restart resume ([Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart)), which would send a second turn. Durable's crash-loop parking after five restarts fails the turn. The orchestrator raises assistance for an external group, and the tick for a tick group.
-- Durable retries a transient provider error, with its policy set to Orbit's budget. Orbit removes its own retry after 1, 2, 4, and 8 minutes ([Retry a transient provider error](/reference/tasks#retry-a-transient-provider-error)).
+- A Pi server restart no longer fails the turn: the server resumes it. The Gateway no longer sends a restart resume; [Restarts](/reference/pi-server#restarts) describes Durable's recovery. Durable's crash-loop parking after five restarts fails the turn. The orchestrator raises assistance for an external group, and the tick for a tick group.
+- Durable retries a transient provider error, with its policy set to Orbit's budget. The Gateway no longer retries after 1, 2, 4, and 8 minutes ([Retry a transient provider error](/reference/tasks#retry-a-transient-provider-error)).
 - Durable deduplicates within the VM's storage only. Across a lost VM, the keyed operation is the guard.
 - Checks stay operations. An agent does not reliably rerun a check that was cut off.
 
@@ -245,7 +247,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - The board and agent sessions stay, so a person still sees what is happening.
 - Retries become one rule for every operation: the key.
 - Until step 3, task work has two modes, as the Principle line states.
-- Step 1 does not wait for ADR 0224. ADR 0224 continues for tick groups, Orbit's among them, until step 3. Its "One resume" build step loses the Pi-restart resume and the provider retry when step 2 lands.
+- Step 1 does not wait for ADR 0224. ADR 0224 continues for tick groups, Orbit's among them, until step 3. Its "One resume" build step no longer includes Pi restart resume or provider retries after #1464.
 - Topology subtasks and review-and-merge Projects, Orbit itself among them, stay on the tick until an amendment covers them.
 - An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Only a deterministic step without an agent waits for a command operation and ADR 0225's agent commands.
 - The orchestrator becomes a dependency for task work. Its availability, licensing, and storage are outside Orbit.

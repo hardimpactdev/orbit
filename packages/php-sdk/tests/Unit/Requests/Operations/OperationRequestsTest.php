@@ -8,6 +8,7 @@ use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -71,6 +72,28 @@ describe('operation requests', function (): void {
         expect($response->result)->toBe($result);
         expect($response->succeeded())->toBeTrue();
         expect($response->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a846');
+        $mock->assertSentCount(1);
+    });
+
+    it('transports turn inputs and the key and returns typed operation evidence', function (): void {
+        $request = new TurnTaskGroupRequest(17, 18, 'reviewer', "Review.\nKeep this prompt.", '23', check: 24, idempotencyKey: 'review.c1');
+        $mock = new MockClient([
+            $request::class => MockResponse::make(['data' => operation_payload([
+                'kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded',
+                'result' => ['receipt' => null, 'thread' => 23, 'state' => 'done'],
+            ]), 'meta' => []], 202),
+        ]);
+        $response = operation_connector($mock)->send($request)->dto();
+
+        expect($request->getMethod())->toBe(Method::POST);
+        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/turn');
+        expect(json_decode((string) $request->body(), true))->toBe(['subtask' => 18, 'role' => 'reviewer', 'prompt' => "Review.\nKeep this prompt.", 'thread' => '23', 'check' => 24]);
+        expect($request->headers()->get('Idempotency-Key'))->toBe('review.c1');
+        expect($response)->toBeInstanceOf(OperationResponse::class);
+        expect($response->result)->toBe(['receipt' => null, 'thread' => 23, 'state' => 'done']);
+        $new = new TurnTaskGroupRequest(17, 18, 'implementer', '', 'new', model: '');
+        expect(json_decode((string) $new->body(), true))->toBe(['subtask' => 18, 'role' => 'implementer', 'prompt' => '', 'thread' => 'new', 'model' => '']);
+        expect($new->headers()->get('Idempotency-Key'))->toBeNull();
         $mock->assertSentCount(1);
     });
 

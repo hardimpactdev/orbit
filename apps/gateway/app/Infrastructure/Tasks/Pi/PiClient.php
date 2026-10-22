@@ -182,6 +182,7 @@ final readonly class PiClient
             ? 'The Pi server refused the request ('.$code.'): '.$message
             : 'The Pi server failed with HTTP '.$response->status().'.');
         $exception->turnRejected = $response->clientError() && is_string($code);
+        $exception->errorCode = is_string($code) ? $code : null;
 
         throw $exception;
     }

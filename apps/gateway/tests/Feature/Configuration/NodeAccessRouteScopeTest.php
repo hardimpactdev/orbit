@@ -293,6 +293,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tasks:subtask:create' => ServingNode::TaskGroupOwning,
         'tasks:subtask:destroy' => ServingNode::TaskGroupOwning,
         'tasks:subtask:update' => ServingNode::TaskGroupOwning,
+        'tasks:turn' => ServingNode::Gateway,
         'tasks:update' => ServingNode::TaskGroupOwning,
         'tool:adopt' => ServingNode::ToolOwning,
         'tool:install' => ServingNode::ToolOwning,

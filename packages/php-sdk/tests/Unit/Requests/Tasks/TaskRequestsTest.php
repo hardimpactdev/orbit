@@ -23,6 +23,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
+use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
@@ -53,6 +54,7 @@ describe('task transport', function (): void {
         'update' => [new UpdateTaskGroupRequest(13), Method::PATCH, '/api/v1/task-groups/13'],
         'cancel' => [new CancelTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/cancel'],
         'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
+        'turn' => [new TurnTaskGroupRequest(13, 14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/task-groups/13/turn'],
         'provision' => [new ProvisionTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/provision'],
         'complete' => [new CompleteTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/complete'],
         'subtask create' => [new CreateSubtaskRequest(13, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups/13/tasks'],

@@ -671,6 +671,8 @@ Route::prefix('v1')->group(function (): void {
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
             Route::post('task-groups/{group}/check', [TaskGroupsController::class, 'check'])
                 ->whereNumber('group')->name('tasks:check');
+            Route::post('task-groups/{group}/turn', [TaskGroupsController::class, 'turn'])
+                ->whereNumber('group')->name('tasks:turn');
             Route::post('task-groups/{group}/provision', [TaskGroupsController::class, 'provision'])
                 ->whereNumber('group')->name('tasks:provision');
             Route::post('task-groups/{group}/cancel', [TaskGroupsController::class, 'cancel'])

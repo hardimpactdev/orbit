@@ -12,6 +12,7 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -78,6 +79,11 @@ final readonly class PiDriver implements AgentDriver
 
     public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
+        if ($thread->parent?->groupOrchestration() === TaskOrchestration::External) {
+            $this->client->send($this->node($thread), $thread->external_id, $key ?? (string) Str::uuid(), $message);
+
+            return;
+        }
         $this->deliver($this->node($thread), $thread->external_id, $message, $key);
     }
 

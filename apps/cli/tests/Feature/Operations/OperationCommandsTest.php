@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -498,4 +499,18 @@ describe('tasks:check', function (): void {
         [['group' => '17', '--subtask' => '21'], 'tasks.phase_required'],
         [['group' => '17', '--subtask' => '21', '--phase' => 'bad'], 'tasks.phase_invalid'],
     ]);
+});
+
+it('follows a turn operation and renders its final receipt in JSON', function (): void {
+    $seen = [];
+    $mock = cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['receipt' => ['outcome' => 'ready_for_review'], 'thread' => 9], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskGroupRequest::class, ['kind' => 'tasks.turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('tasks:turn', ['group' => '17', '--subtask' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
+    $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($output['result']['receipt']['outcome'])->toBe('ready_for_review');
+    $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskGroupRequest
+        && $request->headers()->get('Idempotency-Key') === 'turn.c1'
+        && json_decode((string) $request->body(), true) === ['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
 });
