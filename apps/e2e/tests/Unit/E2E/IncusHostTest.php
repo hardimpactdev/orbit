@@ -553,7 +553,7 @@ describe('IncusHost reads', function () {
     it('reads exact VM and network identities as JSON', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
+                incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
@@ -879,7 +879,7 @@ describe('IncusHost mutations', function () {
     it('does not start an already running owned VM', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
+                incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json') => Process::result(
                     str_replace(
                         ['"status":"Stopped"', '"status_code":102'],
                         ['"status":"Running"', '"status_code":103'],
@@ -898,7 +898,7 @@ describe('IncusHost mutations', function () {
     it('force-stops the exact owned VM when graceful stop fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
+                incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
@@ -914,7 +914,7 @@ describe('IncusHost mutations', function () {
         incusHost()->stop('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
+            incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json'),
             incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')),
             incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--force'),
         ]);
@@ -923,7 +923,7 @@ describe('IncusHost mutations', function () {
     it('exposes the forced stop failure when graceful stop also fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
+                incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json') => Process::result(
                     vmJson(),
                 ),
                 incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
@@ -1103,7 +1103,8 @@ describe('IncusHost mutations', function () {
             if (
                 $process->command === incusCommand(
                     'list',
-                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
+                    incusTarget(),
+                    'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$',
                     '--format=json',
                 )
             ) {
@@ -1157,7 +1158,7 @@ describe('IncusHost mutations', function () {
         incusHost()->deleteInstance('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
+            incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json'),
             incusCommand('delete', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')),
         ]);
     });
@@ -1281,7 +1282,7 @@ describe('IncusHost mutations', function () {
     it('reads identity from expanded devices when local devices are empty', function () {
         Process::fake(function (PendingProcess $process) {
             expect($process->command)
-                ->toBe(incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'));
+                ->toBe(incusCommand('list', incusTarget(), 'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$', '--format=json'));
 
             return Process::result(json_encode([[
                 'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
@@ -1320,7 +1321,8 @@ describe('IncusHost mutations', function () {
         Process::fake(function (PendingProcess $process) {
             return $process->command === incusCommand(
                 'list',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
+                incusTarget(),
+                'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$',
                 '--format=json',
             )
                 ? Process::result(vmJson())
@@ -1654,7 +1656,8 @@ describe('IncusHost mutations', function () {
             if (
                 $process->command === incusCommand(
                     'list',
-                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
+                    incusTarget(),
+                    'name=^orbit-e2e-tst-123-aaaaaaaa-gateway$',
                     '--format=json',
                 )
             ) {
@@ -1925,3 +1928,18 @@ describe('IncusHost failures', function () {
             ->toThrow(RuntimeException::class, 'disk device orbit-source identity is invalid');
     });
 });
+
+it('finds the exact instance with Incus 7 remote and name filter parsing', function (string $remote) {
+    Process::fake(function (PendingProcess $process) use ($remote) {
+        if ($process->command === incusCommand('list', $remote.':', 'name=^guest\\.one$', '--format=json')) {
+            return Process::result(vmJson('guest.one'));
+        }
+
+        return Process::result('[]');
+    });
+
+    $host = new IncusHost(remote: $remote, project: 'orbit');
+
+    expect($host->instance('guest.one')?->name)->toBe('guest.one');
+    Process::assertRanTimes(incusCommand('list', $remote.':', 'name=^guest\\.one$', '--format=json'), 1);
+})->with(['local', 'lab']);
