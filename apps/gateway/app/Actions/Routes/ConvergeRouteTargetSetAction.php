@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\PathProxy;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
@@ -70,6 +71,7 @@ final readonly class ConvergeRouteTargetSetAction
         }
 
         WebSocketRouteSelection::assertMutable($route);
+        PathProxy::assertRouteMutable($route);
         $step = RouteTargetSetStep::tryFrom((string) $route->target_set_step) ?? RouteTargetSetStep::Reserved;
 
         if ($this->rank($step) < $this->rank(RouteTargetSetStep::DatabaseCommitted)) {

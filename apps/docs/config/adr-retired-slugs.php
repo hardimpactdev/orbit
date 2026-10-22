@@ -214,5 +214,6 @@ return [
     '0220' => ['0220-serialize-task-workspaces-with-one-lease'],
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
     '0227' => ['0227-manage-postgresql-and-private-database-endpoints'],
+    '0230' => ['0230-publish-a-process-under-an-app-route-path'],
     '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
 ];

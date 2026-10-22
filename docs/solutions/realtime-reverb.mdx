@@ -20,6 +20,8 @@ Reverb holds long-lived WebSocket connections, so it runs outside the Gateway pr
 
 ## Solution
 
+Public app attachments share Laravel route inspection and app Route Caddy publication with [Instance path proxies](/reference/routes#publish-a-process-under-an-app-path). Reverb keeps `/app` and `/apps` reserved. Its existing collision and publication errors stay the same.
+
 ### Add the role
 
 ```bash

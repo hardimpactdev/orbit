@@ -92,7 +92,7 @@ class ProductionRouteInspectionTest(unittest.TestCase):
         os.symlink(self.release, f'{self.home}/current')
         with open(f'{self.release}/artisan', 'w') as handle:
             handle.write('<?php file_put_contents("booted", "yes"); echo "[]";')
-        self.payload = {'inspection': 'laravel_routes', 'home': self.home,
+        self.payload = {'inspection': 'laravel_routes', 'prefixes': ['/app', '/apps'], 'home': self.home,
                         'application': f'{self.home}/current', 'php': shutil.which('php')}
 
     def test_refuses_a_current_link_outside_releases_without_booting_the_application(self):
@@ -109,6 +109,16 @@ class ProductionRouteInspectionTest(unittest.TestCase):
 
         self.assertEqual((outcome, data), ('path_mismatch', {}))
         self.assertFalse(os.path.exists(f'{self.release}/booted'))
+
+    def test_checks_the_selected_path_prefix_without_reserving_a_sibling(self):
+        for uri, collision in [('powersync/sync/stream', True), ('PowerSync/write-checkpoint2.json', True),
+                               ('powersync-other', False), ('app/id', False), ('{page?}', True),
+                               ('{fallbackPlaceholder}', False)]:
+            with self.subTest(uri=uri):
+                with open(f'{self.release}/artisan', 'w') as handle:
+                    handle.write('<?php echo json_encode([["uri" => "' + uri + '"]]);')
+                outcome, data = result('instances.inspect-source', {**self.payload, 'prefixes': ['/powersync']})
+                self.assertEqual((outcome, data), ('routes_inspected', {'collision': collision}))
 
     def test_suppresses_failed_artisan_output(self):
         with open(f'{self.release}/artisan', 'w') as handle:

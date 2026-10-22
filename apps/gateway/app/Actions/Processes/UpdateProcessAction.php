@@ -9,6 +9,7 @@ use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\Instances\PathProxy;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
@@ -44,6 +45,7 @@ final readonly class UpdateProcessAction
             Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [],
             fn (): Process => $this->lease->run($process, function (Process $fresh) use ($data): Process {
                 $this->databaseServers->assertUpdatable($fresh);
+                PathProxy::assertProcessMutable($fresh);
                 if (isset($fresh->runtime_config['preset'])) {
                     throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
                 }

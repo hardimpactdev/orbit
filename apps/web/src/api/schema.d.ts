@@ -1756,6 +1756,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/path-proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show an Instance path proxy
+         * @description Show the stored path proxy for an Instance.
+         */
+        get: operations["instance-path-proxy-show"];
+        /**
+         * Publish an Instance path proxy
+         * @description Publish a Process under a prefix on an existing public app Route.
+         */
+        put: operations["instance-path-proxy-set"];
+        post?: never;
+        /**
+         * Remove an Instance path proxy
+         * @description Remove an Instance path proxy and keep its Route and Process.
+         */
+        delete: operations["instance-path-proxy-unset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/queue": {
         parameters: {
             query?: never;
@@ -4675,6 +4703,18 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
             poll_after_seconds?: number | null;
+        };
+        RemovedInstancePathProxy: {
+            instance_id?: number;
+        };
+        InstancePathProxy: {
+            instance_id?: number;
+            route_id?: number;
+            process_id?: number;
+            port?: number;
+            prefix?: string;
+            endpoint?: string;
+            enabled?: boolean;
         };
         DeploymentReleaseState: {
             releases?: string[];
@@ -11634,6 +11674,175 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-path-proxy-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstancePathProxy"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-path-proxy-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    process_id: number;
+                    /** @description TCP port published on the upstream Node WireGuard address */
+                    port: number;
+                    /** @description Reserved top-level path prefix */
+                    prefix?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstancePathProxy"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-path-proxy-unset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RemovedInstancePathProxy"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

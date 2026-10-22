@@ -3,13 +3,13 @@ title: "Routes"
 description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
-  - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
-  - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/app/Http/{Controllers/Api/{RoutesController,InstancePathProxyController}.php,Requests/{Routes/**,Instances/SetInstancePathProxyRequest.php}}
+  - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy,InstancePathProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
-  - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php
-  - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
-  - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
+  - apps/gateway/app/{Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php,Infrastructure/Clusters/NativeClusterRouterOperationLock.php}
+  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess,NativeLaravelRouteInspector}.php
+  - apps/gateway/app/{Domain/Instances/{DevelopmentSourceAccess,PathProxy,LaravelRouteInspector}.php,Actions/Instances/*InstancePathProxyAction.php,Data/Instances/*InstancePathProxyData.php}
+  - packages/php-sdk/src/{Requests/Instances/*InstancePathProxyRequest.php,Responses/Instances/*InstancePathProxyResponse.php}
 ---
 
 # Routes
@@ -494,6 +494,26 @@ The wait counts from the last DNS move of that Route, which the Route stores. Wh
 
 The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. Caddy finishes every request in progress on the old target and closes idle keep-alive connections, so the next request resolves the name again. A client with a longer DNS cache of its own, such as a browser or a Java runtime, can still reach the old target and get a TLS error until its cache expires. Retry the request or reload the page.
 
+## Publish a Process under an app path
+
+An Instance path proxy publishes a WireGuard-only Docker Process on the Instance's existing public app domain. For example, `https://hauzer.app/powersync/sync/stream` reaches `/sync/stream` on the selected Process. The proxy strips the prefix and preserves the remaining path, query, method, body, and authorization headers. It flushes each response write immediately and allows one hour between upstream reads. The bare prefix reaches `/`; a sibling such as `/powersync-other` stays with the app.
+
+```bash
+orbit instance:path-proxy:set --instance=hauzer.app --process=123 --port=8080
+orbit instance:path-proxy:show --instance=hauzer.app
+orbit instance:path-proxy:unset --instance=hauzer.app --force
+```
+
+`--prefix` defaults to `/powersync`. It must be one lowercase path segment beginning with a letter, with letters, digits, or hyphens after it, and at most 63 characters excluding the slash. `/app`, `/apps`, and Orbit's `/__orbit` namespace are reserved. Each Instance and Route has at most one path proxy. The Instance must be active on `app-prod`, with a detected Laravel app and an active public app Route without a web root. Every Route target must pass the same Laravel route inspection used for [public Reverb](/reference/websocket-apps#add-an-app-on-an-instance). A declared route under the prefix or a leading route parameter blocks publication. A root fallback does not.
+
+`--process` selects an active Node-owned Docker Process. `--port` selects its exact TCP published port, bound to that Node's WireGuard address. A container port, loopback bind, wildcard bind, UDP mapping, arbitrary host, or URL cannot select an upstream. The Gateway changes no Process, firewall rule, domain, certificate, or application environment. The upstream remains responsible for authentication. For PowerSync, set the client endpoint to the resulting `https://<domain><prefix>` URL without a trailing slash.
+
+Set stores intent, then rebuilds Caddy on every Node serving the Route. Repeat set to change the upstream or prefix, or to repair a failed build. Remove disables intent before rebuilding and deletes it only after every build succeeds. A failed withdrawal stays visible as `enabled: false`; repeat remove to finish. `node:converge --force` also renders the stored intent. Route domain, publication, target, web-root, transfer, and removal changes are refused with `path_proxy.route_in_use` until removal completes. Updating or deleting the selected Process is refused with `path_proxy.process_in_use`; stopping or restarting it remains explicit operator control.
+
+Doctor compares the path handler through the normal Caddy build checks and dials its upstream from the public Ingress through the existing forwarding check. It reports `route.path_proxy_collision` or `route.path_proxy_inspection_failed` when Laravel routes drift or cannot be inspected. A publication whose stored Process or port fails validation reports `route.path_proxy_upstream_invalid`. These checks change nothing.
+
+The API uses `PUT`, `GET`, and `DELETE /api/v1/instances/{instance}/path-proxy`. `instance` is a positive ID or exact Route domain. PUT accepts `process_id`, `port`, and optional `prefix`; it returns `instance_id`, `route_id`, `process_id`, `port`, `prefix`, `endpoint`, and `enabled`. GET returns the stored publication or `path_proxy.missing` (404). DELETE returns the removed `instance_id`. MCP exposes `instance-path-proxy-set`, `instance-path-proxy-show`, and `instance-path-proxy-unset` through these same operations.
+
 ## Remove a Route
 
 `route:destroy` removes a Route and its projections. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
@@ -584,6 +604,10 @@ The forwarding check dials the Router, or the workload Nodes when the Ingress is
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### A Process shares the app domain through one reserved path
+
+PowerSync builds each request by appending its path to an endpoint. Stripping one reserved prefix gives phones a public endpoint on the app's domain while the service stays on WireGuard. The existing Route owns DNS, TLS, and public access. A new domain or Route would duplicate those concerns. An arbitrary upstream URL or Caddy snippet would bypass managed Process identity. Orbit therefore stores only a Process, published port, and prefix. One publication per Route keeps production pools unambiguous; Laravel collision inspection makes the path reservation explicit. Service authentication and service configuration remain with the app.
 
 ### Routes own domains, and Cluster membership owns scope
 

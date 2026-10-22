@@ -580,3 +580,61 @@ it('routes only the selected Pusher paths before the existing application handle
         unlink($path);
     }
 })->with(['proxy pool' => false, 'production PHP' => true]);
+
+it('strips only the path proxy prefix and forwards PowerSync requests and streamed bytes in real Caddy', function (): void {
+    $listeners = [];
+    $addresses = [];
+    foreach (range(1, 2) as $index) {
+        $listeners[$index] = stream_socket_server('tcp://127.0.0.1:0', $error, $message);
+        $addresses[$index] = stream_socket_get_name($listeners[$index], false);
+    }
+    foreach ($listeners as $listener) {
+        fclose($listener);
+    }
+    [$upstreamAddress, $address] = array_values($addresses);
+    $upstream = new Process([PHP_BINARY, '-d', 'output_buffering=0', '-S', $upstreamAddress,
+        dirname(__DIR__, 3).'/Fixtures/path-proxy-upstream.php']);
+    $site = new DevelopmentSite(nodeId: 4, nodeAddress: '10.44.0.4', scope: 'app-instance-71', checkoutPath: '',
+        documentRoot: '', phpVersion: null, domain: 'hauzer.app', environment: 'production', publicListener: true,
+        localHttpUpstream: $upstreamAddress, pathProxyPrefix: '/powersync', pathProxyUpstream: $upstreamAddress);
+    $adapted = caddy_adapt(CaddyGlobalOptions::render().new DevelopmentCaddyConfigRenderer()->render(collect([$site])));
+    expect($adapted->exitCode)->toBe(0, $adapted->stderr);
+    $json = json_decode($adapted->stdout, true, flags: JSON_THROW_ON_ERROR);
+    expect($adapted->stdout)->toContain('"flush_interval":-1', '"read_timeout":3600000000000', '"response_header_timeout":3600000000000');
+    $server = array_key_first($json['apps']['http']['servers']);
+    $json['admin'] = ['disabled' => true];
+    $json['apps']['http']['servers'][$server]['listen'] = [$address];
+    $json['apps']['http']['servers'][$server]['automatic_https'] = ['disable' => true];
+    unset($json['logging'], $json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies']);
+    $path = tempnam(sys_get_temp_dir(), 'orbit-path-proxy-');
+    file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
+    $caddy = new Process([TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path]);
+    try {
+        $upstream->start();
+        $upstream->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'Development Server'));
+        $caddy->start();
+        $caddy->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'serving initial configuration'));
+        foreach ([
+            ['/powersync/write-checkpoint2.json?x=1', '/write-checkpoint2.json?x=1'],
+            ['/powersync/sync/checkpoint-request', '/sync/checkpoint-request'],
+            ['/powersync', '/'], ['/powersync/', '/'], ['/powersync-other', '/powersync-other'], ['/dashboard', '/dashboard'],
+        ] as [$uri, $expected]) {
+            $context = stream_context_create(['http' => ['method' => 'POST', 'content' => 'checkpoint',
+                'header' => "Host: hauzer.app\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\n"]]);
+            $response = json_decode(file_get_contents('http://'.$address.$uri, false, $context), true, flags: JSON_THROW_ON_ERROR);
+            expect($response)->toBe(['path' => $expected, 'method' => 'POST', 'body' => 'checkpoint', 'authorization' => 'Bearer test-token']);
+        }
+        $context = stream_context_create(['http' => ['header' => 'Host: hauzer.app']]);
+        $start = microtime(true);
+        $stream = fopen('http://'.$address.'/powersync/sync/stream', 'r', false, $context);
+        stream_set_timeout($stream, 3);
+        expect(fgets($stream))->toBe("first\n");
+        expect(microtime(true) - $start)->toBeLessThan(1.0);
+        expect(stream_get_contents($stream))->toBe("second\n");
+        fclose($stream);
+    } finally {
+        $caddy->stop();
+        $upstream->stop();
+        unlink($path);
+    }
+});

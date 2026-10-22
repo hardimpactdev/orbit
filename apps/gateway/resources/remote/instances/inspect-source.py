@@ -5,7 +5,7 @@
 # Input: {"checkout": path, "root": apps root, "user": managed user, "group": managed group,
 #   "layout": "checkout" or "worktree", "branch": expected branch or "", "inspect_content": bool,
 #   "unresolved": bool, "allow_absent": bool, "origin": the Project origin, "prepare_id": source preparation ID or ""}
-# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable}; runs as the production user.
+# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable, "prefixes": reserved top-level paths}; runs as the production user.
 # Result: routes_inspected: {"collision": bool}; failed: Laravel inspection failed without application output.
 # Result: inspected: base64 of "top", "common", "origin", "branch", "commit", "dirty" ("", "0", or "1"),
 #   "source_identity" ("<device>:<inode>" or "absent"), and "worktrees" (`git worktree list --porcelain -z`).
@@ -36,10 +36,10 @@ def inspect_laravel_routes(payload):
         routes = json.loads(completed.stdout)
         if not isinstance(routes, list) or any(not isinstance(route, dict) or not isinstance(route.get('uri'), str) for route in routes):
             return 'failed', {}
-        # Root fallback runs after explicit routes; the edge reserves its Pusher paths.
-        # Any other leading parameter can consume either reserved prefix.
+        # Root fallback runs after explicit routes. Other leading parameters can consume a reserved prefix.
+        prefixes = {prefix.strip('/').lower() for prefix in payload['prefixes']}
         uris = [route['uri'].strip('/') for route in routes]
-        collision = any(uri.split('/')[0].lower() in ('app', 'apps')
+        collision = any(uri.split('/')[0].lower() in prefixes
                         or (uri.startswith('{') and uri != '{fallbackPlaceholder}') for uri in uris)
         return 'routes_inspected', {'collision': collision}
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):

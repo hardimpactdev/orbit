@@ -52,6 +52,7 @@ The Gateway also refuses these Instances:
 | Code | Cause |
 | --- | --- |
 | `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) is still open: it is unfinished, failed before cutover with incomplete rollback, or failed after cutover. Retry the identical transfer request first. |
+| `path_proxy.route_in_use` | A Route of the Instance still has an [Instance path proxy](/reference/routes#publish-a-process-under-an-app-path). Finish `instance:path-proxy:unset` first, including a failed withdrawal. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/instance-cloning). |
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |

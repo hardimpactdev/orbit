@@ -678,6 +678,7 @@ SUMMARIES = {
     'instance:clone': 'Clone an Instance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
     'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
+    'instance:path-proxy:set': 'Publish an Instance path proxy', 'instance:path-proxy:show': 'Show an Instance path proxy', 'instance:path-proxy:unset': 'Remove an Instance path proxy',
     'instance:websocket:add': 'Attach a WebSocket app', 'instance:websocket:remove': 'Detach a WebSocket app',
     'websocket:app:list': 'List WebSocket apps', 'websocket:app:show': 'Show a WebSocket app', 'websocket:app:create': 'Create a WebSocket app', 'websocket:app:destroy': 'Remove a WebSocket app',
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
@@ -1646,6 +1647,7 @@ CTRL_DATA_OVERRIDES = {
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
+    'InstancePathProxyController@store': ('InstancePathProxyData', False), 'InstancePathProxyController@show': ('InstancePathProxyData', False), 'InstancePathProxyController@destroy': ('RemovedInstancePathProxyData', False),
     'WebSocketAppAttachmentsController@store': ('WebSocketAppAttachmentData', False), 'WebSocketAppAttachmentsController@destroy': ('WebSocketAppAttachmentData', False),
     'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False), 'ProcessesController@update': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
@@ -1739,7 +1741,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     description = description_for(route)
     if description:
         op['description'] = description
-    env_route = '/environment/' in path or ('/instances/' in path and ('/database-connections/' in path or '/websocket-apps/' in path))
+    env_route = '/environment/' in path or ('/instances/' in path and ('/database-connections/' in path or '/websocket-apps/' in path or path.endswith('/path-proxy')))
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
         if p == 'entry' and route['name'].startswith('project:document:'):

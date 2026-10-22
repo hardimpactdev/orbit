@@ -1451,6 +1451,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/powersync-path-proxy-STATUS.md",
+            "title": "PowerSync path proxy status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/quickstart.mdx",
             "title": "Quickstart",
             "kind": "product",
@@ -2838,7 +2853,8 @@
             "kind": "reference",
             "components": [
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

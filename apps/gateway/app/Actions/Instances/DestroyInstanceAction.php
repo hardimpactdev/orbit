@@ -21,6 +21,7 @@ use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\PathProxy;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalException;
@@ -529,6 +530,10 @@ final readonly class DestroyInstanceAction implements InstanceRemover
 
     private function assertSupported(Instance $instance): void
     {
+        foreach ($instance->routes()->get() as $route) {
+            PathProxy::assertRouteMutable($route);
+        }
+
         if (InstanceTransfer::query()
             ->where('instance_id', $instance->id)
             ->open()
