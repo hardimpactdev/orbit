@@ -41,3 +41,23 @@ Deno.test("report records nothing when this stage entry already has its evidence
   assertEquals(calls, []);
   assertEquals(getWrittenResources()[0].data.status, "already-recorded");
 });
+
+Deno.test("report treats an agent-runner review without a result as a failed run, not a finding", async () => {
+  const { context } = createModelTestContext({ globalArgs });
+  const calls: { method?: string; arguments?: Record<string, unknown> }[] = [];
+  const ctx = Object.assign(context, {
+    queryData: (predicate: string) =>
+      Promise.resolve(
+        predicate.includes('specName == "reviewResult"')
+          ? [{ name: "review-x", attributes: { verdict: "fail", body: "", findings: [{ severity: "critical", file: "N/A", description: "Agent did not produce a structured result" }] } }]
+          : [],
+      ),
+    runModel: (o: { method?: string; arguments?: Record<string, unknown> }) => {
+      calls.push(o);
+      return Promise.resolve({ ok: true });
+    },
+  });
+  await behavior.methods.report.execute({ ...args, stage: "review" as const, key: "bump-x.review.c1", runId: "run-3" }, ctx as never);
+  assertEquals(calls.map((c) => c.method), ["record_evidence"]);
+  assertEquals((calls[0].arguments!.payload as { status: string }).status, "failed");
+});

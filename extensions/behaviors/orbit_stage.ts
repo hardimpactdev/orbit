@@ -298,7 +298,11 @@ export const behavior = {
           }
         } else if (a.stage === "review") {
           const rv = ((await ctx.queryData(`modelType == "@swamp/agent-runner" && specName == "reviewResult" && workflowRunId == "${a.runId}"`)) as Rec[])[0]?.attributes;
-          if (rv) {
+          // agent-runner reports an agent that wrote no result as a critical "N/A"
+          // finding; that is a failed review run (retry), not a finding to rework.
+          const noResult = ((rv?.findings ?? []) as { file?: string; description?: string }[])
+            .some((f) => f.file === "N/A" && /did not produce a structured result/i.test(String(f.description)));
+          if (rv && !noResult) {
             evidence.status = "succeeded";
             artifacts["code-review"] = { summary: String(rv.body ?? ""), findings: toFactoryFindings((rv.findings ?? []) as never[]) };
           }

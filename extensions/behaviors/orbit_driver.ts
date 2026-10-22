@@ -117,6 +117,22 @@ interface Launch {
   runId?: string;
 }
 
+/** A terminal run-record status (failed, cancelled, interrupted), or null. */
+function runRecordEnded(repoDir: string, runId: string): string | null {
+  const out = new Deno.Command(Deno.execPath(), {
+    args: ["workflow", "history", "get", runId, "--json"],
+    cwd: repoDir, stdin: "null", stdout: "piped", stderr: "null",
+  }).outputSync();
+  if (!out.success) return null;
+  try {
+    const text = new TextDecoder().decode(out.stdout);
+    const status = (JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { status?: string }).status;
+    return status && ["failed", "cancelled", "interrupted"].includes(status) ? status : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Status of a serve-started run from swamp's run summary, or null while it has none. */
 async function summaryStatus(ctx: Ctx, runId: string): Promise<string | null> {
   const rows = (await ctx.queryData(
@@ -145,7 +161,8 @@ async function launchWorkflow(ctx: Ctx, workflow: string, key: string, inputs: R
   let runId: string | undefined;
   if (g.serveUrl) {
     // Through swamp serve: the run lives in serve; --detach returns its id at once.
-    const out = await new Deno.Command("swamp", {
+    // Deno.execPath() is the swamp binary itself; a systemd unit has no shell PATH.
+    const out = await new Deno.Command(Deno.execPath(), {
       args: ["workflow", "run", workflow, "--server", g.serveUrl, "--token-file", g.serveTokenFile ?? "", "--detach",
         "--input-file", inputFile, "--no-supersede", "--json"],
       cwd: g.repoDir, stdin: "null", stdout: "piped", stderr: "piped",
@@ -175,8 +192,9 @@ async function workflowStep(ctx: Ctx, workItem: string, key: string, status: Sta
   const prev = await latest<Launch>(ctx, ctx.definitionName, `launch-${key}`);
   const claim = await latest<{ pid: number; startedAt: string; runId: string }>(ctx, g.stageModel, `claim-${key}`);
   if (prev?.runId) {
-    // Serve mode: the run has ended once swamp wrote its summary.
-    const ended = await summaryStatus(ctx, prev.runId);
+    // Serve mode: the run has ended once swamp wrote its summary, or once its run
+    // record says it failed, was cancelled, or was interrupted (a serve restart).
+    const ended = (await summaryStatus(ctx, prev.runId)) ?? runRecordEnded(g.repoDir, prev.runId);
     const age = (Date.now() - Date.parse(prev.lastLaunchedAt)) / 1000;
     if (ended === null && age < g.maxRunSeconds) {
       return { action: null, waiting: `stage run ${prev.runId.slice(0, 8)} for ${key} running (serve)` };

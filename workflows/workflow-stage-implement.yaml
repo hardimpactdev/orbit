@@ -143,6 +143,7 @@ jobs:
             cwd: '${{ inputs.worktree }}'
             model: gpt-6.1-sol
             effort: high
+            sandbox: danger-full-access
             baseUrl: http://10.44.0.3:8317/v1
             auth: '${{ vault.get(default, CLIPROXY_CODEX_AUTH) }}'
         dependsOn:

@@ -1,0 +1,9 @@
+type: '@swamp/git'
+typeVersion: 2026.09.28.1
+id: 6138f62b-994b-4d17-8293-85f975fb9577
+name: git-wt-bump-apps-cli
+version: 1
+tags: {}
+globalArguments:
+  repoPath: /fast/apps/orbit-swamp-scratch/wt2/bump-apps-cli
+methods: {}

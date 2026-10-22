@@ -20,6 +20,8 @@ export const extension = {
         model: z.string().default("gpt-6.1-sol"),
         effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
         readOnly: z.boolean().default(false),
+        sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]).optional()
+          .describe("Overrides readOnly. On hosts that restrict unprivileged user namespaces (Ubuntu's apparmor_restrict_unprivileged_userns=1), Codex's bwrap sandbox cannot start; use danger-full-access in a disposable workspace"),
         providerId: z.string().default("cliproxyapi"),
         baseUrl: z.string(),
         wireApi: z.string().default("responses"),
@@ -27,7 +29,7 @@ export const extension = {
       }),
       execute: async (
         args: {
-          key: string; prompt: string; cwd: string; model: string; effort?: string; readOnly: boolean;
+          key: string; prompt: string; cwd: string; model: string; effort?: string; readOnly: boolean; sandbox?: string;
           providerId: string; baseUrl: string; wireApi: string; auth: string;
         },
         ctx: {
@@ -38,7 +40,7 @@ export const extension = {
       ) => {
         const outputPath = await Deno.makeTempFile({ prefix: "codex-last-" });
         const argv = codexArgs({
-          ...args, sandbox: args.readOnly ? "read-only" : "workspace-write", outputPath, auth: AuthSchema.parse(JSON.parse(args.auth)),
+          ...args, sandbox: args.sandbox ?? (args.readOnly ? "read-only" : "workspace-write"), outputPath, auth: AuthSchema.parse(JSON.parse(args.auth)),
         });
         const env: Record<string, string> = { TERM: "dumb" };
         for (const k of ["PATH", "HOME", "USER", "LANG", "TMPDIR"]) {

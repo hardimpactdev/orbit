@@ -84,6 +84,7 @@ jobs:
             promptFile: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.promptFile }}'
             diff: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.diff }}'
             readOnly: true
+            providerConfig: { claude: { allowedTools: [Read, Grep, Glob, "Bash(tee:*)"] } }
         dependsOn:
           - step: prompt
             condition: { type: succeeded }
