@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Doctor\UfwManagedRulesCheck;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
@@ -20,6 +23,63 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+
+it('replaces the analytics database port in one converge and clears Doctor drift', function (): void {
+    $storage = analytics_storage_processes();
+    $node = $storage['node'];
+    app(AnalyticsRoleSettingsRepository::class)->store(
+        $node,
+        new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
+    );
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $manager->converge($node, RoleName::Analytics, 'orbit');
+    $ssh->calls = [];
+    $before = $ssh->inventory();
+    $postgres18 = analytics_connection_process(
+        $node,
+        'services-postgres',
+        'postgres:18',
+        ['POSTGRES_PASSWORD' => 'postgres-secret'],
+        ['10.44.0.200:5434:5432/tcp'],
+    );
+    app(AnalyticsRoleSettingsRepository::class)->store(
+        $node,
+        new AnalyticsRoleSettings($postgres18->id, $storage['clickhouse']->id),
+    );
+    $rules = new NodeFirewallRuleCatalog()->forRole($node, RoleName::Analytics);
+    $connection = new SshConnection('10.44.0.200', 'orbit', 22, '/tmp/key', '/tmp/hosts');
+    $status = new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']);
+    $doctor = new UfwManagedRulesCheck;
+
+    expect($doctor->matches($ssh->execute($connection, $status), $rules))->toBeFalse();
+
+    $manager->converge($node, RoleName::Analytics, 'orbit');
+
+    expect($doctor->matches($ssh->execute($connection, $status), $rules))->toBeTrue();
+    $mutations = $ssh->mutations();
+    expect($mutations)->toHaveCount(2)
+        ->and($mutations[0])->toBe(['sudo', 'ufw', '--force', 'delete', '4'])
+        ->and($mutations[1])->toContain('5434', 'orbit:analytics-postgres-local');
+    $unrelated = static fn (array $rule): bool => $rule['comment'] !== 'orbit:analytics-postgres-local';
+    expect(array_values(array_filter($ssh->inventory(), $unrelated)))
+        ->toBe(array_values(array_filter($before, $unrelated)));
+    expect($ssh->operatorWebRulesPresent)->toBeTrue();
+});
+
+it('refuses a foreign shape carrying the managed analytics name before any mutation', function (): void {
+    $storage = analytics_storage_processes();
+    app(AnalyticsRoleSettingsRepository::class)->store(
+        $storage['node'],
+        new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
+    );
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seedRule('orbit:analytics-postgres-local', '198.51.100.20', '10.44.0.200', '5434', 'tcp');
+
+    expect(fn () => role_firewall_manager($ssh)->converge($storage['node'], RoleName::Analytics, 'orbit'))
+        ->toThrow(FirewallOperationException::class);
+    expect($ssh->mutations())->toBeEmpty();
+});
 
 it('preserves public SSH before enabling inactive UFW and opens nothing else', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
@@ -1012,6 +1072,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
         }
 
         return match ($comment) {
+            'orbit:analytics-https', 'orbit:analytics-postgres-local', 'orbit:analytics-clickhouse-local' => "[ {$number}] {$rule['destination']} {$rule['port']}/{$rule['protocol']} on ".($comment === 'orbit:analytics-https' ? 'orbit' : 'docker0').' ALLOW IN '.($rule['source'] === 'any' ? 'Anywhere' : $rule['source'])." # {$comment}",
             'orbit:public-ssh-recovery' => "[ {$number}] 22/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:wireguard-members' => '[ '.$number.'] '.($rule['destination'] === 'any' ? '10.44.0.2' : $rule['destination']).' on orbit ALLOW IN Anywhere # '.$comment,
             'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
