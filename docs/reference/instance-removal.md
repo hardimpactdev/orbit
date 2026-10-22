@@ -184,7 +184,7 @@ Closed transfer records stay after removal, with their Instance references clear
 
 ### Production content
 
-Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. After runtime cleanup it removes the production user, the whole production home (including releases, environment files, shared data, and SQLite files), and `/var/lib/orbit/app-instance-sources/<instance-id>`. Removal authenticates the source marker owned by root without requiring the prunable `initial` release.
+Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. After runtime cleanup it removes the production user, the whole production home (including releases, environment files, shared data, and SQLite files), and `/var/lib/orbit/app-instance-sources/<instance-id>`. The existing production release-layout operation authenticates the source marker owned by root for validation, serving withdrawal, and final resource deletion, without requiring the prunable `initial` release.
 
 It verifies that the account, home, and state directory are gone before completing removal. A failure leaves the Instance `removing` for retry; it never reports completed while these resources remain. If final state deletion stops after removing the marker, a retry authenticates the state directory and finishes deleting it only after confirming the account and home are absent. Another Instance using the same production identity on the Node blocks deletion. `/etc/orbit/php-fpm/<production-user>/local.conf` stays. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
 

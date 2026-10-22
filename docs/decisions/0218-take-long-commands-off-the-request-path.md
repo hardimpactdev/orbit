@@ -181,7 +181,7 @@ The `instance.destroy` pull request of ADR 0209 replaces `instance_removals` and
 - An operation is terminal once it fails. A retry is a new `instance.destroy` that adopts the inventory, the removal ID, the member keys, and the finished steps of the operation that the Instance points to. The Node's removal files keep their names, so the retry can prove that it owns them.
 - `ForgetTaskVmWorkspacesAction`, the second writer of the ledger, becomes steps of the task VM branch.
 - Create cleanup and the removal step of a Route target change run the same step code inside their own operation. They do not start a nested `instance.destroy`, which would wait for the one worker that runs them. So this pull request comes after the `instance.create` and Route convergence pull requests, and it changes their callers too.
-- A production removal records the home it keeps in `result`.
+- A production removal records the removed production resources in `result`; it completes only after the account, home, and source state are gone.
 
 ### Task workspaces use instance.destroy
 

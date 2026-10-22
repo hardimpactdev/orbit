@@ -436,22 +436,25 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function validateCurrent(Instance $instance): void
     {
-        $this->releaseLayout($instance, false);
+        $this->releaseLayout($instance, 'validate');
     }
 
     public function clearCurrent(Instance $instance): void
     {
-        $this->releaseLayout($instance, true);
+        $this->releaseLayout($instance, 'clear');
     }
 
-    private function releaseLayout(Instance $instance, bool $clearCurrent): void
+    private function releaseLayout(Instance $instance, string $action): void
     {
-        if (! $instance->usesProductionReleaseLayout()) {
+        if ($action !== 'remove' && ! $instance->usesProductionReleaseLayout()) {
             return;
         }
 
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
+        if ($action === 'remove' && ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}")) {
+            throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
+        }
         $root = $instance->root ?? $instance->project->root;
 
         if (! is_string($root)) {
@@ -470,7 +473,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     $home,
                     (string) $instance->id,
                     $root,
-                    $clearCurrent ? '1' : '0',
+                    $action,
                 ],
                 input: ProductionApplicationPaths::render(<<<'BASH'
                     repository=$1
@@ -478,17 +481,39 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     home=$3
                     instance=$4
                     relative_root=$5
-                    clear_current=$6
+                    action=$6
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
                     environment="$home/.env"
                     current="$home/current"
 
+                    cd /
+                    test "$home" = "/home/$user"
+                    if [ "$action" = remove ]; then
+                        if ! sudo test -e "$state_directory" && ! sudo test -L "$state_directory"; then
+                            if getent passwd "$user" >/dev/null; then exit 1; fi
+                            sudo test ! -e "$home"
+                            sudo test ! -L "$home"
+                            exit 0
+                        fi
+                    fi
+
                     sudo test -d "$state_directory"
                     sudo test ! -L "$state_directory"
                     test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
                     test "$(sudo stat -c %a -- "$state_directory")" = 700
+                    if [ "$action" = remove ]; then
+                        remove_state() {
+                            sudo rm -r --one-file-system -- "$state_directory"
+                            sudo test ! -e "$state_directory"
+                            sudo test ! -L "$state_directory"
+                        }
+                        if ! getent passwd "$user" >/dev/null && sudo test ! -e "$home" && sudo test ! -L "$home"; then
+                            remove_state
+                            exit 0
+                        fi
+                    fi
                     sudo test -f "$marker"
                     sudo test ! -L "$marker"
                     test "$(sudo stat -c %U:%G -- "$marker")" = root:root
@@ -497,7 +522,36 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     expected=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
                     test "$actual" = "$expected"
 
-                    test "$home" = "/home/$user"
+                    if [ "$action" = remove ]; then
+                        account_exists=0
+                        if entry=$(getent passwd "$user"); then
+                            account_exists=1
+                            test "$(printf '%s' "$entry" | cut -d: -f6)" = "$home"
+                            test "$(printf '%s' "$entry" | cut -d: -f7)" = /usr/sbin/nologin
+                            test "$(id -gn "$user")" = "$user"
+                            test "$(id -u "$user")" -lt 1000
+                            if pgrep -u "$user" >/dev/null; then exit 1; else test "$?" = 1; fi
+                        fi
+
+                        if sudo test -e "$home" || sudo test -L "$home"; then
+                            sudo test -d "$home"
+                            sudo test ! -L "$home"
+                            test "$(sudo realpath -e -- "$home")" = "$home"
+                            if [ "$account_exists" = 1 ]; then
+                                test "$(sudo stat -c %U:%G -- "$home")" = "$user:$user"
+                            fi
+                            sudo rm -r --one-file-system -- "$home"
+                        fi
+                        if [ "$account_exists" = 1 ]; then
+                            sudo userdel -- "$user"
+                        fi
+                        if getent passwd "$user" >/dev/null; then exit 1; fi
+                        sudo test ! -e "$home"
+                        sudo test ! -L "$home"
+                        remove_state
+                        exit 0
+                    fi
+
                     sudo -u "$user" -H test -d "$home"
                     sudo -u "$user" -H test ! -L "$home"
                     test "$(sudo -u "$user" -H realpath -e -- "$home")" = "$home"
@@ -529,96 +583,19 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     resolved_root=$(sudo -u "$user" -H realpath -m -- "$current/$relative_root")
                     case "$resolved_root" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
 
-                    if [ "$clear_current" = 1 ]; then
+                    if [ "$action" = clear ]; then
                         sudo -u "$user" -H rm -- "$current"
                     fi
                     BASH, $root),
             ),
-            step: 'production-release-layout',
-            errorCode: 'app-prod.source_metadata_unsafe',
+            step: $action === 'remove' ? 'production-source-cleanup' : 'production-release-layout',
+            errorCode: $action === 'remove' ? 'app-prod.source_cleanup_failed' : 'app-prod.source_metadata_unsafe',
         );
     }
 
     public function remove(Instance $instance): void
     {
-        $instance->loadMissing(['project', 'node']);
-        [$user, $home] = $this->identity($instance);
-
-        if ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}") {
-            throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
-        }
-
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->project->repository_url, $user, $home, (string) $instance->id],
-                input: <<<'BASH'
-                    cd /
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
-                    marker="$state_directory/release-layout"
-                    test "$home" = "/home/$user"
-
-                    if ! sudo test -e "$state_directory" && ! sudo test -L "$state_directory"; then
-                        if getent passwd "$user" >/dev/null; then exit 1; fi
-                        sudo test ! -e "$home"
-                        sudo test ! -L "$home"
-                        exit 0
-                    fi
-
-                    sudo test -d "$state_directory"
-                    sudo test ! -L "$state_directory"
-                    test "$(sudo stat -c %U:%G:%a -- "$state_directory")" = root:root:700
-                    remove_state() {
-                        sudo rm -r --one-file-system -- "$state_directory"
-                        sudo test ! -e "$state_directory"
-                        sudo test ! -L "$state_directory"
-                    }
-                    if ! getent passwd "$user" >/dev/null && sudo test ! -e "$home" && sudo test ! -L "$home"; then
-                        remove_state
-                        exit 0
-                    fi
-                    sudo test -f "$marker"
-                    sudo test ! -L "$marker"
-                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-                    actual=$(sudo base64 --wrap=0 -- "$marker")
-                    expected=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual" = "$expected"
-
-                    account_exists=0
-                    if entry=$(getent passwd "$user"); then
-                        account_exists=1
-                        test "$(printf '%s' "$entry" | cut -d: -f6)" = "$home"
-                        test "$(printf '%s' "$entry" | cut -d: -f7)" = /usr/sbin/nologin
-                        test "$(id -gn "$user")" = "$user"
-                        test "$(id -u "$user")" -lt 1000
-                        if pgrep -u "$user" >/dev/null; then exit 1; else test "$?" = 1; fi
-                    fi
-
-                    if sudo test -e "$home" || sudo test -L "$home"; then
-                        sudo test -d "$home"
-                        sudo test ! -L "$home"
-                        test "$(sudo realpath -e -- "$home")" = "$home"
-                        if [ "$account_exists" = 1 ]; then
-                            test "$(sudo stat -c %U:%G -- "$home")" = "$user:$user"
-                        fi
-                        sudo rm -r --one-file-system -- "$home"
-                    fi
-                    if [ "$account_exists" = 1 ]; then
-                        sudo userdel -- "$user"
-                    fi
-                    if getent passwd "$user" >/dev/null; then exit 1; fi
-                    sudo test ! -e "$home"
-                    sudo test ! -L "$home"
-                    remove_state
-                    BASH,
-            ),
-            step: 'production-source-cleanup',
-            errorCode: 'app-prod.source_cleanup_failed',
-        );
+        $this->releaseLayout($instance, 'remove');
     }
 
     /** @return array{string, string} */

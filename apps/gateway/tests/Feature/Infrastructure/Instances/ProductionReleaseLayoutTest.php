@@ -179,7 +179,7 @@ it('authenticates a selected release before publication and clears only its serv
             '/home/orbit-app-216',
             (string) $instance->id,
             $webRoot,
-            '0',
+            'validate',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain(
@@ -192,7 +192,7 @@ it('authenticates a selected release before publication and clears only its serv
             'readlink -- "$selected_environment")" = '.$target,
         )
         ->and($ssh->commands[1]->arguments[8])
-        ->toBe('1')
+        ->toBe('clear')
         ->and($ssh->commands[1]->input)
         ->toContain('sudo -u "$user" -H rm -- "$current"')
         ->not->toContain('rm -rf', 'rm -- "$releases"', 'rm -- "$environment"');
@@ -418,10 +418,10 @@ function production_cleanup_program(RemoteCommand $command, string $state): arra
     }
     $program = str_replace([
         'state_directory="/var/lib/orbit/app-instance-sources/$instance"',
-        'test "$home" = "/home/$user"', 'root:root:700', 'root:root:600', '= "$user:$user"',
+        'test "$home" = "/home/$user"', '= root:root', '= "$user:$user"',
     ], [
         'state_directory="'.$sandbox.'/state"', 'test "$home" = '.escapeshellarg($home),
-        escapeshellarg("$owner:$group:700"), escapeshellarg("$owner:$group:600"), '= '.escapeshellarg("$owner:$group"),
+        '= '.escapeshellarg("$owner:$group"), '= '.escapeshellarg("$owner:$group"),
     ], $command->input);
     $stubs = 'sandbox='.escapeshellarg($sandbox)."\n".'state='.escapeshellarg($state)."\n".<<<'BASH'
         getent() {
