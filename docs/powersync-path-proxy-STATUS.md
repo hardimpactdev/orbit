@@ -30,3 +30,5 @@ An extra standalone PHPStan run on `bin/docs-nav` reports two existing CLI-entry
 The first CI run found three exhaustive Gateway expectations that omitted the new path proxy contracts. The expectations now include its Doctor codes, its Route-owned model, and its three endpoint scopes. The Docs merge fixture now includes this required status page and refreshed context snapshots. The original failing cases were reproduced locally before the fixes.
 
 The affected Gateway group passes 53 tests and 2,438 assertions. All 29 generated-merge checks pass. Scoped Pint and Rector pass. An extra PHPStan run on the changed tests reports ten existing findings in the node scope test, which is outside the project's configured analysis paths. The unchanged test at `b151a17faf5cb5ee84a26c97cbbda60ea3da89fd` reports the same ten findings.
+
+Shard 1 also found that the new table migration sorted before the squashed schema baseline. Its filename now places it after all existing migrations. The unchanged schema baseline test reproduced the ordering failure before this fix. The schema baseline and path proxy group now passes 48 tests and 1,665 assertions.
