@@ -897,6 +897,8 @@ final class TaskOrchestrationEntryPoints
             'execute' => 'Reads Tasks status.',
         ],
         StopTaskSubtaskAction::class => [
+            'executeExternal' => 'Stops the actual external lease holder without starting work.',
+            'assertExternalStopped' => 'Refuses cancellation while the external subtask still holds a workspace lease.',
             'snapshot' => 'Stops agent/check activity for cancellation; does not start a check or turn.',
             'execute' => 'Stops agent/check activity for cancellation; does not start a check or turn.',
         ],

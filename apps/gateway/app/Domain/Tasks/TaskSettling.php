@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
+use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\GitHub\GitHubRepository;
@@ -1308,17 +1309,21 @@ final readonly class TaskSettling
         }
         $stop($candidate);
 
-        return DB::transaction(function () use ($parent, $candidate): Task {
+        $instanceId = $group->taskable_id;
+        $finish = fn (): Task => DB::transaction(function () use ($parent, $candidate, $instanceId): Task {
             $group = Task::topLevel()->lockForUpdate()->findOrFail($parent->id);
             $locked = Task::query()->where('parent_id', $group->id)->lockForUpdate()->findOrFail($candidate->id);
-            if ($locked->status !== $candidate->status || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+            if ($locked->status !== $candidate->status || $group->taskable_id !== $instanceId || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
                 throw new ResourceOperationException('tasks.subtask_not_running', 'The subtask or group changed while Orbit stopped it, so its new state stands.', 409);
             }
+            app(StopTaskSubtaskAction::class)->assertExternalStopped($group, $locked);
             TaskAssistance::resolveExternalSubtask($locked, $group);
             $this->markSubtaskCancelled($locked);
 
             return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         });
+
+        return $instanceId === null ? $finish() : app(TaskExecutionLock::class)->synchronized(-$instanceId, $finish, wait: false);
     }
 
     private function markSubtaskCancelled(Task $task): ?string

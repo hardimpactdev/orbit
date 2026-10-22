@@ -3,17 +3,23 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -21,6 +27,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
@@ -215,23 +222,12 @@ it('preserves an independent group request when an external subtask is resolved'
 it('cancels external active work without advancing or settling', function (string $status, bool $hasNext): void {
     [$group, $task] = external_state_group('running', $status);
     $next = $hasNext ? Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Next', 'brief' => 'Wait.']) : null;
-    $node = Node::query()->firstOrFail();
-    $instance = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-workspace', 'checkout_path' => '/srv/orbit/apps/external-state/task-workspace', 'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'task_workspace_owner_id' => $group->id, 'status' => 'source_resolved']);
-    $group->taskable()->associate($instance);
-    $group->save();
-    $thread = AgentThread::query()->create([
-        'task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 'fake', 'runtime_key' => 'external', 'external_id' => 'external-turn', 'role' => $status === 'reviewing' ? 'reviewer' : 'implementer',
-    ]);
-    $task->update(['implementer_agent_thread_id' => $status === 'running' ? $thread->id : null]);
-    $check = TaskCheck::query()->create([
-        'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running,
-        'pid' => 4100, 'process_started' => 'Wed Sep 23 12:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-    ]);
+    external_cancel_workspace($group);
     $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
     $driver = new FakeAgentDriver('fake');
     $driver->supportsInterruption = true;
-    app()->instance(TaskCheckRunner::class, $checks);
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $holder = external_cancel_turn($group, $task, $driver, $status === 'reviewing' ? 'reviewer' : 'implementer');
     $before = $group->getRawOriginal();
     $level = DB::transactionLevel();
 
@@ -239,38 +235,54 @@ it('cancels external active work without advancing or settling', function (strin
 
     expect($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'external-turn']]);
     expect($driver->interruptTransactionLevels)->toBe([$level]);
-    expect($checks->cancelTransactionLevels)->toBe([$level]);
-    expect($checks->cancels)->toBe(1);
+    expect($checks->cancels)->toBe(0);
     expect($checks->starts)->toBe(0);
-    expect($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled);
+    expect($holder->fresh()->status)->toBe('released');
     expect($task->fresh()->status)->toBe(TaskStatus::Cancelled);
     expect($task->fresh()->settled_at)->not->toBeNull();
     expect($group->fresh()->getRawOriginal())->toBe($before);
     expect($next?->fresh()->status)->toBe($hasNext ? TaskStatus::Todo : null);
 })->with([['running', true], ['running', false], ['reviewing', true], ['reviewing', false]]);
 
-it('cancels an external todo subtask without settling its group', function (): void {
-    [$group, $task] = external_state_group('todo', 'todo');
+it('cancels an external subtask with no lease holder without remote stops', function (string $status): void {
+    [$group, $task] = external_state_group('running', $status);
+    external_cancel_workspace($group);
+    $checks = new FakeTaskCheckRunner;
+    $driver = new FakeAgentDriver('fake');
+    app()->instance(TaskCheckRunner::class, $checks);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
 
     $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk()->assertJsonPath('data.status', 'cancelled');
 
     expect($task->fresh()->status)->toBe(TaskStatus::Cancelled);
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo);
-});
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+    expect($checks->cancels)->toBe(0);
+    expect($driver->calls)->toBe([]);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->exists())->toBeFalse();
+})->with(['todo', 'running', 'reviewing']);
 
-it('keeps external work active when its turn cannot be interrupted', function (): void {
+it('keeps external work active when its leased turn cannot be confirmed stopped', function (string $outcome): void {
     [$group, $task] = external_state_group();
-    AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 'fake', 'runtime_key' => 'external', 'external_id' => 'external-turn', 'role' => 'implementer']);
+    external_cancel_workspace($group);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
     $driver = new FakeAgentDriver('fake');
     $driver->supportsInterruption = true;
-    $driver->failNextInterrupt = true;
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $holder = external_cancel_turn($group, $task, $driver);
+    $driver->failNextInterrupt = $outcome === 'interrupt';
+    $driver->duringInterrupt = function () use ($driver, $outcome): void {
+        $driver->observation = match ($outcome) {
+            'working' => new AgentObservation(AgentThreadState::Working, turnId: 'active'),
+            'old' => new AgentObservation(AgentThreadState::Done, turnId: 'before'),
+            default => new AgentObservation(null),
+        };
+    };
 
     $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertStatus(502)->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
 
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-});
+    expect($holder->fresh()->status)->toBe('held');
+})->with(['interrupt', 'working', 'unknown', 'old']);
 
 it('updates external board state through the generated MCP tools', function (string $name, string $to): void {
     [$group, $task] = external_state_group();
@@ -347,3 +359,100 @@ it('reconciles external assistance when an asking subtask completes before resol
     expect($group->fresh()->assistance_requested)->toBe($hasSibling || $independent);
     expect($group->fresh()->assistance_question)->toBe($independent ? 'Independent?' : ($hasSibling ? 'Second?' : null));
 })->with([[false, false], [true, false], [false, true]]);
+
+function external_cancel_workspace(Task $group): Instance
+{
+    $instance = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => Node::query()->firstOrFail()->id, 'name' => 'external-cancel', 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/srv/orbit/external-cancel', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
+    $group->taskable()->associate($instance);
+    $group->save();
+
+    return $instance;
+}
+
+it('cancels the leased external check regardless of its subtask board status', function (string $status, bool $interrupted): void {
+    [$group, $task] = external_state_group('running', $status);
+    external_cancel_workspace($group);
+    $checks = new FakeTaskCheckRunner([$interrupted ? TaskCheckReading::interrupted('Stopped.') : FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $leases->run($group, 'check', 'check:'.$task->id, fn () => $leases->startCheck($group, $task, 'composer test'), taskId: $task->id);
+    $holder = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->firstOrFail();
+    $check = TaskCheck::query()->findOrFail($holder->check_id);
+    $level = DB::transactionLevel();
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk();
+
+    expect($checks->cancels)->toBe(1);
+    expect($checks->cancelTransactionLevels)->toBe([$level]);
+    expect($check->fresh()->status)->toBe(TaskCheckStatus::Cancelled);
+    expect($holder->fresh()->status)->toBe('released');
+    expect($holder->fresh()->getAttribute('causality_uncertain'))->toBe($interrupted);
+    expect($task->fresh()->status)->toBe(TaskStatus::Cancelled);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+})->with([['todo', false], ['running', false], ['reviewing', false], ['todo', true], ['running', true], ['reviewing', true]]);
+
+it('interrupts the leased implementer after the external board moves to reviewing', function (): void {
+    [$group, $task] = external_state_group();
+    external_cancel_workspace($group);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $driver = new FakeAgentDriver('fake');
+    $driver->supportsInterruption = true;
+    $holder = external_cancel_turn($group, $task, $driver, externalId: 'leased-implementer');
+    $url = "/api/v1/task-groups/{$group->id}/tasks/{$task->id}";
+    $this->patchJson($url, ['status' => 'reviewing'])->assertOk();
+
+    $this->postJson($url.'/cancel')->assertOk();
+
+    expect($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'leased-implementer']]);
+    expect($holder->fresh()->status)->toBe('released');
+    expect($task->fresh()->status)->toBe(TaskStatus::Cancelled);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('keeps external work uncancelled when the leased check has no confirmed stop', function (string $outcome): void {
+    [$group, $task] = external_state_group('running', 'todo');
+    external_cancel_workspace($group);
+    $checks = new FakeTaskCheckRunner([$outcome === 'running' ? TaskCheckReading::running() : TaskCheckReading::lost('No result.')]);
+    $checks->failNextCancel = $outcome === 'unreachable';
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $leases->run($group, 'check', 'check:'.$task->id, fn () => $leases->startCheck($group, $task, 'composer test'), taskId: $task->id);
+    $holder = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->firstOrFail();
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertStatus(502)->assertJsonPath('error.code', 'tasks.check_unreachable');
+
+    expect($checks->cancels)->toBe(1);
+    expect($task->fresh()->status)->toBe(TaskStatus::Todo);
+    expect(TaskCheck::query()->findOrFail($holder->check_id)->status)->toBe(TaskCheckStatus::Running);
+    expect($holder->fresh()->status)->toBe('held');
+})->with(['running', 'lost', 'unreachable']);
+
+function external_cancel_turn(Task $group, Task $task, FakeAgentDriver $driver, string $role = 'implementer', string $externalId = 'external-turn'): TaskWorkspaceLeaseRecord
+{
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'before');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 'fake', 'runtime_key' => 'external', 'external_id' => $externalId, 'role' => $role]);
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->turn($group, TaskThreadRole::from($role), 'thread:'.$thread->id, $thread->id);
+    $leases->dispatch($thread, $driver->observation);
+    $driver->observation = new AgentObservation(AgentThreadState::Working, turnId: 'active');
+    $driver->duringInterrupt = function () use ($driver): void {
+        $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'active');
+    };
+
+    return $holder;
+}
+
+it('refuses external cancellation if a lease is admitted before the cancellation commit', function (): void {
+    [$group, $task] = external_state_group();
+    external_cancel_workspace($group);
+    $leases = app(TaskWorkspaceLease::class);
+
+    expect(fn () => app(TaskScheduler::class)->cancelRunningSubtask($group, $task, function () use ($leases, $group, $task): void {
+        $leases->acquire($group, 'check', 'new-owner', taskId: $task->id);
+    }))->toThrow(ResourceOperationException::class, 'A workspace actor still holds the subtask lease.');
+
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->owner)->toBe('new-owner');
+});
