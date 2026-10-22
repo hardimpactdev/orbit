@@ -10,7 +10,7 @@ function docsNavFixture(): string
     foreach (['decisions', 'domains', 'solutions', 'reference'] as $folder) {
         mkdir($root.'/docs/'.$folder, 0777, true);
     }
-    foreach (['README', 'decisions/README', 'domains/README', 'solutions/README', 'powersync-path-proxy-STATUS', 'index', 'reference/routes'] as $page) {
+    foreach (['README', 'decisions/README', 'domains/README', 'solutions/README', 'index', 'reference/routes'] as $page) {
         file_put_contents($root.'/docs/'.$page.'.md', "# Page\n");
     }
     docsNavWriteNavigation($root, ['index', 'reference/routes']);

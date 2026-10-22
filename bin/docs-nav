@@ -18,7 +18,6 @@ declare(strict_types=1);
  * Pages that stay out of the site navigation on purpose, keyed by their path under docs/ without the extension.
  */
 const DOCS_NAV_OUTSIDE = [
-    'powersync-path-proxy-STATUS' => 'Branch handoff record read on GitHub, outside product documentation.',
     'README' => 'Map of the docs folder for contributors, read on GitHub.',
     'decisions/README' => 'Folder index read on GitHub; the site lists the decisions overview instead.',
     'domains/README' => 'Folder index read on GitHub; the site lists each domain page directly.',

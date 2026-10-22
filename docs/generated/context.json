@@ -1451,23 +1451,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/powersync-path-proxy-STATUS.md",
-            "title": "PowerSync path proxy status",
-            "kind": "product",
-            "components": [],
-            "concepts": [
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/quickstart.mdx",
             "title": "Quickstart",
             "kind": "product",

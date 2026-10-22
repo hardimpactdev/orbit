@@ -1635,7 +1635,7 @@
       "destination": "/reference/database-servers#why-it-works-this-way"
     },
     {
-      "source": "/decisions/0230-publish-a-process-under-an-app-route-path",
+      "source": "/decisions/0231-publish-a-process-under-an-app-route-path",
       "destination": "/reference/routes#a-process-shares-the-app-domain-through-one-reserved-path"
     }
   ]

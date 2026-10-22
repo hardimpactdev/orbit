@@ -504,7 +504,9 @@ orbit instance:path-proxy:show --instance=hauzer.app
 orbit instance:path-proxy:unset --instance=hauzer.app --force
 ```
 
-`--prefix` defaults to `/powersync`. It must be one lowercase path segment beginning with a letter, with letters, digits, or hyphens after it, and at most 63 characters excluding the slash. `/app`, `/apps`, and Orbit's `/__orbit` namespace are reserved. Each Instance and Route has at most one path proxy. The Instance must be active on `app-prod`, with a detected Laravel app and an active public app Route without a web root. Every Route target must pass the same Laravel route inspection used for [public Reverb](/reference/websocket-apps#add-an-app-on-an-instance). A declared route under the prefix or a leading route parameter blocks publication. A root fallback does not.
+`--prefix` defaults to `/powersync`. It must be one lowercase path segment beginning with a letter, with letters, digits, or hyphens after it, and at most 63 characters excluding the slash. `/app`, `/apps`, and Orbit's `/__orbit` namespace are reserved. Each Instance and Route has at most one path proxy. The Instance must be active on `app-prod`, with a detected Laravel app and an active public app Route without a web root.
+
+Every Route target must pass the same Laravel route inspection used for [public Reverb](/reference/websocket-apps#add-an-app-on-an-instance). A declared route under the prefix blocks publication, including parameters anywhere in its first segment, such as `power{suffix}` or `powersync{suffix?}`. Inspection treats parameter constraints conservatively. A root fallback does not block publication.
 
 `--process` selects an active Node-owned Docker Process. `--port` selects its exact TCP published port, bound to that Node's WireGuard address. A container port, loopback bind, wildcard bind, UDP mapping, arbitrary host, or URL cannot select an upstream. The Gateway changes no Process, firewall rule, domain, certificate, or application environment. The upstream remains responsible for authentication. For PowerSync, set the client endpoint to the resulting `https://<domain><prefix>` URL without a trailing slash.
 

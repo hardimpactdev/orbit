@@ -112,12 +112,25 @@ class ProductionRouteInspectionTest(unittest.TestCase):
 
     def test_checks_the_selected_path_prefix_without_reserving_a_sibling(self):
         for uri, collision in [('powersync/sync/stream', True), ('PowerSync/write-checkpoint2.json', True),
+                               ('power{suffix}', True), ('powersync{suffix?}', True),
+                               ('{prefix}sync', True), ('pow{middle}sync', True),
+                               ('powersync.{format?}', True), ('power{one}{two}', True),
+                               ('power{suffix}-other', False), ('power.sync', False),
                                ('powersync-other', False), ('app/id', False), ('{page?}', True),
                                ('{fallbackPlaceholder}', False)]:
             with self.subTest(uri=uri):
                 with open(f'{self.release}/artisan', 'w') as handle:
                     handle.write('<?php echo json_encode([["uri" => "' + uri + '"]]);')
                 outcome, data = result('instances.inspect-source', {**self.payload, 'prefixes': ['/powersync']})
+                self.assertEqual((outcome, data), ('routes_inspected', {'collision': collision}))
+
+    def test_checks_parameters_inside_the_reverb_path_segments(self):
+        for uri, collision in [('ap{suffix}', True), ('app{suffix?}', True),
+                               ('{prefix}pps', True), ('app.{format?}', True), ('app-other{suffix}', False)]:
+            with self.subTest(uri=uri):
+                with open(f'{self.release}/artisan', 'w') as handle:
+                    handle.write('<?php echo json_encode([["uri" => "' + uri + '"]]);')
+                outcome, data = result('instances.inspect-source', self.payload)
                 self.assertEqual((outcome, data), ('routes_inspected', {'collision': collision}))
 
     def test_suppresses_failed_artisan_output(self):
