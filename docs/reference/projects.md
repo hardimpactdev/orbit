@@ -236,7 +236,9 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
-A Project with tasks cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
+A Project can be removed when all its task groups are `cancelled` or `completed`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, workspace leases and operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
+
+Any group in another status (`backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, or `failed`) blocks removal. The Gateway refuses the request with HTTP 409 and `project.has_task_groups` and leaves the Project and its task records unchanged.
 
 Extensions take part in the removal through the `ProjectRemovalHook` [plug-in point](/reference/extensions#plug-in-points), in the same transaction. The documents extension removes the Project's documents and records their stored bytes for cleanup, whether or not its switch is on.
 
