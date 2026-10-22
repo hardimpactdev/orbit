@@ -18,10 +18,10 @@ it("moves among three node sections with the keyboard and the address", async ()
     await userEvent.keyboard("{ArrowDown}");
     await expect.poll(app.url).toBe("/nodes/2/tools");
     await expect.element(page.getByTestId("node-tools")).toHaveAttribute("aria-selected", "true");
-    await expect.element(row("Tools", "ripgrep")).toHaveTextContent("failed");
-    await expect.element(row("Tools", "ripgrep")).toHaveTextContent("tool.manager_failed");
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.7.1-1");
-    await expect.element(row("Tools", "vite-plus")).toHaveTextContent("^0.2.0");
+    await expect.element(row("Tools", "ripgrep")).toMatchTextContent("failed");
+    await expect.element(row("Tools", "ripgrep")).toMatchTextContent("tool.manager_failed");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.7.1-1");
+    await expect.element(row("Tools", "vite-plus")).toMatchTextContent("^0.2.0");
 
     await userEvent.keyboard("{ArrowDown}");
     await expect.poll(app.url).toBe("/nodes/2/firewall");
@@ -49,9 +49,9 @@ it("loads a section from its address and keeps firewall actions", async () => {
     await userEvent.keyboard("{Enter}");
     await expect
         .element(pane("https-public"))
-        .toHaveTextContent("Confirm? Remove firewall rule [https-public] on node [beast]?");
+        .toMatchTextContent("Confirm? Remove firewall rule [https-public] on node [beast]?");
     await userEvent.keyboard("{Enter}");
-    await expect.element(footer()).toHaveTextContent("Firewall rule [https-public] removed.");
+    await expect.element(footer()).toMatchTextContent("Firewall rule [https-public] removed.");
     expect(app.gateway.requests.at(-1)).toMatchObject({
         method: "DELETE",
         path: "/api/v1/nodes/2/firewall-rules/https-public",
@@ -89,8 +89,8 @@ it("shows stored tools for an unreachable node without a live inventory", async 
 
     await expect.element(page.getByTestId("node-tools-offline")).toBeVisible();
     await expect.element(row("Tools", "nginx")).toBeVisible();
-    await expect.element(row("Tools", "nginx")).toHaveTextContent("install · tool.manager_failed");
-    await expect.element(row("Tools", "gh")).toHaveTextContent("2.62.0");
+    await expect.element(row("Tools", "nginx")).toMatchTextContent("install · tool.manager_failed");
+    await expect.element(row("Tools", "gh")).toMatchTextContent("2.62.0");
     expect(app.gateway.requests.some((request) => request.path.startsWith("/api/v1/tools?"))).toBe(
         true,
     );
@@ -163,8 +163,8 @@ it("shows the tool list error instead of an empty list", async () => {
 
     await expect
         .element(page.getByTestId("node-tools-error"))
-        .toHaveTextContent("The tool list could not be read.");
-    await expect.element(pane("Tools")).not.toHaveTextContent("No registered tools.");
+        .toMatchTextContent("The tool list could not be read.");
+    await expect.element(pane("Tools")).not.toMatchTextContent("No registered tools.");
 });
 
 it("does not request linux firewall rules for a mac", async () => {
@@ -174,13 +174,13 @@ it("does not request linux firewall rules for a mac", async () => {
     await expect.element(page.getByTestId("node-tools")).toBeVisible();
     await expect
         .element(pane("studio · active"))
-        .toHaveTextContent("Metrics are not available on this Node.");
+        .toMatchTextContent("Metrics are not available on this Node.");
     expect(app.gateway.requests.some((request) => linuxFirewall(4)(request.path))).toBe(false);
 
     await page.getByTestId("node-tools").click();
     await expect.poll(app.url).toBe("/nodes/4/tools");
-    await expect.element(row("Tools", "firefox")).toHaveTextContent("failed");
-    await expect.element(row("Tools", "visual-studio-code")).toHaveTextContent("brew-cask");
+    await expect.element(row("Tools", "firefox")).toMatchTextContent("failed");
+    await expect.element(row("Tools", "visual-studio-code")).toMatchTextContent("brew-cask");
     expect(app.gateway.requests.some((request) => linuxFirewall(4)(request.path))).toBe(false);
 });
 

@@ -188,7 +188,10 @@ def dependencies(tree, root):
         env = root / project / '.env'
         if env.exists():
             (tree / project / '.env').symlink_to(env)
-    (tree / 'apps/web/node_modules').symlink_to(root / 'apps/web/node_modules', target_is_directory=True)
+    for project in ('apps/web', 'apps/web/tools/api-types'):
+        destination = tree / project / 'node_modules'
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(root / project / 'node_modules', target_is_directory=True)
 
 
 def regenerate(tree):
@@ -198,7 +201,7 @@ def regenerate(tree):
     run('php', str(tree / 'apps/docs/artisan'), 'orbit:docs-index', cwd=tree, env=env)
     run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
     run(str(tree / 'bin/mcp-tools'), cwd=tree, env=env)
-    run('bun', '--bun', str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+    run('bun', '--bun', str(tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'),
         str(tree / 'docs/openapi.json'), '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
 
 

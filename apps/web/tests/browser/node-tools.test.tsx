@@ -21,26 +21,26 @@ it("shows managed tools, discoveries, a dependency, and an unsupported cask", as
 
     await expect
         .element(page.getByTestId("node-tools-inspection"))
-        .toHaveTextContent("Observed at 2026-04-26T12:00:00+00:00.");
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.7.1");
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.8.0");
-    await expect.element(row("Tools", "git")).toHaveTextContent("absent");
-    await expect.element(row("Tools", "visual-studio-code")).toHaveTextContent("brew-cask");
-    await expect.element(row("Tools", "visual-studio-code")).toHaveTextContent("1.96.2");
+        .toMatchTextContent("Observed at 2026-04-26T12:00:00+00:00.");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.7.1");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.8.0");
+    await expect.element(row("Tools", "git")).toMatchTextContent("absent");
+    await expect.element(row("Tools", "visual-studio-code")).toMatchTextContent("brew-cask");
+    await expect.element(row("Tools", "visual-studio-code")).toMatchTextContent("1.96.2");
     await expect
         .element(row("Detected packages", "visual-studio-code"))
-        .toHaveTextContent("formula");
-    await expect.element(row("Detected packages", "openssl@3")).toHaveTextContent("dependency");
-    await expect.element(row("Detected packages", "docker")).toHaveTextContent("cask");
+        .toMatchTextContent("formula");
+    await expect.element(row("Detected packages", "openssl@3")).toMatchTextContent("dependency");
+    await expect.element(row("Detected packages", "docker")).toMatchTextContent("cask");
     await expect
         .element(row("Detected packages", "docker"))
-        .toHaveTextContent("authorization_required");
+        .toMatchTextContent("authorization_required");
     await expect
         .element(row("Detected packages", "font-hack"))
-        .toHaveTextContent("unsupported_artifact");
+        .toMatchTextContent("unsupported_artifact");
     await expect
         .element(pane("Detected packages"))
-        .toHaveTextContent("Informational. Discovery does not change Node health.");
+        .toMatchTextContent("Informational. Discovery does not change Node health.");
     expect(
         row("Detected packages", "docker").getByRole("button", { name: "Adopt" }).query(),
     ).toBeNull();
@@ -56,24 +56,24 @@ it("adopts one package with the exact request and leaves the other discoveries",
     await page.getByTestId("node-tools-adopt-brew-delta").click();
     await expect
         .element(page.getByTestId("node-tools-adopt-prompt"))
-        .toHaveTextContent(
+        .toMatchTextContent(
             "Take ownership of package [delta] (brew on Node #4) and manage later updates and removal?",
         );
     await page.getByTestId("node-tools-adopt-constraint").fill("^0.18.0");
     await expect
         .element(page.getByTestId("node-tools-adopt-prompt"))
-        .toHaveTextContent("constraint ^0.18.0");
+        .toMatchTextContent("constraint ^0.18.0");
     await page.getByTestId("node-tools-adopt-submit").click();
 
     await expect
         .element(page.getByTestId("node-tools-result"))
-        .toHaveTextContent("Tool [delta] adopted with [brew].");
-    await expect.element(row("Tools", "delta")).toHaveTextContent("^0.18.0");
-    await expect.element(row("Tools", "delta")).toHaveTextContent("0.18.2");
+        .toMatchTextContent("Tool [delta] adopted with [brew].");
+    await expect.element(row("Tools", "delta")).toMatchTextContent("^0.18.0");
+    await expect.element(row("Tools", "delta")).toMatchTextContent("0.18.2");
     expect(row("Detected packages", /^delta/).query()).toBeNull();
     await expect.element(row("Detected packages", "openssl@3")).toBeVisible();
     await expect.element(row("Detected packages", "docker")).toBeVisible();
-    await expect.element(row("Tools", "visual-studio-code")).toHaveTextContent("brew-cask");
+    await expect.element(row("Tools", "visual-studio-code")).toMatchTextContent("brew-cask");
     expect(
         app.gateway.requests.filter((request) => request.path === "/api/v1/tools/adopt"),
     ).toEqual([
@@ -102,7 +102,7 @@ it("keeps a revalidation error and does not take ownership", async () => {
 
     await expect
         .element(page.getByTestId("node-tools-adopt-error"))
-        .toHaveTextContent("The package is not installed.");
+        .toMatchTextContent("The package is not installed.");
     await expect.element(page.getByTestId("node-tools-adopt-form")).toBeVisible();
     await expect.element(row("Detected packages", "ghost")).toBeVisible();
     expect(row("Tools", /^ghost/).query()).toBeNull();
@@ -140,7 +140,7 @@ it("sends one adopt when the form is submitted twice", async () => {
 
     await expect
         .element(page.getByTestId("node-tools-result"))
-        .toHaveTextContent("Tool [delta] adopted with [brew].");
+        .toMatchTextContent("Tool [delta] adopted with [brew].");
     expect(
         app.gateway.requests.filter((request) => request.path === "/api/v1/tools/adopt"),
     ).toHaveLength(1);
@@ -183,7 +183,7 @@ it("refreshes the inventory without adopting or updating", async () => {
     await expect.poll(() => inventoryGets(app.gateway.requests).length).toBeGreaterThan(before);
     expect(mutations(app.gateway.requests)).toEqual([]);
     await expect.element(row("Detected packages", "delta")).toBeVisible();
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.7.1");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.7.1");
 });
 
 it("keeps the last observation when a refresh fails", async () => {
@@ -219,10 +219,10 @@ it("keeps the last observation when a refresh fails", async () => {
     await expect.element(page.getByTestId("node-tools-scan-stale")).toBeVisible();
     await expect
         .element(page.getByTestId("node-tools-inspection"))
-        .toHaveTextContent("Showing packages observed at 2026-04-26T12:00:00+00:00.");
+        .toMatchTextContent("Showing packages observed at 2026-04-26T12:00:00+00:00.");
     await expect
         .element(page.getByTestId("node-tools-inspection"))
-        .toHaveTextContent("The scan could not be read.");
+        .toMatchTextContent("The scan could not be read.");
     await expect.element(row("Detected packages", "delta")).toBeVisible();
     await expect.element(row("Tools", "jq")).toBeVisible();
     expect(page.getByText("No unregistered packages.").query()).toBeNull();
@@ -250,7 +250,7 @@ it("does not present a failed scan as an empty inventory", async () => {
     await expect.element(page.getByTestId("node-tools-scan-unavailable")).toBeVisible();
     await expect
         .element(page.getByTestId("node-tools-unmanaged"))
-        .toHaveTextContent("Installed packages were not read.");
+        .toMatchTextContent("Installed packages were not read.");
     await expect.element(row("Tools", "jq")).toBeVisible();
     expect(page.getByText("No unregistered packages.").query()).toBeNull();
     expect(page.getByText("No packages in the completed scans.").query()).toBeNull();
@@ -261,17 +261,17 @@ it("shows a partial scan without hiding registered tools", async () => {
 
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toHaveTextContent("brew is incomplete, so its package list is not an inventory.");
+        .toMatchTextContent("brew is incomplete, so its package list is not an inventory.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toHaveTextContent("vp is conflicting, so its package list is not an inventory.");
+        .toMatchTextContent("vp is conflicting, so its package list is not an inventory.");
     await expect
         .element(pane("Detected packages"))
-        .toHaveTextContent("No packages in the completed scans.");
+        .toMatchTextContent("No packages in the completed scans.");
     expect(page.getByText("No unregistered packages.").query()).toBeNull();
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.7.1-1");
-    await expect.element(row("Tools", "jq")).toHaveTextContent("not scanned");
-    await expect.element(row("Tools", "ripgrep")).toHaveTextContent("tool.manager_failed");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.7.1-1");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("not scanned");
+    await expect.element(row("Tools", "ripgrep")).toMatchTextContent("tool.manager_failed");
     expect(mutations(app.gateway.requests)).toEqual([]);
 });
 
@@ -281,10 +281,10 @@ it("keeps stored tools for an unreachable node and does not scan", async () => {
     await expect.element(page.getByTestId("node-tools-offline")).toBeVisible();
     await expect
         .element(page.getByTestId("node-tools-scan-unavailable"))
-        .toHaveTextContent("No scan was started.");
-    await expect.element(row("Tools", "nginx")).toHaveTextContent("install · tool.manager_failed");
-    await expect.element(row("Tools", "gh")).toHaveTextContent("2.62.0");
-    await expect.element(row("Tools", "gh")).toHaveTextContent("unavailable");
+        .toMatchTextContent("No scan was started.");
+    await expect.element(row("Tools", "nginx")).toMatchTextContent("install · tool.manager_failed");
+    await expect.element(row("Tools", "gh")).toMatchTextContent("2.62.0");
+    await expect.element(row("Tools", "gh")).toMatchTextContent("unavailable");
     await expect.element(page.getByTestId("node-tools-refresh")).toBeDisabled();
     expect(inventoryGets(app.gateway.requests)).toEqual([]);
     expect(mutations(app.gateway.requests)).toEqual([]);
@@ -293,16 +293,16 @@ it("keeps stored tools for an unreachable node and does not scan", async () => {
 it("shows a node with no tools and an empty completed scan", async () => {
     await openApp("/nodes/1/tools");
 
-    await expect.element(pane("Tools")).toHaveTextContent("No registered tools.");
+    await expect.element(pane("Tools")).toMatchTextContent("No registered tools.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toHaveTextContent("brew-cask is unsupported, so its package list is not an inventory.");
+        .toMatchTextContent("brew-cask is unsupported, so its package list is not an inventory.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toHaveTextContent("vp is absent, so its package list is not an inventory.");
+        .toMatchTextContent("vp is absent, so its package list is not an inventory.");
     await expect
         .element(pane("Detected packages"))
-        .toHaveTextContent("No packages in the completed scans.");
+        .toMatchTextContent("No packages in the completed scans.");
 });
 
 it("updates one tool and shows a failed update without losing the row", async () => {
@@ -310,8 +310,8 @@ it("updates one tool and shows a failed update without losing the row", async ()
     await row("Tools", "jq").getByRole("button", { name: "Update" }).click();
     await expect
         .element(page.getByTestId("node-tools-result"))
-        .toHaveTextContent("Tool [jq] updated.");
-    await expect.element(row("Tools", "jq")).toHaveTextContent("1.8.0");
+        .toMatchTextContent("Tool [jq] updated.");
+    await expect.element(row("Tools", "jq")).toMatchTextContent("1.8.0");
     expect(
         app.gateway.requests.filter((request) => request.path === "/api/v1/tools/6/update"),
     ).toEqual([{ method: "POST", path: "/api/v1/tools/6/update", body: {} }]);
@@ -338,8 +338,8 @@ it("updates one tool and shows a failed update without losing the row", async ()
     await row("Tools", "fd").getByRole("button", { name: "Update" }).click();
     await expect
         .element(page.getByTestId("node-tools-result"))
-        .toHaveTextContent("The Tool manager is unavailable.");
-    await expect.element(row("Tools", "fd")).toHaveTextContent("^10");
+        .toMatchTextContent("The Tool manager is unavailable.");
+    await expect.element(row("Tools", "fd")).toMatchTextContent("^10");
     expect(
         failed.gateway.requests.filter((request) => request.path === "/api/v1/tools/8/update"),
     ).toHaveLength(1);
@@ -350,7 +350,7 @@ it("confirms removal with the package and node, and keeps the row when removal f
     await row("Tools", "wget").getByRole("button", { name: "Remove" }).click();
     await expect
         .element(page.getByTestId("node-tools-remove-prompt"))
-        .toHaveTextContent(
+        .toMatchTextContent(
             "Remove Tool [wget] (brew on Node #4) by uninstalling it and deleting its record?",
         );
     await page.getByTestId("node-tools-remove-cancel").click();
@@ -361,7 +361,7 @@ it("confirms removal with the package and node, and keeps the row when removal f
     await page.getByTestId("node-tools-remove-confirm").click();
     await expect
         .element(page.getByTestId("node-tools-result"))
-        .toHaveTextContent("Tool [wget] removed.");
+        .toMatchTextContent("Tool [wget] removed.");
     expect(row("Tools", "wget").query()).toBeNull();
     await expect.element(row("Tools", "jq")).toBeVisible();
     expect(app.gateway.requests.filter((request) => request.method === "DELETE")).toEqual([
@@ -391,7 +391,7 @@ it("confirms removal with the package and node, and keeps the row when removal f
     await page.getByTestId("node-tools-remove-confirm").click();
     await expect
         .element(page.getByTestId("node-tools-remove-error"))
-        .toHaveTextContent("The package is still installed.");
+        .toMatchTextContent("The package is still installed.");
     await expect.element(page.getByTestId("node-tools-remove-form")).toBeVisible();
     await expect.element(row("Tools", "bat")).toBeVisible();
     expect(failed.gateway.requests.filter((request) => request.method === "DELETE")).toHaveLength(

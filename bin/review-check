@@ -23,7 +23,7 @@ PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/p
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
-WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
+WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./tools/api-types/node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'), ('bun', 'run', 'build'))
 # Include generated outputs as well as source inputs, so hand edits cannot bypass freshness checks.

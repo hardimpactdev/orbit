@@ -199,8 +199,8 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 ```json
 [
   {"id": "reference-page", "type": "file", "description": "Document the export", "path": "docs/reference/export.md", "change": "modified"},
-  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
-  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
+  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "../../bin/pest-plain vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
+  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "../../bin/pest-plain vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
   {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
   {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
 ]

@@ -386,7 +386,7 @@ Open a Project and choose Documents from its section menu. The section and its r
 
 The Project detail page has a Documents section with root browsing, folder navigation, breadcrumbs, name/path search, active/archive filters, create-folder, new text file, and upload. Rows show kind, name, version, size, and archive state, with reachable rename, move, archive/restore, history, download, and remove actions.
 
-Infinite pagination retains the current folder and filters. Automatic page loading pauses while any list, destination-picker, or history request is fetching, including a refresh, so it cannot cancel refreshed data. On a phone, content starts near the top, filters and secondary actions use a sheet/menu, and there is no wide fixed table or stacked filter wall. A desktop may use a table and side detail panel.
+Infinite pagination retains the current folder and filters. Automatic page loading pauses while any list, destination-picker, or history request is fetching, including a refresh. Pagination preserves an active fetch even when a queued visibility event arrives before the page updates, so it cannot cancel refreshed data. On a phone, content starts near the top, filters and secondary actions use a sheet/menu, and there is no wide fixed table or stacked filter wall. A desktop may use a table and side detail panel.
 
 ### Large-tree browsing limitation
 

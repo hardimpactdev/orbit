@@ -194,7 +194,7 @@ it("keeps a dirty draft on revision conflict and refuses silent retries", async 
     await page.getByTestId("documents-save").click();
     await expect
         .element(page.getByTestId("documents-error"))
-        .toHaveTextContent("project_documents.revision_conflict");
+        .toMatchTextContent("project_documents.revision_conflict");
     await expect.element(editor).toHaveValue("My unsaved draft");
     expect(app.gateway.requests.filter((request) => request.method === "PUT")).toHaveLength(1);
     await page.getByRole("button", { name: "Safe preview" }).click();
@@ -227,7 +227,7 @@ it("preserves the draft and exposes recovery guidance when storage is unavailabl
     await expect.element(editor).toHaveValue("first\n");
     await editor.fill("Draft during outage");
     await page.getByTestId("documents-save").click();
-    await expect.element(page.getByTestId("documents-error")).toHaveTextContent("Keep your draft");
+    await expect.element(page.getByTestId("documents-error")).toMatchTextContent("Keep your draft");
     await expect.element(editor).toHaveValue("Draft during outage");
 });
 
@@ -306,7 +306,9 @@ it("distinguishes irreversible recursive folder removal and sends explicit scope
     const app = await openApp("/projects/1/documents");
     await actions("Planning").click();
     await page.getByRole("button", { name: "Remove permanently", exact: true }).click();
-    await expect.element(page.getByText(/Permanently remove folder/)).toHaveTextContent("Planning");
+    await expect
+        .element(page.getByText(/Permanently remove folder/))
+        .toMatchTextContent("Planning");
     await page.getByRole("checkbox").click();
     await page.getByRole("button", { name: "Confirm permanent removal" }).click();
     await expect

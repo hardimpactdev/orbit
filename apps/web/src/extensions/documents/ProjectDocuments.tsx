@@ -418,7 +418,7 @@ export function DocumentsWorkspace({ project }: { project: number }) {
                 hasNext={rows.hasNextPage}
                 pending={rows.isFetching}
                 failed={rows.isFetchNextPageError}
-                next={() => void rows.fetchNextPage()}
+                next={() => void rows.fetchNextPage({ cancelRefetch: false })}
             />
             {filters && (
                 <FilterSheet
@@ -562,7 +562,7 @@ function Destination({
                 hasNext={children.hasNextPage}
                 pending={children.isFetching}
                 failed={children.isFetchNextPageError}
-                next={() => void children.fetchNextPage()}
+                next={() => void children.fetchNextPage({ cancelRefetch: false })}
             />
         </div>
     );
@@ -1059,7 +1059,7 @@ function FileSheet({
                     hasNext={versions.hasNextPage}
                     pending={versions.isFetching}
                     failed={versions.isFetchNextPageError}
-                    next={() => void versions.fetchNextPage()}
+                    next={() => void versions.fetchNextPage({ cancelRefetch: false })}
                 />
             </div>
         </Sheet>

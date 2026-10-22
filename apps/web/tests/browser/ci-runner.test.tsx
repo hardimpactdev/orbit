@@ -16,7 +16,7 @@ it.each(["/nodes", "/"])("shows a CI-only Node with workload meters on %s", asyn
 
     const workload = row("Nodes with roles", "beast");
     await expect.element(workload).toBeVisible();
-    await expect.element(workload).toHaveTextContent(/%/);
+    await expect.element(workload).toMatchTextContent(/%/);
     await expect
         .element(pane("Roleless Nodes").getByText("beast", { exact: true }))
         .not.toBeInTheDocument();

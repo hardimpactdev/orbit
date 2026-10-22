@@ -119,7 +119,7 @@ return [App\Providers\AppServiceProvider::class, HardImpact\Librarian\LibrarianS
         # and independent freshness checks. dependencies() links it read-only.
         # A node_modules symlink is not covered by the directory ignore rule.
         with (cls.tree / '.git/info/exclude').open('a') as excluded:
-            excluded.write('\n/apps/web/node_modules\n')
+            excluded.write('\n/apps/web/node_modules\n/apps/web/tools/api-types/node_modules\n')
         TOOL.install(cls.tree)
         # Keep real core and extension discovery without generating every core
         # endpoint. Activities anchors the navigation assertion; route:create is
@@ -203,7 +203,7 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
             'mcp': ['bin/mcp-tools', '--check'],
             'lint': ['php', 'apps/docs/artisan', 'orbit:docs-lint', '--strict', '--format=text'],
             'navigation': ['bin/docs-nav'],
-            'web_types': ['bun', '--bun', str(tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+            'web_types': ['bun', '--bun', str(tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'),
                           str(tree / 'docs/openapi.json'), '-o', str(schema)],
         }
         command = commands[gate]
@@ -366,7 +366,10 @@ Route::get('api/v1/conn/me', [ConnNodesController::class, 'show'])
         self.preview_order('endpoint', reverse=True)
 
     def test_original_web_cli(self):
-        cli = 'apps/web/node_modules/.bin/openapi-typescript'
+        cli = 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'
+        self.assertTrue((self.tree / cli).is_file(), 'the installed workspace CLI must exist')
+        self.assertEqual(git(self.tree, 'ls-files', '--', '**/node_modules'), '',
+                         'dependency links must stay out of fixture commits')
         self.assertEqual((self.tree / cli).resolve(), (ROOT / cli).resolve(),
                          'merge callbacks and freshness checks must use the original installed CLI')
 
@@ -453,7 +456,7 @@ echo json_encode([
             ('php', str(self.tree / 'apps/docs/artisan'), 'orbit:docs-index'),
             (str(self.tree / 'bin/docs-openapi'),),
             (str(self.tree / 'bin/mcp-tools'),),
-            ('bun', '--bun', str(self.tree / 'apps/web/node_modules/.bin/openapi-typescript'),
+            ('bun', '--bun', str(self.tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'),
              str(self.tree / 'docs/openapi.json'), '-o', str(self.tree / 'apps/web/src/api/schema.d.ts')),
         ])
 

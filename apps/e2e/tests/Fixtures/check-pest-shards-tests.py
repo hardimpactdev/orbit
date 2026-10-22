@@ -47,7 +47,7 @@ class PestShardsTest(unittest.TestCase):
         with patch.object(checker.subprocess, 'run', side_effect=self.outputs()) as run:
             checker.check()
         commands = [call.args[0] for call in run.call_args_list]
-        common = ['vendor/bin/pest', '--exclude-group=privileged']
+        common = [str(HELPER.parent / 'pest-plain'), 'vendor/bin/pest', '--exclude-group=privileged']
         self.assertEqual([common + ['--list-tests', '--colors=never'], *[
             common + [f'--shard={index}/{checker.shard_count()}', '--list-tests', '--colors=never'] for index in range(1, checker.shard_count() + 1)
         ]], commands)

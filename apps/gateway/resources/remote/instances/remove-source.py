@@ -4,7 +4,7 @@
 # Timeout: 900
 # Input: {"checkout": path, "root": apps root, "grouping_directory": the checkout's parent, "user", "group",
 #   "branch": inspected branch or "", "commit": inspected commit, "source_identity": "<device>:<inode>",
-#   "repository_identity": the Project repository identity, "force": bool, "stop_processes": bool,
+#   "repository_identity": the Project repository identity, "force": bool,
 #   "own_units": systemd units whose processes stay, "git_read": Git read environment variables}
 # Result: removed: the checkout and its empty parent are gone. A mismatch names the identity check that refused.
 #   unsafe_content: normal removal found dirty or unpublished source. source_changed: the directory or HEAD differs
@@ -94,8 +94,7 @@ def main(payload):
         require(state, 'unsafe_content', 'the source is clean')
         require(is_published(origin, payload['commit'], payload['git_read'], 'failed'), 'unsafe_content', 'the HEAD is published')
 
-    if payload['stop_processes']:
-        require(stop_tree_processes(checkout, payload['own_units']), 'failed', 'stop the processes inside the checkout')
+    require(stop_tree_processes(checkout, payload['own_units']), 'failed', 'stop the processes inside the checkout')
     remove_source_tree(checkout)
     release_empty_grouping_directory(checkout, root, grouping_directory, account, 'failed')
     return 'removed', {}

@@ -12,6 +12,8 @@ The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessi
 
 Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
 
+The Pi SDK packages share one `pi-ai` and `pi-agent-core` version, including transitive dependencies. Orbit passes Pi’s tool context through when it delegates a read.
+
 ## Configure the server
 
 The server reads command-line flags first, then the environment. Orbit's systemd Processes pass only arguments, so every setting has a flag. The token has only a file flag, because arguments are visible to other users and are stored in the Process definition. The server refuses to start without a bind address and a token.
@@ -230,6 +232,8 @@ Transcripts persist as Pi session files. After a restart, the server reloads a s
 Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; [Run Pi on a task VM](#run-pi-on-a-task-vm) shows how the Gateway installs it. A new task VM gets the binary when the Gateway prepares it at claim; the base image does not need a rebuild. A VM that is already prepared keeps its binary until it is destroyed, so no running turn restarts.
 
 ## Test worker file access
+
+Configuration tests remove their token-file directories after each case, including a failed case.
 
 Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. Many tests call `setfacl` to set up workspaces as a Node does, so they fail without it. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
 

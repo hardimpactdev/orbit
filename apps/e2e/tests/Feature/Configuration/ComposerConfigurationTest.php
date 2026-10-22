@@ -282,7 +282,7 @@ SH);
         expect($steps['Run full test suite'])
             ->toMatchArray([
                 'if' => "matrix.project.directory != 'apps/gateway'",
-                'run' => 'vendor/bin/pest --parallel --compact',
+                'run' => '../../bin/pest-plain vendor/bin/pest --parallel --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
@@ -393,7 +393,7 @@ SH);
         expect($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
-            ->toBe('vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
             'if' => "matrix.project.directory == 'apps/gateway'",
             'run' => '../../bin/check-pest-shards',
@@ -451,8 +451,15 @@ SH);
         $root = temporaryPath('orbit-guidance-check-', 6);
         $project = $root.'/apps/docs';
         mkdir($root.'/bin', 0o700, true);
-        copy(base_path('../../bin/guidance-check'), $root.'/bin/guidance-check');
-        chmod($root.'/bin/guidance-check', 0o700);
+        mkdir($root.'/tools', 0o700);
+        foreach (['guidance-check', 'pest-plain'] as $launcher) {
+            copy(base_path('../../bin/'.$launcher), $root.'/bin/'.$launcher);
+            chmod($root.'/bin/'.$launcher, 0o700);
+        }
+        copy(base_path('../../tools/test_runtime.py'), $root.'/tools/test_runtime.py');
+        $policy = 'apps/gateway/tests/Support/test-private-tmpdir.regex';
+        mkdir(dirname($root.'/'.$policy), 0o700, true);
+        copy(base_path('../../'.$policy), $root.'/'.$policy);
 
         mkdir($project.'/app', 0o700, true);
         mkdir($project.'/tests/Unit', 0o700, true);

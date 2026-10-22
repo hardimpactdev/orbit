@@ -191,7 +191,7 @@ class RemoveSourceTest(Sandbox):
         payload = {
             'checkout': checkout, 'root': self.root, 'grouping_directory': self.project, 'user': USER, 'group': GROUP,
             'branch': 'dev', 'commit': git('rev-parse', 'HEAD', cwd=checkout), 'source_identity': self.identity(checkout),
-            'repository_identity': IDENTITY, 'force': False, 'stop_processes': False, 'own_units': [],
+            'repository_identity': IDENTITY, 'force': False, 'own_units': [],
         }
         return self.run_program('instances.remove-source', {**payload, **overrides})
 
@@ -302,7 +302,7 @@ class FinalizeSourceRemovalTest(Sandbox):
             'force': False, 'origin': ORIGIN, 'commit': git('rev-parse', 'HEAD', cwd=checkout),
             'worktrees': base64.b64encode(subprocess.run(['git', '-C', checkout, 'worktree', 'list', '--porcelain', '-z'], capture_output=True, check=True).stdout).decode(),
             'grouping_directory': self.project, 'unresolved': False, 'independent_worktree': False,
-            'stop_processes': False, 'own_units': [],
+            'own_units': [],
         }
 
     def test_prepares_the_journal_once_and_refuses_another_digest(self):
@@ -387,7 +387,7 @@ class FinalizeSourceRemovalTest(Sandbox):
         payload = {
             **member, 'branch': 'feature', 'receipt': self.receipt, 'force': True, 'origin': ORIGIN,
             'commit': git('rev-parse', 'feature', cwd=repository), 'worktrees': '', 'grouping_directory': self.project,
-            'unresolved': False, 'independent_worktree': True, 'stop_processes': False, 'own_units': [],
+            'unresolved': False, 'independent_worktree': True, 'own_units': [],
         }
         self.assertEqual(self.run_program('instances.finalize-source-removal', payload)[0], 'finalized')
         self.assertFalse(os.path.lexists(worktree))

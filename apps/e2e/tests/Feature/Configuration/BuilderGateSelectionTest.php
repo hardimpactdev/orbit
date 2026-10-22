@@ -48,7 +48,7 @@ function orb277_build_gate_template(): string
     mkdir($root.'/bin', 0o700, true);
     mkdir($root.'/tooling', 0o700, true);
     mkdir($root.'/apps/web/src/api', 0o700, true);
-    mkdir($root.'/apps/web/node_modules/.bin', 0o700, true);
+    mkdir($root.'/apps/web/tools/api-types/node_modules/.bin', 0o700, true);
     mkdir($root.'/apps/pi-server', 0o700, true);
     mkdir($root.'/docs', 0o700, true);
     file_put_contents($root.'/apps/web/src/api/schema.d.ts', "export type Example = string;\n");
@@ -92,7 +92,7 @@ SH);
 
         chmod($root.'/tooling/'.$tool, 0o700);
     }
-    file_put_contents($root.'/apps/web/node_modules/.bin/openapi-typescript', <<<'SH'
+    file_put_contents($root.'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', <<<'SH'
 #!/usr/bin/env sh
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "-o" ]; then
@@ -103,7 +103,7 @@ while [ "$#" -gt 0 ]; do
 done
 exit 2
 SH);
-    chmod($root.'/apps/web/node_modules/.bin/openapi-typescript', 0o700);
+    chmod($root.'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/check-processes', 0o700);
     chmod($root.'/bin/check-classification-fakes', 0o700);
@@ -242,12 +242,12 @@ describe('Builder gate', function (): void {
             ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0, 0]);
         expect($web[3]['command'][2])->toContain('test -s dist/index.html', 'test -s dist/version.json');
         expect($web[4]['command'][0])->toBe('bash')
-            ->and($web[4]['command'][2])->toContain('./node_modules/.bin/openapi-typescript');
+            ->and($web[4]['command'][2])->toContain('./tools/api-types/node_modules/.bin/openapi-typescript');
     });
 
     it('rejects stale web types with the regeneration command', function (): void {
         $fixture = orb277_gate_fixture('docs/openapi.json');
-        file_put_contents($fixture['root'].'/apps/web/node_modules/.bin/openapi-typescript', <<<'SH'
+        file_put_contents($fixture['root'].'/apps/web/tools/api-types/node_modules/.bin/openapi-typescript', <<<'SH'
 #!/usr/bin/env sh
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "-o" ]; then
@@ -301,7 +301,7 @@ SH);
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe([...orb277_selected_projects(), 'apps/web'])
             ->and($web)->toHaveCount(2)
             ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
-            ->and($web[1]['command'][2])->toContain('./node_modules/.bin/openapi-typescript')
+            ->and($web[1]['command'][2])->toContain('./tools/api-types/node_modules/.bin/openapi-typescript')
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
 

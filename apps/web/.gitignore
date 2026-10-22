@@ -1,6 +1,7 @@
 *.local
 .DS_Store
 .vitest-attachments
+.vitest
 dist
 node_modules
 tests/browser/__screenshots__
