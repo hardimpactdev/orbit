@@ -24,7 +24,6 @@ use LogicException;
 final readonly class TaskCheckOperation implements OperationWaitingKind, OperationWaitingStep
 {
     public function __construct(
-        private TaskOperations $operations,
         private TaskExecutionLock $execution,
         private TaskWorkspaceLease $leases,
         private TaskSubtaskRunner $subtasks,
@@ -77,14 +76,12 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
             return $this->execution->synchronized($run->operation()->target_id, function () use ($run): mixed {
                 $operation = $run->operation();
                 $group = Task::topLevel()->with('taskable', 'project')->findOrFail($operation->target_id);
-                $this->operations->requireOpenExternal($group);
                 $subtask = $operation->input['subtask'] ?? null;
                 $phase = $operation->input['phase'] ?? null;
                 if (! is_int($subtask) || ! is_string($phase)) {
                     throw new LogicException('A check operation must store its validated subtask and phase.');
                 }
                 $input = new StartTaskCheckData($subtask, TaskCheckKind::from($phase));
-                $task = $this->requireCheck($group, $input);
                 if ($operation->current_step === 'workspace_ready') {
                     try {
                         $this->vms->node($group);
@@ -94,6 +91,7 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
 
                     return null;
                 }
+                // Admission belongs to start. Board updates cannot end ownership of the recorded check.
                 // The runner claimed waiting -> running before entering this hook. Reconcile owns the reading.
                 $this->leases->reconcile($group);
                 $checkId = $operation->state['check_id'] ?? null;
@@ -106,12 +104,13 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
                     }
                     $check = TaskCheck::query()->findOrFail($checkId);
                     if ($input->phase === TaskCheckKind::Handoff && $check->status === TaskCheckStatus::Passed) {
-                        $this->commit($group, $task, $check, $operation);
+                        $this->commit($group, $check->task()->firstOrFail(), $check, $operation);
                     }
 
                     return $check->id;
                 }
                 if ($checkId === null) {
+                    $task = $group->tasks()->findOrFail($input->subtask);
                     $this->leases->run($group, 'check', 'operation:'.$operation->id, function () use ($run, $group, $task, $input): void {
                         $this->subtasks->recordSubtaskStart($task);
                         $run->remember('check_id', fn (): int => $task->checks()->create([
@@ -132,7 +131,7 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
                     $run->wait(10);
                 }
                 if ($check->status === TaskCheckStatus::Passed && $input->phase === TaskCheckKind::Handoff
-                    && $this->deliverableFailures($task, $check) !== []) {
+                    && $this->deliverableFailures($check->task()->firstOrFail(), $check) !== []) {
                     $check->update(['status' => TaskCheckStatus::Failed]);
                 }
 

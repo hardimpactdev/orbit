@@ -280,6 +280,83 @@ it('stops a waiting check on direct cancel', function (): void {
     expect($group->refresh()->status->value)->toBe('running');
 });
 
+it('reconciles its recorded check after a terminal subtask update until the check finishes', function (string $status, int $exitCode): void {
+    $group = check_operation_group();
+    $task = $group->tasks()->firstOrFail();
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::running(),
+        TaskCheckReading::finished($exitCode, str_repeat('a', 40), str_repeat('b', 40), [], 'Recorded check result.'),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $check = TaskCheck::query()->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+
+    $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['status' => $status])->assertOk();
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+    expect($operation->lock_key)->toBe('task_group:'.$group->id);
+    expect($operation->state['check_id'])->toBe($check->id);
+    expect($check->refresh()->status)->toBe(TaskCheckStatus::Running);
+    expect($lease->refresh()->status)->toBe('held');
+    expect($lease->check_id)->toBe($check->id);
+
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($operation->result['check_id'])->toBe($check->id);
+    expect($operation->result['outcome'])->toBe($exitCode === 0 ? 'passed' : 'failed');
+    expect($operation->result['output'])->toBe('Recorded check result.');
+    expect($operation->lock_key)->toBeNull();
+    expect($check->refresh()->status)->toBe($exitCode === 0 ? TaskCheckStatus::Passed : TaskCheckStatus::Failed);
+    expect($lease->refresh()->status)->toBe('released');
+    expect($task->refresh()->status->value)->toBe($status);
+    expect($runner->starts)->toBe(1);
+})->with(['completed', 'failed'])->with([0, 1]);
+
+it('stops its recorded check after a terminal subtask update and retains ownership until stop is confirmed', function (string $status, bool $unreachable): void {
+    $group = check_operation_group();
+    $task = $group->tasks()->firstOrFail();
+    $runner = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $check = TaskCheck::query()->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+
+    $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['status' => $status])->assertOk();
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+    $runner->failNextCancel = $unreachable;
+
+    $response = $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+
+    if ($unreachable) {
+        $response->assertStatus(502)->assertJsonPath('error.code', 'tasks.check_unreachable');
+        expect($operation->refresh()->cancel_requested_at)->not->toBeNull();
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($check->refresh()->status)->toBe(TaskCheckStatus::Running);
+        expect($lease->refresh()->status)->toBe('held');
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+    } else {
+        $response->assertOk()->assertJsonPath('data.status', 'cancelled');
+    }
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect($operation->lock_key)->toBeNull();
+    expect($check->refresh()->status)->toBe(TaskCheckStatus::Cancelled);
+    expect($lease->refresh()->status)->toBe('released');
+    expect($runner->cancels)->toBe($unreachable ? 2 : 1);
+    expect($runner->starts)->toBe(1);
+})->with(['completed', 'failed'])->with([false, true]);
+
 it('records an unconfirmed cancel before 502 and retries its stop on the next waiting read', function (): void {
     $group = check_operation_group();
     $operation = check_operation_start($group);
