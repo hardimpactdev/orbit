@@ -194,8 +194,7 @@ def dependencies(tree, root):
 def regenerate(tree):
     env = dict(os.environ, APP_CONFIG_CACHE=str(tree / 'private-config.php'),
                ORBIT_DOCS_ROOT=str(tree / 'docs'))
-    # ParaTest already schedules cases across every CPU. Keep each cold driver
-    # to one generator at a time instead of adding a second scheduling layer.
+    # Run generators sequentially so each sees the preceding generated outputs.
     run('php', str(tree / 'apps/docs/artisan'), 'orbit:docs-index', cwd=tree, env=env)
     run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
     run(str(tree / 'bin/mcp-tools'), cwd=tree, env=env)

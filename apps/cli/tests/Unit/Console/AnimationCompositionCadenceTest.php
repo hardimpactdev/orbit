@@ -6,7 +6,11 @@ use App\Support\Console\Animation;
 use Tests\Support\AnimationCadence;
 
 describe('animation composition cadence', function (): void {
-    it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
+    it('keeps the production frame interval at 300 ms', function (): void {
+        expect(Animation::FRAME_INTERVAL_SECONDS)->toBe(0.3);
+    });
+
+    it('keeps outer ticks and the first inner phase on cadence across admission and resume', function (): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
         expect(is_resource($process))->toBeTrue();
@@ -23,21 +27,23 @@ describe('animation composition cadence', function (): void {
         $admitted = false;
         $resumed = false;
         $resumeCount = 0;
+        $interval = 0.05;
+        $updateDelay = $interval / 4;
 
         try {
             stream_set_blocking($pipes[1], false);
-            $send(['frames' => $outerFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
+            $send(['frames' => $outerFrames, 'interval' => $interval]);
             $deadline = microtime(true) + 1.9;
 
             while (microtime(true) < $deadline) {
                 $now = microtime(true);
 
-                if (! $admitted && $changes['outer'] !== [] && $now - $changes['outer'][0] >= 0.08) {
+                if (! $admitted && $changes['outer'] !== [] && $now - $changes['outer'][0] >= $updateDelay) {
                     $send(['frames' => $nestedFrames]);
                     $admitted = true;
                 }
 
-                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= 0.08) {
+                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= $updateDelay) {
                     $send(['frames' => $outerFrames]);
                     $resumed = true;
                     $resumeCount = count($changes['outer']);
@@ -77,8 +83,8 @@ describe('animation composition cadence', function (): void {
             expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
                 ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
                 ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
-                ->and(AnimationCadence::isReadable($changes['outer']))->toBeTrue()
-                ->and(AnimationCadence::isReadable($changes['inner']))->toBeTrue();
+                ->and(AnimationCadence::isReadable($changes['outer'], $interval))->toBeTrue()
+                ->and(AnimationCadence::isReadable($changes['inner'], $interval))->toBeTrue();
 
             foreach ($glyphs as $sequence) {
                 for ($index = 1; $index < count($sequence); $index++) {

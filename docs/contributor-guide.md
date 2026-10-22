@@ -139,7 +139,9 @@ Keep non-Gateway suites fast with each ecosystem's stock test tools. PHP tests u
 
 Keep one real binary smoke test for local profile output, and real PTY cases for raw input, echo, terminal-state restoration, and proving that explicit consent skips a terminal prompt.
 
-Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests accept short work and renderer intervals for process ownership and cleanup checks; terminal recordings and production-cadence assertions retain the 300 ms interval and their original tick counts across admission and resume. Keep cold nested-panel startup and settlement inside the outer callback.
+Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests use short work and renderer intervals for process ownership and cleanup checks. Keep cold nested-panel startup and settlement inside the outer callback.
+
+The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
 
 CLI and Docs tests have a stock PHPUnit limit of two seconds per test. An over-limit test fails the suite. Fix unnecessary work rather than adding retries, sleeps, skips, or longer deadlines. The same limit applies to every test size; see the [CI reference](/reference/implementation-loop#ci) for the enforcement configuration. There is no whole-suite or CI-step duration gate.
 

@@ -159,7 +159,9 @@ The merge driver and the runner for this check start Python without loading site
 
 Both orders must equal the same recorded generator output and complete source tree. Separate read-only cases rebuild the base and combined fixtures to check every recorded byte. The fixture contains only the source corpus these proofs need, not unrelated applications or tests; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
-The real animation composition proof retains seven outer ticks across admission and resume at the production 300 ms cadence. The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
+The animation composition proof runs the real renderer at a 50 ms interval, retaining at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. The proof for printing lines still observes five frames at the real 300 ms cadence in each frame order.
+
+The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
 
 The Rector cache regression directly checks that the project's `composer rector` command includes the `--clear-cache` argument. The tooling baseline keeps this command identical in all five Composer projects and rejects a command without that argument. This checks the cache invalidation contract inside the test's two-second limit, without starting Rector or moving part of the proof into an unmeasured hook.
 

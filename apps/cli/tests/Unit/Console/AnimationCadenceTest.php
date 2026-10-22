@@ -204,7 +204,7 @@ describe('animation composition cadence', function (): void {
         $stream = tmpfile();
         $output = new StreamOutput($stream);
         $mode = new ConsoleMode(false, false, true, true, 80);
-        $outer = new Animation($mode, $output, ["outer 0\n", "outer 1\n"]);
+        $outer = new Animation($mode, $output, ["outer 0\n", "outer 1\n"], frameIntervalSeconds: 0.01);
         $region = new TerminalRegion($mode, $output);
         $inner = new Animation($mode, $output, ["inner 0\n", "inner 1\n"], region: $region,
             settled: static fn (): string => "Inner finished.\n");
