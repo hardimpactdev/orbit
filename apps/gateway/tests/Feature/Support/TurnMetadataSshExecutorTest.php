@@ -149,17 +149,18 @@ it('preserves isolation, arguments, current binary environment and deadlines wit
     $source = File::get(resource_path('tasks/metadata'));
     $probe = <<<'PYTHON'
 
-        import time
+        import signal
         print(json.dumps({'composer': os.environ.get('COMPOSER_AUTH'), 'value': base64.b64encode(os.environb[b'ORBIT_METADATA_VALUE']).decode(), 'isolated': sys.flags.isolated, 'ignore_environment': sys.flags.ignore_environment, 'arguments': sys.argv, 'cwd': os.getcwd()}), file=sys.stderr, flush=True)
         print('started', flush=True)
-        time.sleep(float(os.environ['ORBIT_METADATA_DELAY']))
+        if os.environ['ORBIT_METADATA_BLOCK'] == '1':
+            signal.pause()
         PYTHON;
     File::put($root.'/resources/tasks/metadata', $source."\n".$probe);
     try {
         app()->setBasePath($root);
         $transport = new TurnMetadataSshExecutor;
         $value = "current environment\xff\n☄";
-        $transport->environment = ['COMPOSER_AUTH' => 'must not reach the child', 'ORBIT_METADATA_VALUE' => $value, 'ORBIT_METADATA_DELAY' => '0'];
+        $transport->environment = ['COMPOSER_AUTH' => 'must not reach the child', 'ORBIT_METADATA_VALUE' => $value, 'ORBIT_METADATA_BLOCK' => '0'];
         $command = turn_metadata_fixture_command($root.'/checkout', 'legacy');
         $first = $transport->execute(turn_metadata_fixture_connection(), $command);
         expect($first->exitCode)->toBe(0)->and($first->stdout)->toBe("missing\nstarted\n")
@@ -167,12 +168,12 @@ it('preserves isolation, arguments, current binary environment and deadlines wit
                 'composer' => null, 'value' => base64_encode($value), 'isolated' => 1, 'ignore_environment' => 1,
                 'arguments' => ['-c', $root.'/checkout', 'legacy'], 'cwd' => getcwd(),
             ]);
-        $transport->environment['ORBIT_METADATA_DELAY'] = '0.15';
+        $transport->environment['ORBIT_METADATA_BLOCK'] = '1';
         $timedOut = $transport->execute(turn_metadata_fixture_connection(), new RemoteCommand(arguments: $command->arguments, input: $command->input, timeout: 0.05));
         expect($timedOut->exitCode)->toBe(124)->and($timedOut->stdout)->toBe("missing\nstarted\n")
             ->and($timedOut->stderr)->toContain('Python test program timed out.')
             ->and($timedOut->stderr)->not->toContain('must not reach the child');
-        $transport->environment['ORBIT_METADATA_DELAY'] = '0';
+        $transport->environment['ORBIT_METADATA_BLOCK'] = '0';
         $healthy = $transport->execute(turn_metadata_fixture_connection(), $command);
         expect($healthy->exitCode)->toBe(0)->and($healthy->stdout)->toBe("missing\nstarted\n");
     } finally {
