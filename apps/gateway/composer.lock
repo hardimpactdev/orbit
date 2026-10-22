@@ -11715,7 +11715,6 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "laravel/ai": 20,
         "nckrtl/pestphp-monorepo": 20
     },
     "prefer-stable": true,
