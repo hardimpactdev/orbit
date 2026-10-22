@@ -9357,6 +9357,43 @@
       }
     },
     {
+      "name": "tasks-provision",
+      "extension": "tasks",
+      "title": "Provision a Task group workspace",
+      "description": "Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/provision",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
       "name": "tasks-question-close",
       "extension": "tasks",
       "title": "Close a task question",

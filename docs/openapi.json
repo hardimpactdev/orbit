@@ -27405,6 +27405,139 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/provision": {
+      "post": {
+        "operationId": "tasks-provision",
+        "summary": "Provision a Task group workspace",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/provision\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ProvisionTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ProvisionTaskGroupRequest(groupId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/tasks": {
       "post": {
         "operationId": "tasks-subtask-create",

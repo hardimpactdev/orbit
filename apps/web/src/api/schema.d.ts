@@ -3613,6 +3613,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Provision a Task group workspace
+         * @description Starts tasks.provision on the Gateway and returns HTTP 202 with the queued operation. Requires an external todo group. Waits for VM capacity and readiness, then returns instance_id, node_id, and starting_commit with the group running. Starts no subtask or check. Refuses tick groups with tasks.not_orchestrated, ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. VM errors fail the operation and group. Cancel the group to stop a waiting provision. Supports Idempotency-Key. See /reference/tasks#provision-an-external-group.
+         */
+        post: operations["tasks-provision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks": {
         parameters: {
             query?: never;
@@ -19698,6 +19718,84 @@ export interface operations {
             };
             /** @description A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open. */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-provision": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
