@@ -564,7 +564,16 @@ jobs:
         run: bun run check
 
       - name: Install the test browsers
-        run: bunx playwright install --with-deps --only-shell chromium webkit
+        timeout-minutes: 10
+        env:
+          # Playwright makes up to five browser download attempts across its download URLs.
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '30000'
+        run: |
+          # Use Canonical instead of the runner image's preferred Azure mirror, as in the Desktop job.
+          echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          # --with-deps invokes apt itself, so configure retries and request timeouts for those calls.
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-download-retries
+          bunx playwright install --with-deps --only-shell chromium webkit
 
       - name: Run unit and verification tests
         run: bun run test:unit
