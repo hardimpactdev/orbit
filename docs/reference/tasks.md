@@ -24,7 +24,7 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
-A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. The refusal leaves all records unchanged.
+A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
 ## Extension switch and status
 

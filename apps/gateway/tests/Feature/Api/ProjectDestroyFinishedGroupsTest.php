@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 /** @return array<string, list<array<string, mixed>>> */
-function projectDestroyTaskHistory(Project $project, TaskGroupStatus $status): array
+function projectDestroyTaskHistory(Project $project, TaskGroupStatus $status, TaskVmState $vmState = TaskVmState::Destroyed): array
 {
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -78,7 +79,8 @@ function projectDestroyTaskHistory(Project $project, TaskGroupStatus $status): a
     ]);
     DB::table('task_vms')->insert([
         'group_id' => $group->id, 'provider' => 'incus', 'name' => "retired-{$group->id}",
-        'state' => 'destroyed', 'wireguard_ip' => "10.99.0.{$group->id}", 'destroyed_at' => now(),
+        'state' => $vmState->value, 'wireguard_ip' => "10.99.0.{$group->id}",
+        'destroyed_at' => $vmState === TaskVmState::Destroyed ? now() : null,
     ]);
 
     $tables = [
@@ -129,6 +131,27 @@ describe('Project removal with task history', function (): void {
         }
         expect(DB::select('PRAGMA foreign_key_check'))->toBeEmpty();
     });
+
+    it('returns 409 and preserves every row when a finished group has a VM that is not destroyed', function (TaskVmState $state): void {
+        $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
+        projectDestroyTaskHistory($project, TaskGroupStatus::Completed);
+        $history = projectDestroyTaskHistory($project, TaskGroupStatus::Cancelled, $state);
+        $vmName = $history['task_vms'][1]['name'];
+
+        $this->deleteJson("/api/v1/projects/{$project->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.task_vm_not_destroyed')
+            ->assertJsonPath('error.message', "Project [acme] still has task VM [{$vmName}] in state [{$state->value}].");
+
+        $this->assertModelExists($project);
+        foreach ($history as $table => $rows) {
+            expect(DB::table($table)->get()->map(static fn (object $row): array => (array) $row)->all())
+                ->toBe($rows);
+        }
+    })->with([
+        TaskVmState::Provisioning, TaskVmState::Ready, TaskVmState::Parked,
+        TaskVmState::Destroying, TaskVmState::Failed,
+    ]);
 
     it('rolls back task history cleanup when deleting the Project fails', function (): void {
         $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);

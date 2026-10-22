@@ -123,7 +123,7 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 
 ## orbit project:destroy
 
-Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. Task groups must all be `cancelled` or `completed`; they and their dependent records are deleted with the Project. Any other group status returns HTTP 409 and `project.has_task_groups` without deleting anything. See [Remove a Project](/reference/projects#remove-a-project).
+Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. Task groups must all be `cancelled` or `completed`; they and their dependent records are deleted with the Project. Any other group status returns HTTP 409 and `project.has_task_groups` without deleting anything. Every associated task VM row must be `destroyed`. A VM in any other state, including `failed`, returns HTTP 409 and `project.task_vm_not_destroyed`; the message names the VM and its state. Nothing is deleted. Wait for destruction and model-key revocation to finish before retrying. See [Remove a Project](/reference/projects#remove-a-project).
 
 ```bash
 orbit project:destroy <project> [--yes] [--json]
