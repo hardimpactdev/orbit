@@ -248,24 +248,25 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
     $checks = new FakeTaskCheckRunner($recovers ? [$failure, FakeTaskCheckRunner::passed()] : array_fill(0, 5, $failure));
     app()->instance(TaskCheckRunner::class, $checks);
     app(TaskExtensionState::class)->enable();
+    $scheduler = app(TaskScheduler::class);
 
-    app(TaskScheduler::class)->tick();
+    $scheduler->tick();
     foreach ($recovers ? [60] : [60, 120, 240, 480] as $index => $seconds) {
-        app(TaskScheduler::class)->tick();
+        $scheduler->tick();
         if ($missingFinishedAt) {
             TaskCheck::query()->latest('id')->firstOrFail()->update(['finished_at' => null]);
         }
         expect($group->fresh()->assistance_requested)->toBeFalse();
         expect($task->fresh()->implementer_agent_thread_id)->toBeNull();
         $this->travel($seconds - 1)->seconds();
-        app(TaskScheduler::class)->tick();
+        $scheduler->tick();
         expect($checks->starts)->toBe($index + 1);
         $this->travel(1)->seconds();
-        app(TaskScheduler::class)->tick();
-        app(TaskScheduler::class)->tick();
+        $scheduler->tick();
+        $scheduler->tick();
         expect($checks->starts)->toBe($index + 2);
     }
-    app(TaskScheduler::class)->tick();
+    $scheduler->tick();
 
     expect($group->fresh()->assistance_requested)->toBe(! $recovers, $group->fresh()->assistance_reason ?? '');
     expect($checks->starts)->toBe($recovers ? 2 : 5);

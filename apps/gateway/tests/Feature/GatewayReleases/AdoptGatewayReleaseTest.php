@@ -32,7 +32,7 @@ use Tests\Support\ReleaseTestOwner;
 use Tests\Support\WebArtifactFixture;
 
 beforeEach(function (): void {
-    $this->fixture = new GatewayReleaseFixture;
+    $this->fixture = GatewayReleaseFixture::create();
     $this->current = $this->fixture->layout->currentPath();
     $this->sha = $this->fixture->inPlaceCheckout();
     $this->id = substr($this->sha, 0, 12);

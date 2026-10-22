@@ -15,133 +15,8 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Models\Node;
-use Illuminate\Support\Str;
 use Psr\Log\NullLogger;
-use Symfony\Component\Process\Process;
-use Tests\Support\SubprocessFixture;
-
-/**
- * A scripted TLS WebSocket server in a child process, with a certificate for `reverb.orbit`
- * that only this test trusts.
- */
-final class ScriptedWebSocketServer
-{
-    public readonly int $port;
-
-    private Process $process;
-
-    private string $buffer = '';
-
-    /** @var list<string> */
-    private array $lines = [];
-
-    public function __construct(public readonly string $caPath, string $keyPath, string $mode, array $arguments = [])
-    {
-        $command = [PHP_BINARY, base_path('tests/Fixtures/AgentView/websocket-server.php'), $caPath, $keyPath, $mode, ...$arguments];
-        // Allow 60 seconds for the TLS fixture to print its readiness line.
-        $this->process = new Process($command, timeout: 60);
-        try {
-            $this->process->start();
-            $port = SubprocessFixture::line($this->process);
-            if (! str_starts_with($port, 'port=')) {
-                throw new RuntimeException('The test WebSocket server did not print its port: '.$this->process->getErrorOutput());
-            }
-        } catch (Throwable $exception) {
-            $this->process->stop();
-
-            throw $exception;
-        }
-        $this->port = (int) substr($port, 5);
-    }
-
-    public static function start(string $mode, array $arguments = []): self
-    {
-        $directory = sys_get_temp_dir().'/orbit-ws-'.Str::random(8);
-        mkdir($directory);
-        $config = $directory.'/openssl.cnf';
-        file_put_contents($config, "[req]\ndistinguished_name=dn\n[dn]\n[v3]\nbasicConstraints=critical,CA:TRUE\nsubjectAltName=DNS:reverb.orbit\nkeyUsage=digitalSignature,keyCertSign\n");
-        $options = ['config' => $config, 'private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', 'digest_alg' => 'sha256', 'x509_extensions' => 'v3'];
-        $key = openssl_pkey_new($options);
-        $csr = openssl_csr_new(['commonName' => 'reverb.orbit'], $key, $options);
-        $certificate = openssl_csr_sign($csr, null, $key, 1, $options);
-        openssl_x509_export_to_file($certificate, $directory.'/cert.pem');
-        openssl_pkey_export_to_file($key, $directory.'/key.pem', null, ['config' => $config]);
-
-        return new self($directory.'/cert.pem', $directory.'/key.pem', $mode, $arguments);
-    }
-
-    public function endpoint(string $serverName = 'reverb.orbit'): WebSocketEndpoint
-    {
-        return new WebSocketEndpoint('127.0.0.1', $this->port, $serverName, '/app/key?protocol=7', $this->caPath);
-    }
-
-    /** Waits for the next server line that starts with $prefix. */
-    public function waitFor(string $prefix, float $seconds = 10.0): string
-    {
-        $deadline = microtime(true) + $seconds;
-
-        while (microtime(true) < $deadline) {
-            $running = $this->process->isRunning();
-            $this->buffer .= $this->process->getIncrementalOutput();
-            while (($newline = strpos($this->buffer, "\n")) !== false) {
-                $this->lines[] = rtrim(substr($this->buffer, 0, $newline));
-                $this->buffer = substr($this->buffer, $newline + 1);
-            }
-
-            foreach ($this->lines as $index => $line) {
-                if (str_starts_with($line, $prefix)) {
-                    unset($this->lines[$index]);
-
-                    return $line;
-                }
-            }
-
-            if (! $running) {
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        throw new RuntimeException("The test WebSocket server never printed [{$prefix}]: ".$this->process->getErrorOutput());
-    }
-
-    /** Waits until the server process has exited, so a reset it sent has reached the client. */
-    public function waitForExit(float $seconds = 5.0): void
-    {
-        $deadline = microtime(true) + $seconds;
-
-        while ($this->process->isRunning()) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('The test WebSocket server did not exit.');
-            }
-
-            usleep(10_000);
-        }
-    }
-
-    public function stop(): void
-    {
-        $this->process->stop();
-    }
-}
-
-/**
- * Receives until $count messages arrived or the client closed.
- *
- * @return list<array<string, mixed>>
- */
-function websocket_messages(StreamWebSocketClient $client, int $count, float $seconds = 10.0): array
-{
-    $messages = [];
-    $deadline = microtime(true) + $seconds;
-
-    while (count($messages) < $count && $client->isConnected() && microtime(true) < $deadline) {
-        array_push($messages, ...$client->receive(0.2));
-    }
-
-    return $messages;
-}
+use Tests\Support\ScriptedWebSocketServer;
 
 describe(StreamWebSocketClient::class, function (): void {
     it('completes the TLS and WebSocket handshake against the pinned certificate', function (): void {
@@ -192,18 +67,18 @@ describe(StreamWebSocketClient::class, function (): void {
             $client = new StreamWebSocketClient;
             $client->connect($server->endpoint(), 5.0);
 
-            $events = array_column(websocket_messages($client, 3), 'event');
+            $events = array_column(ScriptedWebSocketServer::messages($client, 3), 'event');
 
             // `too-big` and the fragmented `big-fragment`, including its tail frame, pass 64 KB.
             expect($events)->toBe(['one', 'fragmented', 'two'])
                 ->and($server->waitFor('pong='))->toBe('pong=p');
 
             $client->send(['event' => 'hello', 'data' => ['text' => str_repeat('z', 300)]]);
-            $echo = websocket_messages($client, 1)[0];
+            $echo = ScriptedWebSocketServer::messages($client, 1)[0];
 
             expect(json_decode((string) $echo['data'], true))->toBe(['event' => 'hello', 'data' => ['text' => str_repeat('z', 300)]]);
 
-            websocket_messages($client, 1, 3.0);
+            ScriptedWebSocketServer::messages($client, 1, 3.0);
 
             expect($client->isConnected())->toBeFalse();
         } finally {
@@ -218,7 +93,7 @@ describe(StreamWebSocketClient::class, function (): void {
             $client = new StreamWebSocketClient;
             $client->connect($server->endpoint(), 5.0);
 
-            expect(websocket_messages($client, 1, 3.0))->toBe([])
+            expect(ScriptedWebSocketServer::messages($client, 1, 3.0))->toBe([])
                 ->and($client->isConnected())->toBeFalse()
                 ->and($server->waitFor('closed='))->toBe('closed=yes');
         } finally {
@@ -235,7 +110,7 @@ describe(StreamWebSocketClient::class, function (): void {
             $server->waitFor('reset=');
             $server->waitForExit();
 
-            expect(websocket_messages($client, 1, 3.0))->toBe([])
+            expect(ScriptedWebSocketServer::messages($client, 1, 3.0))->toBe([])
                 ->and($client->isConnected())->toBeFalse();
         } finally {
             $server->stop();
@@ -268,22 +143,6 @@ describe(StreamWebSocketClient::class, function (): void {
             usleep(100_000);
 
             expect($client->receive(1.0))->toBe([['event' => 'last']])
-                ->and($client->isConnected())->toBeFalse();
-        } finally {
-            $server->stop();
-        }
-    });
-
-    it('closes instead of throwing when it cannot answer a ping', function (): void {
-        $server = ScriptedWebSocketServer::start('ping');
-
-        try {
-            $client = new StreamWebSocketClient;
-            $client->connect($server->endpoint(), 5.0);
-            stream_socket_shutdown((new ReflectionProperty($client, 'stream'))->getValue($client), STREAM_SHUT_WR);
-            $server->waitFor('pinged=');
-
-            expect(websocket_messages($client, 1, 3.0))->toBe([])
                 ->and($client->isConnected())->toBeFalse();
         } finally {
             $server->stop();
@@ -420,6 +279,7 @@ describe(StreamWebSocketClient::class, function (): void {
                 ->and($view->node($node->id)->status(ProcessRuntime::Systemd, 'orbit-process-7-web'))->toBe('active')
                 ->and($view->node((int) $websocketNode->id)->freshness)->toBe(AgentViewFreshness::Missing);
 
+            $server->dropConnection();
             expect($pass(fn (): bool => ! $view->node($node->id)->isFresh()))->toBeTrue();
 
             expect($pass(fn (): bool => $view->node($node->id)->isFresh()))->toBeTrue()

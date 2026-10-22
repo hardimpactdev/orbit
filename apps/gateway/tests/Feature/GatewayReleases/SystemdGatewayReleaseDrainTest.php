@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Redis;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->source = $this->pipeline->adopt();
     $this->target = str_repeat('a', 40);
     $this->hold = $this->pipeline->home.'/hold.json';

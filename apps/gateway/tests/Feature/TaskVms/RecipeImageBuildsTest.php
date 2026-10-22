@@ -42,6 +42,7 @@ use Symfony\Component\Process\Process;
 use Tests\Support\IncusGuestCall;
 use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
+use Tests\Support\StandardLibraryPython;
 use Tests\Support\TaskVmSettingsBuilder;
 
 require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
@@ -157,7 +158,7 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     expect(strlen($call->input))->toBeGreaterThan(131072);
 
     // Execute the real assembled input boundary; print its decoded document instead of running the installer.
-    $process = new Process(['python3', '-', 'packages']);
+    $process = new Process([StandardLibraryPython::executable(), '-', 'packages']);
     $process->setInput(str_replace('sys.exit(image_main())', 'print(sys.argv[2])', $call->input));
     $process->mustRun();
     $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
@@ -462,7 +463,7 @@ it('keeps an actual installer traceback once when the unit routes its stderr', f
     $guest = new RecipeImageUnitGuest(static function (string $profile, string $phase, string $source) use ($directory, &$guest): CommandResult {
         $source = str_replace("Path('/var/log/orbit/recipe-images')", 'Path('.json_encode($directory, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).')', $source);
         $source = str_replace("if __name__ == '__main__':", "def platform_check(architecture):\n    pass\ndef image_packages(payload):\n    raise RuntimeError('installer regression')\n\nif __name__ == '__main__':", $source);
-        $result = new NativeProcessRunner()->run(new ProcessInvocation(['python3', '-', $phase], timeout: 30, input: $source));
+        $result = new NativeProcessRunner()->run(new ProcessInvocation([StandardLibraryPython::executable(), '-', $phase], timeout: 30, input: $source));
         if (! is_file($directory.'/'.$profile.'-'.$phase.'.log')) {
             throw new RuntimeException($result->stderr);
         }
@@ -756,7 +757,7 @@ describe('recipe image triggers', function (): void {
 });
 
 it('runs image installer regressions without host changes or downloads', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/build_image_test.py'),
+    $process = new Process([StandardLibraryPython::executable(), base_path('tests/Fixtures/machine-software/build_image_test.py'),
         resource_path('remote/lib/recipe.py'), resource_path('machine-software/build-image.py')]);
     $process->run();
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());

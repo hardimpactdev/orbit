@@ -20,6 +20,14 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\RootCaFixture;
+
+beforeAll(function (): void {
+    RootCaFixture::prepare('bootstrap-command-endpoint', extensions: [
+        'basicConstraints=critical,CA:TRUE',
+        'keyUsage=critical,keyCertSign,cRLSign',
+    ]);
+});
 
 it('reports typed gateway provisioning failures without leaking command output', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-command-'.Str::uuid();
@@ -41,7 +49,7 @@ it('reports typed gateway provisioning failures without leaking command output',
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
-        vpn: new class($failure) implements GatewayVpnConverger
+        vpn: new readonly class($failure) implements GatewayVpnConverger
         {
             public function __construct(
                 private NodeProvisioningException $failure,
@@ -94,7 +102,10 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
 ): void {
     $orbitHome = sys_get_temp_dir().'/orbit-command-'.Str::uuid();
     $filesystem = new Filesystem;
-    $filesystem->ensureDirectoryExists($orbitHome);
+    $filesystem->ensureDirectoryExists($orbitHome.'/ca', 0o700);
+    RootCaFixture::install($orbitHome.'/ca', 'bootstrap-command-endpoint');
+    $caKeyHash = hash_file('sha256', $orbitHome.'/ca/root.key');
+    $caCertificateHash = hash_file('sha256', $orbitHome.'/ca/root.pem');
     $osReleasePath = $orbitHome.'/os-release';
     $filesystem->put($osReleasePath, "ID=ubuntu\nVERSION_CODENAME=resolute\n");
 
@@ -147,7 +158,9 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
         expect(app(VpnSettings::class)->endpoint())
             ->toBe($endpoint)
             ->and($vpn->forPeer($peer)->endpoint)
-            ->toBe($endpoint);
+            ->toBe($endpoint)
+            ->and(hash_file('sha256', $orbitHome.'/ca/root.key'))->toBe($caKeyHash)
+            ->and(hash_file('sha256', $orbitHome.'/ca/root.pem'))->toBe($caCertificateHash);
     } finally {
         $filesystem->deleteDirectory($orbitHome);
     }

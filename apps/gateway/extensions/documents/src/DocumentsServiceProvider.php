@@ -63,7 +63,6 @@ final class DocumentsServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->commands([
             InvalidateDocumentCleanup::class,
             PauseDocumentCleanup::class,

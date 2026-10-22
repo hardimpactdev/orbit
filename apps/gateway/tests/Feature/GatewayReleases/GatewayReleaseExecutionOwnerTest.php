@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->pipeline->adopt();
     $this->pipeline->bindLeaves();
 });

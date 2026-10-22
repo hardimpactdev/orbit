@@ -18,21 +18,20 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentUpload;
 use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+uses(WithCommittedSqliteDatabase::class);
 
 beforeEach(function (): void {
-    DB::rollBack();
     $this->recoveryHome = sys_get_temp_dir().'/orbit-document-recovery-'.Str::uuid();
     mkdir($this->recoveryHome, 0700);
-    touch($this->recoveryHome.'/database.sqlite');
-    config(['orbit.home' => $this->recoveryHome, 'documents.cleanup_runtime' => $this->recoveryHome.'/runtime',
-        'database.connections.sqlite.database' => $this->recoveryHome.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    config(['orbit.home' => $this->recoveryHome, 'documents.cleanup_runtime' => $this->recoveryHome.'/runtime']);
+    $this->useCommittedSqliteDatabase($this->recoveryHome.'/database.sqlite');
     $this->beforeApplicationDestroyed(function (): void {
         if (isset($this->inventoryServer)) {
             $this->inventoryServer->stop();
         }
-        DB::disconnect('sqlite');
+        DB::disconnect();
         File::deleteDirectory($this->recoveryHome);
     });
 });
@@ -449,9 +448,9 @@ describe('paused document inventory and fingerprint-bound resume', function (): 
         app(CleanupGate::class)->invalidate();
         ProjectDocumentEntry::query()->firstOrFail()->update(['name' => 'newer.txt']);
         DB::statement('PRAGMA wal_checkpoint(TRUNCATE)');
-        DB::disconnect('sqlite');
+        DB::disconnect();
         copy($this->recoveryHome.'/backup.sqlite', $this->recoveryHome.'/database.sqlite');
-        DB::purge('sqlite');
+        DB::purge();
         DB::getPdo();
         DB::rollBack();
         Artisan::call('project-documents:cleanup:invalidate');

@@ -146,9 +146,10 @@ final class DevelopmentCheckoutProgram
                 status=$?
                 trap - EXIT HUP INT TERM
                 if [ -n "$supervisor" ]; then
-                    kill -TERM -- "-$supervisor" 2>/dev/null || true
-                    sleep 0.1
-                    kill -KILL -- "-$supervisor" 2>/dev/null || true
+                    if kill -TERM -- "-$supervisor" 2>/dev/null; then
+                        sleep 0.1
+                        kill -KILL -- "-$supervisor" 2>/dev/null || true
+                    fi
                     wait "$supervisor" 2>/dev/null || true
                 fi
                 if [ -n "$watchdog" ]; then
@@ -176,9 +177,10 @@ final class DevelopmentCheckoutProgram
                 group=$2
                 expires=$((SECONDS + $3))
                 while kill -0 "$owner" 2>/dev/null && kill -0 "$group" 2>/dev/null && [ "$SECONDS" -lt "$expires" ]; do sleep 0.1; done
-                kill -TERM -- "-$group" 2>/dev/null || true
-                sleep 0.1
-                kill -KILL -- "-$group" 2>/dev/null || true
+                if kill -TERM -- "-$group" 2>/dev/null; then
+                    sleep 0.1
+                    kill -KILL -- "-$group" 2>/dev/null || true
+                fi
             ' bash "$$" "$supervisor" "$timeout_seconds" {lock_fd}>&- &
             watchdog=$!
             if wait "$supervisor"; then status=0; else status=$?; fi

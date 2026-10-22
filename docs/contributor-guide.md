@@ -8,7 +8,7 @@ covers:
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,generated-merge,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
-  - apps/gateway/tests/Support/{LinuxHost,TestToolchain,LocalShellSshExecutor}.php
+  - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
   - apps/docs/**
   - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
@@ -112,6 +112,12 @@ The Gateway's package-cache integration tests run real npm and Bun installs. Kee
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 
+Build expensive read-only Git fixtures once per test file, then copy them into each case's disposable directory before changing them. Use `WithSharedGitFixtureCleanup` for the shared release and Instance-transfer seeds; its PHPUnit `AfterClass` hook clears them at each file boundary. Stock Pest clears scoped `uses()->afterAll()` hooks between cases. Cleanup must restore owner read, write, and traversal access on fixture directories without following symlinks or changing hard-linked file modes.
+
+Use blocking process completion for fixture commands rather than a polling runner. For bundled Python programs, a test host can share imports and compiled code, but each invocation runs in a fresh child with its own globals, environment, working directory, and process group. Share no mutable program state between cases.
+
+Keep real subprocess coverage for remote programs that manage Git state or process groups. Capture and status tests can run the real program synchronously; detached admission, cancellation, and managed-run tests keep their real launch path. Use explicit readiness signals before advancing a program's timeout clock. Keep a real-clock case where enforcing the timeout is the behavior under test. Start a readiness-timeout fixture with its normal startup budget, then set its short deadline after `Process::start()` returns; process launch must not expire before the readiness helper runs. Scheduler tests advance the framework clock instead of sleeping.
+
 In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs the full suites on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
 
 ```bash
@@ -140,6 +146,16 @@ The first interrupt is forwarded to the test process group. The launcher gives t
 Gateway bootstrap reuses the run directory. Without the wrapper it creates a process-local `orbit-gateway-tests-<pid>-<random>` directory. E2E tests keep their fixtures in an `orbit-e2e-tests-<random>` child directory. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
 
 Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root.
+
+Gateway tests that need real commits or a database visible to subprocesses use `Tests\Support\WithCommittedSqliteDatabase`. It migrates a pristine SQLite template once per test file and copies it into each case's private directory. The ordinary `RefreshDatabase` connection stays inside its transaction; the committed fixture uses a separate connection. Do not roll back or purge the ordinary connection to replace it, because that invalidates Laravel's migration cache and reloads the database for every case.
+
+Before replacing this helper with a stock reset trait, compare complete Documents workloads, including setup and teardown, not repeated migration calls alone. Both setups must preserve real commits, subprocess visibility, reference defaults, and per-case isolation. `DatabaseTruncation` permits real commits; its seeder must restore reference rows and reset application ID counters left by empty tables that Laravel skips truncating.
+
+The Gateway's fresh-install schema is one squashed Laravel migration, followed by a migration that seeds required reference rows. The baseline keeps the last applied migration's name, `2026_12_03_000000_allow_cold_recipe_image_rebuilds`, so an existing Gateway that completed the recorded migration chain skips it. Fresh installations create the same tables, indexes, foreign keys, checks, and triggers and record the squashed history. Trigger diagnostics use the current Project and Instance names. Finish the recorded chain before deploying a squash. The baseline cannot be rolled back.
+
+Keep tables and columns in `Schema::create` calls so Larastan reads them through its normal migration scanner and fingerprints the PHP source. SQLite triggers and partial indexes stay SQL data in the migration. Do not add a separate schema dump: the [Node script ratchet](/decisions/0225-make-node-changes-through-agent-commands#the-ratchet-starts-at-this-merge) counts new non-PHP files, including SQL. `SchemaBaselineTest` compares the table names, column names, and nullability Larastan reads with the loaded SQLite schema. It checks the fixed squashed-history boundary and the exact current migration files after it, so adding a migration does not require changing a hard-coded total.
+
+Separate named test connections use the stock migrate command, with no schema-path override or SQLite CLI dependency. Point `queue.batching.database` at the same connection before migrating; Horizon's batch-metadata migration uses that setting. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the reference-row migration.
 
 Keep non-Gateway suites fast with each ecosystem's stock test tools. PHP tests use controllable clocks and Laravel's `Sleep::fake()` for timeout budgets, and in-process Artisan calls with transport fakes for command behavior. Give in-process nonterminal commands an explicit nonterminal input stream; never inherit the test runner's stdin. For raw output and channel assertions, call the real console kernel with separate in-memory stdout and stderr streams rather than mocking its output style. SDK-backed CLI commands use Saloon's transport fake, not Laravel's HTTP fake.
 
@@ -283,7 +299,9 @@ All maintained documentation lives under the root `docs/` directory, for humans 
 
 The Gateway Tasks engine stores work, deliverables, and lifecycle state. Each Project supplies its own task check and repository policy. Orbit keeps `bin/docs-impact` and its extraction logic in the repository, and enforces the result through `composer check` and `bin/review-check`. Putting docs-first rules in the Gateway is rejected, because it would couple a generic engine to Orbit's documentation, ADRs, and tooling.
 
-A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned changed surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned current surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+
+Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
 
 A waiver lives in the Git directory, not in a tracked file, because it matters only to one branch and nothing reads it after the merge. A shared tracked file is rejected: concurrent branches appended to the same lines, so most merges of `main` into a task branch conflicted.
 

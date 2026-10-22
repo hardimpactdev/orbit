@@ -3,6 +3,7 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/extensions/documents/**
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
   - apps/gateway/tests/Feature/Extensions/Documents/**
@@ -14,7 +15,7 @@ covers:
 
 Project Documents are folders and versioned files owned by one [Project](/reference/projects). They hold notes, specifications, and attachments outside Git. They belong to the Project, not an Instance, branch, task, checkout, or Node. Orbit owns their metadata, history, authorization, and client operations; External document services are not backends. The [storage and editing rationale](/reference/project-documents#why-it-works-this-way) explains this boundary.
 
-Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. An install that already had a document storage configuration or a document entry when it updated keeps the switch on. Turn it on with [`extension:enable documents`](/cli/extension#orbit-extensionenable).
+Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. Upgrades preserve the stored switch value. Turn it on with [`extension:enable documents`](/cli/extension#orbit-extensionenable).
 
 Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context. An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
 
@@ -69,6 +70,8 @@ Search matches entry names and computed paths only, using a case-insensitive lit
 ## Optimistic concurrency and retries
 
 Every mutation of an existing entry requires `expected_revision`, including metadata update, content write, restore-version, archive, restore, and removal. The Gateway atomically compares it with the stored revision under the same lock as the mutation. A stale revision returns HTTP 409 `project_documents.revision_conflict`, with `entry_id` and `current_revision` in error details, and commits no change.
+
+Destination validation holds the document lock while it checks effective archive state, verifies that every ancestor is a folder, and counts the full destination chain plus the moved subtree against the 32-entry depth limit. The lock keeps that ancestry stable. The validator traverses it once for archive state, rather than repeating that scan at every ancestor.
 
 Missing or invalid revisions return validation errors. Versions cannot be edited directly. Clients never force overwrite or automatically retry a conflict with a fresh revision.
 
@@ -367,6 +370,12 @@ Local filesystem or integrity failures use `project_documents.local_io_failed`, 
 Download never overwrites an existing file. Use a new path; there is no implicit overwrite or force option. It verifies the decoded size and digest and atomically publishes a private temporary file without replacing an existing destination, including a racing creator. Raw stdout cannot be recalled, so clients validate the entire bounded body before emitting it. CLI refuses binary stdout to a terminal; a pipe or `--output` file is required. JSON mode creates no local file. Upload verifies local size before sending and the server verifies again.
 
 Storage uses `orbit project:document-storage:show` and `orbit project:document-storage:update`, without a Project selector. Update takes `--endpoint`, `--region`, `--bucket`, and credential input files `--access-key-id-file` and `--secret-access-key-file` (or masked terminal prompts); secret values are not command-line arguments or human output. Both credential files must be supplied together in noninteractive mode when setting or rotating credentials. Existing credentials may be omitted. Secret files are UTF-8 with one optional final newline stripped. Storage commands support `--json` and expose only the redacted configuration/status.
+
+## Test boundaries
+
+Documents lifecycle, recovery, deletion, and API tests use private copies of a migrated SQLite template, not an enclosing transaction. This preserves real commits, rollback checks, independent connections, and subprocess visibility without running the migration chain for each case. See the [contributor test guidance](/contributor-guide#3-implement-and-verify).
+
+The transport tests keep one real stalled-TLS handshake and one real stalled-response deadline case. Body-error classification injects those same transport failures without waiting again, and checks the production request bounds and the response status and partial bytes. The other loopback HTTP cases still exercise signing, bounded sinks, response parsing, redirects, and provider error mapping. Recovery and deletion retain their real provider and subprocess fixtures.
 
 ## SDK and MCP contract
 

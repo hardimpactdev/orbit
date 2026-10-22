@@ -1526,12 +1526,11 @@ it('keeps a converted reviewed head mergeable and recognizes its original final 
     TaskReviewedCommit::query()->where('task_id', $group->id)->delete();
     foreach ([RM_COMMIT, RM_HEAD] as $sha) {
         DB::table('task_reviewed_commits')->insert(['task_id' => $group->id, 'sha' => $sha,
-            'source' => $sha === RM_HEAD ? 'base_merge' : 'orbit_push', 'review_task_id' => $final->id, 'pushed_at' => now()]);
+            'source' => 'orbit_push', 'inherited_approval_sha' => $sha === RM_HEAD ? RM_COMMIT : null,
+            'review_task_id' => $final->id, 'pushed_at' => now()]);
     }
     TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $final->id,
         'type' => 'approved', 'body' => 'Approved the original head.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
-    $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
-    $migration->up();
     $runtime = rm_runtime();
     rm_watch(rm_open(RM_HEAD));
 
@@ -1562,13 +1561,10 @@ it('does not infer an inherited approval from ambiguous converted history', func
     $final = $group->tasks->sole();
     foreach ([RM_HEAD, RM_COMMIT] as $sha) {
         DB::table('task_reviewed_commits')->insert(['task_id' => $group->id, 'sha' => $sha,
-            'source' => $sha === RM_HEAD ? 'base_merge' : 'orbit_push', 'review_task_id' => $final->id, 'pushed_at' => now()]);
+            'source' => 'orbit_push', 'inherited_approval_sha' => null, 'review_task_id' => $final->id, 'pushed_at' => now()]);
         TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id,
             'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
     }
-    $migration = require database_path('migrations/2026_12_01_000000_remove_task_base_merge_gates.php');
-    $migration->up();
-
     expect(app(TaskPublication::class)->checkReturningPullRequest($group, new TaskPullRequestHealth('merged', headSha: RM_HEAD)))->toBeTrue()
         ->and($group->fresh()->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix);
 });

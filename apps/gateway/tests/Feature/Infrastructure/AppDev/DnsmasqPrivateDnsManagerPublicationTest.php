@@ -155,6 +155,7 @@ it('keeps only managed fragments in the live dnsmasq conf-dir after listener pub
         $restoreVpn = "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\nhost-record=extra.orbit,10.44.0.9\n";
         $harness->putVpnFragment($restoreVpn);
         $harness->clearServiceLog();
+        $probesBeforeRestore = count($harness->socketProbes());
 
         expect(fn () => $harness->listenerManager()->converge())
             ->toThrow(RuntimeConvergenceException::class);
@@ -164,7 +165,9 @@ it('keeps only managed fragments in the live dnsmasq conf-dir after listener pub
             ->and($harness->confDirectoryListenAddressFiles())
             ->toBe([])
             ->and(file_get_contents($harness->vpnFragmentPath()))
-            ->toBe($restoreVpn);
+            ->toBe($restoreVpn)
+            ->and(array_slice($harness->socketProbes(), $probesBeforeRestore))
+            ->toBe(array_fill(0, 100, '-4 -ulpnH src 10.44.0.1:53'));
     } finally {
         $harness->cleanup();
     }

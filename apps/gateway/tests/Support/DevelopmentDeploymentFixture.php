@@ -11,13 +11,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
-use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -40,6 +34,8 @@ final class DevelopmentDeploymentFixture
     public readonly Instance $instance;
 
     public readonly RemoteDevelopmentDeployment $deployment;
+
+    public readonly DevelopmentDeploymentSshExecutor $transport;
 
     public readonly string $initialCommit;
 
@@ -92,23 +88,7 @@ final class DevelopmentDeploymentFixture
         $keys->shouldReceive('privateKeyPath')->andReturn('/unused');
         $hosts = Mockery::mock(KnownHostsStore::class);
         $hosts->shouldReceive('path')->andReturn('/unused');
-        $transport = new class($global) implements SshExecutor
-        {
-            public function __construct(private readonly string $global) {}
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                return new NativeProcessRunner()->run(new ProcessInvocation(
-                    $command->arguments,
-                    timeout: $command->timeout ?? 30,
-                    input: $command->input,
-                    protectedInput: $command->protectedInput,
-                    output: $command->output,
-                    cancelled: $command->cancelled,
-                    environment: ['GIT_CONFIG_GLOBAL' => $this->global, 'GIT_CONFIG_NOSYSTEM' => '1'],
-                ));
-            }
-        };
+        $transport = $this->transport = new DevelopmentDeploymentSshExecutor($global);
         $this->deployment = new RemoteDevelopmentDeployment(
             new DevelopmentSshExecutor($transport, $keys, $hosts),
             $accounts,

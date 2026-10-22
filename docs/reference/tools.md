@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
-  - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/*_{add_vp_environment_to_instances,migrate_legacy_vp_deploy_steps}.php}
+  - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/{app/Data/Tools/**,resources/remote/tools/**,resources/remote/lib/vp-store.py}
   - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
   - apps/gateway/app/Http/Requests/Tools/**

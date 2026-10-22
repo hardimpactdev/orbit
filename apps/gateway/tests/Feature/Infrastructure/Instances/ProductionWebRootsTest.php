@@ -29,13 +29,15 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\BufferedBashProgram;
+use Tests\Support\ScriptedBashCommand;
 
 beforeEach(function (): void {
     $this->sandbox = storage_path('framework/testing/prodweb-'.bin2hex(random_bytes(6)));
     new Filesystem()->makeDirectory($this->sandbox.'/bin', 0o755, true);
     $this->sandbox = realpath($this->sandbox);
     // Production programs reach the production user through sudo. Locally the test user owns every file.
-    file_put_contents($this->sandbox.'/bin/sudo', "#!/bin/bash\nif [ \"\$1\" = -u ]; then shift 2; fi\nif [ \"\$1\" = -H ]; then shift; fi\nexec \"\$@\"\n");
+    file_put_contents($this->sandbox.'/bin/sudo', "#!/bin/bash\nif [ \"\$1\" = -u ]; then shift 2; fi\nif [ \"\$1\" = -H ]; then shift; fi\n\"\$@\"\n");
     file_put_contents($this->sandbox.'/bin/setfacl', "#!/bin/bash\nprintf '%s\\n' \"\$*\" >> \"\$ORBIT_TEST_ACL_LOG\"\n");
     chmod($this->sandbox.'/bin/sudo', 0o755);
     chmod($this->sandbox.'/bin/setfacl', 0o755);
@@ -57,14 +59,17 @@ describe('production web roots', function (): void {
         [$before, $prepare, $activate] = $ssh->commands;
 
         expect(count($before->arguments))->toBe(10)
-            ->and(base64_decode($prepare->arguments[array_key_last($prepare->arguments)], true))->toBe("apps/docs/public\tapps/docs\n")
-            ->and(base64_decode($activate->arguments[array_key_last($activate->arguments)], true))->toBe("apps/docs/public\tapps/docs\n")
+            ->and(base64_decode(array_last($prepare->arguments), true))->toBe("apps/docs/public\tapps/docs\n")
+            ->and(base64_decode(array_last($activate->arguments), true))->toBe("apps/docs/public\tapps/docs\n")
             ->and($prepare->input)->toContain('link_served_environments "$release"')
             ->and(strpos((string) $activate->input, "grant_served_web_roots \"\$release\"\ntemporary="))->toBeInt()
             ->and(strpos((string) $activate->input, "link_served_environments \"\$release\"\ngrant_served_web_roots"))->toBeInt();
     });
 
     it('links each served directory to its stable environment and grants Caddy each web root', function (): void {
+        // Direct sudo calls use its current body; find -exec still launches the ACL-recording executable.
+        $path = $this->sandbox.'/bin/sudo';
+        file_put_contents($path, str_replace("#!/bin/bash\n", "#!/usr/bin/false\n", new Filesystem()->get($path)));
         $release = $this->sandbox.'/home/releases/r1';
         foreach (['apps/docs/public', 'apps/admin/public', 'public'] as $directory) {
             mkdir("{$release}/{$directory}", 0o755, true);
@@ -256,7 +261,12 @@ function prodweb_run(object $test, string $release, string $entries): Process
         ['bash', '-seu', '--', $release, $entries],
         env: ['PATH' => $test->sandbox.'/bin:'.getenv('PATH'), 'ORBIT_TEST_ACL_LOG' => $test->sandbox.'/acl.log'],
     );
-    $process->setInput(ProductionWebRootProgram::functions()."\nuser=\$(id -un)\nhome=".escapeshellarg(dirname($release, 2))."\nserved_web_roots=\$2\nlink_served_environments \"\$1\"\ngrant_served_web_roots \"\$1\"\n");
+    $process->setInput(
+        BufferedBashProgram::stdinPrelude($test->sandbox)
+        .ScriptedBashCommand::define('sudo', $test->sandbox.'/bin/sudo')
+        .ScriptedBashCommand::define('setfacl', $test->sandbox.'/bin/setfacl')
+        .ProductionWebRootProgram::functions()."\nuser=\$(id -un)\nhome=".escapeshellarg(dirname($release, 2))."\nserved_web_roots=\$2\nlink_served_environments \"\$1\"\ngrant_served_web_roots \"\$1\"\n",
+    );
     $process->run();
 
     return $process;

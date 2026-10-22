@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
-  - apps/gateway/app/Models/Schedule.php
+  - apps/gateway/{app/Models/Schedule.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - packages/php-sdk/src/{Requests,Responses}/Schedules/**
 ---
 

@@ -3,7 +3,7 @@ title: "AI router"
 description: "The optional Orbit extension that collects CLIProxyAPI quota and its model list into shared Valkey, and publishes provider pools at collector.ai-router.orbit."
 covers:
   - apps/gateway/extensions/ai-router/**
-  - apps/gateway/tests/Feature/Database/AiRouter*MigrationTest.php
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/tests/{Feature,Unit}/Extensions/AiRouter/**
   - apps/web/src/extensions/ai-router/**
 ---
@@ -99,11 +99,11 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 
 While setup uses a Database connection, `database:destroy` refuses to remove it with HTTP 409 `database_connection.required_by_ai_router`. Turning off the extension switch keeps this guard; teardown releases it. Updating that connection validates its proposed driver and placement before saving, then reconverges the collector after the transaction commits. Setup and reconvergence build the same collector environment from the stored settings and current connection credentials; missing cache host or port refuses the build.
 
-`AiRouterProcess::data()` sets both the required `AI_ROUTER_PORT` environment value and the Process port mapping from `AiRouterProcess::PORT` (8787). Caddy upstream and Route takeover checks use that constant too. The collector refuses to start without `AI_ROUTER_PORT`. It has no port setting; the setting migration deletes the obsolete `ai_router.process_port` row without changing credentials or restarting the collector.
+`AiRouterProcess::data()` sets both the required `AI_ROUTER_PORT` environment value and the Process port mapping from `AiRouterProcess::PORT` (8787). Caddy upstream and Route takeover checks use that constant too. The collector refuses to start without `AI_ROUTER_PORT`. It has no port setting.
 
-The extension stores the collector Process’s source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. The upgrade copies rows with a non-null source revision or pending activation in one SQLite transaction before removing the old columns. A Process without either value has no source row; absence means a null revision and no pending activation. Rollback restores the source state and those defaults.
+The extension stores the collector Process’s source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. A Process without a source row has a null revision and no pending activation.
 
-This data move does not install or restart a Process. An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
+An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
 
 `collector.ai-router.orbit` is a reserved platform name, so `route:create` and `route:update` refuse it with `route.domain_conflict`. The suggested management Route `ai-router.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 

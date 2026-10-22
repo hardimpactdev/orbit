@@ -43,6 +43,9 @@ final readonly class GatewaySchedulerHandoff
     /** @var Closure(int): void */
     private Closure $sleep;
 
+    /** @var Closure(): float */
+    private Closure $clock;
+
     /** @var Closure(): void */
     private Closure $clearMutexes;
 
@@ -51,6 +54,7 @@ final readonly class GatewaySchedulerHandoff
 
     /**
      * @param  (Closure(int): void)|null  $sleep  microseconds
+     * @param  (Closure(): float)|null  $clock  monotonic nanoseconds
      * @param  (Closure(): void)|null  $clearMutexes  clears the schedule's overlap mutexes
      * @param  (Closure(string): list<string>)|null  $members  the command lines of the processes in a unit, main process included
      */
@@ -63,7 +67,9 @@ final readonly class GatewaySchedulerHandoff
         private int $drainSeconds = self::DrainSeconds,
         ?Closure $clearMutexes = null,
         ?Closure $members = null,
+        ?Closure $clock = null,
     ) {
+        $this->clock = $clock ?? static fn (): float => hrtime(true);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -207,7 +213,7 @@ final readonly class GatewaySchedulerHandoff
      */
     private function drain(string $unit): array
     {
-        $startedAt = hrtime(true);
+        $startedAt = ($this->clock)();
         $main = $this->mainPid($unit);
 
         if ($main === 0) {
@@ -230,7 +236,7 @@ final readonly class GatewaySchedulerHandoff
         $deadline = $startedAt + $this->drainSeconds * 1_000_000_000;
 
         while ($this->mainPid($unit) === $main) {
-            if (hrtime(true) >= $deadline) {
+            if (($this->clock)() >= $deadline) {
                 return [
                     'outcome' => 'forced',
                     'waited_ms' => $this->elapsed($startedAt),
@@ -339,7 +345,7 @@ final readonly class GatewaySchedulerHandoff
 
     private function waitActive(string $unit): void
     {
-        $deadline = hrtime(true) + $this->startWaitSeconds * 1_000_000_000;
+        $deadline = ($this->clock)() + $this->startWaitSeconds * 1_000_000_000;
 
         do {
             if ($this->processes->run(new ProcessInvocation(['systemctl', 'is-active', '--quiet', $unit], timeout: 10.0))->succeeded()) {
@@ -347,7 +353,7 @@ final readonly class GatewaySchedulerHandoff
             }
 
             ($this->sleep)(500_000);
-        } while (hrtime(true) < $deadline);
+        } while (($this->clock)() < $deadline);
 
         throw new GatewayReleaseException(
             step: 'handoff',
@@ -357,8 +363,8 @@ final readonly class GatewaySchedulerHandoff
         );
     }
 
-    private function elapsed(int $startedAt): int
+    private function elapsed(float $startedAt): int
     {
-        return intdiv(hrtime(true) - $startedAt, 1_000_000);
+        return (int) ((($this->clock)() - $startedAt) / 1_000_000);
     }
 }

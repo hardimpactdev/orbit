@@ -59,11 +59,15 @@ final readonly class GatewayRuntimeHandoff
     /** @var Closure(int): void */
     private Closure $sleep;
 
+    /** @var Closure(): float */
+    private Closure $clock;
+
     /**
      * @param  (Closure(string): (string|false))|null  $readLivePool
      * @param  (Closure(string, string): string)|null  $resetOpcache  runs the reset script inside the pool with a query and returns its JSON
      * @param  (Closure(): int)|null  $fpmConnections  requests in flight in every pool of the PHP-FPM master, which share one OPcache
      * @param  (Closure(int): void)|null  $sleep  microseconds
+     * @param  (Closure(): float)|null  $clock  monotonic nanoseconds
      * @param  (Closure(): void)|null  $recipeImages  reconcile the newly deployed recipe without running builds inline
      */
     public function __construct(
@@ -88,7 +92,9 @@ final readonly class GatewayRuntimeHandoff
         private ?GatewayNodeAgentUpdate $agent = null,
         private ?GatewayHorizon $horizon = null,
         private ?Closure $recipeImages = null,
+        ?Closure $clock = null,
     ) {
+        $this->clock = $clock ?? static fn (): float => hrtime(true);
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
         $this->fpmConnections = $fpmConnections ?? new FpmPoolConnections(dirname($this->livePool))->count(...);
@@ -286,10 +292,10 @@ final readonly class GatewayRuntimeHandoff
      */
     private function opcache(): array
     {
-        $deadline = hrtime(true) + $this->idleWaitSeconds * 1_000_000_000;
+        $deadline = ($this->clock)() + $this->idleWaitSeconds * 1_000_000_000;
 
         while (($this->fpmConnections)() > 0) {
-            if (hrtime(true) >= $deadline) {
+            if (($this->clock)() >= $deadline) {
                 return ['outcome' => 'deferred'];
             }
 

@@ -156,7 +156,7 @@ describe('Gateway convergence', function () {
     })->with([
         'Caddy' => ['caddy', 'caddy'],
         'dnsmasq' => ['dnsmasq', 'dnsmasq'],
-        'all' => ['dnsmasq,caddy', 'caddy dnsmasq'],
+        'Caddy and dnsmasq' => ['dnsmasq,caddy', 'caddy dnsmasq'],
     ]);
 
     it('points a Gateway environment that names another checkout at the mounted checkout', function () {

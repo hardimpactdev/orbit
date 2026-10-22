@@ -4,7 +4,7 @@ description: "How Orbit runs Processes for an Instance or a Node, and how a Proj
 covers:
   - apps/gateway/app/Actions/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/{Domain,Data}/Processes/**
-  - apps/gateway/database/migrations/*process*
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php

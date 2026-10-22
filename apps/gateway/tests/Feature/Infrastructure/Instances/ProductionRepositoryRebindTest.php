@@ -24,10 +24,54 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\BufferedBashProgram;
 use Tests\Support\LinuxHost;
+use Tests\Support\ScriptedBashCommand;
+use Tests\Support\StandardLibraryPython;
 
 const REBIND_SSH_URL = 'git@github.com:acme/site.git';
 const REBIND_HTTPS_URL = 'https://github.com/acme/site.git';
+
+beforeAll(function (): void {
+    rebind_repository_seed();
+});
+
+it('isolates writable rebind repositories and environment links copied from the committed seed', function (): void {
+    $first = rebind_sandbox();
+    $second = rebind_sandbox();
+    $third = null;
+    $git = static fn (string $root, array $arguments): string => trim(new Process(['git', '-C', $root.'/home/releases/initial', ...$arguments])->mustRun()->getOutput());
+
+    try {
+        $initial = $git($second, ['rev-parse', 'HEAD']);
+        expect($git($first, ['rev-parse', 'HEAD']))->toBe($initial)
+            ->and($git($first, ['rev-parse', '--absolute-git-dir']))->toBe($first.'/home/releases/initial/.git')
+            ->and($git($second, ['rev-parse', '--absolute-git-dir']))->toBe($second.'/home/releases/initial/.git');
+        file_put_contents($first.'/home/releases/initial/public/index.php', 'private change');
+        file_put_contents($first.'/home/releases/initial/.env', 'private environment');
+        $git($first, ['add', 'public/index.php']);
+        $git($first, ['-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'private change']);
+        $git($first, ['remote', 'set-url', 'origin', REBIND_HTTPS_URL]);
+        expect($git($first, ['rev-parse', 'HEAD']))->not->toBe($initial)
+            ->and($git($first, ['remote', 'get-url', 'origin']))->toBe(REBIND_HTTPS_URL)
+            ->and($git($second, ['rev-parse', 'HEAD']))->toBe($initial)
+            ->and($git($second, ['remote', 'get-url', 'origin']))->toBe(REBIND_SSH_URL)
+            ->and(file_get_contents($second.'/home/releases/initial/public/index.php'))->toBe("<?php\n")
+            ->and(file_get_contents($second.'/home/releases/initial/.env'))->toBe("APP_ENV=production\n");
+        new Filesystem()->deleteDirectory($first);
+        $third = rebind_sandbox();
+        expect($git($third, ['rev-parse', 'HEAD']))->toBe($initial)
+            ->and($git($third, ['remote', 'get-url', 'origin']))->toBe(REBIND_SSH_URL)
+            ->and(file_get_contents($third.'/home/releases/initial/public/index.php'))->toBe("<?php\n")
+            ->and(file_get_contents($third.'/home/releases/initial/.env'))->toBe("APP_ENV=production\n");
+    } finally {
+        foreach ([$first, $second, $third] as $directory) {
+            if ($directory !== null) {
+                new Filesystem()->deleteDirectory($directory);
+            }
+        }
+    }
+});
 
 describe('ProductionRepositoryRecord', function (): void {
     it('treats SSH and HTTPS URLs of one repository as the same repository', function (): void {
@@ -62,29 +106,64 @@ describe('RemoteProductionRepositoryBinding', function (): void {
                         ->and($exception->getMessage())->toContain('orbit project:update');
                 });
 
+            $record = rebind_initial_record();
+            $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
+
+            expect($deployment->selected($instance)?->name)->toBe('initial')
+                ->and($deployment->retained($instance, '20261001000000-a')->name)->toBe('20261001000000-a');
+        } finally {
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
+
+    it('inspects and re-binds every recorded URL while preserving protected marker bytes', function (): void {
+        $sandbox = rebind_sandbox();
+        [$instance, , $binding] = rebind_instance(rebind_local_executor($sandbox), REBIND_HTTPS_URL, "{$sandbox}/home");
+
+        try {
             $record = $binding->inspect($instance);
-
-            expect($record)->toEqual(new ProductionRepositoryRecord(
-                REBIND_SSH_URL,
-                REBIND_SSH_URL,
-                ['20261001000000-a' => REBIND_SSH_URL, 'initial' => REBIND_SSH_URL],
-            ));
+            expect($record)->toEqual(rebind_initial_record());
 
             $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
-            // A repeated re-bind is a no-op.
-            $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
 
-            expect($binding->inspect($instance)->boundTo(REBIND_HTTPS_URL))->toBeTrue()
+            expect($binding->inspect($instance))->toEqual($record->withRepository(REBIND_HTTPS_URL))
                 ->and(decoct(fileperms("{$sandbox}/state/release-layout") & 0o777))->toBe('600')
                 ->and(file_get_contents("{$sandbox}/state/release-layout"))
                 ->toBe(REBIND_HTTPS_URL."\0rebind\0{$sandbox}/home\0initial\0")
                 ->and(file_get_contents("{$sandbox}/state/initial-clone"))
-                ->toBe(REBIND_HTTPS_URL."\0rebind\0{$sandbox}/home\0")
-                ->and($deployment->selected($instance)?->name)->toBe('initial')
-                ->and($deployment->retained($instance, '20261001000000-a')->name)->toBe('20261001000000-a');
+                ->toBe(REBIND_HTTPS_URL."\0rebind\0{$sandbox}/home\0");
+        } finally {
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
 
-            // Rollback restores every recorded URL.
-            $binding->rebind($instance, $record->withRepository(REBIND_HTTPS_URL), $record);
+    it('accepts repeated convergence from the same old production binding', function (): void {
+        $sandbox = rebind_sandbox();
+        [$instance, , $binding] = rebind_instance(rebind_local_executor($sandbox), REBIND_HTTPS_URL, "{$sandbox}/home");
+        $record = rebind_initial_record();
+        $target = $record->withRepository(REBIND_HTTPS_URL);
+
+        try {
+            $binding->rebind($instance, $record, $target);
+            $binding->rebind($instance, $record, $target);
+
+            expect($binding->inspect($instance))->toEqual($target);
+        } finally {
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
+
+    it('rolls back every recorded production URL after a real re-bind', function (): void {
+        $sandbox = rebind_sandbox();
+        [$instance, , $binding] = rebind_instance(rebind_local_executor($sandbox), REBIND_HTTPS_URL, "{$sandbox}/home");
+        $record = rebind_initial_record();
+        $target = $record->withRepository(REBIND_HTTPS_URL);
+
+        try {
+            $binding->rebind($instance, $record, $target);
+            expect($binding->inspect($instance))->toEqual($target);
+
+            $binding->rebind($instance, $target, $record);
 
             expect($binding->inspect($instance))->toEqual($record);
         } finally {
@@ -92,16 +171,14 @@ describe('RemoteProductionRepositoryBinding', function (): void {
         }
     });
 
-    it('re-binds the releases that pruning keeps, and pruning then accepts them', function (): void {
+    it('inventories and re-binds an in-use release beyond the pruning retention limit', function (): void {
         if (LinuxHost::delegate($this)) {
             return;
         }
 
         $sandbox = rebind_sandbox(['initial', '20261001000000-a', '20261002000000-b', '20261003000000-c']);
-        $executor = rebind_local_executor($sandbox);
-        [$instance, $deployment, $binding] = rebind_instance($executor, REBIND_SSH_URL, "{$sandbox}/home");
+        [$instance, $deployment, $binding] = rebind_instance(rebind_local_executor($sandbox), REBIND_SSH_URL, "{$sandbox}/home");
         $selected = new DeploymentRelease('initial', "{$sandbox}/home/releases/initial", str_repeat('a', 40));
-        // A running Process works in a release beyond the retention limit, so pruning keeps it.
         $worker = new Process(['sleep', '60'], "{$sandbox}/home/releases/20261001000000-a/public");
 
         try {
@@ -118,11 +195,41 @@ describe('RemoteProductionRepositoryBinding', function (): void {
             expect(array_keys($record->releases))->toBe(['20261001000000-a', '20261002000000-b', '20261003000000-c', 'initial']);
 
             $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
+
+            expect($binding->inspect($instance))->toEqual($record->withRepository(REBIND_HTTPS_URL))
+                ->and($worker->isRunning())->toBeTrue();
+        } finally {
+            $worker->stop(0);
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
+
+    it('re-binds the releases that pruning keeps, and pruning then accepts them', function (): void {
+        if (LinuxHost::delegate($this)) {
+            return;
+        }
+
+        $sandbox = rebind_sandbox(['initial', '20261001000000-a', '20261002000000-b', '20261003000000-c']);
+        [$instance, $deployment, $binding] = rebind_instance(rebind_local_executor($sandbox), REBIND_SSH_URL, "{$sandbox}/home");
+        $selected = new DeploymentRelease('initial', "{$sandbox}/home/releases/initial", str_repeat('a', 40));
+        $worker = new Process(['sleep', '60'], "{$sandbox}/home/releases/20261001000000-a/public");
+        $record = new ProductionRepositoryRecord(
+            REBIND_SSH_URL,
+            REBIND_SSH_URL,
+            ['20261001000000-a' => REBIND_SSH_URL, '20261002000000-b' => REBIND_SSH_URL, '20261003000000-c' => REBIND_SSH_URL, 'initial' => REBIND_SSH_URL],
+        );
+
+        try {
+            $worker->start();
+            for ($attempt = 0; $attempt < 100 && @readlink('/proc/'.$worker->getPid().'/cwd') !== "{$sandbox}/home/releases/20261001000000-a/public"; $attempt++) {
+                usleep(10_000);
+            }
+
+            $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
             $instance->project->update(['repository_url' => REBIND_HTTPS_URL]);
             $instance->refresh();
 
-            expect($binding->inspect($instance)->boundTo(REBIND_HTTPS_URL))->toBeTrue()
-                ->and($deployment->prune($instance, $selected, null))
+            expect($deployment->prune($instance, $selected, null))
                 ->toBe(['removed' => [], 'in_use' => ['20261001000000-a']]);
 
             $worker->stop(0);
@@ -187,6 +294,36 @@ describe('RemoteProductionRepositoryBinding', function (): void {
     });
 });
 
+function rebind_initial_record(): ProductionRepositoryRecord
+{
+    return new ProductionRepositoryRecord(
+        REBIND_SSH_URL,
+        REBIND_SSH_URL,
+        ['20261001000000-a' => REBIND_SSH_URL, 'initial' => REBIND_SSH_URL],
+    );
+}
+
+/** Read-only setup; TestTemporaryDirectory removes the process-owned seed at shutdown. */
+function rebind_repository_seed(): string
+{
+    static $seed = null;
+    if ($seed === null) {
+        $seed = sys_get_temp_dir().'/orbit-rebind-seed-'.bin2hex(random_bytes(6));
+        mkdir($seed.'/public', 0o700, true);
+        file_put_contents($seed.'/public/index.php', "<?php\n");
+        foreach ([
+            ['git', 'init', '--quiet', $seed],
+            ['git', '-C', $seed, 'remote', 'add', 'origin', REBIND_SSH_URL],
+            ['git', '-C', $seed, 'add', 'public/index.php'],
+            ['git', '-C', $seed, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'fixture'],
+        ] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+    }
+
+    return $seed;
+}
+
 /** @param list<string> $names */
 function rebind_sandbox(array $names = ['initial', '20261001000000-a']): string
 {
@@ -200,7 +337,7 @@ function rebind_sandbox(array $names = ['initial', '20261001000000-a']): string
             #!/usr/bin/env bash
             if [ "${1:-}" = -u ]; then shift 2; fi
             if [ "${1:-}" = -H ]; then shift; fi
-            exec "$@"
+            "$@"
             BASH,
     );
     chmod("{$sandbox}/bin/sudo", 0o755);
@@ -209,16 +346,8 @@ function rebind_sandbox(array $names = ['initial', '20261001000000-a']): string
 
     foreach ($names as $name) {
         $release = "{$home}/releases/{$name}";
-        mkdir("{$release}/public", 0o700, true);
-        file_put_contents("{$release}/public/index.php", "<?php\n");
-        foreach ([
-            ['git', 'init', '--quiet', $release],
-            ['git', '-C', $release, 'remote', 'add', 'origin', REBIND_SSH_URL],
-            ['git', '-C', $release, 'add', 'public/index.php'],
-            ['git', '-C', $release, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'fixture'],
-        ] as $arguments) {
-            new Process($arguments)->mustRun();
-        }
+        mkdir($release, 0o700, true);
+        new Process(['cp', '-a', '--', rebind_repository_seed().'/.', $release])->mustRun();
         symlink('../../.env', "{$release}/.env");
     }
 
@@ -242,9 +371,17 @@ function rebind_sandbox(array $names = ['initial', '20261001000000-a']): string
  */
 function rebind_local_executor(string $sandbox): ProductionSshExecutor
 {
-    return rebind_executor(new class($sandbox) implements SshExecutor
+    $owner = posix_getpwuid(posix_geteuid()) ?: throw new RuntimeException('The fixture account must exist.');
+    $group = posix_getgrgid(posix_getegid()) ?: throw new RuntimeException('The fixture group must exist.');
+
+    return rebind_executor(new readonly class($sandbox, $owner['name'].':'.$group['name'], posix_geteuid(), posix_getegid()) implements SshExecutor
     {
-        public function __construct(private readonly string $sandbox) {}
+        public function __construct(
+            private string $sandbox,
+            private string $account,
+            private int $uid,
+            private int $gid,
+        ) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
@@ -266,19 +403,19 @@ function rebind_local_executor(string $sandbox): ProductionSshExecutor
                 [
                     'state_directory="'.$this->sandbox.'/state"',
                     'test -d "$home"',
-                    '"$(id -un):$(id -gn):700"',
-                    '"$(id -un):$(id -gn):600"',
+                    escapeshellarg($this->account.':700'),
+                    escapeshellarg($this->account.':600'),
                     ':',
-                    '! -uid "$(id -u)"',
-                    '! -gid "$(id -g)"',
+                    '! -uid '.$this->uid,
+                    '! -gid '.$this->gid,
                     'pgrep -P "$PPID"',
                 ],
                 $input,
             );
             $process = new Process(
                 $command->arguments,
-                env: ['PATH' => $this->sandbox.'/bin:'.getenv('PATH')],
-                input: $input,
+                env: ['PATH' => StandardLibraryPython::path($this->sandbox.'/bin:'.getenv('PATH'))],
+                input: BufferedBashProgram::stdinPrelude($this->sandbox).ScriptedBashCommand::define('sudo', $this->sandbox.'/bin/sudo').$input,
             );
             $process->run();
 

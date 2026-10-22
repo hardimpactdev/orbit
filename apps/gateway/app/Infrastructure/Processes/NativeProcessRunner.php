@@ -174,6 +174,8 @@ final readonly class NativeProcessRunner implements ProcessRunner
             @posix_kill(-$pid, self::TerminateSignal);
             $deadline = microtime(true) + max(0.0, $graceSeconds);
             while (microtime(true) < $deadline && @posix_kill(-$pid, 0)) {
+                // Reap the leader, but keep draining the group if a child survives it.
+                $process->isRunning();
                 usleep(10_000);
             }
             @posix_kill(-$pid, self::KillSignal);

@@ -13,6 +13,7 @@ use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Tests\Support\SubprocessFixture;
 
 /**
  * Run `php NativeProcessRunnerTest.php negative-controls` for the bounded corruption check.
@@ -259,6 +260,32 @@ it('discards only older bytes from the stream that exceeds the result limit', fu
         ->toBeTrue();
 });
 
+it('reaps a cooperative leader without consuming its unused termination grace', function (): void {
+    $ready = '';
+    $cancelledAt = null;
+    try {
+        (new NativeProcessRunner)->run(new ProcessInvocation(
+            arguments: ['python3', '-c', 'import signal,sys; signal.signal(signal.SIGTERM, lambda *_: sys.exit(0)); print("ready", flush=True); signal.pause()'],
+            terminateGraceSeconds: 1.0,
+            output: static function (ProcessOutput $output) use (&$ready, &$cancelledAt): void {
+                $ready .= $output->value;
+                if ($cancelledAt === null && str_contains($ready, 'ready')) {
+                    $cancelledAt = hrtime(true);
+                }
+            },
+            cancelled: static function () use (&$cancelledAt): bool {
+                return $cancelledAt !== null;
+            },
+        ));
+        $this->fail('The cancelled process unexpectedly completed.');
+    } catch (ProcessCancelledException) {
+        if ($cancelledAt === null) {
+            $this->fail('The process was cancelled before readiness.');
+        }
+        expect((hrtime(true) - $cancelledAt) / 1_000_000_000)->toBeLessThan(0.5);
+    }
+});
+
 it('terminates its complete process group when cancellation is requested', function (): void {
     $childPid = null;
     $cancel = false;
@@ -411,7 +438,7 @@ if child == 0:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     with open(ready, 'w') as handle:
-        handle.write('ready')
+        handle.write(str(os.getpid()))
         handle.flush()
         os.fsync(handle.fileno())
     time.sleep(2)
@@ -497,17 +524,15 @@ it('SIGKILLs a process-group child that ignores SIGTERM after its leader exits o
         $this->fail('The cancelled process unexpectedly completed.');
     } catch (ProcessCancelledException) {
         expect($ready)->toBeFile();
+        SubprocessFixture::assertExited((int) file_get_contents($ready));
+        expect(is_file($later))->toBeFalse();
     } finally {
-        @unlink($ready);
+        foreach ([$ready, $later] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
     }
-
-    $deadline = microtime(true) + 2.5;
-    while (! is_file($later) && microtime(true) < $deadline) {
-        usleep(50_000);
-    }
-
-    expect(is_file($later))->toBeFalse();
-    @unlink($later);
 });
 
 it('SIGKILLs a process-group child that ignores SIGTERM after its leader exits on timeout', function (): void {
@@ -517,24 +542,22 @@ it('SIGKILLs a process-group child that ignores SIGTERM after its leader exits o
     try {
         $runner->run(new ProcessInvocation(
             arguments: native_process_group_ignoring_term_child($ready, $later),
-            timeout: 1.0,
+            timeout: 0.2,
             terminateGraceSeconds: 0.05,
         ));
 
         $this->fail('The timed-out process unexpectedly completed.');
     } catch (ProcessTimedOutException) {
         expect($ready)->toBeFile();
+        SubprocessFixture::assertExited((int) file_get_contents($ready));
+        expect(is_file($later))->toBeFalse();
     } finally {
-        @unlink($ready);
+        foreach ([$ready, $later] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
     }
-
-    $deadline = microtime(true) + 2.5;
-    while (! is_file($later) && microtime(true) < $deadline) {
-        usleep(50_000);
-    }
-
-    expect(is_file($later))->toBeFalse();
-    @unlink($later);
 });
 
 final class NativeProcessRunnerCompletedProcess extends SymfonyProcess

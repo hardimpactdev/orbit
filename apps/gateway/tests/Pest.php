@@ -39,8 +39,9 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Foundation\Testing\WithCachedConfig;
+use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -55,16 +56,17 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
+use Tests\Support\LocalInstanceTransferTransport;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\RealStorageGuard;
 use Tests\Support\SshGuardedProcessRunner;
 use Tests\Support\TestToolchain;
 use Tests\Support\UnreachableSshExecutor;
+use Tests\Support\WithSharedGitFixtureCleanup;
 use Tests\TestCase;
 
-require_once __DIR__.'/Support/InstanceEnvironmentMigration.php';
-require_once __DIR__.'/Support/LegacySchemaMigration.php';
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
@@ -88,7 +90,7 @@ require_once __DIR__.'/Helpers/OperationFixtures.php';
 
 uses(GuardsSudo::class)->in('Feature', 'Unit', 'Fixtures', 'Rehearsal');
 
-uses(TestCase::class, LazilyRefreshDatabase::class)
+uses(TestCase::class, LazilyRefreshDatabase::class, WithCachedConfig::class, WithCachedRoutes::class)
     ->beforeEach(function (): void {
         $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
         // Direct-file staging must be isolated too, not just writes through the Storage facade.
@@ -107,6 +109,7 @@ uses(TestCase::class, LazilyRefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        test_share_scheduler_graph();
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
@@ -130,6 +133,27 @@ uses(TestCase::class, LazilyRefreshDatabase::class)
         }
     })
     ->in('Feature');
+
+uses(WithSharedGitFixtureCleanup::class)
+    ->beforeAll(fn () => GatewayReleaseFixture::prepare())
+    ->in('Feature/GatewayReleases');
+
+uses()
+    ->beforeAll(fn () => GatewayReleaseFixture::prepareAdopted())
+    ->in(
+        'Feature/GatewayReleases/AbandonGatewayReleaseTest.php',
+        'Feature/GatewayReleases/FinalizeGatewayReleaseTest.php',
+        'Feature/GatewayReleases/GatewayReleaseExecutionOwnerTest.php',
+        'Feature/GatewayReleases/GatewayReleaseOperationsWiringTest.php',
+        'Feature/GatewayReleases/GatewayReleaseProcessDeclarationTest.php',
+        'Feature/GatewayReleases/GatewayReleaseTickConfirmationTest.php',
+        'Feature/GatewayReleases/GatewayReleaseFixtureTest.php',
+        'Feature/GatewayReleases/SystemdGatewayReleaseDrainTest.php',
+    );
+
+uses(WithSharedGitFixtureCleanup::class)
+    ->beforeAll(fn () => LocalInstanceTransferTransport::prepare())
+    ->in('Feature/Api/TransferInstanceTest.php', 'Feature/Infrastructure/Instances/TransferEnvironmentModeTest.php', 'Feature/Infrastructure/Instances/RemoteInstanceTransferSourceTest.php');
 
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()
@@ -191,41 +215,6 @@ function normalized_deploy_steps(Instance $instance): array
     );
 }
 
-function app_instance_deploy_step_records_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_14_180000_store_deploy_steps_as_named_records.php',
-    );
-}
-
-function app_instance_deployment_config_migration(): object
-{
-    return require base_path(
-        'database/migrations/2026_09_11_000000_add_deployment_config_to_app_instances.php',
-    );
-}
-
-/** @return array{Project, Node} */
-function deployment_migration_parents(): array
-{
-    $count = Node::query()->count();
-    $node = Node::query()->create([
-        'name' => "deployment-migration-{$count}",
-        'status' => 'active',
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.'.(130 + $count),
-    ]);
-    $project = Project::query()->create([
-        'name' => "Deployment migration {$count}",
-        'slug' => "deployment-migration-{$count}",
-        'repository_url' => "https://example.test/deployment-migration-{$count}.git",
-        'default_branch' => 'main',
-        'root' => 'public',
-    ]);
-
-    return [$project, $node];
-}
-
 /** @return array{Node, Node, Project, Instance} */
 function deployment_api_fixture(): array
 {
@@ -268,38 +257,6 @@ function deployment_api_fixture(): array
     ]);
 
     return [$caller, $owner, $project, $instance->fresh()];
-}
-
-function orb183_production_route_migration(): Migration
-{
-    return require base_path(
-        'database/migrations/2026_09_08_200000_enable_production_route_target_sets.php',
-    );
-}
-
-function app_instance_removal_migration_boundary(): Migration
-{
-    return new class extends Migration
-    {
-        public function down(): void
-        {
-            run_legacy_schema_migration(orb183_production_route_migration(), 'down');
-            run_legacy_schema_migration($this->removalMigration(), 'down');
-        }
-
-        public function up(): void
-        {
-            run_legacy_schema_migration($this->removalMigration(), 'up');
-            run_legacy_schema_migration(orb183_production_route_migration(), 'up');
-        }
-
-        private function removalMigration(): Migration
-        {
-            return require base_path(
-                'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
-            );
-        }
-    };
 }
 
 /**

@@ -89,9 +89,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** @var array<string, mixed> what the schedule phase reports for the Gateway Node's own agent */
     public array $gatewayAgent = ['outcome' => 'unchanged', 'version' => '0.4.0'];
 
-    public function __construct()
+    public function __construct(private readonly bool $adopted = false)
     {
-        $this->fixture = new GatewayReleaseFixture;
+        $this->fixture = GatewayReleaseFixture::create(adopted: $adopted);
         $this->home = $this->fixture->base.'/home';
         mkdir($this->home, 0700, true);
         config(['orbit.home' => $this->home]);
@@ -100,6 +100,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** Builds the first release and makes it current, as `gateway:release:adopt` would. */
     public function adopt(): string
     {
+        if ($this->adopted) {
+            return trim($this->fixture->git($this->fixture->layout->currentPath(), 'rev-parse', 'HEAD'));
+        }
         $sha = $this->fixture->commit('Adopted release');
         $this->fixture->builder()->prepare($sha);
         $current = $this->fixture->layout->currentPath();
@@ -145,14 +148,14 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $drain);
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder, $this), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $drain);
     }
 
-    public function rollback(): RollbackGatewayReleaseAction
+    public function rollback(?GatewayReleaseSmoke $smoke = null): RollbackGatewayReleaseAction
     {
         $recorder = $this->recorder();
 
-        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder), $recorder);
+        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder, $smoke ?? $this), $recorder);
     }
 
     public function guard(): GatewayReleaseGuard
@@ -398,7 +401,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public function prune(array $retained): void {}
 
-    private function promoter(GatewayReleaseRecorder $recorder): GatewayReleasePromoter
+    private function promoter(GatewayReleaseRecorder $recorder, GatewayReleaseSmoke $smoke): GatewayReleasePromoter
     {
         $builder = $this->fixture->builder($this);
 
@@ -408,7 +411,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $this,
             $this,
             $this,
-            $this,
+            $smoke,
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),

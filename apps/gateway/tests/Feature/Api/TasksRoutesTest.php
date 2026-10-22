@@ -18,6 +18,7 @@ use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
@@ -1349,7 +1350,7 @@ it('refuses retired notification inputs when creating a task', function (string 
     expect(Task::topLevel()->count())->toBe(0);
 })->with(['notify_coder', 'notify_on_settle']);
 
-it('returns the migrated redacted 16 KiB check tail on show and list', function (): void {
+it('returns the stored redacted 16 KiB check tail on show and list', function (): void {
     tasks_gateway();
     enable_tasks();
     $group = Task::query()->create(['project_id' => tasks_app()->id, 'title' => 'Checked', 'brief' => 'Check.', 'status' => TaskGroupStatus::Backlog]);
@@ -1358,10 +1359,8 @@ it('returns the migrated redacted 16 KiB check tail on show and list', function 
         'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed,
         'pid' => 1, 'process_started' => 'start', 'head_before' => str_repeat('a', 40),
         'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-        'output' => "Early line\n".str_repeat("padding\n", 15_000).'TOKEN='.str_repeat('s', 40_000)."\nFAILED last line",
+        'output' => app(TaskCheckOutputBuilder::class)->tail("Early line\n".str_repeat("padding\n", 15_000).'TOKEN='.str_repeat('s', 40_000)."\nFAILED last line"),
     ]);
-
-    (require database_path('migrations/2026_11_17_000000_redact_stored_task_check_output.php'))->up();
 
     $shown = $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->json('data.tasks.0.check.output');
     $listed = $this->getJson('/api/v1/task-groups?compact=0')->assertOk()->json('data.0.tasks.0.check.output');

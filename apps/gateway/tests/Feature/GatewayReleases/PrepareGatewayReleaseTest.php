@@ -11,7 +11,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use Tests\Support\GatewayReleaseFixture;
 
 beforeEach(function (): void {
-    $this->fixture = new GatewayReleaseFixture;
+    $this->fixture = GatewayReleaseFixture::create();
     $this->live = $this->fixture->layout->currentPath();
     mkdir($this->live.'/apps/gateway', 0755, true);
     file_put_contents($this->live.'/apps/gateway/live.txt', 'serving');

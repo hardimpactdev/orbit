@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/DatabaseConnections/**
   - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController}.php
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
-  - apps/gateway/app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php
+  - apps/gateway/{app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/{Commands/Internal/InternalDatabaseLocalCommand.php,Services/Database/**}
   - apps/gateway/app/{Actions/Instances/CloneInstanceDatabaseAction.php,Domain/Instances/DatabaseClone/**,Infrastructure/Instances/RemoteInstanceSqliteCloner.php}
 ---

@@ -8,6 +8,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
@@ -22,12 +23,14 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmProvider;
@@ -52,11 +55,47 @@ use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\NullInstanceProvisioning;
 use Tests\Support\NullTaskWorkspaceDiffReader;
 use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\UnreachableSshExecutor;
 
 use function Pest\Laravel\mock;
+
+/** Share immutable construction within one graph, never across scheduler resolutions. */
+function test_share_scheduler_graph(): void
+{
+    $app = app();
+    $building = false;
+    $owned = false;
+    $app->resolving(TaskSubtaskRunner::class, function (TaskSubtaskRunner $runner) use ($app, &$building, &$owned): void {
+        if ($building && ! $app->isShared(TaskSubtaskRunner::class)) {
+            $app->instance(TaskSubtaskRunner::class, $runner);
+            $owned = true;
+        }
+    });
+    $app->bind(TaskScheduler::class, function ($app) use (&$building, &$owned): TaskScheduler {
+        $building = true;
+        try {
+            return $app->build(TaskScheduler::class);
+        } finally {
+            $building = false;
+            if ($owned) {
+                $app->forgetInstance(TaskSubtaskRunner::class);
+                $owned = false;
+            }
+        }
+    });
+}
+
+/** Scheduler fixtures supply ready workspaces; provisioning and Route repair have their own integration tests. */
+function test_ready_workspace_services(): void
+{
+    app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
+    $routes = mock(TaskWorkspaceRoute::class);
+    $routes->shouldReceive('pending')->andReturnFalse();
+    $routes->shouldNotReceive('complete');
+}
 
 function tick_bind_defaults(): void
 {

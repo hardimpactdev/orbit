@@ -47,10 +47,7 @@ use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeRouteRemovalProjector;
 
@@ -515,53 +512,6 @@ describe('route web root', function (): void {
             ->and(InstanceRemoval::query()->count())->toBe(1);
     });
 
-    it('keeps an existing Instance unchanged after the migration', function (): void {
-        $migration = require database_path('migrations/2026_10_22_000000_add_web_root_to_routes.php');
-        $migration->down();
-        $route = web_root_route($this->instance, 'acme.web.test');
-        $render = fn (): array => [
-            new DevelopmentCaddyConfigRenderer()->render(new DevelopmentSiteRepository()->forNode($this->node)),
-            new DevelopmentPhpFpmConfigRenderer()->render(web_root_sites($this->node)->values(), new ManagedUserAccount('orbit', 'orbit', '/home/orbit')),
-        ];
-        $before = $render();
-
-        $migration->up();
-
-        expect($route->refresh()->web_root)->toBeNull()
-            ->and($render())->toBe($before)
-            ->and($before[1])->toContain("[orbit-app-instance-{$this->instance->id}]\n")
-            ->and($this->instance->refresh()->authoritativeRoute()?->id)->toBe($route->id);
-        expect(fn () => web_root_route($this->instance, 'second.acme.web.test'))->toThrow(QueryException::class);
-    });
-
-    it('leaves the schema unchanged when a trigger does not match, and can run again', function (): void {
-        $migration = require database_path('migrations/2026_10_22_000000_add_web_root_to_routes.php');
-        $migration->down();
-        $original = DB::table('sqlite_master')->where('name', 'instances_active_route_update')->value('sql');
-        $changed = str_replace("IN ('active', 'activating')", "IN ('activating', 'active')", $original);
-        DB::statement('DROP TRIGGER instances_active_route_update');
-        DB::statement($changed);
-
-        expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'The instances_active_route_update trigger is incompatible.');
-        expect(Schema::hasColumn('routes', 'web_root'))->toBeFalse()
-            ->and(DB::table('sqlite_master')->where('name', 'route_targets_contract_insert')->value('sql'))->not->toContain('web_root');
-
-        DB::statement('DROP TRIGGER instances_active_route_update');
-        DB::statement($original);
-        $migration->up();
-
-        expect(Schema::hasColumn('routes', 'web_root'))->toBeTrue()
-            ->and(DB::table('sqlite_master')->where('name', 'instances_active_route_update')->value('sql'))->toContain('routes.web_root IS NULL');
-    });
-
-    it('refuses to roll back while a Route has a web root', function (): void {
-        web_root_route($this->instance, 'acme.web.test');
-        web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
-        $migration = require database_path('migrations/2026_10_22_000000_add_web_root_to_routes.php');
-
-        expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Routes with a web root exist.');
-        expect(Schema::hasColumn('routes', 'web_root'))->toBeTrue();
-    });
 });
 
 function web_root_node(string $name, string $address, bool $production): Node

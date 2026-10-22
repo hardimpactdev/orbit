@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,drop_task_notification_columns,redact_stored_task_check_output,classify_task_removal_failures,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge,remove_task_base_merge_gates}.php"
+  - "apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php"
 ---
 
 # Tasks
@@ -241,11 +241,7 @@ A file path must exist on that base, and a file glob must match at least one bas
 
 Every command `paths` entry must exist on the base unless a sibling file deliverable with `change: created` covers it, literally or through a glob. A sibling with `change: modified` or `change: any` is not a new-file marker. With `fails_on_base: true`, each command path must also be a test file: under a `tests/` directory, or ending in `Test.php`, `.test.ts`, `.spec.ts`, or `_test.go`. This prevents a base run from copying the implementation fix. A violation returns HTTP 422 `validation.failed`; its field error names the deliverable id, path, base SHA, and `base_kind=resolved` or `base_kind=provisional`.
 
-There is no `test` deliverable type. A migration converts stored `test` deliverables in tasks that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring. The migration normalizes the project and file paths, then runs `vendor/bin/pest` from that project directory with the file and `--colors=never`. The name match is a case-sensitive substring, and regex characters in the name are escaped so they stay literal.
-
-It carries over `fails_on_base`. When the base run is on, `paths` lists the workspace-relative test file. The migration also adds a `file` deliverable with `change: any` for that file. The command and the file stay together, and each id stays unique and at most 64 characters.
-
-When the converted list would exceed five deliverables, the extra pairs go on continuation subtasks placed directly after the source subtask. The migration writes each source task and the continuation rows it adds in one database transaction. A continuation uses the source subtask's start commit for its diff and its base run, including when the source subtask has committed its fixes.
+There is no `test` deliverable type. A stored continuation uses the source subtask's start commit for its diff and its base run, including when the source subtask has committed its fixes.
 
 A subtask's diff runs from its start commit to the working tree that the check sees, uncommitted and untracked files included. Deleted and ignored files never match. Orbit records the start commit when the subtask starts, before the implementer's first turn. When that read fails, the next tick tries again until the first turn starts. After that, the start commit stays empty, and the diff uses a fallback base: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
@@ -644,14 +640,7 @@ The owner is the only record of task workspace ownership:
 
 Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
 
-Workspaces created before the owner existed get it from explicit records:
-
-- An Instance on the Node of a live task VM belongs to the VM's task of the same Project. A destroyed VM is no record.
-- Any other Instance belongs to the one task of its Project that holds it as its Instance.
-
-An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
-
-The same migration detaches every Instance that its task does not own. A task that is not `completed` or `cancelled` then asks for assistance with the reason `Orbit detached the Instance of this task because the task does not own it. Cancel or complete the task.` A task that already asks for direction keeps that request, and the detach adds no reason to it. Rolling the migration back keeps those tasks detached.
+Task cleanup never removes an Instance without that task as its recorded owner. To remove another Instance explicitly, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
 
 A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
@@ -879,19 +868,7 @@ Every assistance request has a typed kind. The task and the subtask store `assis
 
 The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. An observation outage replaces no open request; direction or failure can replace an observation request. `tasks:status` lists direction requests first in its table.
 
-#### Migrate open requests
-
-`2026_10_07_000000_create_task_questions` creates the empty `task_questions` table. `2026_10_07_000001_add_assistance_kind_to_tasks` runs after it, because Laravel applies migration files in timestamp order, and that second file writes the rows.
-
-The migration classifies each open subtask row. It does not read the task row's reason, because that reason repeats the subtask. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction` on that subtask. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. Every other open subtask becomes `failure` with a null question.
-
-An open task row with no asking subtask becomes `failure` with a null question and no question record. A closed pull request, an orphaned commit, and a failed workspace removal are such task-only requests.
-
-It writes one `escalated` question record for each `direction` subtask and none for a `failure` subtask or for the task row. The task row receives only that subtask's `assistance_kind` and `assistance_question`. When more than one subtask asks, a `direction` subtask supplies the task row, and a `failure` subtask does not replace it.
-
-The record's `task_id` is the parent task id and its `subtask_id` is the asking subtask id. `asked_by` comes from the prefix. `attempt` is the subtask's `completion_attempt` for the implementer prefix and its `review_attempt` for the reviewer prefix. The rows do not store the original ask time, so `asked_at` and `escalated_at` are both the time `add_assistance_kind_to_tasks` runs, and `answered_at` is null. The cause is null. Closed requests get no records, so `questions` and `escalations` start with this change.
-
-`2026_11_16_000000_classify_task_removal_failures` converts open `failure` requests with a stored workspace-removal, merge-cleanup, or ownership-refusal reason to `removal_failure`. Closed requests and other kinds remain unchanged. Runtime decisions use only the open flag and typed kind; reason prefixes are human text. An ownership refusal counts as a removal failure. VM destruction still checks that the VM is stopped or absent before discarding a stranded workspace.
+Runtime decisions use only the open flag and typed kind; reason prefixes are human text. An ownership refusal counts as a removal failure. VM destruction still checks that the VM is stopped or absent before discarding a stranded workspace.
 
 #### Resolve a request
 
@@ -1055,7 +1032,7 @@ Stored check output, API responses, check reminders, CI fixup briefs, handoff CI
 
 Every raw output passes through one shared builder. It keeps at most the last 100 KiB, drops an incomplete first line when a later line exists, then removes timestamps and ANSI codes and redacts once before taking the 16 KiB tail. A final line longer than the window retains its last bounded bytes. Streamed CI logs use the same window. Stored tails are quoted for agents without redacting them again. If a window starts inside a PEM block, Orbit drops the orphan body through its END marker before redaction. Other multiline secrets can lose their identifying key when they cross the cut.
 
-The Orbit check transport uses the same window rule and shared 100 KiB limit for each check, command, and start-commit output record. No record is discarded to fit the 8 MiB status response. The shared [text-redaction failure rule](/cli/activity#text-redaction-failures) applies. A data migration applies the same output rule to check output stored before this rule was introduced.
+The Orbit check transport uses the same window rule and shared 100 KiB limit for each check, command, and start-commit output record. No record is discarded to fit the 8 MiB status response. The shared [text-redaction failure rule](/cli/activity#text-redaction-failures) applies.
 
 ### Baseline check
 
@@ -1069,7 +1046,9 @@ The check runs only the Project's ordered [setup steps](/reference/instance-setu
 
 Setup commands run in a login shell from a private temporary script file, which the check removes when the step ends or times out. Large cache payloads do not enter shell arguments or depend on the operating system's argument-size limit.
 
-Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
+Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. It sends SIGTERM, waits up to five seconds for the group to stop, then sends SIGKILL to any remaining members. During that wait, it reaps the exited shell before checking whether the group still exists, so an unreaped shell does not consume the grace period after all work has stopped.
+
+Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
 
 The Orbit repository's own check seeds its quality caches, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
@@ -1487,9 +1466,7 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 In a review-and-merge task, an approval does not push. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes only its reviewed head. No head inherits another commit's review. [Handoff CI](#handoff-ci) pushes each handoff commit to `task-{id}-handoff`, which no pull request has as head.
 
-The migration that removes the integration gate refuses to run while one of its checks is running or a holder it would cancel has uncertain remote work or a pending workspace operation. It cancels the gate’s queued and held workspace leases before deleting its checks, and clears the delta-review fixup identities.
-
-It converts the gate’s reviewed heads to `orbit_push`, preserving their evidence. For a converted head only, `inherited_approval_sha` records the review task’s single distinct approved commit in the group’s reviewed ledger. This lets a returning merged pull request recognize that approval. Ambiguous history receives no inherited approval. New reviewed heads still need exact approval.
+A stored `orbit_push` reviewed head may carry `inherited_approval_sha`, recording the review task’s single distinct approved commit in the group’s reviewed ledger. This lets a returning merged pull request recognize that approval. Ambiguous history has no inherited approval. New reviewed heads still need exact approval.
 
 Orbit never asks GitHub to update the branch of such a task and never merges main itself. When GitHub reports a conflict, the settling fixup `Merge origin/{base}` asks the implementer to merge and resolve it. Its handoff and final review follow the normal subtask flow. If GitHub refuses a merge because the branch is behind, Orbit asks for assistance. It does not merge main to satisfy a strict-base rule. Topology checks count the group's changes against the current merge base, including merge resolutions.
 
@@ -1779,7 +1756,7 @@ The Activity key is the command and the error code. Putting the resource id in t
 
 ### A small sample, and no past rows on the first run
 
-Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. The incident identity migration retires old unscoped and hashed Doctor incidents; the next filing pass closes their untouched generated groups before filing scoped replacements. The incident identity migration accepts generated groups with symptom briefs or fixed subtask instructions. New groups and refreshed groups use the same fixed instructions. The operator keeps control of groups they edited.
+Doctor evidence stores the issue code independently of the fingerprint, including when a long identity is hashed. New groups and refreshed groups use the same fixed instructions. The operator keeps control of groups they edited.
 
 The sample keeps bounded Doctor values and a short redacted log excerpt. Storing raw Doctor reports or full traces is rejected, because that output exposes paths and credentials. [Doctor](/cli/doctor#no-stored-reports) keeps no raw report for the caller. Counting past Activity and log rows on the first run is rejected, because those rows would take the daily cap on the day the loop starts. The first run records its cursors at the end of the current data.
 

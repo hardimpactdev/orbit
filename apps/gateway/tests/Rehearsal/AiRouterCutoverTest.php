@@ -144,12 +144,11 @@ it('rehearses the automatic rename with native services and continuous held-key 
 
         $wait(fn (): bool => $cache->get('orbit:'.$slug.':snapshot') !== null);
         $cache->put('orbit:'.$slug.':lock', 'retired-holder', 120);
-        $vm = DB::table('task_vms')->insertGetId(['provider' => 'incus', 'name' => 'held', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'model_key' => 'held-task-key', 'model_proxy_origin' => 'http://127.0.0.1:8317']);
+        $vm = DB::table('task_vms')->insertGetId(['provider' => 'incus', 'name' => 'held', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130', 'model_key' => 'held-task-key', 'ai_router_origin' => 'http://127.0.0.1:8317']);
         $probeBefore = json_decode(file_get_contents($home.'/probe.json'), true, flags: JSON_THROW_ON_ERROR);
         $oldUnit = 'orbit-process-163-cli-proxy-api-collector.service';
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active');
         $started = microtime(true);
-        (require base_path('extensions/ai-router/database/migrations/2026_11_16_000001_rename_ai_router_state.php'))->up();
         $footprint = new NodeFootprint([app(AiRouterFootprintArtifact::class)]);
         $footprint->converge($node);
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active')

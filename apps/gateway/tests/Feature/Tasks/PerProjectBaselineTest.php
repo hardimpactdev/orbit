@@ -8,16 +8,19 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\ResolvedVp;
+use Tests\Support\StandardLibraryPython;
+
+require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
 
 function per_project_baseline_checkout(): string
 {
@@ -28,8 +31,11 @@ function per_project_baseline_checkout(): string
     return $checkout;
 }
 
-function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRunner
+function per_project_baseline_runner(): RemoteTaskCheckRunner
 {
+    $transport = new LocalShellSshExecutor;
+    $transport->environment['PATH'] = StandardLibraryPython::path((string) getenv('PATH'));
+
     return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
@@ -56,6 +62,27 @@ function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRun
     )), ResolvedVp::manager(), app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
 }
 
+function per_project_baseline_instance(?string $command): Instance
+{
+    $project = Project::query()->create([
+        'name' => 'Project',
+        'slug' => 'project',
+        'repository_url' => 'git@github.com:acme/project.git',
+        'task_check' => $command,
+    ]);
+    expect($project->taskCheckCommand())->toBe($command);
+    $node = Node::query()->create([
+        'name' => 'baseline-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.222',
+        'wireguard_ip' => '10.44.0.222',
+        'user' => 'orbit',
+    ]);
+
+    return test_ready_task_workspace($project, $node, ['name' => 'task-85', 'checkout_path' => per_project_baseline_checkout(), 'branch' => 'task-85']);
+}
+
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-per-project-baseline-'.bin2hex(random_bytes(6));
     mkdir($this->directory, 0755, true);
@@ -65,73 +92,32 @@ afterEach(function (): void {
     File::deleteDirectory($this->directory);
 });
 
-it('per-project baseline skips an unset command and preserves custom command failure output', function (): void {
-    $checkout = per_project_baseline_checkout();
-    $project = Project::query()->create([
-        'name' => 'Project',
-        'slug' => 'project',
-        'repository_url' => 'git@github.com:acme/project.git',
-        'task_check' => 'printf "custom baseline failed\\n"; exit 7',
-    ]);
-    expect($project->taskCheckCommand())->toBe('printf "custom baseline failed\\n"; exit 7');
+it('preserves per-project custom baseline command failure output', function (): void {
+    $instance = per_project_baseline_instance('printf "custom baseline failed\\n"; exit 7');
+    $runner = per_project_baseline_runner();
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, command: $instance->project->taskCheckCommand()));
+    expect($reading->exitCode)->toBe(7)
+        ->and($reading->output)->toContain('custom baseline failed');
+});
 
-    $node = Node::query()->create([
-        'name' => 'baseline-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '10.44.0.222',
-        'wireguard_ip' => '10.44.0.222',
-        'user' => 'orbit',
-    ]);
-    $instance = test_ready_task_workspace($project, $node, ['name' => 'task-85', 'checkout_path' => $checkout, 'branch' => 'task-85']);
-    $runner = per_project_baseline_runner(new LocalShellSshExecutor);
+it('skips an unset per-project baseline without invoking Composer', function (): void {
+    $instance = per_project_baseline_instance(null);
+    $runner = per_project_baseline_runner();
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, command: $instance->project->taskCheckCommand()));
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->output)->not->toContain('composer check');
+});
 
-    $failed = $runner->start($instance, command: $project->taskCheckCommand());
-    $reading = null;
-    for ($attempt = 0; $attempt < 100; $attempt++) {
-        $reading = $runner->read($instance, $failed);
-        if ($reading->state !== 'running') {
-            break;
-        }
-        usleep(100_000);
-    }
-    expect($reading?->exitCode)->toBe(7)
-        ->and($reading?->output)->toContain('custom baseline failed');
-
-    $unsetProject = Project::query()->create([
-        'name' => 'No check',
-        'slug' => 'no-check',
-        'repository_url' => 'git@github.com:acme/no-check.git',
-    ]);
-    expect($unsetProject->taskCheckCommand())->toBeNull();
-    $unsetNode = Node::query()->create(['name' => 'no-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.223', 'wireguard_ip' => '10.44.0.223', 'user' => 'orbit']);
-    $instance = test_ready_task_workspace($unsetProject, $unsetNode, ['name' => 'task-86', 'checkout_path' => $checkout, 'branch' => 'task-86']);
-    $noCheck = $runner->start($instance, command: $unsetProject->taskCheckCommand());
-    $noOp = null;
-    for ($attempt = 0; $attempt < 100; $attempt++) {
-        $noOp = $runner->read($instance, $noCheck);
-        if ($noOp->state !== 'running') {
-            break;
-        }
-        usleep(100_000);
-    }
-    expect($noOp?->exitCode)->toBe(0)
-        ->and($noOp?->output)->not->toContain('composer check');
-
-    $handoff = $runner->start($instance, null, [], [
+it('runs deliverables when the per-project baseline command is unset', function (): void {
+    $instance = per_project_baseline_instance(null);
+    $runner = per_project_baseline_runner();
+    $process = $runner->start($instance, command: $instance->project->taskCheckCommand(), deliverables: [
         'start' => null,
         'tests' => [],
         'commands' => [['id' => 'hello', 'command' => 'printf "deliverable ran\\n"', 'directory' => null]],
     ]);
-    $verified = null;
-    for ($attempt = 0; $attempt < 100; $attempt++) {
-        $verified = $runner->read($instance, $handoff);
-        if ($verified->state !== 'running') {
-            break;
-        }
-        usleep(100_000);
-    }
-    expect($verified?->exitCode)->toBe(0)
-        ->and($verified?->deliverables['commands']['hello']['exit_code'] ?? null)->toBe(0)
-        ->and($verified?->output)->not->toContain('composer check');
+    $reading = check_runner_wait($runner, $instance, $process);
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->deliverables['commands']['hello']['exit_code'] ?? null)->toBe(0)
+        ->and($reading->output)->toContain('deliverable ran')->not->toContain('composer check');
 });

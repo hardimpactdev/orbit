@@ -9,6 +9,7 @@ use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
+use Tests\Support\StandardLibraryPython;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
@@ -35,13 +36,20 @@ it('skips credentials, private registries, missing integrity and unsafe package 
     [['name' => '../demo', 'version' => '1.2.3', 'resolved' => 'https://registry.npmjs.org/demo/-/demo-1.2.3.tgz', 'integrity' => 'sha512-JsZpzQgUrEDlModSshxKpkUNFileTuwwNWoGqRHCOYOq6+EtXaOO7r/BshO+ZQSY34QZGU1aJsfgpQrxVoU8eQ==']],
 ]);
 
-it('seeds real npm and Bun caches and downloads cache misses through a registry', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/package-cache/npm.py'), resource_path('task-vms/package-cache.py'), resource_path('task-vms/package-cache-seed.py')]);
+it('checks real npm and Bun package-cache behavior', function (string $case, string $manager): void {
+    $process = new Process([StandardLibraryPython::executable(), base_path('tests/Fixtures/package-cache/npm.py'), resource_path('task-vms/package-cache.py'), resource_path('task-vms/package-cache-seed.py'), 'NpmCacheTest.'.$case, $manager]);
     $process->setTimeout(90)->run();
 
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
-    expect($process->getErrorOutput())->toContain('OK');
-});
+    expect($process->getErrorOutput())->toContain('Ran 1 test', 'OK');
+})->with([
+    'native npm cache hits and private writes' => ['test_native_npm_and_bun_hits_and_private_writes', 'npm'],
+    'native Bun cache hits and private writes' => ['test_native_npm_and_bun_hits_and_private_writes', 'bun'],
+    'named-root type archives' => ['test_type_archives_with_a_named_root_seed_bun_without_running_scripts', 'bun'],
+    'integrity and path traversal rejection' => ['test_integrity_and_path_traversal_are_refused', 'npm'],
+    'npm registry misses without shared-state writes' => ['test_misses_download_from_a_registry_without_writing_shared_state', 'npm'],
+    'Bun registry misses without shared-state writes' => ['test_misses_download_from_a_registry_without_writing_shared_state', 'bun'],
+]);
 
 it('tracks changed JavaScript locks below packages and clears usage on default-branch deletion', function (): void {
     $root = TestOrbitHome::scratch('npm-cache-git');

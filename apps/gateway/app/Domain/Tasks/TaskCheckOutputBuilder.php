@@ -37,9 +37,13 @@ final readonly class TaskCheckOutputBuilder
     public function buildStream(iterable $chunks): string
     {
         $output = '';
+        // Keep the preceding byte so tail() can recognize an exact line boundary.
+        $window = $this->rawWindowBytes + 1;
         foreach ($chunks as $chunk) {
-            // Keep the preceding byte so tail() can recognize an exact line boundary.
-            $output = substr($output.$chunk, -($this->rawWindowBytes + 1));
+            $output .= substr($chunk, -$window);
+            if (strlen($output) > 2 * $window) {
+                $output = substr($output, -$window);
+            }
         }
 
         return $this->build($this->tail($output));

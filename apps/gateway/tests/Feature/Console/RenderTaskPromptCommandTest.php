@@ -15,6 +15,7 @@ use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Support\Arr;
 use Symfony\Component\Process\Process;
 use Tests\Support\NullTaskReviewDiff;
 
@@ -262,26 +263,27 @@ it('renders the same prompt for the implementer with optional command fields, in
         ->and($prompt)->not->toContain('Build to them.');
 });
 
-it('renders only the configured or absent Project check in implementer prompts', function (): void {
-    foreach ([['vp run check', 'Orbit runs vp run check when you hand off.'], [null, 'When the brief is complete, end your turn']] as [$check, $expected]) {
-        $group = render_task_prompt_group();
-        $group['task_check'] = $check;
-        $prompt = render_task_prompt('implementer', [
-            'group' => $group,
-            'subtask' => render_task_prompt_subtask(),
-            'thread_id' => 31,
-        ])['prompt'];
+it('renders only the configured or absent Project check in implementer prompts', function (?string $check, string $expected): void {
+    $group = render_task_prompt_group();
+    $group['task_check'] = $check;
+    $prompt = render_task_prompt('implementer', [
+        'group' => $group,
+        'subtask' => render_task_prompt_subtask(),
+        'thread_id' => 31,
+    ])['prompt'];
 
-        expect($prompt)->toContain($expected)
-            ->toContain('Follow this repository\'s task instructions.')
-            ->not->toContain('composer check')
-            ->not->toContain('vendor/bin/pest')
-            ->not->toContain('Routes and publications')
-            ->not->toContain('required CLI confirmation flags')
-            ->not->toContain('lease and cleanup rules')
-            ->not->toContain('feature\'s contract');
-    }
-});
+    expect($prompt)->toContain($expected)
+        ->toContain('Follow this repository\'s task instructions.')
+        ->not->toContain('composer check')
+        ->not->toContain('vendor/bin/pest')
+        ->not->toContain('Routes and publications')
+        ->not->toContain('required CLI confirmation flags')
+        ->not->toContain('lease and cleanup rules')
+        ->not->toContain('feature\'s contract');
+})->with([
+    'configured' => ['vp run check', 'Orbit runs vp run check when you hand off.'],
+    'absent' => [null, 'When the brief is complete, end your turn'],
+]);
 
 it('renders the same prompt for the opening reviewer', function (): void {
     $production = production_review_prompt(continued: false);
@@ -297,26 +299,27 @@ it('renders the same prompt for the opening reviewer', function (): void {
         ->not->toContain('feature\'s contract');
 });
 
-it('renders only the configured or absent Project check in opening reviewer prompts', function (): void {
-    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
-        $group = render_task_prompt_group();
-        $group['task_check'] = $check;
-        $prompt = render_task_prompt('reviewer', [
-            'group' => $group,
-            'subtask' => render_task_prompt_subtask(),
-            'thread_id' => 32,
-            'review_packet' => render_task_prompt_review_packet(),
-        ])['prompt'];
+it('renders only the configured or absent Project check in opening reviewer prompts', function (?string $check, string $expected): void {
+    $group = render_task_prompt_group();
+    $group['task_check'] = $check;
+    $prompt = render_task_prompt('reviewer', [
+        'group' => $group,
+        'subtask' => render_task_prompt_subtask(),
+        'thread_id' => 32,
+        'review_packet' => render_task_prompt_review_packet(),
+    ])['prompt'];
 
-        expect($prompt)->toContain($expected)
-            ->not->toContain('composer check')
-            ->not->toContain('vendor/bin/pest')
-            ->not->toContain('Routes and publications')
-            ->not->toContain('required CLI confirmation flags')
-            ->not->toContain('lease and cleanup rules')
-            ->not->toContain('feature\'s contract');
-    }
-});
+    expect($prompt)->toContain($expected)
+        ->not->toContain('composer check')
+        ->not->toContain('vendor/bin/pest')
+        ->not->toContain('Routes and publications')
+        ->not->toContain('required CLI confirmation flags')
+        ->not->toContain('lease and cleanup rules')
+        ->not->toContain('feature\'s contract');
+})->with([
+    'configured' => ['vp run check', 'The Project task check is `vp run check`.'],
+    'absent' => [null, 'Do not re-run the Project task check'],
+]);
 
 it('renders the same prompt for a continued reviewer', function (): void {
     $production = production_review_prompt(continued: true);
@@ -332,70 +335,67 @@ it('renders the same prompt for a continued reviewer', function (): void {
         ->not->toContain('feature\'s contract');
 });
 
-it('renders only the configured or absent Project check in continued reviewer prompts', function (): void {
-    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
-        $group = render_task_prompt_group();
-        $group['task_check'] = $check;
-        $review = render_task_prompt_review_packet(continued: true);
-        $prompt = render_task_prompt('reviewer-continue', [
-            'group' => $group,
-            'subtask' => render_task_prompt_subtask(),
-            'thread_id' => 32,
-            'review_packet' => $review,
-        ])['prompt'];
+it('renders only the configured or absent Project check in continued reviewer prompts', function (?string $check, string $expected): void {
+    $group = render_task_prompt_group();
+    $group['task_check'] = $check;
+    $review = render_task_prompt_review_packet(continued: true);
+    $prompt = render_task_prompt('reviewer-continue', [
+        'group' => $group,
+        'subtask' => render_task_prompt_subtask(),
+        'thread_id' => 32,
+        'review_packet' => $review,
+    ])['prompt'];
 
-        expect($prompt)->toContain($expected)
-            ->not->toContain('composer check')
-            ->not->toContain('vendor/bin/pest')
-            ->not->toContain('Routes and publications')
-            ->not->toContain('required CLI confirmation flags')
-            ->not->toContain('lease and cleanup rules')
-            ->not->toContain('feature\'s contract');
+    expect($prompt)->toContain($expected)
+        ->not->toContain('composer check')
+        ->not->toContain('vendor/bin/pest')
+        ->not->toContain('Routes and publications')
+        ->not->toContain('required CLI confirmation flags')
+        ->not->toContain('lease and cleanup rules')
+        ->not->toContain('feature\'s contract');
+})->with([
+    'configured' => ['vp run check', 'The Project task check is `vp run check`.'],
+    'absent' => [null, 'Do not re-run the Project task check'],
+]);
+
+it('omits the group start lines when the workspace commit is missing or not a recorded sha', function (?string $start, string $role): void {
+    $group = render_task_prompt_group();
+    $group['start_commit'] = $start;
+    $payload = ['group' => $group, 'subtask' => render_task_prompt_subtask()];
+    if ($role === 'reviewer') {
+        $payload['review_packet'] = render_task_prompt_review_packet();
     }
-});
+    $prompt = render_task_prompt($role, $payload)['prompt'];
 
-it('omits the group start lines when the workspace commit is missing or not a recorded sha', function (): void {
-    foreach ([null, 'abc1234', 'not-a-commit'] as $start) {
-        $group = render_task_prompt_group();
-        $group['start_commit'] = $start;
-        $implementer = render_task_prompt('implementer', [
-            'group' => $group,
-            'subtask' => render_task_prompt_subtask(),
-        ])['prompt'];
-        $reviewer = render_task_prompt('reviewer', [
-            'group' => $group,
-            'subtask' => render_task_prompt_subtask(),
-            'review_packet' => render_task_prompt_review_packet(),
-        ])['prompt'];
-
-        expect($implementer)->not->toContain('The group started at')
-            ->and($implementer)->not->toContain('..HEAD')
-            ->and($reviewer)->not->toContain('The group started at')
-            ->and($reviewer)->toContain('git diff --stat abc1234');
+    expect($prompt)->not->toContain('The group started at');
+    if ($role === 'implementer') {
+        expect($prompt)->not->toContain('..HEAD');
+    } else {
+        expect($prompt)->toContain('git diff --stat abc1234');
     }
-});
+})->with([
+    'missing' => [null],
+    'abbreviated' => ['abc1234'],
+    'invalid' => ['not-a-commit'],
+])->with(['implementer', 'reviewer']);
 
-it('renders the blocking rule and follow-up policy for opening and continued reviews but not for implementers', function (): void {
+it('renders the blocking rule and follow-up policy for opening and continued reviews but not for implementers', function (string $role): void {
     $sentence = 'Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour; (e) a breach of the quality bar that the repository\'s instructions define. For each blocking finding, give its file:line, the rule it meets, and what must change; for (a), also name the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee; do not ask for markers, fences or locks against it; an operator recovery command is enough. List follow-ups under \'Follow-ups\' in the approval; they never block. After two changes_requested on one subtask, only (b), (c) and (d) findings may block; list (a) and (e) findings as follow-ups with file:line.';
     $payload = [
         'group' => render_task_prompt_group(),
         'subtask' => render_task_prompt_subtask(),
-        'thread_id' => 32,
-        'review_packet' => render_task_prompt_review_packet(),
+        'thread_id' => $role === 'implementer' ? 31 : 32,
     ];
-    $continuedPayload = $payload;
-    $continuedPayload['review_packet'] = render_task_prompt_review_packet(continued: true);
-
-    expect(render_task_prompt('reviewer', $payload)['prompt'])
-        ->toContain('Do not edit or commit the code; Orbit commits the work itself. '.$sentence.' ');
-    expect(render_task_prompt('reviewer-continue', $continuedPayload)['prompt'])
-        ->toContain('Do not edit or commit the code; Orbit commits the work itself. '.$sentence.' ');
-    expect(render_task_prompt('implementer', [
-        'group' => render_task_prompt_group(),
-        'subtask' => render_task_prompt_subtask(),
-        'thread_id' => 31,
-    ])['prompt'])->not->toContain($sentence);
-});
+    if ($role !== 'implementer') {
+        $payload['review_packet'] = render_task_prompt_review_packet(continued: $role === 'reviewer-continue');
+    }
+    $prompt = render_task_prompt($role, $payload)['prompt'];
+    if ($role === 'implementer') {
+        expect($prompt)->not->toContain($sentence);
+    } else {
+        expect($prompt)->toContain('Do not edit or commit the code; Orbit commits the work itself. '.$sentence.' ');
+    }
+})->with(['implementer', 'reviewer', 'reviewer-continue']);
 
 it('preserves literal formatter tags in prompt JSON', function (): void {
     $review = render_task_prompt_review_packet();
@@ -410,23 +410,26 @@ it('preserves literal formatter tags in prompt JSON', function (): void {
     expect($reviewOutput['prompt'])->toContain('<info>literal</info>');
 });
 
-it('rejects role-inapplicable and missing nested fields', function (): void {
-    $review = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'reviewer'], base_path());
-    $review->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => render_task_prompt_subtask(), 'review_packet' => array_diff_key(render_task_prompt_review_packet(), ['handoff_check' => true])], JSON_THROW_ON_ERROR));
-    $review->run();
-    $evidence = render_task_prompt_review_packet();
-    unset($evidence['handoff_check']['evidence']);
-    $missingEvidence = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'reviewer'], base_path());
-    $missingEvidence->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => render_task_prompt_subtask(), 'review_packet' => $evidence], JSON_THROW_ON_ERROR));
-    $missingEvidence->run();
-    $implementer = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'implementer'], base_path());
-    $implementer->setInput(json_encode(['group' => render_task_prompt_group(), 'subtask' => render_task_prompt_subtask(), 'review_packet' => render_task_prompt_review_packet()], JSON_THROW_ON_ERROR));
-    $implementer->run();
+it('rejects role-inapplicable and missing nested fields', function (string $role, ?string $missing, string $expected): void {
+    $packet = render_task_prompt_review_packet();
+    if ($missing !== null) {
+        Arr::forget($packet, $missing);
+    }
+    $process = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', $role], base_path());
+    $process->setInput(json_encode([
+        'group' => render_task_prompt_group(),
+        'subtask' => render_task_prompt_subtask(),
+        'review_packet' => $packet,
+    ], JSON_THROW_ON_ERROR));
+    $process->run();
 
-    expect($review->getOutput())->toContain('review_packet.handoff_check is required.')
-        ->and($missingEvidence->getOutput())->toContain('review_packet.handoff_check.evidence is required.')
-        ->and($implementer->getOutput())->toContain('input.review_packet is only valid for reviewer roles.');
-});
+    expect($process->getExitCode())->toBe(1)
+        ->and($process->getOutput())->toContain($expected);
+})->with([
+    'missing handoff check' => ['reviewer', 'handoff_check', 'review_packet.handoff_check is required.'],
+    'missing evidence' => ['reviewer', 'handoff_check.evidence', 'review_packet.handoff_check.evidence is required.'],
+    'inapplicable review packet' => ['implementer', null, 'input.review_packet is only valid for reviewer roles.'],
+]);
 
 it('refuses an unknown prompt field', function (): void {
     $process = new Process([PHP_BINARY, base_path('artisan'), 'tasks:render-prompt', 'implementer'], base_path());

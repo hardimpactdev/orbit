@@ -6,7 +6,6 @@ namespace App\Http\Requests;
 
 use App\Support\ValidatedData;
 use JsonException;
-use stdClass;
 use UnexpectedValueException;
 
 final readonly class TopLevelJsonObjectInspector
@@ -24,12 +23,12 @@ final readonly class TopLevelJsonObjectInspector
         }
 
         try {
-            $object = json_decode($json, flags: JSON_THROW_ON_ERROR);
+            $payload = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             $this->fail('The request body must be a valid JSON object.');
         }
 
-        if (! $object instanceof stdClass) {
+        if (! is_array($payload) || $json[strspn($json, " \t\r\n")] !== '{') {
             $this->fail('The request body must be a valid JSON object.');
         }
 
@@ -41,16 +40,6 @@ final readonly class TopLevelJsonObjectInspector
 
         if (array_diff($keys, $allowedKeys) !== []) {
             $this->fail('The request body contains unsupported top-level keys.');
-        }
-
-        try {
-            $payload = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $this->fail('The request body must be a valid JSON object.');
-        }
-
-        if (! is_array($payload)) {
-            $this->fail('The request body must be a valid JSON object.');
         }
 
         return ValidatedData::object($payload);
@@ -123,26 +112,20 @@ final readonly class TopLevelJsonObjectInspector
     private function stringEnd(#[\SensitiveParameter] string $json, int $index): int
     {
         $length = strlen($json);
-        $escaped = false;
 
-        for (; $index < $length; $index++) {
-            $character = $json[$index];
+        while ($index < $length) {
+            // inspect() has already validated JSON. Only quotes and escapes can end a string span.
+            $index += strcspn($json, '"\\', $index);
 
-            if ($escaped) {
-                $escaped = false;
-
-                continue;
+            if ($index >= $length) {
+                break;
             }
 
-            if ($character === '\\') {
-                $escaped = true;
-
-                continue;
-            }
-
-            if ($character === '"') {
+            if ($json[$index] === '"') {
                 return $index;
             }
+
+            $index += 2;
         }
 
         $this->fail('The request body must be a valid JSON object.');

@@ -103,6 +103,5 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
                 ->when(static fn (): bool => app(ExtensionStore::class)->enabled('ai-router') || DB::table('ai_router_cutovers')->exists());
         });
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
 }

@@ -22,14 +22,34 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
+use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\ResolvedVp;
+use Tests\Support\StandardLibraryPython;
+
+require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
+
+beforeAll(function (): void {
+    tmpdir_programs();
+});
+
+afterAll(function (): void {
+    tmpdir_programs()->close();
+});
+
+function tmpdir_programs(): ForkedPythonPrograms
+{
+    static $programs = null;
+
+    return $programs ??= new ForkedPythonPrograms;
+}
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
     $this->allocated = [];
     File::ensureDirectoryExists($this->directory);
+    File::ensureDirectoryExists($this->directory.'/home', 0700);
 });
 
 afterEach(function (): void {
@@ -45,10 +65,19 @@ afterEach(function (): void {
     }
 });
 
+function tmpdir_shell(): LocalShellSshExecutor
+{
+    $transport = new LocalShellSshExecutor;
+    $transport->environment['HOME'] = test()->directory.'/home';
+    $transport->environment['PATH'] = StandardLibraryPython::path((string) getenv('PATH'));
+
+    return $transport;
+}
+
 function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 {
     return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
-        $transport ?? new LocalShellSshExecutor,
+        $transport ?? tmpdir_shell(),
         new class implements SshKeyProvider
         {
             public function privateKeyPath(): string
@@ -75,11 +104,11 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor
 {
-    $inner = new LocalShellSshExecutor;
+    $inner = tmpdir_shell();
 
     return new class($inner, $scripts) implements SshExecutor
     {
-        public function __construct(private LocalShellSshExecutor $inner, private array &$scripts) {}
+        public function __construct(private SshExecutor $inner, private array &$scripts) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
@@ -124,34 +153,22 @@ function tmpdir_instance(string $checkout, string $name): Instance
 
 function tmpdir_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
 {
-    for ($attempt = 0; $attempt < 150; $attempt++) {
-        $reading = $runner->read($instance, $process);
-        if ($reading->state !== 'running') {
-            return $reading;
-        }
-        usleep(100_000);
-    }
-
-    throw new RuntimeException('The check did not finish.');
+    return check_runner_wait($runner, $instance, $process);
 }
 
 function tmpdir_remove(string $path): bool
 {
     $script = test()->directory.'/check.py';
     file_put_contents($script, TaskUnitProgram::read('tasks/check'));
-    $probe = new Process([
-        'python3', '-c', <<<'PYTHON'
+    $probe = tmpdir_programs()->runCommand(<<<'PYTHON'
 import importlib.machinery, importlib.util, sys
 loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
 check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
 loader.exec_module(check)
 sys.exit(0 if check.remove_allocated_check_tmpdir(sys.argv[2]) else 1)
-PYTHON,
-        $script,
-        $path,
-    ]);
+PYTHON, [$script, $path]);
 
-    return $probe->run() === 0;
+    return $probe->exitCode === 0;
 }
 
 function tmpdir_checkout(string $directory, string $name): string
@@ -164,6 +181,26 @@ function tmpdir_checkout(string $directory, string $name): string
 }
 
 describe('workspace TMPDIR', function (): void {
+    it('runs login commands in its private fixture home without changing the caller', function (): void {
+        $home = $this->directory.'/home';
+        File::ensureDirectoryExists($home, 0700);
+        file_put_contents($home.'/.profile', "export ORBIT_TMPDIR_LOGIN_PROOF=private-home\n");
+        $priorHome = getenv('HOME');
+        $priorProof = getenv('ORBIT_TMPDIR_LOGIN_PROOF');
+        $transport = tmpdir_shell();
+        $result = $transport->execute(
+            new SshConnection('127.0.0.1', 'fixture', 22, '/unused', '/unused'),
+            new RemoteCommand(['bash', '-lc', 'printf "%s\\n%s\\n" "$HOME" "$ORBIT_TMPDIR_LOGIN_PROOF"']),
+        );
+
+        expect($result->exitCode)->toBe(0)
+            ->and($result->stdout)->toBe($home."\nprivate-home\n")
+            ->and($result->stderr)->toBe('')
+            ->and($transport->environment['HOME'] ?? null)->toBe($home)
+            ->and(getenv('HOME'))->toBe($priorHome)
+            ->and(getenv('ORBIT_TMPDIR_LOGIN_PROOF'))->toBe($priorProof);
+    });
+
     it('gives test processes inheriting private TMPDIR a separate traversable fixture root', function (): void {
         $temporary = tmpdir_check_directory($this->directory);
         $probe = new Process([PHP_BINARY, '-r', <<<'PHP'
@@ -196,7 +233,7 @@ describe('workspace TMPDIR', function (): void {
 
         try {
             $runner = tmpdir_runner();
-            $directories = [];
+            $checks = [];
             foreach (['first', 'second'] as $name) {
                 $checkout = tmpdir_checkout($this->directory, $name);
                 File::ensureDirectoryExists($checkout.'/.git/orbit/tmp');
@@ -207,8 +244,14 @@ describe('workspace TMPDIR', function (): void {
                 ], ['start' => null, 'commands' => [
                     ['id' => 'tmp', 'command' => $analyse.' > deliverable-tmp', 'directory' => '.'],
                 ]]);
-                $reading = tmpdir_wait($runner, $instance, $process);
-                expect($reading->exitCode)->toBe(0);
+                $checks[] = [$checkout, $process];
+            }
+            $directories = [];
+            foreach ($checks as [$checkout, $process]) {
+                // Observe the local result directly; remote status decoding has its own proofs.
+                check_runner_wait_for_exit($process);
+                $result = json_decode(file_get_contents($checkout.'/.git/orbit/check.json'), true, flags: JSON_THROW_ON_ERROR);
+                expect($result['exit_code'])->toBe(0);
                 $expected = file_get_contents($checkout.'/setup-tmp');
                 expect($expected)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
                     ->not->toContain($checkout)
@@ -345,11 +388,16 @@ describe('workspace TMPDIR', function (): void {
             ->and(is_dir($path))->toBeTrue();
 
         posix_kill($process->pid, SIGKILL);
-        $runner->cancel($instance, $process);
+        // Cancellation cleans a leftover only after the killed process is gone, not while SIGKILL is pending.
         $reading = tmpdir_wait($runner, $instance, $process);
-
+        clearstatcache(true, $path);
         expect($reading->state)->toBe('lost')
-            ->and(is_dir($path))->toBeFalse();
+            ->and(is_dir($path))->toBeTrue();
+
+        $runner->cancel($instance, $process);
+
+        clearstatcache(true, $path);
+        expect(is_dir($path))->toBeFalse();
     });
 
     it('refuses to remove an unexpected TMPDIR path', function (): void {

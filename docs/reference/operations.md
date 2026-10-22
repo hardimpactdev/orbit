@@ -4,7 +4,7 @@ description: "How the Gateway runs a long operation as a queued record with name
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
   - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
-  - apps/gateway/database/migrations/*_create_operations_tables.php
+  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}

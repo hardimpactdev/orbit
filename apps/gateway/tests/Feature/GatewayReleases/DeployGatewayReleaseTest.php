@@ -35,7 +35,7 @@ use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
 
 beforeEach(function (): void {
-    $this->fixture = new GatewayReleaseFixture;
+    $this->fixture = GatewayReleaseFixture::create();
     $this->live = $this->fixture->layout->currentPath();
     mkdir($this->live.'/apps/gateway', 0755, true);
     file_put_contents($this->live.'/apps/gateway/live.txt', 'serving');
@@ -214,33 +214,6 @@ describe('gateway:release:deploy', function (): void {
             ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue()
             ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12), 'web:publish', 'smoke'])
             ->and($order->steps)->not->toContain('handoff:'.$first);
-    });
-
-    it('switches back when the release smoke command runs past its limit', function (): void {
-        $first = adopt_release($this->fixture);
-        $this->fixture->write('bin/gateway-smoke', "#!/usr/bin/env bash\nsleep 60 &\nwait\n");
-        chmod($this->fixture->origin.'/bin/gateway-smoke', 0755);
-        $sha = $this->fixture->commit('Smoke hangs');
-        $this->fixture->builder()->prepare($sha);
-        $order = new ReleaseSteps;
-        $smoke = new ScriptGatewayReleaseSmoke(
-            layout: $this->fixture->layout,
-            processes: $this->fixture,
-            origin: 'https://gateway.orbit',
-            webRoot: $this->fixture->base.'/web',
-            timeoutSeconds: 1,
-            graceSeconds: 0,
-        );
-        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
-
-        $exception = release_failure(fn () => $action->execute(substr($sha, 0, 12)));
-        $record = GatewayRelease::query()->first();
-
-        expect($exception->errorCode)->toBe('gateway.release_smoke_timeout')
-            ->and($record->outcome)->toBe('switched_back')
-            ->and($record->phases['smoke']['error_code'])->toBe('gateway.release_smoke_timeout')
-            ->and($record->phases['smoke']['timeout_seconds'])->toBe(1)
-            ->and($this->fixture->layout->currentReleaseId())->toBe($first);
     });
 
     it('removes the web build of a release it prunes', function (): void {

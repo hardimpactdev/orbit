@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
@@ -43,11 +44,18 @@ it('rejects an empty readiness line from a running fixture', function (): void {
 
 it('uses the process deadline when a fixture never becomes ready', function (): void {
     $input = new InputStream;
-    $server = new Process([PHP_BINARY, '-r', 'fread(STDIN, 1);'], input: $input, timeout: 0.05);
-    $server->start();
+    $server = new Process([PHP_BINARY, '-r', 'fread(STDIN, 1);'], input: $input, timeout: 10);
 
     try {
-        expect(fn () => SubprocessFixture::line($server))->toThrow(RuntimeException::class, 'Fixture server timed out before readiness.');
+        $server->start();
+        $server->setTimeout(0.05);
+
+        expect(fn () => SubprocessFixture::line($server))->toThrow(function (RuntimeException $exception): void {
+            expect($exception::class)->toBe(RuntimeException::class);
+            expect($exception->getMessage())->toContain('Fixture server timed out before readiness.');
+            expect($exception->getPrevious())->toBeInstanceOf(ProcessTimedOutException::class);
+        });
+        expect($server->isRunning())->toBeFalse();
     } finally {
         $input->close();
         $server->stop();
@@ -83,3 +91,28 @@ it('rejects a process without a timeout before checking readiness', function ():
         ->toThrow(RuntimeException::class, 'Fixture server must have a timeout');
     expect($checked)->toBeFalse();
 });
+
+it('rejects executable fixture processes and accepts them only after exit', function (): void {
+    $input = new InputStream;
+    $server = new Process([PHP_BINARY, '-r', 'echo "ready\n"; fflush(STDOUT); fread(STDIN, 1);'], input: $input, timeout: 5);
+    $server->start();
+
+    try {
+        expect(SubprocessFixture::line($server))->toBe('ready');
+        $pid = $server->getPid() ?? throw new RuntimeException('Fixture has no PID.');
+        expect(fn () => SubprocessFixture::assertExited($pid))
+            ->toThrow(ExpectationFailedException::class, 'still executable');
+        $input->write('x');
+        $input->close();
+        $server->wait();
+        SubprocessFixture::assertExited($pid);
+    } finally {
+        $input->close();
+        $server->stop();
+    }
+});
+
+it('rejects empty or invalid fixture PID lists before querying the process table', function (array $pids): void {
+    expect(fn () => SubprocessFixture::assertExited(...$pids))
+        ->toThrow(ExpectationFailedException::class);
+})->with(['empty' => [[]], 'invalid' => [[0]]]);

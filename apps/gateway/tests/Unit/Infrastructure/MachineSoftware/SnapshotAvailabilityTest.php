@@ -14,6 +14,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 beforeEach(fn () => Sleep::fake());
+afterEach(fn () => Sleep::fake(false));
 
 function snapshot_fixture_recipe(string $version = '1.2.3-1ubuntu1'): MachineRecipe
 {

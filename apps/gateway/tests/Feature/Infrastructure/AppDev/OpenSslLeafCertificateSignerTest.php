@@ -5,11 +5,19 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\FixtureProcessRunner;
+use Tests\Support\RootCaFixture;
+
+beforeAll(function (): void {
+    foreach (['leaf-signer', 'leaf-signer-alternate'] as $name) {
+        RootCaFixture::prepare($name, '/CN=Orbit Test Root', 1, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']);
+    }
+});
 
 it('signs a target CSR for only the gateway-approved hostname', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
@@ -19,38 +27,14 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
     $unapprovedHostname = 'leaf-signer-unapproved.example';
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
     mkdir(directory: $target, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'genrsa',
-                '-out',
-                "{$ca}/root.key",
-                '4096',
-            ]))->succeeded(),
-        )->toBeTrue();
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'req',
-                '-x509',
-                '-new',
-                '-key',
-                "{$ca}/root.key",
-                '-out',
-                "{$ca}/root.pem",
-                '-days',
-                '1',
-                '-subj',
-                '/CN=Orbit Test Root',
-                '-addext',
-                'basicConstraints=critical,CA:TRUE',
-                '-addext',
-                'keyUsage=critical,keyCertSign,cRLSign',
-            ]))->succeeded(),
-        )->toBeTrue();
+        RootCaFixture::install($ca, 'leaf-signer');
+        $rootKey = openssl_pkey_get_private(file_get_contents("{$ca}/root.key"));
+        expect($rootKey)->not->toBeFalse();
+        expect(openssl_pkey_get_details($rootKey)['bits'])->toBe(4096)
+            ->and(openssl_x509_check_private_key(file_get_contents("{$ca}/root.pem"), $rootKey))->toBeTrue();
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
@@ -169,7 +153,7 @@ it('fails closed when the root CA state is partial', function (): void {
     );
 
     try {
-        expect(fn () => new OpenSslLeafCertificateSigner(new NativeProcessRunner, $orbitHome)->rootCertificate())
+        expect(fn () => new OpenSslLeafCertificateSigner(new FixtureProcessRunner, $orbitHome)->rootCertificate())
             ->toThrow(RuntimeException::class, 'partial');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -182,10 +166,10 @@ it('rejects an Ed25519 target CSR with the approved hostname and SAN', function 
     $target = "{$orbitHome}/target";
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
     mkdir(directory: $target, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
-        create_leaf_signer_root_ca($processes, $ca);
+        RootCaFixture::install($ca, 'leaf-signer');
         expect(
             $processes->run(new ProcessInvocation([
                 leaf_openssl_binary(),
@@ -234,10 +218,10 @@ it('rejects root CA material outside its validity window', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
-        create_leaf_signer_root_ca($processes, $ca);
+        RootCaFixture::install($ca, 'leaf-signer');
         $certificate = file_get_contents("{$ca}/root.pem");
         $details = is_string($certificate) ? openssl_x509_parse($certificate) : false;
         $validFrom = is_array($details) ? $details['validFrom_time_t'] ?? null : null;
@@ -264,7 +248,7 @@ it('rejects root CA material that is not RSA 4096', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
         expect(
@@ -308,19 +292,14 @@ it('rejects a root certificate and private key mismatch', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
-        create_leaf_signer_root_ca($processes, $ca);
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'genrsa',
-                '-out',
-                "{$ca}/root.key",
-                '4096',
-            ]))->succeeded(),
-        )->toBeTrue();
+        RootCaFixture::install($ca, 'leaf-signer');
+        mkdir($ca.'/alternate', 0o700);
+        RootCaFixture::install($ca.'/alternate', 'leaf-signer-alternate');
+        copy($ca.'/alternate/root.key', $ca.'/root.key');
+        expect(openssl_pkey_get_details(openssl_pkey_get_private(file_get_contents($ca.'/root.key')))['bits'])->toBe(4096);
 
         expect(fn () => new OpenSslLeafCertificateSigner($processes, $orbitHome)->rootCertificate())
             ->toThrow(RuntimeException::class, 'material is invalid');
@@ -329,7 +308,7 @@ it('rejects a root certificate and private key mismatch', function (): void {
     }
 });
 
-function leaf_certificate_serial(NativeProcessRunner $processes, string $certificatePath): string
+function leaf_certificate_serial(ProcessRunner $processes, string $certificatePath): string
 {
     return trim($processes->run(new ProcessInvocation([
         'openssl',
@@ -341,7 +320,7 @@ function leaf_certificate_serial(NativeProcessRunner $processes, string $certifi
     ]))->stdout);
 }
 
-function leaf_certificate_validity_days(NativeProcessRunner $processes, string $certificatePath): int
+function leaf_certificate_validity_days(ProcessRunner $processes, string $certificatePath): int
 {
     $dates = $processes->run(new ProcessInvocation([
         'openssl',
@@ -360,39 +339,6 @@ function leaf_certificate_validity_days(NativeProcessRunner $processes, string $
     return is_int($days) ? $days : 0;
 }
 
-function create_leaf_signer_root_ca(NativeProcessRunner $processes, string $ca): void
-{
-    $key = $processes->run(new ProcessInvocation([
-        'openssl',
-        'genrsa',
-        '-out',
-        "{$ca}/root.key",
-        '4096',
-    ]));
-    $certificate = $processes->run(new ProcessInvocation([
-        'openssl',
-        'req',
-        '-x509',
-        '-new',
-        '-key',
-        "{$ca}/root.key",
-        '-out',
-        "{$ca}/root.pem",
-        '-days',
-        '1',
-        '-subj',
-        '/CN=Orbit Test Root',
-        '-addext',
-        'basicConstraints=critical,CA:TRUE',
-        '-addext',
-        'keyUsage=critical,keyCertSign,cRLSign',
-    ]));
-
-    if (! $key->succeeded() || ! $certificate->succeeded()) {
-        throw new RuntimeException('Could not create the leaf signer root CA fixture.');
-    }
-}
-
 /** @return array<array-key, mixed> */
 function leaf_certificate_extensions(string $certificatePath): array
 {
@@ -403,7 +349,7 @@ function leaf_certificate_extensions(string $certificatePath): array
     return is_array($extensions) ? $extensions : [];
 }
 
-function leaf_certificate_text(NativeProcessRunner $processes, string $certificatePath): string
+function leaf_certificate_text(ProcessRunner $processes, string $certificatePath): string
 {
     return $processes->run(new ProcessInvocation([
         'openssl',
@@ -416,7 +362,7 @@ function leaf_certificate_text(NativeProcessRunner $processes, string $certifica
 }
 
 function leaf_certificate_matches_host(
-    NativeProcessRunner $processes,
+    ProcessRunner $processes,
     string $certificatePath,
     string $domain,
 ): bool {
@@ -450,7 +396,7 @@ function leaf_certificate_host_check_matches(CommandResult $result, string $doma
 }
 
 function leaf_certificate_caddy_validation(
-    NativeProcessRunner $processes,
+    ProcessRunner $processes,
     string $directory,
     string $certificatePath,
     string $privateKeyPath,

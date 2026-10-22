@@ -738,7 +738,9 @@
                 "Task check",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0225"
+            ]
         },
         {
             "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
@@ -2023,13 +2025,11 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
-                "Process",
                 "Role",
                 "Task"
             ],
@@ -2563,7 +2563,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",

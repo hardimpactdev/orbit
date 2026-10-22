@@ -17,7 +17,7 @@ use Tests\Support\GatewayReleasePipeline;
  * service provider. Only leaf services are faked, so a dependency the provider does not wire fails here.
  */
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->pipeline->adopt();
     $this->pipeline->bindLeaves();
     $this->pipeline->automation()->enable();

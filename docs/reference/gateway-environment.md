@@ -49,7 +49,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 [Gateway disk retention](/reference/gateway-recovery#disk-retention) documents `ORBIT_JOURNAL_MAX_MB`, `ORBIT_JOURNAL_KEEP_FREE_MB`, `ORBIT_JOURNAL_RUNTIME_MAX_MB`, `ORBIT_JOURNAL_DAYS`, `ORBIT_LOG_ROTATE_MB`, and `ORBIT_LOG_ROTATE_KEEP`. Queue record retention uses `ORBIT_FAILED_JOBS_HOURS` and `ORBIT_JOB_BATCH_HOURS`. Their defaults are in `config/retention.php`.
 
-Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. The deployment migration reads the former `ORBIT_TASK_VMS_INCUS_HOSTS` JSON list from the process environment or the Gateway's `.env`, including when configuration is cached. Keep the existing deployment values until migration copies them into the host Nodes, verify the stored settings, and then remove the variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). Runtime host selection has no environment-list fallback.
+Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 ## Drift check
 
@@ -63,4 +63,4 @@ Gateway code includes each extension under `apps/gateway/extensions`, such as th
 
 The check finds keys read through `env()`, including `env(key: ...)`, and through `getenv()`, `Env::get()`, `$_SERVER`, and `$_ENV`. ADRs do not count as documentation. Keys without the `ORBIT_` prefix belong to Laravel, PHP, or the operating system, and their own docs cover them.
 
-The shared task VM [package cache](/reference/compute-drivers#shared-package-cache) reads its byte budget from `config/package_cache.php` (`package_cache.max_bytes`, 20 GiB by default). Its host list comes only through `TaskVmSettings`, so the move to Node `settings.task_vms` changes that interface alone. No package cache environment host list is added.
+The shared task VM [package cache](/reference/compute-drivers#shared-package-cache) reads its byte budget from `config/package_cache.php` (`package_cache.max_bytes`, 20 GiB by default). Its host list comes only through `TaskVmSettings`; the package cache has no environment host list.

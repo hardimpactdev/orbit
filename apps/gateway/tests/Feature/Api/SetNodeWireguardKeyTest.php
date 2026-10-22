@@ -315,6 +315,7 @@ function wireguard_key_probe_database(string $home): string
     $source = DB::connection()->getPdo();
     $tables = $source->query("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_ASSOC);
 
+    $target->beginTransaction();
     foreach ($tables as $table) {
         $target->exec($table['sql']);
         $name = '"'.str_replace('"', '""', $table['name']).'"';
@@ -326,6 +327,8 @@ function wireguard_key_probe_database(string $home): string
             $insert->execute(array_values($row));
         }
     }
+
+    $target->commit();
 
     return $path;
 }

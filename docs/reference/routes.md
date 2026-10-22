@@ -4,7 +4,7 @@ description: "What a Route records, how Orbit projects its private traffic path 
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
-  - apps/gateway/app/Models/{Route,RouteTarget,RouteCustomProxy}.php
+  - apps/gateway/{app/Models/{Route,RouteTarget,RouteCustomProxy}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php

@@ -11,45 +11,22 @@ use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\FixtureProcessRunner;
+use Tests\Support\RootCaFixture;
+
+beforeAll(static fn () => RootCaFixture::prepare());
 
 it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP identities', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-'.Str::uuid();
+    $orbitHome = gateway_certificate_test_home();
     $caDirectory = $orbitHome.'/ca';
-    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'genrsa',
-                '-out',
-                $caDirectory.'/root.key',
-                '4096',
-            ]))->succeeded(),
-        )->toBeTrue();
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'req',
-                '-x509',
-                '-new',
-                '-key',
-                $caDirectory.'/root.key',
-                '-out',
-                $caDirectory.'/root.pem',
-                '-days',
-                '3650',
-                '-subj',
-                '/CN=Orbit Root CA',
-            ]))->succeeded(),
-        )->toBeTrue();
 
         $issuer = new OpenSslGatewayCertificateIssuer(
             processes: $processes,
@@ -156,7 +133,7 @@ it('publishes the Metrics leaf without replacing the Gateway certificate scope',
     $orbitHome = sys_get_temp_dir().'/orbit-metrics-certificate-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
     mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
         expect(
@@ -220,7 +197,7 @@ it('publishes the Metrics leaf without replacing the Gateway certificate scope',
 
 it('keeps an issued generation stable while later certificates are published', function (): void {
     $orbitHome = gateway_certificate_test_home();
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
     $issuer = new OpenSslGatewayCertificateIssuer(
         processes: $processes,
         validator: new OpenSslGatewayCertificateValidator($processes),
@@ -288,7 +265,7 @@ it('keeps an issued generation stable while later certificates are published', f
 
 it('reuses one resolved generation when the current alias changes during validation', function (): void {
     $orbitHome = gateway_certificate_test_home();
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
     $issuer = new OpenSslGatewayCertificateIssuer(
         processes: $processes,
         validator: new OpenSslGatewayCertificateValidator($processes),
@@ -303,7 +280,7 @@ it('reuses one resolved generation when the current alias changes during validat
         new NativeAtomicSymlinkPublisher()->publish(dirname($first->certificatePath), $currentDirectory);
         $switchingProcesses = new class(dirname($second->certificatePath), $currentDirectory) implements ProcessRunner
         {
-            private NativeProcessRunner $processes;
+            private ProcessRunner $processes;
 
             private bool $switched = false;
 
@@ -311,7 +288,7 @@ it('reuses one resolved generation when the current alias changes during validat
                 private string $replacement,
                 private string $currentDirectory,
             ) {
-                $this->processes = new NativeProcessRunner;
+                $this->processes = new FixtureProcessRunner;
             }
 
             public function run(ProcessInvocation $invocation): CommandResult
@@ -374,7 +351,7 @@ it('renews gateway leaves when they expire within 30 days', function (): void {
 
 it('rejects otherwise usable leaves when the parsed validity spans ten years', function (): void {
     $orbitHome = gateway_certificate_test_home();
-    $nativeProcesses = new NativeProcessRunner;
+    $nativeProcesses = new FixtureProcessRunner;
     $issuer = new OpenSslGatewayCertificateIssuer(
         processes: $nativeProcesses,
         validator: new OpenSslGatewayCertificateValidator($nativeProcesses),
@@ -389,7 +366,7 @@ it('rejects otherwise usable leaves when the parsed validity spans ten years', f
             /** @var list<ProcessInvocation> */
             public array $invocations = [];
 
-            public function __construct(private readonly NativeProcessRunner $nativeProcesses) {}
+            public function __construct(private readonly ProcessRunner $nativeProcesses) {}
 
             public function run(ProcessInvocation $invocation): CommandResult
             {
@@ -443,30 +420,14 @@ it('rejects legacy gateway leaves whose lifetime exceeds 397 days', function ():
 });
 
 it('rejects gateway leaves with :invalidPolicy', function (string $extensions): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-policy-'.(string) Str::uuid();
+    $orbitHome = gateway_certificate_test_home();
     $caDirectory = $orbitHome.'/ca';
     $leafDirectory = $orbitHome.'/leaf';
-    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
     mkdir(directory: $leafDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
         foreach ([
-            ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
-            [
-                'openssl',
-                'req',
-                '-x509',
-                '-new',
-                '-key',
-                $caDirectory.'/root.key',
-                '-out',
-                $caDirectory.'/root.pem',
-                '-days',
-                '3650',
-                '-subj',
-                '/CN=Orbit Root CA',
-            ],
             ['openssl', 'genrsa', '-out', $leafDirectory.'/gateway.key', '2048'],
             [
                 'openssl',
@@ -559,30 +520,14 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
 ]);
 
 it('rejects a gateway leaf with an Ed25519 key pair and the exact approved policy', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-rsa-'.(string) Str::uuid();
+    $orbitHome = gateway_certificate_test_home();
     $caDirectory = $orbitHome.'/ca';
     $leafDirectory = $orbitHome.'/leaf';
-    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
     mkdir(directory: $leafDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $processes = new FixtureProcessRunner;
 
     try {
         foreach ([
-            ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
-            [
-                'openssl',
-                'req',
-                '-x509',
-                '-new',
-                '-key',
-                $caDirectory.'/root.key',
-                '-out',
-                $caDirectory.'/root.pem',
-                '-days',
-                '3650',
-                '-subj',
-                '/CN=Orbit Root CA',
-            ],
             [gateway_test_openssl_binary(), 'genpkey', '-algorithm', 'ED25519', '-out', $leafDirectory.'/gateway.key'],
             [
                 gateway_test_openssl_binary(),
@@ -684,63 +629,16 @@ function gateway_certificate_test_home(): string
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-paths-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
     mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
-
-    foreach ([
-        ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
-        [
-            'openssl',
-            'req',
-            '-x509',
-            '-new',
-            '-key',
-            $caDirectory.'/root.key',
-            '-out',
-            $caDirectory.'/root.pem',
-            '-days',
-            '3650',
-            '-subj',
-            '/CN=Orbit Root CA',
-        ],
-    ] as $arguments) {
-        expect($processes->run(new ProcessInvocation($arguments))->succeeded())->toBeTrue();
-    }
+    RootCaFixture::install($caDirectory);
 
     return $orbitHome;
 }
 
 it('preserves the current usable certificate pair when atomic publication fails', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-'.Str::uuid();
-    $caDirectory = $orbitHome.'/ca';
-    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
-    $processes = new NativeProcessRunner;
+    $orbitHome = gateway_certificate_test_home();
+    $processes = new FixtureProcessRunner;
 
     try {
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'genrsa',
-                '-out',
-                $caDirectory.'/root.key',
-                '4096',
-            ]))->succeeded(),
-        )->toBeTrue();
-        expect(
-            $processes->run(new ProcessInvocation([
-                'openssl',
-                'req',
-                '-x509',
-                '-new',
-                '-key',
-                $caDirectory.'/root.key',
-                '-out',
-                $caDirectory.'/root.pem',
-                '-days',
-                '3650',
-                '-subj',
-                '/CN=Orbit Root CA',
-            ]))->succeeded(),
-        )->toBeTrue();
 
         $issuer = new OpenSslGatewayCertificateIssuer(
             processes: $processes,
@@ -810,7 +708,7 @@ it('preserves the current usable certificate pair when atomic publication fails'
     }
 });
 
-function gateway_certificate_serial(NativeProcessRunner $processes, string $certificatePath): string
+function gateway_certificate_serial(ProcessRunner $processes, string $certificatePath): string
 {
     return trim($processes->run(new ProcessInvocation([
         'openssl',
@@ -822,7 +720,7 @@ function gateway_certificate_serial(NativeProcessRunner $processes, string $cert
     ]))->stdout);
 }
 
-function gateway_certificate_validity_days(NativeProcessRunner $processes, string $certificatePath): int
+function gateway_certificate_validity_days(ProcessRunner $processes, string $certificatePath): int
 {
     $dates = $processes->run(new ProcessInvocation([
         'openssl',
@@ -853,7 +751,7 @@ function gateway_certificate_extensions(string $certificatePath): array
     return is_array($extensions) ? $extensions : [];
 }
 
-function gateway_certificate_text(NativeProcessRunner $processes, string $certificatePath): string
+function gateway_certificate_text(ProcessRunner $processes, string $certificatePath): string
 {
     return $processes->run(new ProcessInvocation([
         'openssl',
@@ -866,7 +764,7 @@ function gateway_certificate_text(NativeProcessRunner $processes, string $certif
 }
 
 function gateway_certificate_caddy_validation(
-    NativeProcessRunner $processes,
+    ProcessRunner $processes,
     string $directory,
     string $certificatePath,
     string $privateKeyPath,

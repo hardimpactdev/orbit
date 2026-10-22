@@ -2179,7 +2179,8 @@ it('consumes complete large shell input while draining complete stdout and stder
             printf 'stderr-tail\n' >&2
             BASH,
     );
-    $input .= "\n# ".str_repeat(string: 'successful-input-', times: 131_073)."\n";
+    $padding = str_repeat(string: 'successful-input-', times: 131_073);
+    $input .= "\ninput_bytes=\$(head -c ".strlen($padding)." | wc -c); printf 'input-bytes=%s\\n' \"\$((input_bytes))\"\n".$padding."\n";
     $input .= <<<'BASH'
         printf 'argument=%s\n' "$1"
         printf 'cwd=%s\n' "$PWD"
@@ -2196,6 +2197,7 @@ it('consumes complete large shell input while draining complete stdout and stder
         ));
         $pid = (int) file_get_contents($pidPath);
         $expectedStdout = str_repeat(string: 'O', times: $outputBytes)."stdout-tail\n"
+            .'input-bytes='.strlen($padding)."\n"
             ."argument=argument sentinel\n"
             ."cwd={$root}\n"
             ."rewritten={$root}/wireguard/orbit.conf\n"

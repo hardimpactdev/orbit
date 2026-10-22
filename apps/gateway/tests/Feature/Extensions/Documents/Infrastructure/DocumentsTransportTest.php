@@ -3,9 +3,13 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
-use Aws\S3\S3Client;
+use Aws\Handler\Guzzle\GuzzleHandler;
+use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectTimeoutException;
 use GuzzleHttp\Exception\ResponseTimeoutException;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -19,8 +23,13 @@ use Orbit\Extensions\Documents\Infrastructure\ProbeJournal;
 use Orbit\Extensions\Documents\Infrastructure\ProbeResponseBuffer;
 use Orbit\Extensions\Documents\Infrastructure\VerifyDocumentStorage;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
+use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Process;
-use Tests\Support\SubprocessFixture;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+require_once __DIR__.'/../../../../Support/ProbeTransportFixtures.php';
+
+uses(WithCommittedSqliteDatabase::class);
 
 beforeEach(function (): void {
     $this->probeTransportHome = sys_get_temp_dir().'/orbit-probe-transport-'.Str::uuid();
@@ -31,36 +40,39 @@ beforeEach(function (): void {
     });
 });
 
-/** @return array{Process, S3Client, ProjectDocumentStorage} */
-function probe_transport_fixture(string $mode): array
-{
-    // Allow 60 seconds for the transport fixture to print its readiness line.
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/probe_http_server.py'), $mode, config()->string('orbit.home').'/http-state.json'], timeout: 60);
-    $server->start();
-    $port = SubprocessFixture::line($server);
-    if (! ctype_digit($port)) {
-        $server->stop();
-        throw new RuntimeException('Loopback S3 transport fixture did not start.');
-    }
-    $storage = new ProjectDocumentStorage([
-        'endpoint' => ($mode === 'tls-stall' ? 'https' : 'http').'://127.0.0.1:'.$port,
-        'region' => 'europe-2', 'bucket' => 'fixture-bucket',
-        'access_key_id' => 'fixture-access', 'secret_access_key' => 'fixture-secret',
-    ]);
-
-    return [$server, app(DocumentsFilesystem::class)->forConfiguration($storage)->getClient(), $storage];
-}
-
-/** @return array{Process, DocumentBodies} */
+/** @return array{Process|null, DocumentBodies} */
 function body_transport_fixture(string $mode): array
 {
-    DB::rollBack();
-    $database = config()->string('orbit.home').'/bodies.sqlite';
-    touch($database);
-    config(['database.connections.sqlite.database' => $database]);
-    DB::purge('sqlite');
-    test()->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
-    [$server, , $storage] = probe_transport_fixture($mode);
+    test()->useCommittedSqliteDatabase(config()->string('orbit.home').'/bodies.sqlite');
+    $server = null;
+    if (in_array($mode, ['tls-stall', 'body-timeout'], true)) {
+        $storage = new ProjectDocumentStorage(['endpoint' => 'https://documents.example.test', 'region' => 'europe-2', 'bucket' => 'fixture-bucket']);
+        $requests = [];
+        config(['filesystems.disks.documents.http_handler' => new GuzzleHandler(new Client([
+            'handler' => static function (RequestInterface $request, array $options) use ($mode, &$requests): PromiseInterface {
+                $record = ['method' => $request->getMethod(), 'connect_timeout' => $options['connect_timeout'] ?? null,
+                    'timeout' => $options['timeout'] ?? null, 'allow_redirects' => $options['allow_redirects'] ?? null];
+                if ($mode === 'tls-stall') {
+                    $exception = new ConnectTimeoutException('fixture-access fixture-secret timeout', $request);
+                } else {
+                    $response = new Response(200, ['Content-Length' => '32'], 'aaaaaaaa');
+                    $options['on_headers']($response);
+                    $options['sink']->write('aaaaaaaa');
+                    $record['status'] = $options['sink']->responseStatus;
+                    $record['partial_body'] = (string) $options['sink'];
+                    $exception = new ResponseTimeoutException('fixture-access fixture-secret timeout', $request, $response);
+                }
+                $requests[] = $record;
+                file_put_contents(config()->string('orbit.home').'/http-state.json', json_encode([
+                    'requests' => $requests,
+                ], JSON_THROW_ON_ERROR));
+
+                return Create::rejectionFor($exception);
+            },
+        ]))]);
+    } else {
+        [$server, , $storage] = probe_transport_fixture($mode);
+    }
     ProjectDocumentStorage::query()->findOrFail(1)->update([
         'endpoint' => $storage->endpoint, 'region' => $storage->region, 'bucket' => $storage->bucket,
         'access_key_id' => 'fixture-access', 'secret_access_key' => 'fixture-secret',
@@ -70,11 +82,6 @@ function body_transport_fixture(string $mode): array
 }
 
 /** @return array<string, mixed> */
-function probe_transport_state(): array
-{
-    return json_decode(file_get_contents(config()->string('orbit.home').'/http-state.json'), true, flags: JSON_THROW_ON_ERROR);
-}
-
 describe('committed document body HTTP transport', function (): void {
     it('round trips DocumentBodies without an object ACL and verifies empty and binary bodies through real bounded HTTP responses', function (string $encoded): void {
         [$server, $bodies] = body_transport_fixture('short');
@@ -87,12 +94,12 @@ describe('committed document body HTTP transport', function (): void {
             expect(array_column(probe_transport_state()['requests'], 'method'))->toBe(['PUT', 'GET', 'GET']);
             expect(probe_transport_state()['requests'][0]['acl'])->toBeNull();
         } finally {
-            $server->stop();
-            DB::disconnect('sqlite');
+            $server?->stop();
+            DB::disconnect();
         }
     })->with(['empty' => '', 'binary' => 'YQD/Cg==']);
 
-    it('distinguishes missing and corrupt bodies from provider outages through the real HTTP sink', function (string $mode, int $size, string $code, int $status): void {
+    it('distinguishes missing and corrupt bodies from provider outages through the HTTP sink with controlled timeouts', function (string $mode, int $size, string $code, int $status): void {
         [$server, $bodies] = body_transport_fixture($mode);
         try {
             try {
@@ -104,13 +111,26 @@ describe('committed document body HTTP transport', function (): void {
                 expect($exception->getPrevious())->toBeNull();
                 expect((string) $exception)->not->toContain('fixture-access', 'fixture-secret', 'orbit-documents/');
             }
+            // Assert outside the handler: DocumentBodies deliberately catches every transport exception.
+            if (in_array($mode, ['tls-stall', 'body-timeout'], true)) {
+                $requests = probe_transport_state()['requests'];
+                expect($requests)->toHaveCount(1);
+                expect($requests[0]['method'])->toBe('GET');
+                expect($requests[0]['connect_timeout'])->toBe(2);
+                expect($requests[0]['timeout'])->toBe(30);
+                expect($requests[0]['allow_redirects'])->toBeFalse();
+                if ($mode === 'body-timeout') {
+                    expect($requests[0]['status'])->toBe(200);
+                    expect($requests[0]['partial_body'])->toBe('aaaaaaaa');
+                }
+            }
             if ($mode !== 'tls-stall') {
                 expect(probe_transport_state()['requests'])->toHaveCount(1);
                 expect(probe_transport_state()['requests'][0]['method'])->toBe('GET');
             }
         } finally {
-            $server->stop();
-            DB::disconnect('sqlite');
+            $server?->stop();
+            DB::disconnect();
         }
     })->with([
         'missing empty file' => ['get-404', 0, 'project_documents.body_unavailable', 502],
@@ -227,45 +247,6 @@ describe('document probe HTTP transport', function (): void {
             $server->stop();
         }
     })->with(['denied' => 403, 'not found' => 404, 'server failure' => 500, 'redirect' => 302]);
-
-    it('enforces the connection bound during a stalled TLS handshake', function (): void {
-        [$server, $client] = probe_transport_fixture('tls-stall');
-        $command = $client->getCommand('GetObject', [
-            'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
-            '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
-        ]);
-        expect($command['@http']['connect_timeout'])->toBe(2);
-
-        try {
-            expect(fn () => $client->execute($command))->toThrow(function (RuntimeException $exception): void {
-                $previous = $exception->getPrevious();
-                expect($previous)->toBeInstanceOf(ConnectTimeoutException::class);
-            });
-        } finally {
-            $server->stop();
-        }
-    });
-
-    it('enforces the total request deadline when a response body stalls', function (): void {
-        [$server, $client] = probe_transport_fixture('body-stall');
-        $command = $client->getCommand('GetObject', [
-            'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
-            '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
-        ]);
-        expect($command['@http']['timeout'])->toBe(5);
-
-        try {
-            expect(fn () => $client->execute($command))->toThrow(function (RuntimeException $exception): void {
-                $previous = $exception->getPrevious();
-                expect($previous)->toBeInstanceOf(ResponseTimeoutException::class);
-                expect($previous->getResponse()->getStatusCode())->toBe(200);
-                expect((string) $previous->getResponse()->getBody())->toBe('aaaaaaaa');
-            });
-            expect(array_column(probe_transport_state()['requests'], 'method'))->toBe(['GET']);
-        } finally {
-            $server->stop();
-        }
-    });
 
     it('accepts a complete body transferred in short HTTP chunks', function (): void {
         [$server, $client] = probe_transport_fixture('short');

@@ -10,6 +10,7 @@ use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Models\Instance;
 use Tests\Support\DevelopmentDeploymentFixture;
+use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
     $this->fixture = new DevelopmentDeploymentFixture;
@@ -137,6 +138,57 @@ describe('development defaults in place', function (): void {
             ->and(plain_git($home, 'rev-parse', 'main'))->toBe($local);
     });
 
+    it('does not consume termination grace after its step process group has exited', function (): void {
+        $startup = $this->fixture->sandbox.'/shell-startup';
+        $sleeps = $this->fixture->sandbox.'/cleanup-sleeps';
+        file_put_contents($startup, str_replace('__SLEEPS__', escapeshellarg($sleeps), <<<'BASH'
+            sleep() {
+                if [[ ${FUNCNAME[1]:-} == cleanup ]] && [ "$1" = 0.1 ]; then
+                    printf '%s\n' "$1" >> __SLEEPS__
+                fi
+                command sleep "$@"
+            }
+            BASH));
+        $this->fixture->transport->environment['BASH_ENV'] = $startup;
+
+        $result = $this->fixture->deployment->executeStep(
+            $this->fixture->instance,
+            new DevelopmentDeployStep('finished', 'true'),
+            DeploymentRequest::withoutOutput(),
+        );
+
+        expect($result->exitCode)->toBe(0)
+            ->and(is_file($sleeps))->toBeFalse();
+    });
+
+    it('lets its watchdog exit without unused grace after the step group has exited', function (): void {
+        $startup = $this->fixture->sandbox.'/watchdog-startup';
+        $sleeps = $this->fixture->sandbox.'/watchdog-sleeps';
+        file_put_contents($startup, str_replace('__SLEEPS__', escapeshellarg($sleeps), <<<'BASH'
+            kill() {
+                # Let the real watchdog finish naturally, rather than killing it in cleanup.
+                if [[ ${FUNCNAME[1]:-} == cleanup ]] && [ "$#" = 1 ]; then return 0; fi
+                builtin kill "$@"
+            }
+            sleep() {
+                if [[ ${BASH_EXECUTION_STRING:-} == *'owner=$1'* ]] && ! builtin kill -0 -- "-$group" 2>/dev/null; then
+                    printf '%s\n' "$1" >> __SLEEPS__
+                fi
+                command sleep "$@"
+            }
+            BASH));
+        $this->fixture->transport->environment['BASH_ENV'] = $startup;
+
+        $result = $this->fixture->deployment->executeStep(
+            $this->fixture->instance,
+            new DevelopmentDeployStep('finished', 'true'),
+            DeploymentRequest::withoutOutput(),
+        );
+
+        expect($result->exitCode)->toBe(0)
+            ->and(is_file($sleeps))->toBeFalse();
+    });
+
     it('runs back-to-back steps when an earlier step leaves a process behind', function (): void {
         plain_steps($this->fixture->instance, [
             new DevelopmentDeployStep('daemon', 'setsid -f sleep 5 >/dev/null 2>&1 </dev/null'),
@@ -162,13 +214,23 @@ describe('development defaults in place', function (): void {
     });
 
     it('stops a step at its timeout', function (): void {
-        plain_steps($this->fixture->instance, [new DevelopmentDeployStep('hang', 'sleep 60', timeoutSeconds: 1)]);
+        $startup = $this->fixture->sandbox.'/readiness-clock';
+        $advance = 'if [ -f '.escapeshellarg($this->fixture->home.'/start-marker').' ]; then SECONDS=$((SECONDS + 60)); fi';
+        file_put_contents($startup, 'trap '.escapeshellarg($advance).' DEBUG'."\n");
+        $this->fixture->transport->environment['BASH_ENV'] = $startup;
+        plain_steps($this->fixture->instance, [new DevelopmentDeployStep('hang', SubprocessFixture::DelayedHook, timeoutSeconds: 1)]);
         $started = microtime(true);
 
         $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result?->failure?->errorCode)->toBe('deployment.step_failed')
             ->and($result?->commands[0]->result->exitCode)->toBe(143)
-            ->and(microtime(true) - $started)->toBeLessThan(20.0);
+            ->and(microtime(true) - $started)->toBeLessThan(20.0)
+            ->and(is_file($this->fixture->home.'/start-marker'))->toBeTrue();
+        SubprocessFixture::assertExited(
+            (int) file_get_contents($this->fixture->home.'/hook-pid'),
+            (int) file_get_contents($this->fixture->home.'/child-pid'),
+        );
+        expect(is_file($this->fixture->home.'/later-marker'))->toBeFalse();
     });
 });

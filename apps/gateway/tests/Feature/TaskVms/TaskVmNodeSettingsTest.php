@@ -7,12 +7,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Database\Migrations\Migration;
-
-function task_host_migration(): Migration
-{
-    return require database_path('migrations/2026_11_05_000000_migrate_task_vm_host_settings.php');
-}
 
 describe('Node task VM settings', function (): void {
     it('selects only active configured Nodes and ignores app-dev and the former env config', function (): void {
@@ -74,69 +68,4 @@ describe('Node task VM settings', function (): void {
         'missing fields' => [[]],
     ]);
 
-    it('reads the deployment environment file even when the legacy host config is cached away', function (): void {
-        $key = 'ORBIT_TASK_VMS_INCUS_HOSTS';
-        $original = [getenv($key), $_ENV[$key] ?? null, $_SERVER[$key] ?? null];
-        $directory = sys_get_temp_dir().'/task-vm-migration-'.bin2hex(random_bytes(8));
-        mkdir($directory);
-        $environmentPath = app()->environmentPath();
-        $environmentFile = app()->environmentFile();
-        Node::query()->forceCreate(['id' => 9, 'name' => 'beast', 'public_ssh_host' => '192.0.2.9', 'status' => 'active']);
-        file_put_contents($directory.'/.env', $key.'=\'[{"node_id":9,"cidr":"10.251.77.0/24","max_vms":8,"pool":"existing-pool"}]\''."\n");
-        try {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-            app()->useEnvironmentPath($directory)->loadEnvironmentFrom('.env');
-            config()->set('task_vms.incus.hosts', []);
-            task_host_migration()->up();
-            expect(Node::query()->findOrFail(9)->settings['task_vms']['pool'])->toBe('existing-pool')
-                ->and(Node::query()->findOrFail(9)->settings['task_vms']['max_vms'])->toBe(8);
-        } finally {
-            app()->useEnvironmentPath($environmentPath)->loadEnvironmentFrom($environmentFile);
-            unlink($directory.'/.env');
-            rmdir($directory);
-            $original[0] === false ? putenv($key) : putenv($key.'='.$original[0]);
-            foreach (['_ENV' => 1, '_SERVER' => 2] as $source => $index) {
-                if ($original[$index] === null) {
-                    unset($GLOBALS[$source][$key]);
-                } else {
-                    $GLOBALS[$source][$key] = $original[$index];
-                }
-            }
-        }
-    });
-
-    it('copies deployment values unchanged to beast and shark without replacing existing intent', function (): void {
-        $entries = [
-            ['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 8, 'pool' => 'fast', 'zfs_dataset' => 'fast/tasks', 'operator_owned' => ['orbit-ci/*'], 'memory' => '8GiB'],
-            ['node_id' => 13, 'cidr' => '10.251.78.0/24', 'max_vms' => 4, 'cpus' => 4, 'disk' => '40GiB'],
-        ];
-        foreach ([9, 13] as $id) {
-            Node::query()->forceCreate(['id' => $id, 'public_ssh_host' => '192.0.2.'.$id, 'name' => $id === 9 ? 'beast' : 'shark', 'status' => 'active', 'settings' => ['apps' => ['path' => '/srv/apps'], 't3' => ['id' => 'retained']]]);
-        }
-        $raw = json_encode($entries, JSON_THROW_ON_ERROR);
-        putenv('ORBIT_TASK_VMS_INCUS_HOSTS='.$raw);
-        $_ENV['ORBIT_TASK_VMS_INCUS_HOSTS'] = $_SERVER['ORBIT_TASK_VMS_INCUS_HOSTS'] = $raw;
-        try {
-            task_host_migration()->up();
-            foreach ($entries as $entry) {
-                $node = Node::query()->findOrFail($entry['node_id']);
-                unset($entry['node_id']);
-                expect(array_intersect_key($node->settings['task_vms'], $entry))->toEqual($entry)
-                    ->and($node->settings['apps'])->toBe(['path' => '/srv/apps'])
-                    ->and($node->settings['t3'])->toBe(['id' => 'retained'])
-                    ->and($node->settings['task_vms']['image_alias'])->toBe('orbit-task-base');
-            }
-            $node = Node::query()->findOrFail(9);
-            $stored = $node->settings;
-            $stored['task_vms']['max_vms'] = 3;
-            $node->update(['settings' => $stored]);
-            task_host_migration()->up();
-            task_host_migration()->down();
-            expect($node->refresh()->settings)->toBe($stored);
-        } finally {
-            putenv('ORBIT_TASK_VMS_INCUS_HOSTS');
-            unset($_ENV['ORBIT_TASK_VMS_INCUS_HOSTS'], $_SERVER['ORBIT_TASK_VMS_INCUS_HOSTS']);
-        }
-    });
 });

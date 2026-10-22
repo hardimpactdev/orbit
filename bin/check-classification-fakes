@@ -237,6 +237,11 @@ foreach (array_slice($argv, 1) as $input) {
             continue;
         }
 
+        // A statically named fake() call always contains this identifier, regardless of aliases.
+        if (stripos($source, 'fake') === false) {
+            continue;
+        }
+
         $tokens = [];
         foreach (token_get_all($source) as $token) {
             if (is_array($token)) {

@@ -69,17 +69,6 @@ it('accepts the Orbit domain limit and refuses one more without truncating', fun
     expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
 });
 
-it('clears old DNS overrides without changing endpoints or contacting a peer', function (): void {
-    $node = Node::query()->create(['name' => 'app-prod', 'public_ssh_host' => '192.0.2.3', 'dns_server_override' => '10.0.0.2', 'wireguard_endpoint_override' => '10.0.0.2:51820']);
-    $migration = require database_path('migrations/2026_10_19_111105_reset_existing_node_dns_overrides.php');
-
-    $migration->up();
-    $migration->up();
-
-    expect($node->refresh()->dns_server_override)->toBeNull()
-        ->and($node->wireguard_endpoint_override)->toBe('10.0.0.2:51820');
-});
-
 it('reports live and persisted resolver drift and failed private answers', function (string $fault, bool $policy, bool $answers): void {
     [$node, $ssh] = peer_dns_inspection_fixture();
     $ssh->fault = $fault;
@@ -262,17 +251,6 @@ it('checks public resolution in Doctor including global DNS answers', function (
     $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
     expect(in_array('node.public_dns_unreachable', $codes, true))->toBe($failed);
 })->with([['public-fails', true], ['public-over-vpn', true], ['global', false], ['', false]]);
-
-it('clears unusable global DNS overrides before any peer operation', function (?string $server, ?string $expected): void {
-    [$node] = peer_dns_inspection_fixture();
-    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: $server);
-    $migration = require database_path('migrations/2026_10_19_120215_reset_invalid_global_vpn_dns_server.php');
-    $migration->up();
-    $migration->up();
-
-    expect(app(VpnSettings::class)->dnsServer())->toBe($expected)
-        ->and(app(PeerDnsPolicy::class)->server($node))->toBe($expected ?? '10.44.0.1');
-})->with([[null, null], ['10.0.0.2', null], ['bad', null], ['10.44.0.0', null], ['10.44.0.255', null], ['10.44.0.53', '10.44.0.53']]);
 
 it('refuses invalid names and overflow at each namespace write boundary without saving', function (string $kind): void {
     $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3']);

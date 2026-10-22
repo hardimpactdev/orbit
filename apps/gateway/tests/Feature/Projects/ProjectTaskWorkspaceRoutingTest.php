@@ -3,21 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Projects\ProjectType;
-use App\Domain\Routes\RouteProvenance;
-use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
-use App\Models\Route;
-use App\Models\Task;
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     $this->operator = $this->markAsGateway(Node::query()->create([
@@ -169,120 +159,6 @@ it('does not reconcile sources when an update only changes task workspace routin
         ->and(Project::query()->findOrFail($id)->task_check)->toBe('composer check');
 });
 
-it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills workspace mode from state and Routes', function (): void {
-    $node = Node::query()->create([
-        'name' => 'routing-node',
-        'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.40',
-        'wireguard_ip' => '10.44.0.40',
-    ]);
-    $orbit = Project::query()->create([
-        'name' => 'Orbit',
-        'slug' => 'orbit',
-        'type' => ProjectType::Monorepo,
-        'repository_url' => 'https://github.com/orbit/orbit.git',
-        'default_branch' => 'main',
-        'root' => 'apps/web/public',
-        'task_check' => 'composer check',
-    ]);
-    $shop = Project::query()->create([
-        'name' => 'Shop',
-        'slug' => 'shop',
-        'repository_url' => 'https://github.com/acme/shop.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-        'task_check' => 'vp run check',
-    ]);
-    $plain = Project::query()->create([
-        'name' => 'Plain',
-        'slug' => 'plain',
-        'repository_url' => 'https://github.com/acme/plain.git',
-        'default_branch' => 'main',
-        'root' => 'public',
-        'task_check' => null,
-    ]);
-
-    $settledUnrouted = routing_task_workspace($orbit, $node, 'source_resolved', null, false, 'unrouted.test');
-    $settledRouted = routing_task_workspace($shop, $node, 'active', 'public', true, 'routed.test');
-    $activeWithoutRoute = routing_task_workspace($shop, $node, 'active', null, false, 'active-only.test');
-    $provisioningRouted = routing_task_workspace($shop, $node, 'source_resolved', 'public', false, 'provisioning-routed.test');
-    $provisioningUnrouted = routing_task_workspace($orbit, $node, 'reserved', null, false, 'provisioning-unrouted.test');
-
-    $ordinary = Instance::query()->create([
-        'project_id' => $shop->id,
-        'node_id' => $node->id,
-        'name' => 'default',
-        'checkout_path' => '/srv/orbit/apps/shop/default',
-        'root' => 'public',
-        'status' => 'active',
-    ]);
-    $ordinaryRoute = Route::query()->create([
-        'project_id' => $shop->id,
-        'node_id' => $node->id,
-        'domain' => 'shop.test',
-        'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
-    ]);
-    $ordinaryRoute->targets()->create(['instance_id' => $ordinary->id, 'position' => 0]);
-
-    $managed = Task::topLevel()->create([
-        'project_id' => $shop->id,
-        'title' => 'Mismatched name',
-        'brief' => 'Not this Instance.',
-        'status' => 'running',
-    ]);
-    $mismatched = Instance::query()->create([
-        'task_workspace_owner_id' => $managed->id,
-        'project_id' => $shop->id,
-        'node_id' => $node->id,
-        'name' => 'not-a-workspace',
-        'checkout_path' => '/srv/orbit/apps/shop/not-a-workspace',
-        'status' => 'source_resolved',
-    ]);
-    $managed->taskable()->associate($mismatched);
-    $managed->save();
-
-    // Replay the routing migration with the task column it read on that release.
-    Schema::table('tasks', fn (Blueprint $table) => $table->string('execution_mode')->nullable());
-    DB::table('tasks')->whereNull('parent_id')->update(['execution_mode' => 'managed']);
-
-    $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
-    assert($migration instanceof Migration);
-    owned_interrupted_creation_removal_migration()->down();
-    $migration->down();
-    $migration->up();
-    owned_interrupted_creation_removal_migration()->up();
-
-    expect(Project::query()->findOrFail($orbit->id)->task_workspace_routed)->toBeFalse()
-        ->and(Project::query()->findOrFail($orbit->id)->task_check)->toBe('composer check')
-        ->and(Project::query()->findOrFail($shop->id)->task_workspace_routed)->toBeTrue()
-        ->and(Project::query()->findOrFail($shop->id)->task_check)->toBe('vp run check')
-        ->and(Project::query()->findOrFail($plain->id)->task_workspace_routed)->toBeTrue()
-        ->and(Project::query()->findOrFail($plain->id)->task_check)->toBeNull()
-        ->and(Instance::query()->findOrFail($settledUnrouted->id)->task_workspace_routed)->toBeFalse()
-        ->and(Instance::query()->findOrFail($settledRouted->id)->task_workspace_routed)->toBeTrue()
-        ->and(Instance::query()->findOrFail($activeWithoutRoute->id)->task_workspace_routed)->toBeTrue()
-        ->and(Instance::query()->findOrFail($provisioningRouted->id)->task_workspace_routed)->toBeTrue()
-        ->and(Instance::query()->findOrFail($provisioningUnrouted->id)->task_workspace_routed)->toBeFalse()
-        ->and(Instance::query()->findOrFail($ordinary->id)->task_workspace_routed)->toBeNull()
-        ->and(Instance::query()->findOrFail($mismatched->id)->task_workspace_routed)->toBeNull();
-
-    DB::table('projects')->insert([
-        'name' => 'Fresh',
-        'slug' => 'fresh',
-        'code' => 'FRS',
-        'type' => 'laravel-app',
-        'repository_url' => 'https://github.com/acme/fresh.git',
-        'repository_identity' => 'github.com/acme/fresh',
-        'task_check' => 'composer check',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
-
-    expect((bool) DB::table('projects')->where('slug', 'fresh')->value('task_workspace_routed'))->toBeTrue()
-        ->and(DB::table('projects')->where('slug', 'fresh')->value('task_check'))->toBe('composer check');
-});
-
 /**
  * @return array{slug: string, type: string, repository_url: string, default_branch: string, root: string}
  */
@@ -295,46 +171,4 @@ function routing_project_payload(string $slug): array
         'default_branch' => 'main',
         'root' => 'public',
     ];
-}
-
-function routing_task_workspace(Project $project, Node $node, string $status, ?string $root, bool $withRoute, string $domain): Instance
-{
-    $task = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Workspace '.$domain,
-        'brief' => 'Record the provisioned mode.',
-        'status' => 'running',
-    ]);
-    $instance = Instance::query()->create([
-        'task_workspace_owner_id' => $task->id,
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'pending-'.Str::uuid()->toString(),
-        'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/'.Str::uuid()->toString(),
-        'root' => $root,
-        'status' => $withRoute ? 'active' : $status,
-    ]);
-    $name = 'task-'.$task->id;
-    $attributes = ['name' => $name, 'branch_override' => $name];
-
-    if (! $withRoute) {
-        $attributes['status'] = $status;
-    }
-
-    $instance->update($attributes);
-    $task->taskable()->associate($instance);
-    $task->save();
-
-    if ($withRoute) {
-        $route = Route::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $node->id,
-            'domain' => $domain,
-            'provenance' => RouteProvenance::Explicit,
-            'publication' => RoutePublication::Private,
-        ]);
-        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-    }
-
-    return $instance;
 }

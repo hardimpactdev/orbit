@@ -353,7 +353,7 @@ final readonly class DocsImpact
         }
         if (! $unchangedSnapshot) {
             foreach (array_diff_key($baseByKey, $currentByKey) as $surface) {
-                if ($deleted && ! $this->isApiPath($path) && $surface['owner'] === 'unowned' && ($surface['kind'] === 'error_code' || $surface['kind'] === 'registered_command')) {
+                if ($deleted && ! $this->isApiPath($path) && $surface['owner'] === 'unowned' && in_array($surface['kind'], ['error_code', 'registered_command', 'migration'], true)) {
                     continue;
                 }
 
@@ -371,9 +371,9 @@ final readonly class DocsImpact
             }
         }
         foreach ($baseErrors as $error) {
-            // A deleted file outside the API needs no owner page, so its removed unowned identifiers are not a docs gap.
+            // A deleted non-API source needs no new ownership binding. Owned removals are routed above.
             // The API generators decide for a deleted API source.
-            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command ['))) {
+            if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned migration surface'))) {
                 continue;
             }
 

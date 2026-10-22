@@ -36,9 +36,7 @@ use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): Task
 {
@@ -662,99 +660,6 @@ it('asks for assistance and keeps a routed source-resolved workspace with an act
         $this->assertModelExists($otherTarget);
     }
 })->with(['active', 'shared']);
-
-it('cancels open subtasks left in a cancelled group', function (): void {
-    $default = DB::getDefaultConnection();
-    config(['database.connections.cancelled_open_subtasks' => [
-        'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
-    ]]);
-    DB::setDefaultConnection('cancelled_open_subtasks');
-
-    try {
-        $paths = array_values(array_filter(
-            glob(database_path('migrations/*.php')) ?: [],
-            static fn (string $path): bool => basename($path) < '2026_10_05_000000_merge_task_groups_into_tasks.php',
-        ));
-        Artisan::call('migrate', ['--database' => 'cancelled_open_subtasks', '--path' => $paths, '--realpath' => true, '--force' => true]);
-
-        $projectId = DB::table('projects')->insertGetId([
-            'name' => 'Cancel legacy', 'slug' => 'cancel-legacy', 'code' => 'CAN',
-            'repository_url' => 'git@example.test:cancel-legacy.git', 'repository_identity' => 'example.test/cancel-legacy',
-        ]);
-        $cancelled = DB::table('task_groups')->insertGetId([
-            'project_id' => $projectId, 'title' => 'Cancelled', 'brief' => 'Already cancelled.', 'status' => 'cancelled',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $active = DB::table('task_groups')->insertGetId([
-            'project_id' => $projectId, 'title' => 'Still running', 'brief' => 'Its open subtask stays open.', 'status' => 'running',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-        $keptAt = now()->subHour()->startOfSecond();
-        $completedAt = now()->subDay()->startOfSecond();
-        $rows = [
-            'todo' => ['status' => 'todo', 'assistance_requested' => true, 'assistance_reason' => null, 'settled_at' => null],
-            'running' => ['status' => 'running', 'assistance_requested' => true, 'assistance_reason' => 'Still waiting.', 'settled_at' => $keptAt],
-            'reviewing' => ['status' => 'reviewing', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
-            'completed' => ['status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => null, 'settled_at' => $completedAt],
-            'failed' => ['status' => 'failed', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
-            'already' => ['status' => 'cancelled', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
-        ];
-        $ids = [];
-        $position = 1;
-        foreach ($rows as $name => $row) {
-            $ids[$name] = DB::table('tasks')->insertGetId([
-                ...$row,
-                'task_group_id' => $cancelled,
-                'position' => $position,
-                'title' => $name,
-                'brief' => 'Part of the group.',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $position++;
-        }
-        $untouched = DB::table('tasks')->insertGetId([
-            'task_group_id' => $active, 'position' => 1, 'title' => 'Untouched', 'brief' => 'Stays open.',
-            'status' => 'todo', 'assistance_requested' => true, 'settled_at' => null,
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        $migration = require database_path('migrations/2026_09_27_190000_cancel_open_subtasks_of_cancelled_groups.php');
-        $migration->up();
-
-        $todo = DB::table('tasks')->where('id', $ids['todo'])->first();
-        $running = DB::table('tasks')->where('id', $ids['running'])->first();
-        $reviewing = DB::table('tasks')->where('id', $ids['reviewing'])->first();
-        $completed = DB::table('tasks')->where('id', $ids['completed'])->first();
-        $failed = DB::table('tasks')->where('id', $ids['failed'])->first();
-        $already = DB::table('tasks')->where('id', $ids['already'])->first();
-        $open = DB::table('tasks')->where('id', $untouched)->first();
-
-        expect($todo->status)->toBe('cancelled')
-            ->and((bool) $todo->assistance_requested)->toBeFalse()
-            ->and($todo->settled_at)->not->toBeNull()
-            ->and($running->status)->toBe('cancelled')
-            ->and((bool) $running->assistance_requested)->toBeFalse()
-            ->and($running->assistance_reason)->toBe('Still waiting.')
-            ->and($running->settled_at)->toBe($keptAt->format('Y-m-d H:i:s'))
-            ->and($reviewing->status)->toBe('cancelled')
-            ->and($reviewing->settled_at)->not->toBeNull()
-            ->and($completed->status)->toBe('completed')
-            ->and((bool) $completed->assistance_requested)->toBeTrue()
-            ->and($completed->settled_at)->toBe($completedAt->format('Y-m-d H:i:s'))
-            ->and($failed->status)->toBe('failed')
-            ->and($failed->settled_at)->toBeNull()
-            ->and($already->status)->toBe('cancelled')
-            ->and($already->settled_at)->toBeNull()
-            ->and($open->status)->toBe('todo')
-            ->and((bool) $open->assistance_requested)->toBeTrue()
-            ->and($open->settled_at)->toBeNull()
-            ->and(Schema::hasTable('task_groups'))->toBeTrue();
-    } finally {
-        DB::setDefaultConnection($default);
-        DB::purge('cancelled_open_subtasks');
-    }
-});
 
 it('preserves the removal error after a claim attaches during cancellation', function (bool $deleted): void {
     app(TaskExtensionState::class)->enable();

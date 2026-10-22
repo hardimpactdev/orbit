@@ -13,5 +13,5 @@ it('fails ordinary cases that call sudo even when they ignore the process failur
     $process->run();
 
     expect($process->getExitCode())->toBe(1)
-        ->and($process->getOutput())->toContain('7 failed', 'A non-privileged Gateway test called sudo:');
+        ->and($process->getOutput())->toContain('9 failed', 'A non-privileged Gateway test called sudo:');
 })->with(['inherited environment' => false, 'Linux host clean environment' => true]);

@@ -57,10 +57,14 @@ final readonly class ToolManifest
     public function tools(ApiDispatcher $dispatcher): array
     {
         $extensions = app(ExtensionStore::class);
+        $enabled = [];
 
         return array_values(array_map(
             static fn (ToolDefinition $definition): ApiOperationTool => new ApiOperationTool($definition, $dispatcher),
-            array_filter($this->definitions(), static fn (ToolDefinition $definition): bool => $definition->extension === null || $extensions->enabled($definition->extension)),
+            array_filter($this->definitions(), static function (ToolDefinition $definition) use ($extensions, &$enabled): bool {
+                return $definition->extension === null
+                    || ($enabled[$definition->extension] ??= $extensions->enabled($definition->extension));
+            }),
         ));
     }
 

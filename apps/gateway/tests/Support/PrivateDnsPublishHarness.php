@@ -10,10 +10,9 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 
-final class PrivateDnsPublishHarness
+final readonly class PrivateDnsPublishHarness
 {
     private string $root;
 
@@ -47,146 +46,164 @@ final class PrivateDnsPublishHarness
         $serviceLog = $this->root.'/systemctl.log';
         $ssLog = $this->root.'/ss.log';
         $this->writeShim('dnsmasq', <<<BASH
-            #!/bin/bash
-            set -euo pipefail
-            if [ -f '{$failTest}' ]; then
-                echo 'dnsmasq: failed test' >&2
-                exit 1
-            fi
-            exit 0
+            dnsmasq() {
+                if [ -f '{$failTest}' ]; then
+                    echo 'dnsmasq: failed test' >&2
+                    return 1
+                fi
+                return 0
+            }
             BASH);
         // A listener started from a release loads the catalog and confirms it; a stale one does not.
         $this->writeShim('systemctl', <<<BASH
-            #!/bin/bash
-            set -euo pipefail
-            printf '%s\n' "\$*" >> '{$serviceLog}'
-            confirm() {
+            private_dns_confirm() {
                 rm -f '{$stale}'
                 ln -sfn -- "\$(cat '{$this->root}/listener-php')" '{$this->root}/proc/4242/exe'
                 if [ -f '{$listenerConfirms}' ] && [ -f '{$catalog}' ]; then
                     sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
                 fi
             }
-            unit="\${*: -1}"
-            if [ "\$1" = 'enable' ] || [ "\$1" = 'stop' ]; then
-                if [ "\$#" -gt 2 ] && [ "\${2:-}" != '--now' ]; then
-                    verb=\$1
-                    shift
-                    for each in "\$@"; do
-                        "\$0" "\$verb" "\$each" > /dev/null
-                    done
-                    exit 0
+            systemctl() {
+                local unit verb each state
+                printf '%s\n' "\$*" >> '{$serviceLog}'
+                unit="\${*: -1}"
+                if [ "\$1" = 'enable' ] || [ "\$1" = 'stop' ]; then
+                    if [ "\$#" -gt 2 ] && [ "\${2:-}" != '--now' ]; then
+                        verb=\$1
+                        shift
+                        for each in "\$@"; do
+                            systemctl "\$verb" "\$each" > /dev/null
+                        done
+                        return 0
+
+                    fi
                 fi
-            fi
-            case "\$1" in
-                is-active)
-                    case "\$unit" in
-                        orbit-private-dns.service) state='{$listenerActive}' ;;
-                        orbit-private-dns.socket) state='{$socketActive}' ;;
-                        *) state='{$active}' ;;
+                case "\$1" in
+                    is-active)
+                        case "\$unit" in
+                            orbit-private-dns.service) state='{$listenerActive}' ;;
+                            orbit-private-dns.socket) state='{$socketActive}' ;;
+                            *) state='{$active}' ;;
+                        esac
+                        [ -f "\$state" ] && return 0
+                        return 3
+                        ;;
+                    show)
+                        if [ "\${3:-}" = WorkingDirectory ]; then
+                            sed -n 's/^WorkingDirectory=//p' '{$this->root}/etc/systemd/system/orbit-private-dns.service'
+                            return 0
+                        fi
+                        if [ -f '{$listenerActive}' ]; then
+                            printf '%s\n' '4242'
+                        else
+                            printf '%s\n' '0'
+                        fi
+                        return 0
+                        ;;
+                esac
+                if [ "\$unit" = 'orbit-private-dns.socket' ]; then
+                    case "\$1" in
+                        enable) [ "\${2:-}" = '--now' ] && touch '{$socketActive}' ;;
+                        start|restart) touch '{$socketActive}' ;;
+                        stop|disable) rm -f '{$socketActive}' ;;
                     esac
-                    [ -f "\$state" ] && exit 0
-                    exit 3
-                    ;;
-                show)
-                    if [ "\${3:-}" = WorkingDirectory ]; then
-                        sed -n 's/^WorkingDirectory=//p' '{$this->root}/etc/systemd/system/orbit-private-dns.service'
-                        exit 0
-                    fi
-                    if [ -f '{$listenerActive}' ]; then
-                        printf '%s\n' '4242'
-                    else
-                        printf '%s\n' '0'
-                    fi
-                    exit 0
-                    ;;
-            esac
-            if [ "\$unit" = 'orbit-private-dns.socket' ]; then
-                case "\$1" in
-                    enable) [ "\${2:-}" = '--now' ] && touch '{$socketActive}' ;;
-                    start|restart) touch '{$socketActive}' ;;
-                    stop|disable) rm -f '{$socketActive}' ;;
-                esac
-                exit 0
-            fi
-            if [ "\$unit" = 'orbit-private-dns.service' ]; then
-                case "\$1" in
-                    restart)
-                        if [ -f '{$failListenerRestart}' ]; then
-                            echo 'orbit-private-dns failed to restart' >&2
-                            rm -f '{$listenerActive}'
-                            exit 1
-                        fi
-                        touch '{$listenerActive}'
-                        confirm
-                        ;;
-                    start)
-                        if [ -f '{$failListener}' ]; then
-                            echo 'orbit-private-dns failed to start' >&2
-                            exit 1
-                        fi
-                        touch '{$listenerActive}'
-                        confirm
-                        ;;
-                    enable)
-                        if [ "\${2:-}" = '--now' ]; then
-                            touch '{$listenerActive}'
-                            confirm
-                        fi
-                        ;;
-                    stop) rm -f '{$listenerActive}' ;;
-                    disable) [ "\${2:-}" = '--now' ] && rm -f '{$listenerActive}' ;;
-                esac
-                exit 0
-            fi
-            if [ "\$1" = 'restart' ]; then
-                if [ -f '{$failRestart}' ]; then
-                    echo 'dnsmasq failed to restart' >&2
-                    exit 1
+                    return 0
                 fi
-                touch '{$active}'
-            fi
-            exit 0
+                if [ "\$unit" = 'orbit-private-dns.service' ]; then
+                    case "\$1" in
+                        restart)
+                            if [ -f '{$failListenerRestart}' ]; then
+                                echo 'orbit-private-dns failed to restart' >&2
+                                rm -f '{$listenerActive}'
+                                return 1
+                            fi
+                            touch '{$listenerActive}'
+                            private_dns_confirm
+                            ;;
+                        start)
+                            if [ -f '{$failListener}' ]; then
+                                echo 'orbit-private-dns failed to start' >&2
+                                return 1
+                            fi
+                            touch '{$listenerActive}'
+                            private_dns_confirm
+                            ;;
+                        enable)
+                            if [ "\${2:-}" = '--now' ]; then
+                                touch '{$listenerActive}'
+                                private_dns_confirm
+                            fi
+                            ;;
+                        stop) rm -f '{$listenerActive}' ;;
+                        disable) [ "\${2:-}" = '--now' ] && rm -f '{$listenerActive}' ;;
+                    esac
+                    return 0
+                fi
+                if [ "\$1" = 'restart' ]; then
+                    if [ -f '{$failRestart}' ]; then
+                        echo 'dnsmasq failed to restart' >&2
+                        return 1
+                    fi
+                    touch '{$active}'
+                fi
+                return 0
+            }
             BASH);
         $this->writeShim('ss', <<<BASH
-            #!/bin/bash
-            set -euo pipefail
-            printf '%s\n' "\$*" >> '{$ssLog}'
-            if [ -f '{$failBind}' ]; then
-                exit 0
-            fi
-            if [ -f '{$listenerActive}' ]; then
-                printf '%s\n' 'UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:(("php8.5",pid=4242,fd=5))'
-            fi
-            exit 0
+            ss() {
+                printf '%s\n' "\$*" >> '{$ssLog}'
+                if [ -f '{$failBind}' ]; then
+                    return 0
+                fi
+                if [ -f '{$listenerActive}' ]; then
+                    printf '%s\n' 'UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:(("php8.5",pid=4242,fd=5))'
+                fi
+                return 0
+            }
             BASH);
         // A waiting publication gives the listener time to load the catalog. A confirming listener does so here.
         $this->writeShim('sleep', <<<BASH
-            #!/bin/bash
-            set -euo pipefail
-            if [ -f '{$listenerConfirms}' ] && [ ! -f '{$stale}' ] && [ -f '{$listenerActive}' ] && [ -f '{$catalog}' ]; then
-                sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
-            fi
-            exit 0
+            sleep() {
+                if [ -f '{$listenerConfirms}' ] && [ ! -f '{$stale}' ] && [ -f '{$listenerActive}' ] && [ -f '{$catalog}' ]; then
+                    if [ ! -f '{$catalog}.loaded' ] || [ '{$catalog}' -nt '{$catalog}.loaded' ]; then
+                        sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
+                    fi
+                fi
+                return 0
+            }
             BASH);
         $this->writeShim('systemd-analyze', <<<'BASH'
-            #!/bin/bash
-            set -euo pipefail
-            exit 0
+            systemd-analyze() {
+                return 0
+            }
             BASH);
+    }
+
+    /** @return list<string> */
+    /** @return list<string> */
+    public function shell(): array
+    {
+        $functions = 'export PATH='.escapeshellarg(StandardLibraryPython::path((string) getenv('PATH')))."\n"
+            .BashFixtureFileReader::forFile($this->loadedPath());
+        foreach (['dnsmasq', 'systemctl', 'ss', 'sleep', 'systemd-analyze'] as $name) {
+            // These known definitions localize variables and never change the caller's options.
+            $functions .= 'source '.escapeshellarg($this->root.'/bin/'.$name.'.bash')."\n";
+        }
+
+        return ['bash', '-eu', '-c', $functions.BufferedBashProgram::stdinPrelude($this->root)];
     }
 
     public function manager(): DnsmasqPrivateDnsManager
     {
         return new DnsmasqPrivateDnsManager(
-            processes: new NativeProcessRunner,
+            processes: new FixtureProcessRunner,
             projection: $this->projectionLock(),
             renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',
             lockPath: $this->root.'/run/lock/orbit-dnsmasq.lock',
-            shell: ['bash', '-seu'],
+            shell: $this->shell(),
             preserveRootOwnership: false,
             executablePath: $this->root.'/bin',
         );
@@ -197,14 +214,14 @@ final class PrivateDnsPublishHarness
         file_put_contents($this->root.'/listener-php', $phpBinary ?? PHP_BINARY);
 
         return new DnsmasqPrivateDnsManager(
-            processes: new NativeProcessRunner,
+            processes: new FixtureProcessRunner,
             projection: $this->projectionLock(),
             renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',
             lockPath: $this->root.'/run/lock/orbit-dnsmasq.lock',
-            shell: ['bash', '-seu'],
+            shell: $this->shell(),
             preserveRootOwnership: false,
             executablePath: $this->root.'/bin',
             activateListener: true,
@@ -441,7 +458,9 @@ final class PrivateDnsPublishHarness
     private function writeShim(string $name, string $contents): void
     {
         $path = $this->root.'/bin/'.$name;
-        $this->files->put($path, $contents);
+        $definition = $path.'.bash';
+        $this->files->put($definition, $contents);
+        $this->files->put($path, "#!/bin/bash\nset -euo pipefail\nsource ".escapeshellarg($definition)."\n".$name.' "$@"'."\n");
         chmod($path, 0755);
     }
 }

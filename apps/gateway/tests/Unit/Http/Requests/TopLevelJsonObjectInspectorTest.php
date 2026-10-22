@@ -16,6 +16,25 @@ it('returns the exact decoded top-level object', function (): void {
     ]);
 });
 
+it('preserves escaped strings and nested values while finding only top-level keys', function (array $payload): void {
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+
+    expect(new TopLevelJsonObjectInspector()->inspect($json, array_keys($payload)))->toBe($payload);
+})->with([
+    'escaped quote' => [['role' => 'left"right', 'after' => true]],
+    'trailing backslash' => [['role' => 'left\\', 'after' => true]],
+    'backslash before quote' => [['role' => 'left\\"right', 'after' => true]],
+    'JSON punctuation in a string' => [['role' => '","unsupported":[{"role":"other"}]', 'after' => true]],
+    'nested objects and lists' => [['role' => ['role' => ['[', '}', '\\', '"']], 'after' => true]],
+    'unicode' => [['role' => 'héllo 世界', 'after' => true]],
+]);
+
+it('recognizes an object after every JSON whitespace character', function (): void {
+    expect(new TopLevelJsonObjectInspector()->inspect(" \t\r\n{\"role\":\"app-dev\"}", ['role']))
+        ->toBe(['role' => 'app-dev']);
+    expect(new TopLevelJsonObjectInspector()->inspect(' {} ', ['role']))->toBeEmpty();
+});
+
 it('treats an empty body as an empty object', function (): void {
     expect(new TopLevelJsonObjectInspector()->inspect('', ['force', 'purge_data']))
         ->toBeEmpty();
@@ -27,6 +46,8 @@ it('rejects malformed JSON and non-object top-level values', function (string $j
 })->with([
     'malformed object' => ['{"role":"app-dev"'],
     'list' => ['["app-dev"]'],
+    'empty list' => ['[]'],
+    'list after whitespace' => [" \t\r\n[]"],
     'scalar' => ['"app-dev"'],
     'null' => ['null'],
 ]);

@@ -26,6 +26,7 @@ use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\StandardLibraryPython;
 
 function check_runner_directory(): string
 {
@@ -37,13 +38,37 @@ function check_runner_directory(): string
     return $directory;
 }
 
-function check_runner_checkout(string $check): string
+/** Use only when command evidence, not Composer itself, is the proof. */
+function check_runner_scripted_checks(): void
 {
+    $bin = test()->directory.'/scripted-check-bin';
+    File::ensureDirectoryExists($bin);
+    file_put_contents($bin.'/composer', <<<'PHP'
+        #!/usr/bin/env php
+        <?php
+        if (array_slice($argv, 1) !== ['check']) {
+            fwrite(STDERR, "Unexpected scripted check invocation\n");
+            exit(64);
+        }
+        $configuration = json_decode(file_get_contents('composer.json'), true, flags: JSON_THROW_ON_ERROR);
+        passthru($configuration['scripts']['check'], $status);
+        exit($status);
+        PHP
+        ."\n");
+    chmod($bin.'/composer', 0700);
+    file_put_contents(test()->directory.'/home/.profile', 'export PATH='.escapeshellarg($bin).':"$PATH"'."\n", FILE_APPEND);
+}
+
+function check_runner_checkout(string $check, bool $realComposer = false): string
+{
+    if (! $realComposer) {
+        check_runner_scripted_checks();
+    }
     $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
-    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    new Process(['git', 'init', '--quiet', $checkout])->mustRun();
     file_put_contents($checkout.'/composer.json', json_encode(['scripts' => ['check' => $check]], JSON_THROW_ON_ERROR));
     file_put_contents($checkout.'/.gitignore', "ignored/\n");
-    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start'], $checkout))->mustRun();
+    new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start'], $checkout)->mustRun();
     file_put_contents($checkout.'/uncommitted.php', "<?php\n");
 
     return $checkout;
@@ -61,6 +86,7 @@ function check_runner_instance(string $checkout, array $group = []): Instance
 function check_runner_shell(LocalShellSshExecutor $transport): LocalShellSshExecutor
 {
     $transport->environment['HOME'] = test()->directory.'/home';
+    $transport->environment['PATH'] = StandardLibraryPython::path((string) getenv('PATH'));
 
     return $transport;
 }
@@ -72,7 +98,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
     }
     $vp = new VpToolManager(
         new RemoteToolCommandRunner(
-            $probe ?? new class($vpHome) implements SshExecutor
+            $probe ?? new readonly class($vpHome) implements SshExecutor
             {
                 public function __construct(private string $home) {}
 
@@ -115,13 +141,41 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
 {
-    for ($attempt = 0; $attempt < 150; $attempt++) {
-        $reading = $runner->read($instance, $process);
-        if ($reading->state !== 'running') {
-            return $reading;
-        }
-        usleep(100_000);
-    }
+    check_runner_wait_for_exit($process);
 
-    throw new RuntimeException('The check did not finish.');
+    return $runner->read($instance, $process);
+}
+
+/**
+ * Inspect completed local work, never remote status decoding, streaming or cancellation.
+ *
+ * @return array{result: array<string, mixed>, output: string, gitDirectory: string}
+ */
+function check_runner_local_result(string $checkout, TaskCheckProcess $process): array
+{
+    check_runner_wait_for_exit($process);
+    $git = trim(new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir'])->mustRun()->getOutput());
+
+    return [
+        'result' => json_decode(File::get($git.'/orbit/check.json'), true, flags: JSON_THROW_ON_ERROR),
+        'output' => File::get($git.'/orbit/check.log'),
+        'gitDirectory' => $git,
+    ];
+}
+
+function check_runner_wait_for_exit(TaskCheckProcess $process): void
+{
+    // A pidfd becomes readable on exit, including an unreaped detached child. No status-polling sleeps are needed.
+    $wait = new Process(['/usr/bin/env', 'python3', '-c', <<<'PYTHON'
+        import os, select, sys
+        try:
+            fd = os.pidfd_open(int(sys.argv[1]))
+        except ProcessLookupError:
+            sys.exit(0)
+        try:
+            assert select.select([fd], [], [], 15)[0], 'The check did not finish.'
+        finally:
+            os.close(fd)
+        PYTHON, (string) $process->pid], env: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
+    $wait->mustRun();
 }

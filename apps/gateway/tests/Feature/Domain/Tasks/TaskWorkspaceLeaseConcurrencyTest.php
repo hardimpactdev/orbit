@@ -12,7 +12,6 @@ use App\Models\Task;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
     tick_bind_defaults();
@@ -22,26 +21,21 @@ it('serializes independent groups and preserves FIFO ownership across a process 
     $second->save();
     $second->setRelation('taskable', $first->taskable);
     $original = config('database.default');
+    $originalBatching = config('queue.batching.database');
     $database = tempnam(sys_get_temp_dir(), 'orbit-lease-concurrency-');
     $directory = $database.'-locks';
     mkdir($directory, 0o700);
     $children = [];
     config(['database.connections.lease_concurrency' => [
         ...config('database.connections.sqlite'), 'database' => $database,
-    ], 'database.default' => 'lease_concurrency']);
+    ], 'database.default' => 'lease_concurrency', 'queue.batching.database' => 'lease_concurrency']);
 
     try {
-        Schema::create('tasks', function ($table): void {
-            $table->id();
-            $table->unsignedBigInteger('parent_id')->nullable();
-            $table->string('status');
-        });
+        $this->artisan('migrate', ['--database' => 'lease_concurrency', '--force' => true])->assertExitCode(0);
         DB::table('tasks')->insert([
-            ['id' => $first->id, 'parent_id' => null, 'status' => 'running'],
-            ['id' => $second->id, 'parent_id' => null, 'status' => 'running'],
+            ['id' => $first->id, 'parent_id' => null, 'title' => 'First', 'brief' => 'First contender', 'status' => 'running'],
+            ['id' => $second->id, 'parent_id' => null, 'title' => 'Second', 'brief' => 'Second contender', 'status' => 'running'],
         ]);
-        (require database_path('migrations/2026_10_16_074802_create_task_workspace_leases_table.php'))->up();
-        (require database_path('migrations/2026_10_16_111138_create_task_workspace_operations_table.php'))->up();
         $first->setConnection('lease_concurrency');
         $second->setConnection('lease_concurrency');
 
@@ -156,7 +150,7 @@ it('serializes independent groups and preserves FIFO ownership across a process 
             }
         }
         DB::purge('lease_concurrency');
-        config(['database.default' => $original]);
+        config(['database.default' => $original, 'queue.batching.database' => $originalBatching]);
         foreach ([$database, $database.'-wal', $database.'-shm'] as $file) {
             if (is_file($file)) {
                 unlink($file);

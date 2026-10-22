@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Redis;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
-    $this->pipeline = new GatewayReleasePipeline;
+    $this->pipeline = new GatewayReleasePipeline(adopted: true);
     $this->source = $this->pipeline->adopt();
     $this->target = $this->pipeline->fixture->commit('Staged Process continuity');
     $this->pipeline->bindLeaves();

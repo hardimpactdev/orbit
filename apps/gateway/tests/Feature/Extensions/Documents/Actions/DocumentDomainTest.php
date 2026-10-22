@@ -13,6 +13,7 @@ use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -32,18 +33,17 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
+use Tests\Support\WithCommittedSqliteDatabase;
+
+uses(WithCommittedSqliteDatabase::class);
 
 beforeEach(function (): void {
     // These lifecycle tests need real commits, not RefreshDatabase's enclosing transaction.
-    DB::rollBack();
     $home = sys_get_temp_dir().'/orbit-document-domain-'.Str::uuid();
     mkdir($home, 0700, true);
-    touch($home.'/database.sqlite');
-    config(['database.connections.sqlite.database' => $home.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    $this->useCommittedSqliteDatabase($home.'/database.sqlite');
     $this->beforeApplicationDestroyed(static function () use ($home): void {
-        DB::disconnect('sqlite');
+        DB::disconnect();
         File::deleteDirectory($home);
     });
 });
@@ -159,6 +159,53 @@ describe('document hierarchy', function (): void {
         expect($root->revision)->toBe(1);
     });
 
+    it('validates the full destination chain with one archive traversal', function (?int $archivedLevel, int $subtreeDepth): void {
+        $project = domain_documents_project();
+        $tree = app(DocumentTreeAction::class);
+        $entries = DB::transaction(function () use ($project): array {
+            $entries = [];
+            $parent = null;
+            for ($level = 1; $level <= 31; $level++) {
+                $entry = ProjectDocumentEntry::query()->create([
+                    'project_id' => $project->id, 'parent_id' => $parent, 'sibling_scope' => $parent ?? 0,
+                    'name' => 'level-'.$level, 'kind' => 'folder', 'revision' => 1,
+                ]);
+                $entries[] = $entry;
+                $parent = $entry->id;
+            }
+
+            return $entries;
+        });
+        if ($archivedLevel !== null) {
+            $entries[$archivedLevel - 1]->update(['archived_at' => now()]);
+        }
+        $queries = 0;
+        DB::listen(function (QueryExecuted $event) use (&$queries): void {
+            if (str_contains($event->sql, 'project_document_entries')) {
+                $queries++;
+            }
+        });
+        $validate = fn () => DB::transaction(function () use ($tree, $project, $entries, $subtreeDepth): void {
+            $tree->lock();
+            $tree->destination($project->id, $entries[30]->id, $subtreeDepth);
+        });
+
+        if ($archivedLevel !== null) {
+            expect($validate)->toThrow(ResourceOperationException::class, 'archived');
+        } elseif ($subtreeDepth === 2) {
+            expect($validate)->toThrow(ValidationException::class, '32 entries');
+        } else {
+            $validate();
+        }
+        expect($queries)->toBeLessThanOrEqual(62);
+    })->with([
+        'depth 32' => [null, 1],
+        'depth 33' => [null, 2],
+        'archived root' => [1, 1],
+        'archived middle' => [16, 1],
+        'archived immediate parent' => [31, 1],
+    ]);
+
     it('preserves independent child archives and refuses mutations below an archived parent', function (): void {
         $project = domain_documents_project();
         $tree = app(DocumentTreeAction::class);
@@ -184,7 +231,7 @@ describe('immutable bodies and publication', function (): void {
         $provider->beforePut = function (string $key): void {
             expect(DB::transactionLevel())->toBe(0);
             expect(DB::getPdo()->inTransaction())->toBeFalse();
-            $independent = new PDO('sqlite:'.config()->string('database.connections.sqlite.database'));
+            $independent = new PDO('sqlite:'.DB::connection()->getDatabaseName());
             $intent = $independent->query('SELECT * FROM project_document_uploads')->fetch(PDO::FETCH_ASSOC);
             expect($intent['storage_key'])->toBe($key);
             expect($intent['state'])->toBe('active');
@@ -241,7 +288,7 @@ describe('immutable bodies and publication', function (): void {
     it('retains a committed intent after writer death following PUT and recovers its exact key', function (): void {
         $project = domain_documents_project();
         domain_documents_provider();
-        $database = config()->string('database.connections.sqlite.database');
+        $database = DB::connection()->getDatabaseName();
         $process = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/interrupted_document.php'), $database, (string) $project->id],
             env: ['APP_KEY' => config()->string('app.key')]);
         $process->setTimeout(15);

@@ -72,11 +72,38 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\PlantedGitConfig;
 
 pest()->group('privileged');
+
+beforeAll(function (): void {
+    $seed = orb76_repository_seed();
+    new Filesystem()->makeDirectory($seed, 0o755, true);
+    orb76_create_remote_repository($seed, $seed.'/origin.git');
+});
+
+afterAll(function (): void {
+    orb76_python_programs()->close();
+    new Filesystem()->deleteDirectory(orb76_repository_seed());
+});
+
+function orb76_python_programs(): ForkedPythonPrograms
+{
+    static $programs = null;
+
+    return $programs ??= new ForkedPythonPrograms;
+}
+
+/** The immutable seed is private to this file's worker; each case changes only its copy. */
+function orb76_repository_seed(): string
+{
+    static $directory = null;
+
+    return $directory ??= sys_get_temp_dir().'/orbit-source-seed-'.bin2hex(random_bytes(16));
+}
 
 beforeEach(function (): void {
     $this->files = new Filesystem;
@@ -87,7 +114,7 @@ beforeEach(function (): void {
     $this->files->makeDirectory($this->sandbox, 0o755, true);
     $this->previousDirectory = getcwd();
     chdir($this->sandbox);
-    orb76_create_remote_repository($this->sandbox, $this->repository);
+    $this->files->copyDirectory(orb76_repository_seed(), $this->sandbox);
 
     $identity = posix_getpwuid(posix_geteuid());
     $groupIdentity = posix_getgrgid(posix_getegid());
@@ -549,13 +576,13 @@ describe('CheckoutProcesses', function (): void {
         copy((string) new ExecutableFinder()->find('bash'), $this->sandbox.'/tmux: server');
         chmod($this->sandbox.'/tmux: server', 0o755);
         $stopped = [
-            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'own cwd' => orb_checkout_process_spawn($checkout, 'bash'),
             'own executable' => orb_checkout_process_spawn($this->sandbox, $checkout.'/orbit-test-shell'),
         ];
         $kept = [
             'own tmux server' => orb_checkout_process_spawn($checkout, $this->sandbox.'/tmux: server'),
-            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep'),
-            'own outside' => orb_checkout_process_spawn($this->sandbox, 'sleep'),
+            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'bash'),
+            'own outside' => orb_checkout_process_spawn($this->sandbox, 'bash'),
         ];
 
         try {
@@ -598,7 +625,7 @@ describe('CheckoutProcesses', function (): void {
         }
         $checkout = (string) $instance->checkout_path;
         $stopped = [
-            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'own cwd' => orb_checkout_process_spawn($checkout, 'bash'),
         ];
 
         try {
@@ -1373,14 +1400,7 @@ it('refuses matching pre-existing source for a fresh reservation and resumes it 
 });
 
 it('refuses dirty and unpublished source unless force is explicit', function (string $mutation): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
 
     if ($mutation === 'dirty') {
         file_put_contents($instance->checkout_path.'/dirty.txt', 'dirty');
@@ -1478,14 +1498,7 @@ it('refuses a checkout with shared Git administration as a layout mismatch in ei
 ]);
 
 it('uses current remote publication evidence without changing the checkout index refs or object store', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $beforeRefs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
     $beforeIndex = file_get_contents($instance->checkout_path.'/.git/index');
     $tip = orb178_advance_remote($this->sandbox, 'published-descendant');
@@ -1504,7 +1517,7 @@ it('uses current remote publication evidence without changing the checkout index
     )
         ->toBeFalse()
         ->and($this->removal->inspect($instance, false)->startingCommit)
-        ->toBe($resolution->startingCommit)
+        ->toBe($instance->starting_commit)
         ->and(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)
         ->toBe($beforeRefs)
         ->and(file_get_contents($instance->checkout_path.'/.git/index'))
@@ -1523,14 +1536,7 @@ it('uses current remote publication evidence without changing the checkout index
 });
 
 it('keeps the Git index byte-for-byte unchanged through clean inspection and later refusal', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $index = $instance->checkout_path.'/.git/index';
     expect(touch($instance->checkout_path.'/README.md', time() + 10))->toBeTrue();
     $beforeBytes = file_get_contents($index);
@@ -1551,14 +1557,7 @@ it('keeps the Git index byte-for-byte unchanged through clean inspection and lat
 });
 
 it('skips dirty and remote publication reads for forced removal', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     file_put_contents($instance->checkout_path.'/dirty.txt', 'dirty');
     orb76_run([
         'git',
@@ -1581,14 +1580,7 @@ it('skips dirty and remote publication reads for forced removal', function (): v
 });
 
 it('returns linked-worktree inventory and refuses deletion with every path and branch intact', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $worktree = $this->appsRoot.'/acme/linked';
     orb76_run(['git', '-C', $instance->checkout_path, 'worktree', 'add', '-b', 'linked', $worktree, 'HEAD']);
     $refs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
@@ -1612,14 +1604,7 @@ it('returns linked-worktree inventory and refuses deletion with every path and b
 });
 
 it('removes a checkout whose only other worktree lost its directory', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     // A test run adds a worktree under /tmp, and /tmp is cleared before the workspace is removed.
     $scratch = $this->sandbox.'/tmp-worktree';
     orb76_run(['git', '-C', $instance->checkout_path, 'worktree', 'add', '-b', 'scratch', $scratch, 'HEAD']);
@@ -1637,20 +1622,13 @@ it('refuses a replacement or changed canonical origin between inspection and del
     bool $force,
     string $code,
 ): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $inventory = $this->removal->inspect($instance, $force);
 
     if ($mutation === 'replacement') {
         expect(rename($instance->checkout_path, $this->sandbox.'/original'))->toBeTrue();
         orb76_run(['git', 'clone', '--no-checkout', $this->repository, $instance->checkout_path]);
-        orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '-b', 'dev', $resolution->startingCommit]);
+        orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '-b', 'dev', $instance->starting_commit]);
     } else {
         orb76_run([
             'git',
@@ -1677,14 +1655,7 @@ it('refuses a replacement or changed canonical origin between inspection and del
 ]);
 
 it('removes a checkout whose origin an insteadOf rule rewrites', function (bool $force): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     orb76_insteadof_rule($instance->checkout_path, $this->sandbox);
 
     orb178_remove_source($this->removal, $instance, $force);
@@ -1696,14 +1667,7 @@ it('removes a checkout whose origin an insteadOf rule rewrites', function (bool 
 ]);
 
 it('still refuses a different origin under an insteadOf rule', function (bool $force): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     orb76_insteadof_rule($instance->checkout_path, $this->sandbox);
     orb76_run(['git', '-C', $instance->checkout_path, 'remote', 'set-url', 'origin', 'ssh://git@example.test/other/site.git']);
 
@@ -1719,14 +1683,7 @@ it('still refuses a different origin under an insteadOf rule', function (bool $f
 ]);
 
 it('accepts an equivalent supported origin at the destructive boundary', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $inventory = $this->removal->inspect($instance, true);
     orb76_run([
         'git',
@@ -1749,14 +1706,7 @@ it('removes supported URL authorities', function (string $origin, string $identi
         'repository_identity' => $identity,
     ])->save();
     $this->transport->remoteOrigin = $origin;
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
 
     orb178_remove_source($this->removal, $instance, $force);
 
@@ -1825,14 +1775,7 @@ it('removes supported URL authorities', function (string $origin, string $identi
 ]);
 
 it('refuses malformed origin ports at the destructive boundary', function (string $origin, bool $force): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $inventory = $this->removal->inspect($instance, $force);
     orb76_run([
         'git',
@@ -1861,14 +1804,7 @@ it('refuses malformed origin ports at the destructive boundary', function (strin
 ]);
 
 it('rejects origins with a trailing line feed during inspection', function (string $origin, bool $force): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     orb76_run([
         'git',
         '-C',
@@ -1895,14 +1831,7 @@ it('refuses origins with a trailing line feed at the destructive boundary', func
     string $origin,
     bool $force,
 ): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $inventory = $this->removal->inspect($instance, $force);
     orb76_run([
         'git',
@@ -3038,14 +2967,7 @@ it('finalizes a forced removal whose HEAD no longer descends from the recorded s
 });
 
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
-    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance, false);
-    $resolution = $this->source->resolve($instance);
-    $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
-        'status' => InstanceState::SourceResolved,
-    ]);
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $groups = posix_getgroups();
     $alternateGroup = is_array($groups)
         ? collect($groups)->first(static fn (int $group): bool => $group !== posix_getegid())
@@ -3100,11 +3022,25 @@ function orb180_resolved_source(
     ?Task $owner = null,
 ): Instance {
     $instance = orb76_source_instance($project, $node, $appsRoot, $name, owner: $owner);
-    $source->prepare($instance, false);
-    $resolution = $source->resolve($instance);
+    // Finalization tests start with a resolved checkout. Creation, resolution, and task-VM transfer
+    // remain real integration cases above; ordinary finalization fixtures only need a private copy.
+    if ($owner !== null) {
+        $source->prepare($instance, false);
+        $resolution = $source->resolve($instance);
+        $branch = $resolution->branch;
+        $commit = $resolution->startingCommit;
+    } else {
+        $branch = $name === 'default' ? $project->default_branch : $name;
+        orb76_run(['git', 'clone', '--quiet', '--branch', $project->default_branch, test()->repository, $instance->checkout_path]);
+        $remoteBranch = 'refs/remotes/origin/'.$branch;
+        $exists = new Process(['git', '-C', $instance->checkout_path, 'show-ref', '--verify', '--quiet', $remoteBranch])->run() === 0;
+        orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--quiet', '-B', $branch, $exists ? $remoteBranch : 'refs/remotes/origin/'.$project->default_branch]);
+        $commit = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout);
+        $instance->update(['seed_selected' => true]);
+    }
     $instance->update([
-        'branch' => $resolution->branch,
-        'starting_commit' => $resolution->startingCommit,
+        'branch' => $branch,
+        'starting_commit' => $commit,
         'status' => InstanceState::SourceResolved,
     ]);
 
@@ -3646,38 +3582,49 @@ function orb76_create_remote_repository(string $sandbox, string $repository): vo
     orb76_run(['git', '-C', $work, 'commit', '-m', 'Main']);
     orb76_run(['git', '-C', $work, 'branch', 'dev']);
     orb76_run(['git', 'init', '--bare', $repository]);
-    orb76_run(['git', '-C', $work, 'remote', 'add', 'origin', $repository]);
+    orb76_run(['git', '-C', $work, 'remote', 'add', 'origin', '../origin.git']);
     orb76_run(['git', '-C', $work, 'push', 'origin', 'main', 'dev']);
 }
 
 /** @param non-empty-list<string> $arguments */
 function orb76_run(array $arguments, ?string $input = null): CommandResult
 {
-    $result = new NativeProcessRunner()->run(new ProcessInvocation($arguments, input: $input));
+    $process = new Process($arguments, input: $input);
+    $process->run();
+    $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false);
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;
 }
 
-/**
- * Start a detached process in $directory, optionally as $user, and return its PID. `sleep` sleeps 300 seconds;
- * any other executable is a copy of bash that waits up to 300 seconds on a FIFO without a child process.
- */
+/** Start a detached bash executable in $directory, ready and waiting on a FIFO without a child process. */
 function orb_checkout_process_spawn(string $directory, string $executable): int
 {
+    $executable = $executable === 'bash' ? (string) new ExecutableFinder()->find('bash') : $executable;
     $script = <<<'BASH'
+        set -eu
         cd -- "$1"
-        if [ "$2" = sleep ]; then
-            nohup sleep 300 >/dev/null 2>&1 </dev/null &
-        else
-            fifo=$(mktemp -u)
-            mkfifo -m 0600 -- "$fifo"
-            nohup "$2" -c 'exec 9<>"$0"; rm -f -- "$0"; read -t 300 -u 9 || true' "$fifo" >/dev/null 2>&1 </dev/null &
+        scratch=$(mktemp -d)
+        trap 'rm -rf -- "$scratch"' EXIT
+        mkfifo -m 0600 -- "$scratch/wait" "$scratch/ready"
+        exec 8<>"$scratch/ready"
+        nohup "$2" -c '
+            exec 9<>"$0/wait"
+            printf "%s\n" "$$" > "$0/ready"
+            read -t 300 -u 9 || true
+        ' "$scratch" >/dev/null 2>&1 </dev/null &
+        child=$!
+        # A PID exists before exec. Only the final executable can acknowledge readiness.
+        if ! read -r -t 5 -u 8 ready || [ "$ready" != "$child" ]; then
+            kill -KILL "$child" || true
+            exit 1
         fi
-        printf %s "$!"
+        printf %s "$child"
         BASH;
     $pid = (int) orb76_run(['bash', '-c', $script, '_', $directory, $executable])->stdout;
-    expect(orb_checkout_process_running($pid))->toBeTrue();
+    expect(orb_checkout_process_running($pid))->toBeTrue()
+        ->and(readlink("/proc/{$pid}/exe"))->toBe(realpath($executable))
+        ->and(is_link("/proc/{$pid}/fd/9"))->toBeTrue();
 
     return $pid;
 }
@@ -3770,12 +3717,18 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             $command->arguments,
         );
 
-        $result = new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: $arguments,
-            input: $input,
-            protectedInput: $command->protectedInput,
-            environment: $this->environment,
-        ));
+        try {
+            if (is_string($program)) {
+                $payload = $command->protectedInput === null ? $input : stream_get_contents($command->protectedInput->stream());
+                $result = orb76_python_programs()->run($arguments[3], $program, $payload, $this->environment);
+            } else {
+                $process = new Process($arguments, env: $this->environment, input: $command->protectedInput?->stream() ?? $input);
+                $process->run();
+                $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false);
+            }
+        } finally {
+            $command->protectedInput?->close();
+        }
 
         if (is_string($program) && $result->succeeded()) {
             $outcome = json_decode($result->stdout, true);

@@ -7,16 +7,12 @@ use App\Models\Project;
 use Aws\Handler\Guzzle\GuzzleHandler;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Documents\Actions\DocumentTreeAction;
-use Orbit\Extensions\Documents\Actions\RecoverDocumentCleanupAction;
 use Orbit\Extensions\Documents\Actions\UpdateDocumentStorageAction;
-use Orbit\Extensions\Documents\Actions\WorkDocumentCleanupAction;
 use Orbit\Extensions\Documents\Actions\WriteDocumentAction;
 use Orbit\Extensions\Documents\Data\DocumentBody;
 use Orbit\Extensions\Documents\Data\UpdateDocumentStorageData;
-use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Orbit\Extensions\Documents\Infrastructure\ProbeJournal;
 use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
 use Orbit\Extensions\Documents\Models\ProjectDocumentEntry;
@@ -27,88 +23,18 @@ use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
+use Tests\Support\WithDocumentDeletionFixture;
+
+require_once __DIR__.'/../../../../Support/DocumentDeletionFixtures.php';
+
+uses(WithDocumentDeletionFixture::class);
 
 beforeEach(function (): void {
-    DB::rollBack();
-    $this->deletionHome = sys_get_temp_dir().'/orbit-document-deletion-'.Str::uuid();
-    mkdir($this->deletionHome, 0700);
-    touch($this->deletionHome.'/database.sqlite');
-    config(['orbit.home' => $this->deletionHome, 'documents.cleanup_runtime' => $this->deletionHome.'/runtime',
-        'database.connections.sqlite.database' => $this->deletionHome.'/database.sqlite']);
-    DB::purge('sqlite');
-    $this->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
-    $this->beforeApplicationDestroyed(function (): void {
-        if (isset($this->deletionServer)) {
-            $this->deletionServer->stop();
-        }
-        DB::disconnect('sqlite');
-        File::deleteDirectory($this->deletionHome);
-    });
+    $this->initializeDocumentDeletionFixture();
 });
 
-function deletion_bucket(array $objects, string $mode = ''): void
-{
-    $encoded = [];
-    foreach ($objects as $key => $body) {
-        $encoded[$key] = ['body' => base64_encode($body)];
-    }
-    file_put_contents(config()->string('orbit.home').'/bucket.json', json_encode(['objects' => (object) $encoded, 'mode' => $mode], JSON_THROW_ON_ERROR));
-}
-
-function deletion_provider(array $objects = []): void
-{
-    deletion_bucket($objects);
-    $home = config()->string('orbit.home');
-    // Allow 60 seconds for the provider to print its readiness line.
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
-    test()->deletionServer = $server;
-    $server->start();
-    $port = SubprocessFixture::line($server);
-    expect(ctype_digit($port))->toBeTrue();
-    ProjectDocumentStorage::query()->findOrFail(1)->update([
-        'endpoint' => 'http://127.0.0.1:'.$port, 'region' => 'fixture-1', 'bucket' => 'fixture-bucket',
-        'access_key_id' => 'fixture-access', 'secret_access_key' => 'fixture-secret',
-    ]);
-    app(CleanupGate::class)->invalidate();
-}
-
-function deletion_resume(): void
-{
-    $action = app(RecoverDocumentCleanupAction::class);
-    $report = $action->reconcile();
-    expect($report['difference_count'])->toBe(0);
-    expect($action->resume($report['report_id'])['cleanup_state'])->toBe('running');
-}
-
-function deletion_requests(): array
-{
-    $path = config()->string('orbit.home').'/requests.json';
-    $requests = is_file($path) ? json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR) : [];
-
-    return array_values(array_filter($requests, fn (array $request): bool => $request['method'] === 'DELETE'));
-}
-
-function deletion_project(): Project
-{
-    $name = 'deletion-'.Str::uuid();
-
-    return Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git']);
-}
-
-function deletion_child(string $mode): Process
-{
-    // Include application boot, the 10-second release wait, and the provider request.
-    return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/interrupted_document_cleanup.php'), config()->string('orbit.home'), $mode],
-        env: ['APP_KEY' => config()->string('app.key'), 'APP_ENV' => 'testing', 'DB_URL' => '', 'CACHE_STORE' => 'array'], timeout: 60);
-}
-
-function deletion_work(): array
-{
-    return app(WorkDocumentCleanupAction::class)->handle();
-}
-
 it('is a paused no-op including due claims and expired active intents', function (): void {
-    deletion_provider(['removed' => 'body']);
+    deletion_provider($this, ['removed' => 'body']);
     $record = ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     $upload = ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'active', 'state' => 'active', 'created_at' => now()->subHours(2)]);
     $before = $record->fresh()->getAttributes();
@@ -119,7 +45,7 @@ it('is a paused no-op including due claims and expired active intents', function
 });
 
 it('requires one real successful HTTP DELETE and retries failures with bounded backoff', function (string $mode): void {
-    deletion_provider(['removed' => 'body']);
+    deletion_provider($this, ['removed' => 'body']);
     $record = ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     deletion_resume();
     deletion_bucket(['removed' => 'body'], $mode);
@@ -138,7 +64,7 @@ it('requires one real successful HTTP DELETE and retries failures with bounded b
 })->with(['delete-500', 'delete-redirect']);
 
 it('retains absent abandoned fences and deletes a late PUT using rotated credentials', function (): void {
-    deletion_provider();
+    deletion_provider($this);
     $upload = ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'late', 'state' => 'abandoned']);
     $record = ProjectDocumentCleanup::query()->create(['storage_key' => 'late', 'retained_fence' => true, 'next_attempt_at' => now()]);
     deletion_resume();
@@ -163,11 +89,13 @@ it('retains absent abandoned fences and deletes a late PUT using rotated credent
 });
 
 it('recovers expired process claims without consuming unexpired claims and bounds a batch to 100', function (): void {
-    deletion_provider();
-    for ($i = 0; $i < 102; $i++) {
-        ProjectDocumentCleanup::query()->create(['storage_key' => 'removed-'.$i, 'next_attempt_at' => now(),
-            'claim_token' => str_repeat('a', 64), 'claim_expires_at' => $i === 0 ? now()->addMinutes(10) : now()->subSecond()]);
-    }
+    deletion_empty_transport();
+    DB::transaction(function (): void {
+        for ($i = 0; $i < 102; $i++) {
+            ProjectDocumentCleanup::query()->create(['storage_key' => 'removed-'.$i, 'next_attempt_at' => now(),
+                'claim_token' => str_repeat('a', 64), 'claim_expires_at' => $i === 0 ? now()->addMinutes(10) : now()->subSecond()]);
+        }
+    });
     deletion_resume();
     expect(deletion_work())->toMatchArray(['claimed_count' => 100, 'deleted_count' => 100, 'failed_count' => 0]);
     expect(ProjectDocumentCleanup::query()->count())->toBe(2);
@@ -177,13 +105,15 @@ it('recovers expired process claims without consuming unexpired claims and bound
 
 it('claims pending tombstones and pending fences before more than 100 older idle fences', function (): void {
     $this->freezeTime();
-    deletion_provider();
-    for ($i = 0; $i < 101; $i++) {
-        $key = 'idle-'.$i;
-        ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => $key, 'state' => 'abandoned']);
-        ProjectDocumentCleanup::query()->create(['storage_key' => $key, 'retained_fence' => true,
-            'pending' => false, 'next_attempt_at' => now()->subMinutes(10)]);
-    }
+    deletion_empty_transport();
+    DB::transaction(function (): void {
+        for ($i = 0; $i < 101; $i++) {
+            $key = 'idle-'.$i;
+            ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => $key, 'state' => 'abandoned']);
+            ProjectDocumentCleanup::query()->create(['storage_key' => $key, 'retained_fence' => true,
+                'pending' => false, 'next_attempt_at' => now()->subMinutes(10)]);
+        }
+    });
     $tombstone = ProjectDocumentCleanup::query()->create(['storage_key' => 'pending-removal', 'next_attempt_at' => now()]);
     ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'pending-fence', 'state' => 'abandoned']);
     $fence = ProjectDocumentCleanup::query()->create(['storage_key' => 'pending-fence', 'retained_fence' => true, 'next_attempt_at' => now()]);
@@ -201,7 +131,7 @@ it('claims pending tombstones and pending fences before more than 100 older idle
 });
 
 it('commits the retained published-row handoff but never deletes conflicting committed or active keys', function (): void {
-    deletion_provider(['removed' => 'body']);
+    deletion_provider($this, ['removed' => 'body']);
     $published = ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'removed', 'state' => 'published']);
     ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     deletion_resume();
@@ -216,7 +146,7 @@ it('commits the retained published-row handoff but never deletes conflicting com
 });
 
 it('deletes Project removal bodies without touching unknown objects or tracked probes', function (): void {
-    deletion_provider(['published' => 'body']);
+    deletion_provider($this, ['published' => 'body']);
     $name = 'deletion-'.Str::uuid();
     $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git']);
     $entry = ProjectDocumentEntry::query()->create(['project_id' => $project->id, 'kind' => 'file', 'name' => 'file.txt', 'sibling_scope' => 0]);
@@ -248,7 +178,7 @@ it('deletes Project removal bodies without touching unknown objects or tracked p
 });
 
 it('recovers process death before or after real DELETE without retiring durable authority early', function (string $mode): void {
-    deletion_provider(['removed' => 'body']);
+    deletion_provider($this, ['removed' => 'body']);
     $upload = ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'removed', 'state' => 'published']);
     $record = ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     deletion_resume();
@@ -276,7 +206,7 @@ it('recovers process death before or after real DELETE without retiring durable 
 })->with(['before-handoff', 'before-delete', 'after-delete']);
 
 it('serializes publication and abandonment and catches a PUT finishing after an absent-key DELETE', function (): void {
-    deletion_provider();
+    deletion_provider($this);
     $project = deletion_project();
     deletion_resume();
     $http = new GuzzleHandler(new Client);
@@ -306,122 +236,8 @@ it('serializes publication and abandonment and catches a PUT finishing after an 
     expect(deletion_requests())->toHaveCount(2);
 });
 
-function deletion_scheduler(string $command = 'schedule:work', ?string $staleToken = null): Process
-{
-    $home = config()->string('orbit.home');
-
-    // Allow 20 seconds for startup and each of five ticks.
-    // Readiness and tick waits check the shared 120-second deadline.
-    return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/document_scheduler.php'), $command, '--no-interaction'], base_path(), [
-        'ORBIT_HOME' => $home, 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $home.'/runtime', 'APP_ENV' => 'testing',
-        'DB_DATABASE' => $home.'/database.sqlite', 'DB_URL' => '', 'APP_KEY' => config()->string('app.key'),
-        'ORBIT_DOCUMENT_SCHEDULER_SESSION' => $staleToken ?? false,
-    ], timeout: 120);
-}
-
-function deletion_scheduler_clock(string $clock): void
-{
-    $home = config()->string('orbit.home');
-    file_put_contents($home.'/scheduler-clock.next', $clock);
-    rename($home.'/scheduler-clock.next', $home.'/scheduler-clock');
-}
-
-function deletion_scheduler_start(Process $consumer): void
-{
-    $consumer->start();
-    expect(SubprocessFixture::line($consumer))->toBe('scheduler-ready');
-}
-
-function deletion_scheduler_tick(Process $consumer, string $clock): array
-{
-    deletion_scheduler_clock($clock);
-    $path = config()->string('orbit.home').'/tick-'.str_replace(':', '-', $clock);
-    SubprocessFixture::waitUntil($consumer, static function () use ($path): bool {
-        clearstatcache(true, $path);
-
-        return is_file($path);
-    });
-    expect(is_file($path))->toBeTrue($consumer->getOutput().$consumer->getErrorOutput());
-    $tick = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-    expect($tick['exit_code'])->toBe(0);
-
-    return $tick;
-}
-
-it('runs real recurring scheduler children after resume without losing authorization and pauses on restart', function (): void {
-    deletion_provider(['restored' => 'preserved body', 'next' => 'next body']);
-    $restored = ProjectDocumentCleanup::query()->create(['storage_key' => 'restored', 'next_attempt_at' => now()]);
-    $next = ProjectDocumentCleanup::query()->create(['storage_key' => 'next', 'next_attempt_at' => now()->addYears(20)]);
-    deletion_resume();
-    $oldGeneration = app(CleanupGate::class)->status()->generation;
-    deletion_scheduler_clock('2030-01-01T00:00:01Z');
-    $consumer = deletion_scheduler();
-    $restart = deletion_scheduler();
-    try {
-        deletion_scheduler_start($consumer);
-        $generation = app(CleanupGate::class)->status()->generation;
-        expect($generation)->not->toBe($oldGeneration);
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:05:00Z'))->toMatchArray(['cleanup_state' => 'paused', 'cleanup_generation' => $generation]);
-        expect(deletion_requests())->toBe([]);
-        expect($restored->fresh()->pending)->toBeTrue();
-
-        // Reconcile and resume after actual consumer startup, not before it.
-        deletion_resume();
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:10:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $generation]);
-        expect($restored->fresh())->toBeNull();
-        expect($next->fresh()->pending)->toBeTrue();
-        expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored']);
-        $next->update(['next_attempt_at' => now()]);
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:15:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $generation]);
-        expect($next->fresh())->toBeNull();
-        expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next']);
-
-        $paused = app(CleanupGate::class)->invalidate();
-        deletion_bucket(['paused' => 'preserve after pause']);
-        $pending = ProjectDocumentCleanup::query()->create(['storage_key' => 'paused', 'next_attempt_at' => now()]);
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:20:00Z'))->toMatchArray(['cleanup_state' => 'paused', 'cleanup_generation' => $paused->generation]);
-        expect($pending->fresh()->pending)->toBeTrue();
-        expect(deletion_requests())->toHaveCount(2);
-        deletion_resume();
-        expect(deletion_scheduler_tick($consumer, '2030-01-01T00:25:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $paused->generation]);
-        expect($pending->fresh())->toBeNull();
-        expect(deletion_requests())->toHaveCount(3);
-
-        $staleToken = file_get_contents($this->deletionHome.'/runtime/scheduler.session');
-        $consumer->signal(SIGKILL);
-        try {
-            $consumer->wait();
-        } catch (ProcessSignaledException) {
-            // The retained session file must not stand in for the daemon's lifetime lock.
-        }
-        deletion_bucket(['restart' => 'preserve after death']);
-        $afterDeath = ProjectDocumentCleanup::query()->create(['storage_key' => 'restart', 'next_attempt_at' => now()]);
-        deletion_scheduler_clock('2030-01-01T00:30:00Z');
-        $standalone = deletion_scheduler('schedule:run', $staleToken);
-        expect($standalone->run())->toBe(0, $standalone->getErrorOutput());
-        expect(app(CleanupGate::class)->status()->state)->toBe('paused');
-        expect($afterDeath->fresh()->pending)->toBeTrue();
-        expect(deletion_requests())->toHaveCount(3);
-
-        deletion_scheduler_clock('2030-01-01T00:30:01Z');
-        deletion_scheduler_start($restart);
-        $restartedGeneration = app(CleanupGate::class)->status()->generation;
-        expect($restartedGeneration)->not->toBe($paused->generation);
-        expect(deletion_scheduler_tick($restart, '2030-01-01T00:35:00Z'))->toMatchArray(['cleanup_state' => 'paused', 'cleanup_generation' => $restartedGeneration]);
-        expect($afterDeath->fresh()->pending)->toBeTrue();
-        expect(deletion_requests())->toHaveCount(3);
-        deletion_resume();
-        expect(deletion_scheduler_tick($restart, '2030-01-01T00:40:00Z'))->toMatchArray(['cleanup_state' => 'running', 'cleanup_generation' => $restartedGeneration]);
-        expect($afterDeath->fresh())->toBeNull();
-        expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next', '/fixture-bucket/paused', '/fixture-bucket/restart']);
-    } finally {
-        $consumer->stop();
-        $restart->stop();
-    }
-});
-
 it('holds the execution lock through real HTTP completion and pause defeats the next batch', function (): void {
-    deletion_provider(['removed' => 'body']);
+    deletion_provider($this, ['removed' => 'body']);
     ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     deletion_resume();
     $worker = deletion_child('hold');
