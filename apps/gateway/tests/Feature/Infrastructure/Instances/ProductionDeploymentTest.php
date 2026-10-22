@@ -34,12 +34,45 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\BufferedBashProgram;
 use Tests\Support\LinuxHost;
+use Tests\Support\ScriptedBashCommand;
 
 pest()->group('privileged');
 
 beforeAll(function (): void {
     foreach ([['public', null], ['server/web/public', null], ['public', 'storage'], ['apps/site/public', 'apps/site/storage']] as [$root, $storage]) {
         orb219_repository_seed($root, $storage);
+    }
+});
+
+it('sources the fake sudo without executing its wrapper and preserves real commands and their status', function (): void {
+    $sandbox = sys_get_temp_dir().'/orbit-deployment-sudo-'.bin2hex(random_bytes(6));
+    $filesystem = new Filesystem;
+    $filesystem->ensureDirectoryExists($sandbox.'/bin');
+    try {
+        orb219_fake_sudo($sandbox);
+        chmod($sandbox.'/bin/sudo', 0o600);
+        new Process(['cp', '-a', '--', orb219_repository_seed(), $sandbox.'/repository'])->mustRun();
+        $head = new Process(['git', '-C', $sandbox.'/repository', 'rev-parse', 'HEAD'])->mustRun()->getOutput();
+        $script = <<<'BASH'
+            sudo -u fixture -H git -C "$1" rev-parse HEAD
+            if sudo -u fixture -H bash -c 'printf "<%s>\n" "$@"; exit 7' -- 'space arg' 'slash\arg' ''; then
+                status=0
+            else
+                status=$?
+            fi
+            printf 'status=%s\nargument=%s\n' "$status" "$2"
+            BASH;
+        $process = new Process(
+            ['bash', '-seu', '--', $sandbox.'/repository', 'unchanged'],
+            env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
+            input: orb219_scripted_sudo_input($sandbox, $script),
+        );
+
+        expect($process->run())->toBe(0)
+            ->and($process->getOutput())->toBe($head."<space arg>\n<slash\\arg>\n<>\nstatus=7\nargument=unchanged\n")
+            ->and($process->getErrorOutput())->toBe('');
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
     }
 });
 
@@ -200,8 +233,7 @@ it('seeds shared storage before steps and keeps existing files through later rel
         file_put_contents($home.'/.env', 'APP_ENV=production');
         file_put_contents($home.'/state/release-layout', $repository."\0$user\0$home\0initial\0");
         chmod($home.'/state/release-layout', 0600);
-        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
         if ($existing) {
             $filesystem->ensureDirectoryExists($home.'/'.$storage.'/app/public');
             file_put_contents($home.'/'.$storage.'/app/public/upload.txt', 'uploaded');
@@ -216,7 +248,7 @@ it('seeds shared storage before steps and keeps existing files through later rel
 
         foreach (['20260911-a1', '20260912-a2'] as $name) {
             $arguments[8] = $name;
-            new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$script)->mustRun();
+            new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: orb219_scripted_sudo_input($sandbox, $script))->mustRun();
             $release = $home.'/releases/'.$name;
             expect(is_link($release.'/'.$storage))->toBeTrue()
                 ->and(realpath($release.'/'.$storage))->toBe($home.'/'.$storage)
@@ -237,7 +269,7 @@ it('seeds shared storage before steps and keeps existing files through later rel
         array_splice($arguments, 3, 3, [$repository, $user, $home]);
         $arguments[7] = '20260912-a2';
         $arguments[8] = trim(new Process(['git', '-C', $repository, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
-        new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$activation)->mustRun();
+        new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: orb219_scripted_sudo_input($sandbox, $activation))->mustRun();
 
         if ($declared !== null) {
             expect(is_dir($home.'/var/uploads'))->toBeTrue()
@@ -289,8 +321,7 @@ it('refuses unsafe shared directory placement before removing source files', fun
         } elseif ($variant === 'seed link') {
             symlink($sandbox.'/outside', $release.'/storage/foreign');
         }
-        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
         $script = ProductionApplicationPaths::render(<<<'BASH'
             home=$1
             release=$2
@@ -298,7 +329,7 @@ it('refuses unsafe shared directory placement before removing source files', fun
             relative_root=public
             __SHARED_PATHS__
             BASH, 'public', [$path]);
-        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$script);
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: orb219_scripted_sudo_input($sandbox, $script));
 
         expect($process->run())->not->toBe(0)
             ->and(file_get_contents($sandbox.'/outside/keep.txt'))->toBe('untouched')
@@ -340,15 +371,14 @@ it('allows only the exact public storage target and refuses nested or unrelated 
             rename($home.'/storage/app/public', $home.'/uploads');
             symlink($home.'/uploads', $home.'/storage/app/public');
         }
-        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
         $program = ProductionWebRootProgram::functions()."\n".<<<'BASH'
             home=$1
             release=$2
             user=$(id -un)
             check_web_root_links "$release" "$release/public"
             BASH;
-        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$program);
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: orb219_scripted_sudo_input($sandbox, $program));
 
         expect($process->run() === 0)->toBe($allowed);
     } finally {
@@ -679,16 +709,7 @@ it('skips partial directories while executing the retained release listing', fun
             $repository."\0".$user."\0".$home."\0initial\0",
         );
         chmod($home.'/state/release-layout', 0600);
-        file_put_contents(
-            $sandbox.'/bin/sudo',
-            <<<'BASH'
-                #!/usr/bin/env bash
-                if [ "${1:-}" = -u ]; then shift 2; fi
-                if [ "${1:-}" = -H ]; then shift; fi
-                exec "$@"
-                BASH,
-        );
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
 
         new Process(['cp', '-a', '--', orb219_repository_seed($webRoot).'/.git', $release])->mustRun();
         $commit = trim((new Process(['git', '-C', $release, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
@@ -714,7 +735,7 @@ it('skips partial directories while executing the retained release listing', fun
             ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', $webRoot],
             env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
         );
-        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
+        $process->setInput(orb219_scripted_sudo_input($sandbox, $script));
         $process->mustRun();
 
         expect($process->getOutput())
@@ -767,13 +788,7 @@ it('prunes a production home to the selected, the previous, and the newest other
         symlink('releases/20260104000000-d', $home.'/current');
         file_put_contents($home.'/state/release-layout', $repository."\0orbit-fixture\0".$home."\0initial\0");
         chmod($home.'/state/release-layout', 0600);
-        file_put_contents($sandbox.'/bin/sudo', <<<'BASH'
-            #!/usr/bin/env bash
-            if [ "${1:-}" = -u ]; then shift 2; fi
-            if [ "${1:-}" = -H ]; then shift; fi
-            exec "$@"
-            BASH);
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
         $script = str_replace(
             ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:600', '! -user "$user"', '! -group "$user"'],
             ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"'],
@@ -795,7 +810,7 @@ it('prunes a production home to the selected, the previous, and the newest other
         }
 
         $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
-        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
+        $process->setInput(orb219_scripted_sudo_input($sandbox, $script));
         $process->mustRun();
 
         expect($process->getOutput())->toBe(implode('', array_map(static fn (string $line): string => $line."\n", $output)))
@@ -842,8 +857,7 @@ it('removes nothing when it cannot read where a running process works', function
         symlink('releases/initial', $home.'/current');
         file_put_contents($home.'/state/release-layout', $repository."\0orbit-fixture\0".$home."\0initial\0");
         chmod($home.'/state/release-layout', 0600);
-        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
-        chmod($sandbox.'/bin/sudo', 0755);
+        orb219_fake_sudo($sandbox);
         $script = str_replace(
             ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:600', '! -user "$user"', '! -group "$user"', 'pgrep -u "$user"', 'sudo readlink --'],
             ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"', 'pgrep -P "$PPID"', 'false --'],
@@ -853,7 +867,7 @@ it('removes nothing when it cannot read where a running process works', function
         array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
 
         $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
-        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
+        $process->setInput(orb219_scripted_sudo_input($sandbox, $script));
 
         expect($process->run())->not->toBe(0)
             ->and($process->getOutput())->toBe('')
@@ -884,6 +898,24 @@ it('rejects traversal before asking the remote host to inspect a release', funct
 
     expect($ssh->commands)->toBe([]);
 });
+
+function orb219_fake_sudo(string $sandbox): void
+{
+    file_put_contents($sandbox.'/bin/sudo', <<<'BASH'
+        #!/usr/bin/env bash
+        if [ "${1:-}" = -u ]; then shift 2; fi
+        if [ "${1:-}" = -H ]; then shift; fi
+        exec "$@"
+        BASH);
+    chmod($sandbox.'/bin/sudo', 0755);
+}
+
+function orb219_scripted_sudo_input(string $sandbox, string $script): string
+{
+    return BufferedBashProgram::stdinPrelude($sandbox)
+        .ScriptedBashCommand::define('sudo', $sandbox.'/bin/sudo')
+        .$script;
+}
 
 /** Committed setup is read-only; each case copies its own writable repository and index. */
 function orb219_repository_seed(string $root = 'public', ?string $storage = null): string
