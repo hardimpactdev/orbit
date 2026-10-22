@@ -48,11 +48,15 @@ function tmpdir_programs(): ForkedPythonPrograms
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
     $this->allocated = [];
+    $this->releaseCheck = null;
     File::ensureDirectoryExists($this->directory);
     File::ensureDirectoryExists($this->directory.'/home', 0700);
 });
 
 afterEach(function (): void {
+    if (is_resource($this->releaseCheck)) {
+        fclose($this->releaseCheck);
+    }
     File::deleteDirectory($this->directory);
     foreach ($this->allocated as $path) {
         if (! is_string($path) || $path === '' || ! is_dir($path)) {
@@ -171,6 +175,42 @@ PYTHON, [$script, $path]);
     return $probe->exitCode === 0;
 }
 
+/** Keep only the check shell in its process group; a sleeper can outlive cancellation as an unreaped child. */
+function tmpdir_running_command(string $checkout): string
+{
+    File::ensureDirectoryExists($checkout.'/.git/orbit', 0700);
+    foreach (['fixture-ready', 'fixture-release'] as $name) {
+        if (! posix_mkfifo($checkout.'/.git/orbit/'.$name, 0600)) {
+            throw new RuntimeException('Could not create the check handshake FIFO.');
+        }
+    }
+    // Keep the release pipe open through exit, even if the check has not reached its read yet.
+    test()->releaseCheck = fopen($checkout.'/.git/orbit/fixture-release', 'r+');
+    if (test()->releaseCheck === false) {
+        throw new RuntimeException('Could not open the check release FIFO.');
+    }
+
+    return 'printf "%s\\n" "$TMPDIR" > .git/orbit/fixture-ready && read -r release < .git/orbit/fixture-release && test -d "$TMPDIR"';
+}
+
+function tmpdir_ready(string $checkout): string
+{
+    $pipe = fopen($checkout.'/.git/orbit/fixture-ready', 'r');
+    if ($pipe === false) {
+        throw new RuntimeException('Could not open the check readiness FIFO.');
+    }
+    try {
+        $line = fgets($pipe);
+        if ($line === false) {
+            throw new RuntimeException('The check did not acknowledge its TMPDIR.');
+        }
+
+        return rtrim($line, "\n");
+    } finally {
+        fclose($pipe);
+    }
+}
+
 function tmpdir_checkout(string $directory, string $name): string
 {
     $checkout = $directory.'/'.$name;
@@ -222,7 +262,9 @@ describe('workspace TMPDIR', function (): void {
         $shared = $this->directory.'/prior-shared';
         File::ensureDirectoryExists($shared.'/phpstan');
         chmod($shared.'/phpstan', 0500);
-        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && getfacl -cp "$TMPDIR" > tmp-acl && stat -c %a:%u "$TMPDIR" > tmp-stat && printf %s "$TMPDIR"';
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && printf %s "$TMPDIR"';
+        // Each phase records its TMPDIR; capture the same final permissions once, rather than overwriting them three times.
+        $permissions = 'getfacl -cp "$TMPDIR" > tmp-acl && stat -c %a:%u "$TMPDIR" > tmp-stat';
         // The old layout really fails on permissions, not on an assertion about the new path.
         expect((new Process(['bash', '-c', $analyse], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
         $prior = getenv('TMPDIR');
@@ -242,7 +284,7 @@ describe('workspace TMPDIR', function (): void {
                 $process = $runner->start($instance, $analyse.' > check-tmp', [
                     ['name' => 'setup', 'command' => $analyse.' > setup-tmp', 'timeout_seconds' => 10],
                 ], ['start' => null, 'commands' => [
-                    ['id' => 'tmp', 'command' => $analyse.' > deliverable-tmp', 'directory' => '.'],
+                    ['id' => 'tmp', 'command' => $analyse.' > deliverable-tmp && '.$permissions, 'directory' => '.'],
                 ]]);
                 $checks[] = [$checkout, $process];
             }
@@ -323,19 +365,16 @@ describe('workspace TMPDIR', function (): void {
         $instance = tmpdir_instance($checkout, 'pass');
         $runner = tmpdir_runner();
 
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && while [ ! -f release-check ]; do sleep 0.05; done && test -d "$TMPDIR"');
+        $process = $runner->start($instance, tmpdir_running_command($checkout));
         try {
-            for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
-                usleep(50_000);
-            }
-            $path = (string) file_get_contents($checkout.'/tmpdir-path');
+            $path = tmpdir_ready($checkout);
             $first = $runner->read($instance, $process);
 
             expect($first->state)->toBe('running')
                 ->and($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
                 ->and(is_dir($path))->toBeTrue();
         } finally {
-            file_put_contents($checkout.'/release-check', 'ready');
+            fwrite($this->releaseCheck, "ready\n");
             $reading = tmpdir_wait($runner, $instance, $process);
         }
 
@@ -360,11 +399,8 @@ describe('workspace TMPDIR', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'cancel');
         $instance = tmpdir_instance($checkout, 'cancel');
         $runner = tmpdir_runner();
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
-        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
-            usleep(50_000);
-        }
-        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        $process = $runner->start($instance, tmpdir_running_command($checkout));
+        $path = tmpdir_ready($checkout);
         expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
             ->and(is_dir($path))->toBeTrue();
 
@@ -379,11 +415,8 @@ describe('workspace TMPDIR', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'killed');
         $instance = tmpdir_instance($checkout, 'killed');
         $runner = tmpdir_runner();
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
-        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
-            usleep(50_000);
-        }
-        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        $process = $runner->start($instance, tmpdir_running_command($checkout));
+        $path = tmpdir_ready($checkout);
         expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
             ->and(is_dir($path))->toBeTrue();
 
@@ -445,11 +478,8 @@ describe('workspace TMPDIR', function (): void {
         $instance = tmpdir_instance($checkout, 'polls');
         $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
 
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
-        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
-            usleep(50_000);
-        }
-        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        $process = $runner->start($instance, tmpdir_running_command($checkout));
+        $path = tmpdir_ready($checkout);
         expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
             ->and(is_dir($path))->toBeTrue()
             ->and(tmpdir_script_allocates($scripts[0] ?? ''))->toBeTrue();
