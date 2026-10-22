@@ -5,7 +5,7 @@ export type ProviderError = "overloaded" | "rate_limited" | "server_error";
 export interface StateInput {
     /** A turn was accepted and Pi has not settled it yet. */
     working: boolean;
-    /** The server restarted while the latest turn was active. */
+    /** A persisted active turn is being recovered by Durable after restart. */
     interruptedByRestart: boolean;
     /** The last assistant message in the transcript, if any. */
     lastAssistant:
@@ -33,7 +33,7 @@ export function deriveState(input: StateInput): DerivedState {
         return { state: "working", error: null };
     }
     if (input.interruptedByRestart) {
-        return { state: "failed", error: "The Pi server restarted during the turn." };
+        return { state: "working", error: null };
     }
     const last = input.lastAssistant;
     if (last === undefined) {

@@ -1472,7 +1472,7 @@
     },
     {
       "source": "/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
-      "destination": "/reference/tasks#recover-a-pi-server-restart"
+      "destination": "/reference/pi-server#restarts"
     },
     {
       "source": "/decisions/0168-offload-large-pi-tool-output",

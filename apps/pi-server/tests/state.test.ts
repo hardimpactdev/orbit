@@ -66,10 +66,10 @@ describe("deriveState", () => {
         expect(deriveState(settled("aborted", message)).providerError).toBeUndefined();
     });
 
-    it("reports a restart during the turn as failed, not as the earlier outcome", () => {
+    it("reports a restarted active turn as working while Durable resumes it", () => {
         expect(deriveState({ ...settled("stop"), interruptedByRestart: true })).toEqual({
-            state: "failed",
-            error: "The Pi server restarted during the turn.",
+            state: "working",
+            error: null,
         });
     });
 });

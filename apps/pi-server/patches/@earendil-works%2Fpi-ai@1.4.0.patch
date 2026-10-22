@@ -1,0 +1,19 @@
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+index 1ae291c296dc5d35a7b827e1098977e0d0db32cf..35daf79056aafa7fb115acf7b01489d846700674 100644
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -200,7 +200,13 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+  * before restarting the assistant turn.
+  */
+ export function isRetryableAssistantError(message) {
+-    if (message.stopReason !== "error" || !message.errorMessage)
++    if (message.stopReason !== "error")
++        return false;
++    // Orbit preserves the provider-boundary decision before SDK text conversion.
++    // Durable uses this check for both generation and compaction; null is terminal.
++    if (message.orbitProviderError !== undefined)
++        return message.orbitProviderError !== null;
++    if (!message.errorMessage)
+         return false;
+     const errorMessage = message.errorMessage;
+     if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))

@@ -495,7 +495,6 @@ it('complete ended holds stale transitions and start or send boundaries during i
         $actor = app(TaskSessionActor::class);
         $actor->remindRubric($stale->parent, $observed, 'Start another turn.');
         $actor->relayReviewBody($stale->parent, $observed, 'Findings.');
-        $actor->resumeInterruptedTurn($stale->parent, $observed, 'Restart.', 'restart-key');
     };
 
     if ($fail) {

@@ -61,12 +61,9 @@ final readonly class TaskSubtaskRunner
         if ($implementer === null) {
             return false;
         }
-        $scheduler->reconcilePiRestart($task, $implementer);
         $state = AgentThreadState::tryFrom($implementer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if (! $scheduler->retryProviderFailure($task, $group, $implementer) && $scheduler->resumePiServerRestart($task, $group, $implementer) !== 'handled') {
-                $scheduler->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
-            }
+            $scheduler->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
 
             return true;
         }

@@ -13,6 +13,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\Orb101ProjectUpdateFixture;
 
@@ -235,6 +236,52 @@ describe('app updates', function (): void {
             ->toBe('github.com/acme/site')
             ->and($this->fixture->sources->originMutations)
             ->toBe(['/srv/orbit/apps/acme/default']);
+    });
+
+    it('returns 409 and preserves stale identity when same-URL repository preflight fails', function (): void {
+        $project = $this->fixture->project;
+        DB::table('projects')->where('id', $project->id)->update(['repository_identity' => 'github.com/acme/old']);
+        $this->fixture->sources->refuseRepositoryPreflight = true;
+
+        $this->patchJson('/api/v1/projects/'.$project->id, ['repository_url' => $project->repository_url])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.repository_preflight_failed');
+
+        $this->assertDatabaseHas('projects', [
+            'id' => $project->id,
+            'repository_url' => $project->repository_url,
+            'repository_identity' => 'github.com/acme/old',
+        ]);
+        expect($this->fixture->sources->originMutations)->toBeEmpty();
+    });
+
+    it('returns 409 when another Project owns the identity of an unchanged repository URL', function (): void {
+        $project = $this->fixture->project;
+        DB::table('projects')->where('id', $project->id)->update(['repository_identity' => 'github.com/acme/old']);
+        Project::query()->create([
+            'name' => 'Other', 'slug' => 'other', 'repository_url' => $project->repository_url,
+            'default_branch' => 'main', 'root' => 'public',
+        ]);
+
+        $this->patchJson('/api/v1/projects/'.$project->id, ['repository_url' => $project->repository_url])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.repository_identity_conflict');
+
+        $this->assertDatabaseHas('projects', [
+            'id' => $project->id,
+            'repository_url' => $project->repository_url,
+            'repository_identity' => 'github.com/acme/old',
+        ]);
+        expect($this->fixture->sources->originMutations)->toBeEmpty();
+    });
+
+    it('leaves stale identity unchanged when an update omits the repository URL', function (): void {
+        $project = $this->fixture->project;
+        DB::table('projects')->where('id', $project->id)->update(['repository_identity' => 'github.com/acme/old']);
+
+        $this->patchJson('/api/v1/projects/'.$project->id, ['root' => $project->root])->assertOk();
+
+        $this->assertDatabaseHas('projects', ['id' => $project->id, 'repository_identity' => 'github.com/acme/old']);
     });
 
     it('refuses a repository identity owned by another App before mutation', function (): void {

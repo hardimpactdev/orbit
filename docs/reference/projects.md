@@ -212,6 +212,8 @@ Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
 
+A repository update recomputes the stored repository identity from `repository_url`, even when the URL is unchanged. Send the current URL through `project:update` or MCP `project-update` to repair a stale identity. The repair runs the repository preflight and checks that no other Project owns the derived identity before publication. A refused preflight leaves the stored identity unchanged. An update that omits the repository URL does not repair identity drift.
+
 A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout.
 
 A task workspace on a task VM gets its new `origin` too. Its preflight checks the checkout but does not read the proposed repository there, because a task VM gets no token ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). The Gateway checks the default branch in the proposed repository once instead. A parked task VM refuses the update with `project.task_vm_parked`; Orbit resumes it, and the update can run again when it is ready.

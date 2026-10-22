@@ -266,7 +266,7 @@ it('does not fetch for a resolution that does not start a turn', function (): vo
         ->and($comment->body)->toBe('Access has been restored.');
 });
 
-it('fetches before a restarted turn and still sends it when the fetch fails', function (): void {
+it('does not fetch or send a replacement turn after a Pi restart failure', function (): void {
     [, $node, , $group] = turn_fetch_group('turn-fetch-restart', TaskGroupStatus::Running->value);
     $task = Task::query()->create([
         'parent_id' => $group->id,
@@ -293,7 +293,7 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
             return Http::response([
                 'kind' => 'state', 'run' => 'run-1', 'sequence' => 4,
                 'session' => ['id' => 'implementer-thread'],
-                'state' => 'failed', 'error' => TaskScheduler::PiServerRestartError, 'turnId' => 'turn-key-1', 'entries' => [],
+                'state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'turn-key-1', 'entries' => [],
             ]);
         }
 
@@ -303,14 +303,9 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
 
     app(TaskScheduler::class)->tick();
 
-    $sent = collect(Http::recorded())
-        ->map(fn (array $pair): Request => $pair[0])
-        ->first(fn (Request $request): bool => str_ends_with($request->url(), '/messages'));
-    expect($fetcher->order)->toBe(['fetch', 'turn'])
-        ->and($sent)->toBeInstanceOf(Request::class)
-        ->and($sent['text'] ?? '')->toContain('The fetch of origin failed. origin/* may be stale.')
-        ->and($sent['text'] ?? '')->toContain(TaskScheduler::PiServerRestartContinue)
+    expect($fetcher->order)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/messages'));
 });

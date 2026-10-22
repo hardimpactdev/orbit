@@ -1,21 +1,61 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { sep } from "node:path";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AttachedReplicatedState } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { AssistantMessage, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
-    type AgentSession,
-    createAgentSession,
     DefaultResourceLoader,
     type ModelRuntime,
-    type SessionEntry,
-    SessionManager,
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { createSearchDocsTool } from "./search-docs.ts";
-import { createWorkspaceTools } from "./workspace-tools.ts";
+import {
+    ConversationBusy,
+    GenerationTask,
+    hook,
+    createRegistry,
+    defineDoc,
+    defineExtension,
+    Harness,
+    section,
+    type Conversation,
+    type ConversationView,
+    type Cursor,
+    type EntryRecord,
+    type DocumentState,
+    type HarnessSettings,
+    type LiveState,
+    type SubmissionRecord,
+} from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { createEditTool, createWriteTool } from "@earendil-works/pi-durable/tools";
+import { buildSystemPrompt } from "./system-prompt.ts";
+import { createDurableSearchDocsTool } from "./search-docs.ts";
+import { createDurableWorkspaceTools } from "./workspace-tools.ts";
 import { deriveState, type DerivedState } from "./state.ts";
-import { withProviderErrors } from "./provider-errors.ts";
+import { modelsWithProviderErrors } from "./provider-errors.ts";
 import { isValidSessionId, type SessionConfig, type SessionRecord, SessionStore } from "./store.ts";
+
+const context = BACKGROUND_CONTEXT;
+const OutcomeDoc = defineDoc({
+    kind: "orbit.outcome",
+    version: 1,
+    scope: "conversation",
+    history: "latest",
+    fork: "initial",
+    initial: () => ({
+        interruptedTurnId: null as string | null,
+        toolResults: {} as Record<string, string>,
+    }),
+    checkpointWhen: () => true,
+});
+export const PROVIDER_RETRY_POLICY = {
+    enabled: true,
+    maxRetries: 4,
+    baseDelayMs: 60_000,
+    maxAgentDelayMs: 480_000,
+};
 
 const THINKING_LEVELS: readonly string[] = [
     "off",
@@ -26,7 +66,6 @@ const THINKING_LEVELS: readonly string[] = [
     "xhigh",
     "max",
 ];
-const STREAMED_EVENTS = new Set(["message_end", "turn_end", "agent_end", "agent_settled"]);
 
 /** A request the server refuses. `status` and the dotted `code` become the HTTP error response. */
 export class PiServerError extends Error {
@@ -42,6 +81,8 @@ export class PiServerError extends Error {
 
 export interface RegistryOptions {
     modelRuntime: ModelRuntime;
+    /** In-process test seam; production uses Orbit's retry budget. Not an HTTP setting. */
+    harnessSettings?: HarnessSettings;
     agentDir: string;
     sessionDir: string;
     /** When not empty, a session's working directory must be inside one of these directories. */
@@ -181,9 +222,18 @@ interface LiveSession {
     /** A new random value each time the session loads. Sequence numbers restart with it. */
     run: string;
     record: SessionRecord;
-    session: AgentSession;
-    working: boolean;
-    interruptedByRestart: boolean;
+    harness: Harness;
+    conversation: Conversation;
+    view: AttachedReplicatedState<ConversationView>;
+    outcome: DocumentState<{
+        interruptedTurnId: string | null;
+        toolResults: Record<string, string>;
+    }>;
+    entries: TranscriptEntry[];
+    turnId: string | null;
+    submission: SubmissionRecord | undefined;
+    sending: Promise<unknown>;
+    admitting: number;
     sequence: number;
     /** The sequence each entry was streamed with. Entries loaded from disk have 0. */
     entrySequences: Map<string, number>;
@@ -191,22 +241,38 @@ interface LiveSession {
     lastStateEvent: StateEvent | undefined;
     listeners: Set<StreamListener>;
     lastUsedAt: number;
+    parked: boolean;
 }
 
 export class SessionRegistry {
     private readonly store: SessionStore;
     private readonly live = new Map<string, LiveSession>();
+    private readonly closing = new Map<string, Promise<void>>();
+    private readonly creating = new Map<string, Promise<unknown>>();
     private readonly loading = new Map<string, Promise<LiveSession>>();
     private readonly settings = SettingsManager.inMemory({ defaultProjectTrust: "always" });
     private readonly options: RegistryOptions;
 
     constructor(options: RegistryOptions) {
         this.options = options;
-        this.store = new SessionStore(options.sessionDir);
+        this.store = new SessionStore(options.sessionDir, options.agentDir);
     }
 
     /** Creates a session. Repeating a create with the same settings returns the existing session. */
-    async create(request: CreateRequest): Promise<{ id: string; created: boolean }> {
+    create(request: CreateRequest): Promise<{ id: string; created: boolean }> {
+        const creating = (this.creating.get(request.id) ?? Promise.resolve())
+            .catch(() => undefined)
+            .then(() => this.createOnce(request));
+        this.creating.set(request.id, creating);
+        void creating
+            .finally(() => {
+                if (this.creating.get(request.id) === creating) this.creating.delete(request.id);
+            })
+            .catch(() => undefined);
+        return creating;
+    }
+
+    private async createOnce(request: CreateRequest): Promise<{ id: string; created: boolean }> {
         const config = await this.validateCreate(request);
         const existing = this.store.read(request.id);
         if (existing !== undefined) {
@@ -218,10 +284,11 @@ export class SessionRegistry {
                 );
             }
 
+            await this.load(request.id);
             return { id: request.id, created: false };
         }
 
-        this.store.write(request.id, { config, acceptedKeys: [], turnActive: false });
+        this.store.write(request.id, { config });
         await this.load(request.id);
 
         return { id: request.id, created: true };
@@ -233,46 +300,52 @@ export class SessionRegistry {
             throw new PiServerError(422, "validation.failed", "A send needs a key and text.");
         }
         const live = await this.load(id);
-        if (live.record.acceptedKeys.includes(key)) {
-            return { duplicate: true };
-        }
-        if (live.working) {
-            throw new PiServerError(
-                409,
-                "session.turn_active",
-                `Session ${id} is already working on a turn.`,
+        // Serialize HTTP admissions; Durable makes requestId admission and busy rejection atomic.
+        live.admitting++;
+        const send = live.sending.then(async () => {
+            const existing = await live.harness.commit(
+                (tx) => tx.submissionByRequest(live.conversation.id, key),
+                context,
             );
-        }
-
-        live.record = {
-            ...live.record,
-            acceptedKeys: [...live.record.acceptedKeys, key],
-            turnActive: true,
-        };
-        this.store.write(id, live.record);
-        live.working = true;
-        live.interruptedByRestart = false;
-        this.publishState(live);
-
-        void live.session
-            .prompt(text)
-            .catch(() => undefined)
-            .finally(() => {
-                live.working = false;
-                live.record = { ...live.record, turnActive: false };
-                this.store.write(id, live.record);
-                live.lastUsedAt = Date.now();
-                this.publishEntries(live);
-                this.publishState(live);
-            });
-
-        return { duplicate: false };
+            if (existing !== undefined) return { duplicate: true };
+            try {
+                await live.conversation.submit(
+                    {
+                        type: "input",
+                        content: text,
+                        requestId: key,
+                        whenBusy: "reject",
+                        entry: { kind: "orbit.input", data: { key } },
+                    },
+                    context,
+                );
+            } catch (error) {
+                if (!(error instanceof ConversationBusy)) throw error;
+                throw new PiServerError(
+                    409,
+                    "session.turn_active",
+                    `Session ${id} is already working on a turn.`,
+                );
+            }
+            return { duplicate: false };
+        });
+        live.sending = send.catch(() => undefined);
+        return send.finally(() => {
+            live.admitting--;
+        });
     }
 
     async interrupt(id: string): Promise<void> {
         const live = await this.load(id);
-        if (live.working) {
-            await live.session.abort();
+        await live.sending;
+        if (live.view.value.docs["pi.live"]?.run !== undefined) {
+            await live.conversation.commit(async (tx) => {
+                const outcome = await tx.doc(OutcomeDoc, live.conversation.id);
+                outcome.interruptedTurnId = live.turnId;
+            }, context);
+            await live.conversation.abort(context);
+            live.parked = false;
+            this.publishState(live);
         }
     }
 
@@ -295,7 +368,7 @@ export class SessionRegistry {
             session: { id: live.id },
             ...this.derive(live),
             turnId: latestTurn(live),
-            usage: usage(live.session),
+            usage: usage(live.entries),
             context: replay.context,
             events: replay.missed,
         };
@@ -314,7 +387,7 @@ export class SessionRegistry {
             session: { id: live.id },
             ...this.derive(live),
             turnId: latestTurn(live),
-            usage: usage(live.session),
+            usage: usage(live.entries),
         };
     }
 
@@ -364,11 +437,15 @@ export class SessionRegistry {
     unloadIdle(now = Date.now()): void {
         for (const live of this.live.values()) {
             if (
-                !live.working &&
+                live.view.value.docs["pi.live"]?.run === undefined &&
                 live.listeners.size === 0 &&
+                live.admitting === 0 &&
                 now - live.lastUsedAt >= this.options.idleUnloadMs
             ) {
-                live.session.dispose();
+                // Keep load() behind close(), so two Harnesses never own one SQLite file.
+                const closing = this.closeLive(live);
+                // Do not reopen until a caller actually needs the session.
+                this.closing.set(live.id, closing);
                 this.live.delete(live.id);
             }
         }
@@ -383,6 +460,7 @@ export class SessionRegistry {
         const runtime = this.options.modelRuntime;
 
         return (await runtime.getAvailable())
+            .filter((model) => model.provider !== "anthropic" && !/claude/i.test(model.id))
             .filter(
                 (model) =>
                     this.options.allowApiKeys ||
@@ -392,11 +470,20 @@ export class SessionRegistry {
             .map((model) => `${model.provider}/${model.id}`);
     }
 
-    dispose(): void {
-        for (const live of this.live.values()) {
-            live.session.dispose();
-        }
+    async dispose(): Promise<void> {
+        await Promise.all(
+            [...this.loading.values()].map((pending) => pending.catch(() => undefined)),
+        );
+        await Promise.all([...this.live.values()].map((live) => this.closeLive(live)));
+        await Promise.all(this.closing.values());
         this.live.clear();
+    }
+
+    private async closeLive(live: LiveSession): Promise<void> {
+        await live.sending;
+        live.view.dispose();
+        live.outcome.dispose();
+        await live.harness.close(context);
     }
 
     private async load(id: string): Promise<LiveSession> {
@@ -416,75 +503,268 @@ export class SessionRegistry {
     }
 
     private async open(id: string): Promise<LiveSession> {
+        await this.closing.get(id);
+        this.closing.delete(id);
         const record = this.store.read(id);
         if (record === undefined) {
             throw new PiServerError(404, "session.not_found", `Session ${id} does not exist.`);
         }
         const { cwd, model: modelKey, thinkingLevel, appendSystemPrompt } = record.config;
         const model = this.resolveModel(modelKey);
-        const file = this.store.sessionFile(id);
-        const sessionManager =
-            file === undefined
-                ? SessionManager.create(cwd, this.options.sessionDir, { id })
-                : SessionManager.open(file, this.options.sessionDir);
         const resourceLoader = new DefaultResourceLoader({
             cwd,
             agentDir: this.options.agentDir,
             settingsManager: this.settings,
             appendSystemPrompt: appendSystemPrompt === null ? [] : [appendSystemPrompt],
+            noExtensions: true,
         });
         await resourceLoader.reload();
-
-        const { session } = await createAgentSession({
-            cwd,
-            agentDir: this.options.agentDir,
-            modelRuntime: this.options.modelRuntime,
-            model,
-            thinkingLevel: thinkingLevel as ThinkingLevel,
-            settingsManager: this.settings,
-            resourceLoader,
-            sessionManager,
-            // read and bash replace Pi's tools so a result over 8 KiB is stored
-            // under the workspace .git before it is appended to the session.
-            customTools: [
-                createSearchDocsTool({ cwd }),
-                ...createWorkspaceTools({ cwd, sessionId: id }),
-            ],
-        });
-
-        session.agent.streamFunction = withProviderErrors(session.agent.streamFunction);
-
-        const live: LiveSession = {
-            id,
-            run: randomBytes(8).toString("hex"),
-            record,
-            session,
-            working: false,
-            interruptedByRestart: record.turnActive,
-            sequence: 0,
-            entrySequences: new Map(transcript(session).map((entry) => [entry.id, 0])),
-            lastState: "",
-            lastStateEvent: undefined,
-            listeners: new Set(),
-            lastUsedAt: Date.now(),
-        };
-        live.lastState = stateKey(this.derive(live), usage(session));
-        session.subscribe((event) => {
-            if (STREAMED_EVENTS.has(event.type)) {
-                // Pi persists the finished message in its own listener; read entries after it runs.
-                setImmediate(() => {
+        let activeConversation: Conversation | undefined;
+        let recordAbortedBash: ((callId: string, text: string) => Promise<void>) | undefined;
+        const tools = [
+            ...createDurableWorkspaceTools({
+                cwd,
+                sessionId: id,
+                model: modelKey,
+                thinkingLevel,
+                sessionFile: this.store.databasePath(id),
+                onAbortedBash: (callId, text) =>
+                    recordAbortedBash?.(callId, text) ?? Promise.resolve(),
+            }),
+            createEditTool(),
+            createWriteTool(),
+            createDurableSearchDocsTool({ cwd }),
+        ];
+        const registry = createRegistry();
+        registry.install(
+            defineExtension({
+                name: "orbit",
+                tools,
+                hooks: [
+                    hook(GenerationTask, {
+                        async beforeRequest(request, api, hookContext) {
+                            const outcome = await api.snapshot(
+                                OutcomeDoc,
+                                api.conversationId,
+                                hookContext,
+                            );
+                            if (
+                                activeConversation === undefined ||
+                                outcome === undefined ||
+                                Object.keys(outcome.toolResults).length === 0
+                            )
+                                return;
+                            const replacements = new Map<string, string>();
+                            for (const entry of (await activeConversation.context(hookContext))
+                                .entries) {
+                                const text = outcome.toolResults[String(entry.byTaskId)];
+                                if (text === undefined) continue;
+                                for (const message of entry.model ?? []) {
+                                    if (message.role === "toolResult")
+                                        replacements.set(
+                                            JSON.stringify([message.toolCallId, message.timestamp]),
+                                            text,
+                                        );
+                                }
+                            }
+                            return {
+                                messages: request.messages.map((message) => {
+                                    const text =
+                                        message.role === "toolResult"
+                                            ? replacements.get(
+                                                  JSON.stringify([
+                                                      message.toolCallId,
+                                                      message.timestamp,
+                                                  ]),
+                                              )
+                                            : undefined;
+                                    return text === undefined
+                                        ? message
+                                        : {
+                                              ...message,
+                                              content: [{ type: "text" as const, text }],
+                                          };
+                                }),
+                            };
+                        },
+                    }),
+                ],
+                sections: [
+                    section(
+                        "preamble",
+                        () =>
+                            buildSystemPrompt({
+                                cwd,
+                                customPrompt: resourceLoader.getSystemPrompt(),
+                                appendSystemPrompt: resourceLoader
+                                    .getAppendSystemPrompt()
+                                    .join("\n\n"),
+                                skills: resourceLoader.getSkills().skills,
+                                contextFiles: resourceLoader.getAgentsFiles().agentsFiles,
+                                selectedTools: tools.map((tool) => tool.name),
+                                toolSnippets: {
+                                    read: "Read file contents",
+                                    bash: "Execute bash commands (ls, grep, find, etc.)",
+                                    edit: "Make precise edits to files",
+                                    write: "Create or overwrite files",
+                                    search_docs:
+                                        "Search Laravel ecosystem docs for the Project's installed package versions",
+                                },
+                                toolGuidelines: {
+                                    read: ["Use read to examine files instead of cat or sed."],
+                                    bash: [
+                                        "You can inspect PI_* environment variables for current model and session details.",
+                                    ],
+                                    search_docs: [
+                                        "Use search_docs before you write Laravel ecosystem code you are not sure about, so the code matches the installed package versions.",
+                                    ],
+                                },
+                            }),
+                        { tag: false },
+                    ),
+                ],
+            }),
+        );
+        let parked = false;
+        let loaded: LiveSession | undefined;
+        const harness = await Harness.open(
+            await openNodeSqliteStorage(this.store.databasePath(id)),
+            {
+                models: modelsWithProviderErrors(this.options.modelRuntime),
+                registry,
+                env: () => new NodeExecutionEnv({ cwd }),
+                onReport: (_error, info) => {
+                    if (info.type === "task_parked") {
+                        parked = true;
+                        if (loaded !== undefined) {
+                            loaded.parked = true;
+                            this.publishState(loaded);
+                        }
+                    }
+                },
+                settings: {
+                    retry: PROVIDER_RETRY_POLICY,
+                    stream: { maxRetries: 0 },
+                    toolExecution: "sequential",
+                    ...this.options.harnessSettings,
+                },
+            },
+            context,
+        );
+        try {
+            const conversation = await harness.root(context, {
+                agent: {
+                    cwd,
+                    model: { provider: model.provider, modelId: model.id },
+                    thinkingLevel: thinkingLevel as ModelThinkingLevel,
+                },
+            });
+            activeConversation = conversation;
+            await conversation.commit(async (tx) => {
+                await tx.doc(OutcomeDoc, conversation.id);
+            }, context);
+            const outcome = await harness.documentState(OutcomeDoc, conversation.id, context);
+            if (outcome === undefined) throw new Error("Missing Orbit outcome document.");
+            const view = await conversation.viewState(context);
+            const raw: EntryRecord[] = [];
+            let cursor: Cursor | undefined;
+            do {
+                const page = await conversation.entries(
+                    { order: "ascending" },
+                    1000,
+                    cursor,
+                    context,
+                );
+                raw.push(...page.items);
+                cursor = page.next;
+            } while (cursor !== undefined);
+            recordAbortedBash = async (callId, text) => {
+                // Host-owned presentation evidence can commit after the invocation was cancelled.
+                // Close seals admission; a crash/reopen keeps Durable's interrupted-tool evidence.
+                await conversation
+                    .commit(async (tx) => {
+                        (await tx.doc(OutcomeDoc, conversation.id)).toolResults[callId] = text;
+                    }, context)
+                    .catch(() => undefined);
+            };
+            const entries = raw.flatMap((entry) =>
+                transcriptEntry(entry, outcome.value?.toolResults),
+            );
+            const turnId = raw.reduce<string | null>((key, entry) => inputKey(entry) ?? key, null);
+            const submission =
+                turnId === null
+                    ? undefined
+                    : await harness.commit(
+                          (tx) => tx.submissionByRequest(conversation.id, turnId),
+                          context,
+                      );
+            const live: LiveSession = {
+                id,
+                run: randomBytes(8).toString("hex"),
+                record,
+                harness,
+                conversation,
+                view,
+                outcome,
+                entries,
+                turnId,
+                submission,
+                sending: Promise.resolve(),
+                admitting: 0,
+                sequence: 0,
+                entrySequences: new Map(entries.map((entry) => [entry.id, 0])),
+                lastState: "",
+                lastStateEvent: undefined,
+                listeners: new Set(),
+                lastUsedAt: Date.now(),
+                parked:
+                    parked ||
+                    (await harness.inspect(context)).tasks.some(
+                        (task) =>
+                            task.state.kind === "blocked" && task.state.reason === "restart_limit",
+                    ),
+            };
+            loaded = live;
+            live.lastState = stateKey(this.derive(live), usage(entries), live.turnId);
+            // Submission settlements are authoritative even when no assistant entry is appended.
+            harness.subscribeCommits((publication) => {
+                for (const change of publication.changes) {
+                    if (
+                        change.type === "submission" &&
+                        change.value.type === "input" &&
+                        change.value.conversationId === conversation.id &&
+                        (live.submission === undefined || change.value.id >= live.submission.id)
+                    ) {
+                        live.submission = change.value;
+                        live.turnId = change.value.requestId ?? null;
+                    }
+                }
+                // Chord delivers the adopted view in a microtask, before this projection.
+                queueMicrotask(() => {
+                    const value = view.value;
+                    live.lastUsedAt = Date.now();
+                    for (const rawEntry of value.entries) {
+                        live.turnId = inputKey(rawEntry) ?? live.turnId;
+                        for (const entry of transcriptEntry(rawEntry, outcome.value?.toolResults)) {
+                            if (!live.entrySequences.has(entry.id)) live.entries.push(entry);
+                        }
+                    }
+                    if (value.docs["pi.live"]?.run !== undefined) this.publishState(live);
                     this.publishEntries(live);
                     this.publishState(live);
                 });
-            }
-        });
-        this.live.set(id, live);
-
-        return live;
+            });
+            this.live.set(id, live);
+            harness.resume();
+            return live;
+        } catch (error) {
+            await harness.close(context);
+            throw error;
+        }
     }
 
     private publishEntries(live: LiveSession): void {
-        for (const entry of transcript(live.session)) {
+        for (const entry of live.entries) {
             if (!live.entrySequences.has(entry.id)) {
                 const sequence = ++live.sequence;
                 live.entrySequences.set(entry.id, sequence);
@@ -495,8 +775,8 @@ export class SessionRegistry {
 
     private publishState(live: LiveSession): void {
         const derived = this.derive(live);
-        const tokens = usage(live.session);
-        const key = stateKey(derived, tokens);
+        const tokens = usage(live.entries);
+        const key = stateKey(derived, tokens, live.turnId);
         if (key === live.lastState) {
             return;
         }
@@ -524,7 +804,7 @@ export class SessionRegistry {
         }
         const missed: (EntryEvent | StateEvent)[] = [];
         const openCalls = new Map<string, TranscriptEntry>();
-        for (const entry of transcript(live.session)) {
+        for (const entry of live.entries) {
             const sequence = live.entrySequences.get(entry.id);
             if (sequence === undefined) {
                 // Not streamed yet. It reaches this listener as a live entry event.
@@ -566,8 +846,8 @@ export class SessionRegistry {
             session: { id: live.id, cwd, model, thinkingLevel },
             ...this.derive(live),
             turnId: latestTurn(live),
-            entries: transcript(live.session),
-            usage: usage(live.session),
+            entries: live.entries,
+            usage: usage(live.entries),
         };
         if (maxBytes === undefined) {
             return snapshot;
@@ -607,14 +887,70 @@ export class SessionRegistry {
     }
 
     private derive(live: LiveSession): DerivedState {
-        const last = [...live.session.messages]
-            .reverse()
-            .find((message) => message.role === "assistant");
-
+        if (live.parked) {
+            return {
+                state: "failed",
+                error: "Pi Durable parked the turn after its restart limit (crash loop). Operator assistance is required.",
+            };
+        }
+        const generation = (live.view.value.docs["pi.live"] as LiveState | undefined)?.generation;
+        if (generation?.retry !== undefined) {
+            const last = [...live.entries]
+                .reverse()
+                .map((entry) => entry.message as AssistantMessage)
+                .find((message) => message.role === "assistant");
+            const category = deriveState({
+                working: false,
+                interruptedByRestart: false,
+                lastAssistant: last,
+            }).providerError;
+            return {
+                state: "working",
+                error: `Waiting for provider retry ${generation.attempt}/${PROVIDER_RETRY_POLICY.maxRetries}${category ? ` (${category})` : ""} at ${new Date(generation.retry.at).toISOString()}.`,
+                ...(category ? { providerError: category } : {}),
+            };
+        }
+        if (
+            live.view.value.docs["pi.live"]?.run === undefined &&
+            live.turnId !== null &&
+            live.outcome.value?.interruptedTurnId === live.turnId
+        ) {
+            return { state: "failed", error: "The turn was interrupted." };
+        }
+        const submission = live.submission;
+        if (
+            live.view.value.docs["pi.live"]?.run !== undefined ||
+            submission?.status === "placed" ||
+            submission?.status === "queued"
+        ) {
+            return { state: "working", error: null };
+        }
+        if (submission === undefined) return { state: "idle", error: null };
+        if (submission.status === "done") {
+            const answer = live.entries.find((entry) => entry.id === String(submission.answer));
+            return deriveState({
+                working: false,
+                interruptedByRestart: false,
+                lastAssistant: answer?.message as AssistantMessage | undefined,
+            });
+        }
+        // Unanswered submissions include compaction/model/task failures with no assistant answer.
+        // Only current-turn assistant evidence can supply the sanitized provider category.
+        const last = live.entries
+            .filter((entry) => Number(entry.id) > Number(submission.entry))
+            .map((entry) => entry.message as AssistantMessage)
+            .findLast((message) => message.role === "assistant");
         return deriveState({
-            working: live.working,
-            interruptedByRestart: live.interruptedByRestart,
-            lastAssistant: last === undefined || last.role !== "assistant" ? undefined : last,
+            working: false,
+            interruptedByRestart: false,
+            lastAssistant: {
+                ...(last?.errorMessage === submission.detail ? last : {}),
+                stopReason: submission.reason === "aborted" ? "aborted" : "error",
+                errorMessage:
+                    typeof submission.detail === "string"
+                        ? submission.detail
+                        : `The turn failed: ${submission.reason}.`,
+            },
         });
     }
 
@@ -679,6 +1015,13 @@ export class SessionRegistry {
     }
 
     private resolveModel(key: string): NonNullable<ReturnType<ModelRuntime["getModel"]>> {
+        if (/claude/i.test(key) || key.startsWith("anthropic/")) {
+            throw new PiServerError(
+                422,
+                "model.unavailable",
+                "Claude is unavailable for task agents.",
+            );
+        }
         const slash = key.indexOf("/");
         const model =
             slash > 0
@@ -696,15 +1039,37 @@ export class SessionRegistry {
     }
 }
 
-function transcript(session: AgentSession): TranscriptEntry[] {
-    return session.sessionManager
-        .getEntries()
-        .filter(
-            (entry): entry is Extract<SessionEntry, { type: "message" }> =>
-                entry.type === "message",
-        )
-        .filter((entry) => entry.message.role !== "system")
-        .map((entry) => ({ id: entry.id, timestamp: entry.timestamp, message: entry.message }));
+function inputKey(entry: EntryRecord): string | undefined {
+    if (
+        entry.kind !== "orbit.input" ||
+        typeof entry.data !== "object" ||
+        entry.data === null ||
+        Array.isArray(entry.data)
+    )
+        return undefined;
+    return typeof entry.data.key === "string" ? entry.data.key : undefined;
+}
+
+function transcriptEntry(
+    entry: EntryRecord,
+    toolResults?: Record<string, string>,
+): TranscriptEntry[] {
+    if (!["orbit.input", "pi.user", "pi.assistant", "pi.tool-result"].includes(entry.kind))
+        return [];
+    return (entry.model ?? [])
+        .filter((message) => message.role !== "system")
+        .map((message, index) => ({
+            id: String(entry.id) + (index === 0 ? "" : `:${index}`),
+            timestamp: new Date(message.timestamp ?? 0).toISOString(),
+            message:
+                message.role === "toolResult" && toolResults?.[String(entry.byTaskId)] !== undefined
+                    ? {
+                          ...message,
+                          content: [{ type: "text", text: toolResults[String(entry.byTaskId)] }],
+                          isError: true,
+                      }
+                    : message,
+        }));
 }
 
 function toolCallIds(message: unknown): string[] {
@@ -717,7 +1082,7 @@ function toolCallIds(message: unknown): string[] {
 }
 
 function latestTurn(live: LiveSession): string | null {
-    return live.record.acceptedKeys.at(-1) ?? null;
+    return live.turnId;
 }
 
 /**
@@ -725,7 +1090,7 @@ function latestTurn(live: LiveSession): string | null {
  * `cacheRead`, and `cacheWrite`. A message missing one of those is not a call,
  * and neither is a tool result, compaction, or other usage entry.
  */
-function usage(session: AgentSession): Usage {
+function usage(entries: TranscriptEntry[]): Usage {
     const totals: Usage = {
         input: 0,
         output: 0,
@@ -735,10 +1100,7 @@ function usage(session: AgentSession): Usage {
         calls: 0,
         peakContext: 0,
     };
-    for (const entry of session.sessionManager.getEntries()) {
-        if (entry.type !== "message") {
-            continue;
-        }
+    for (const entry of entries) {
         const call = countedCall(entry.message);
         if (call === undefined) {
             continue;
@@ -795,8 +1157,8 @@ function isTokenCount(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
 }
 
-function stateKey(derived: DerivedState, tokens: Usage): string {
-    return JSON.stringify([derived.state, derived.error, tokens]);
+function stateKey(derived: DerivedState, tokens: Usage, turnId: string | null): string {
+    return JSON.stringify([derived.state, derived.error, derived.providerError, tokens, turnId]);
 }
 
 function sameConfig(a: SessionConfig, b: SessionConfig): boolean {

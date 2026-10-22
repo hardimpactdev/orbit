@@ -277,7 +277,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.inspection_failed',
             'role.node_unreachable',
         ],
-        'project' => ['project.repository_origin_mismatch', 'project.inspection_failed', 'project.node_unreachable'],
+        'project' => ['project.repository_identity_mismatch', 'project.repository_origin_mismatch', 'project.inspection_failed', 'project.node_unreachable'],
         'instance' => [
             'instance.lifecycle_not_active',
             'instance.removal_stuck',

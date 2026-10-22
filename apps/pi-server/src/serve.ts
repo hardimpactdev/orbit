@@ -6,7 +6,7 @@ import { createPiServer } from "./http.ts";
 import { SessionRegistry } from "./registry.ts";
 
 // Pi reads its own version from disk, which a compiled binary does not include.
-export const piVersion = serverPackage.dependencies["@earendil-works/pi-coding-agent"];
+export const piVersion = serverPackage.dependencies["@earendil-works/pi-durable"];
 
 export async function serve(argv: string[]): Promise<void> {
     const config = readConfig(argv);
@@ -34,8 +34,7 @@ export async function serve(argv: string[]): Promise<void> {
         console.error(`pi-server listening on ${config.host}:${config.port} with Pi ${piVersion}`);
     });
 
-    // Exit without settling active turns: their records keep `turnActive`, so the next start
-    // reports them as failed by a restart instead of as interrupted.
+    // Leave active Durable tasks pending; reopen resumes them without a Gateway resend.
     const shutdown = () => {
         clearInterval(sweep);
         server.close();

@@ -1,13 +1,11 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
 export function isValidSessionId(id: string): boolean {
     return ID_PATTERN.test(id);
 }
 
-/** What the Gateway asked for when it created the session. Needed to reopen it after a restart. */
 export interface SessionConfig {
     cwd: string;
     model: string;
@@ -15,34 +13,27 @@ export interface SessionConfig {
     appendSystemPrompt: string | null;
 }
 
-/** Orbit's own record beside Pi's JSONL session file. */
+/** Bootstrap settings only. Durable owns submissions, run state, and transcripts. */
 export interface SessionRecord {
     config: SessionConfig;
-    /** Send keys already accepted, so a repeated send never starts a second turn. */
-    acceptedKeys: string[];
-    /** Set when a turn starts and cleared when it settles. Still set on load means a restart cut the turn off. */
-    turnActive: boolean;
 }
 
-/**
- * Stores Orbit records as `<id>.orbit.json` in the session directory. Pi writes its own
- * `<timestamp>_<id>.jsonl` files there. Writes replace the file atomically.
- */
 export class SessionStore {
-    readonly directory: string;
+    private readonly directory: string;
+    private readonly agentDir: string;
 
-    constructor(directory: string) {
+    constructor(directory: string, agentDir: string) {
         this.directory = directory;
+        this.agentDir = agentDir;
         mkdirSync(directory, { recursive: true });
+        mkdirSync(join(agentDir, "durable"), { recursive: true });
     }
 
     read(id: string): SessionRecord | undefined {
         try {
             return JSON.parse(readFileSync(this.recordPath(id), "utf8")) as SessionRecord;
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-                return undefined;
-            }
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
             throw error;
         }
     }
@@ -54,12 +45,8 @@ export class SessionStore {
         renameSync(temporary, path);
     }
 
-    /** Finds Pi's session file for an ID. Pi prefixes the file name with its creation time. */
-    sessionFile(id: string): string | undefined {
-        const suffix = `_${id}.jsonl`;
-        const match = readdirSync(this.directory).find((name) => name.endsWith(suffix));
-
-        return match === undefined ? undefined : join(this.directory, match);
+    databasePath(id: string): string {
+        return join(this.agentDir, "durable", `${id}.sqlite`);
     }
 
     private recordPath(id: string): string {

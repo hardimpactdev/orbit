@@ -157,17 +157,17 @@ final class TaskOrchestrationEntryPoints
     public const array Refuses = [
         TaskHandoffCi::class => ['test'],
         TaskAgentSpawner::class => ['spawnReviewer', 'consult', 'relay', 'reserveReviewer', 'reserveImplementer', 'spawnImplementer', 'requestReview'],
-        TaskConsultation::class => ['remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance', 'retryProviderFailure', 'resumePiServerRestart'],
+        TaskConsultation::class => ['remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance'],
         TaskPublication::class => ['publishApprovedCommit', 'mergeWhenReady', 'checkReturningPullRequest'],
         TaskReviewOutcome::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'nudgeReviewer', 'settleImplementer', 'acceptReview'],
-        TaskSessionActor::class => ['execute', 'relayAnswer', 'relayReviewBody', 'remindRubric', 'resumeInterruptedTurn'],
+        TaskSessionActor::class => ['execute', 'relayAnswer', 'relayReviewBody', 'remindRubric'],
         TaskSettling::class => ['tickPullRequest', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
         TaskSubtaskRunner::class => ['handleImplementerCompletion', 'prepareTurn', 'startTask', 'startFirstTask', 'markRunning', 'beginRunningTask', 'assignImplementer', 'tickSubtasks'],
         RequestEndedPullRequestAssistanceAction::class => ['execute'],
         ResumeDeliverableCorrectionAction::class => ['reserve', 'execute'],
         RetryTaskBaselineAction::class => ['queue', 'recover'],
         StoreTaskCommentAction::class => ['retryPendingResolution'],
-        TaskScheduler::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'publishApprovedCommit', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'mergeWhenReady', 'checkReturningPullRequest', 'remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance', 'retryProviderFailure', 'resumePiServerRestart', 'nudgeReviewer', 'settleImplementer', 'startTask', 'acceptReview', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
+        TaskScheduler::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'publishApprovedCommit', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'mergeWhenReady', 'checkReturningPullRequest', 'remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance', 'nudgeReviewer', 'settleImplementer', 'startTask', 'acceptReview', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
     ];
 
     /**
@@ -197,7 +197,6 @@ final class TaskOrchestrationEntryPoints
             'relayAnswer' => [TaskSessionActor::class.'::relayAnswer'],
             'relayReviewBody' => [TaskSessionActor::class.'::relayReviewBody'],
             'remindRubric' => [TaskSessionActor::class.'::remindRubric'],
-            'resumeInterruptedTurn' => [TaskSessionActor::class.'::resumeInterruptedTurn'],
         ],
         TaskSubtaskRunner::class => [
             'handleImplementerCompletion' => [TaskSubtaskRunner::class.'::handleImplementerCompletion'],
@@ -686,7 +685,6 @@ final class TaskOrchestrationEntryPoints
             'pendingReceipt' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
             'clearCommunicationFailures' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
             'pendingRelayResolution' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
-            'reconcilePiRestart' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
             'subtaskReviewer' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
             'failSpawn' => 'Reads receipts or records retry observations; never sends a turn or changes a claim.',
         ],
@@ -751,7 +749,6 @@ final class TaskOrchestrationEntryPoints
             'pendingReceipt' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
             'clearCommunicationFailures' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
             'pendingRelayResolution' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
-            'reconcilePiRestart' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
             'clearUnavailable' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
             'unavailableDecision' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',
             'workspaceSnapshot' => 'Forwards read or record-only helpers; effectful forwards are exercised in Refuses.',

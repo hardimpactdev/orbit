@@ -1,8 +1,6 @@
-import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { type Harness, startHarness, waitFor } from "./support.ts";
+import { appendSessionEntries, type Harness, startHarness, waitFor } from "./support.ts";
 
 const MODEL = "faux/model-a";
 let harness: Harness | undefined;
@@ -553,7 +551,7 @@ describe("token usage", () => {
         const before = (await settled(h)).usage;
         expect(before.calls).toBe(2);
 
-        appendSessionEntries(h.root, [
+        const fixtureIds = await appendSessionEntries(h, [
             {
                 type: "message",
                 id: "partial1",
@@ -612,7 +610,9 @@ describe("token usage", () => {
         harness = await h.restart();
         const snapshot = (await harness.request("GET", "/sessions/thread-1")).body;
 
-        expect(snapshot.entries.some((entry: any) => entry.id === "partial1")).toBe(true);
+        expect(snapshot.entries.some((entry: any) => entry.id === fixtureIds.get("partial1"))).toBe(
+            true,
+        );
         expect(snapshot.usage).toEqual({
             input: before.input + 3,
             output: before.output + 4,
@@ -632,7 +632,7 @@ describe("large session reads", () => {
         await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
         const before = await settled(h);
         const maxBytes = 16 * 1024 * 1024;
-        appendSessionEntries(h.root, [
+        const fixtureIds = await appendSessionEntries(h, [
             {
                 type: "message",
                 id: "large-history",
@@ -678,7 +678,7 @@ describe("large session reads", () => {
         expect(Buffer.byteLength(JSON.stringify(bounded.body))).toBeLessThanOrEqual(maxBytes);
         expect(bounded.body.entries[0].message).toMatchObject({ role: "system" });
         expect(bounded.body.entries[0].message.content).toContain("Transcript truncated");
-        expect(bounded.body.entries.at(-1).id).toBe("latest");
+        expect(bounded.body.entries.at(-1).id).toBe(fixtureIds.get("latest"));
         expect(bounded.body.usage).toEqual(full.usage);
         expect(bounded.body.sequence).toBe(full.sequence);
 
@@ -759,21 +759,41 @@ describe("restart", () => {
         expect(repeat.body.duplicate).toBe(true);
     });
 
-    it("reports a turn that was active during a restart as failed", async () => {
+    it("resumes a turn that was active during a restart without a Gateway resend", async () => {
         const h = await created();
-        h.faux.setResponses([fauxAssistantMessage("done before the crash")]);
-        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
-        await settled(h);
-        const recordPath = join(h.root, "sessions", "thread-1.orbit.json");
-        const record = JSON.parse(readFileSync(recordPath, "utf8"));
-        writeFileSync(recordPath, JSON.stringify({ ...record, turnActive: true }));
-
-        harness = await h.restart();
-
-        expect((await harness.request("GET", "/sessions/thread-1")).body).toMatchObject({
-            state: "failed",
-            error: "The Pi server restarted during the turn.",
+        let started!: () => void;
+        const active = new Promise<void>((resolve) => {
+            started = resolve;
         });
+        h.faux.setResponses([
+            async (_context, options) => {
+                await new Promise<void>((resolve) => {
+                    options!.signal!.addEventListener("abort", () => resolve(), { once: true });
+                    started();
+                });
+                return fauxAssistantMessage("cut off");
+            },
+        ]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        await active;
+        harness = await h.restart();
+        harness.faux.setResponses([fauxAssistantMessage("resumed answer")]);
+        const snapshot = await settled(harness);
+        expect(snapshot).toMatchObject({ state: "done", error: null, turnId: "k1" });
+        expect(snapshot.entries.filter((entry: any) => entry.message.role === "user")).toHaveLength(
+            1,
+        );
+        expect(snapshot.entries.at(-1).message.content).toEqual([
+            { type: "text", text: "resumed answer" },
+        ]);
+        expect(
+            (
+                await harness.request("POST", "/sessions/thread-1/messages", {
+                    key: "k1",
+                    text: "go",
+                })
+            ).body.duplicate,
+        ).toBe(true);
     });
 });
 
@@ -824,26 +844,4 @@ function aggregate(calls: CallUsage[]) {
     usage.total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 
     return usage;
-}
-
-/** Appends entries to Pi's session file, chained after the current leaf. */
-function appendSessionEntries(root: string, entries: Array<Record<string, unknown>>): void {
-    const dir = join(root, "sessions");
-    const name = readdirSync(dir).find((entry) => entry.endsWith("_thread-1.jsonl"));
-    if (name === undefined) {
-        throw new Error("Pi session file was not written.");
-    }
-    const path = join(dir, name);
-    const current = readFileSync(path, "utf8");
-    const lastLine = current.trimEnd().split("\n").at(-1) ?? "{}";
-    const last = JSON.parse(lastLine) as { id?: unknown };
-    let parentId = typeof last.id === "string" ? last.id : null;
-    const encoded = entries.map((entry) => {
-        const record = { ...entry, parentId };
-        parentId = typeof entry.id === "string" ? entry.id : parentId;
-
-        return JSON.stringify(record);
-    });
-    const separator = current.endsWith("\n") || current.length === 0 ? "" : "\n";
-    appendFileSync(path, `${separator}${encoded.join("\n")}\n`);
 }

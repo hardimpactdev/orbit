@@ -1,6 +1,7 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { classifyProviderFailure, type ProviderError } from "./state.ts";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { classifyProviderFailure, deriveState, type ProviderError } from "./state.ts";
 
 const MAX_ERROR_BYTES = 64 * 1024;
 
@@ -138,5 +139,86 @@ function sseErrors(onError: (error: unknown) => void): TransformStream<Uint8Arra
             // The pinned SDK treats EOF as the end of a residual SSE record.
             if (!oversized) inspect(pending + decoder.decode());
         },
+    });
+}
+
+/** Keep ModelRuntime for auth/models.json, while Durable consumes the Models stream interface. */
+export function modelsWithProviderErrors(
+    models: import("@earendil-works/pi-ai").Models,
+): import("@earendil-works/pi-ai").Models {
+    return new Proxy(models, {
+        get(target, property) {
+            if (property === "streamSimple" || property === "completeSimple") {
+                const stream = (...args: Parameters<typeof models.streamSimple>) => {
+                    const output = createAssistantMessageEventStream();
+                    void (async () => {
+                        const source = await withProviderErrors(target.streamSimple.bind(target))(
+                            args[0],
+                            normalizeContext(args[1]),
+                            args[2],
+                        );
+                        for await (const event of source) {
+                            if (event.type === "error" && event.error.stopReason === "error") {
+                                // One decision for thread state and Durable's patched retry check.
+                                // Preserve explicit structured null instead of re-reading friendly text.
+                                withProviderDecision(event.error);
+                            }
+                            output.push(event);
+                        }
+                        output.end();
+                    })().catch((error: unknown) => {
+                        output.push({
+                            type: "error",
+                            reason: "error",
+                            error: withProviderDecision({
+                                role: "assistant",
+                                content: [],
+                                api: args[0].api,
+                                provider: args[0].provider,
+                                model: args[0].id,
+                                timestamp: Date.now(),
+                                stopReason: "error",
+                                errorMessage:
+                                    error instanceof Error ? error.message : String(error),
+                                usage: {
+                                    input: 0,
+                                    output: 0,
+                                    cacheRead: 0,
+                                    cacheWrite: 0,
+                                    totalTokens: 0,
+                                    cost: {
+                                        input: 0,
+                                        output: 0,
+                                        cacheRead: 0,
+                                        cacheWrite: 0,
+                                        total: 0,
+                                    },
+                                },
+                            }),
+                        });
+                        output.end();
+                    });
+                    return output;
+                };
+                // Models.completeSimple is streamSimple().result(); keep compaction on this boundary too.
+                return property === "streamSimple"
+                    ? stream
+                    : (...args: Parameters<typeof models.completeSimple>) =>
+                          stream(...args).result();
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+        },
+    });
+}
+
+function withProviderDecision(message: AssistantMessage): AssistantMessage {
+    return Object.assign(message, {
+        orbitProviderError:
+            deriveState({
+                working: false,
+                interruptedByRestart: false,
+                lastAssistant: message,
+            }).providerError ?? null,
     });
 }
