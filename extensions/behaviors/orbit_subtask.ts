@@ -117,12 +117,15 @@ function products(stage: string, key: string, r: Record<string, unknown>): Pick<
   return { artifacts, evidence };
 }
 
-function alive(pid: number): boolean {
+/** A job holds an exclusive flock on <dir>/lock for as long as it runs. */
+function lockHeld(dir: string): boolean {
   try {
-    return Deno.statSync(`/proc/${pid}`).isDirectory;
+    Deno.statSync(`${dir}/lock`);
   } catch {
     return false;
   }
+  const r = new Deno.Command("flock", { args: ["-n", `${dir}/lock`, "true"], stdout: "null", stderr: "null" }).outputSync();
+  return !r.success;
 }
 
 function readText(path: string): string | null {
@@ -172,7 +175,6 @@ export const behavior = {
         const dir = `${g.markersDir}/${args.key}`;
         const launches = (readText(`${dir}/attempts`) ?? "").split("\n").filter(Boolean).length;
         const resultText = readText(`${dir}/result.json`);
-        const pid = Number(readText(`${dir}/pid`) ?? "0");
 
         let job: Job;
         const base = { key: args.key, workItem: args.workItem, stage: args.stage, launches };
@@ -185,7 +187,7 @@ export const behavior = {
             llmTurns: Number(r.llmTurns ?? 0),
             ...products(args.stage, args.key, r),
           };
-        } else if (pid > 0 && alive(pid)) {
+        } else if (lockHeld(dir)) {
           job = { ...base, state: "running", launchedNow: false, llmTurns: 0, artifacts: {}, evidence: null };
         } else if (launches >= g.maxLaunches) {
           job = {

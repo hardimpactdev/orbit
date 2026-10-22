@@ -207,6 +207,10 @@ globalArguments:
         - name: code-review
           kind: findings
           reviews: candidate
+          schema:
+            type: object
+            properties:
+              summary: { type: string }
       transitions:
         - name: accept
           to: approved
@@ -219,7 +223,7 @@ globalArguments:
             - { type: artifact-fresh, config: { artifact: code-review, recordedThisCycle: true } }
             - type: cel
               config:
-                expr: 'artifacts.code_review.findings.exists(f, f.resolved != true && f.severity in ["critical", "high"])'
+                expr: 'artifacts.code_review.findings.exists(f, !(has(f.resolved) && f.resolved) && f.severity in ["critical", "high"])'
                 message: no open critical or high findings
         - name: retry
           to: review

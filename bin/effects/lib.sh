@@ -24,14 +24,15 @@ ensure_worktree() {
     log "creating worktree $WT on $BRANCH at ${PLAN_COMMIT:0:9}"
     git -C "$BASE_CLONE" worktree add -q -B "$BRANCH" "$WT" "$PLAN_COMMIT"
   fi
-  if [ ! -e "$WT/vendor/autoload.php" ]; then
-    log "composer install (root)"
-    (cd "$WT" && composer install --no-interaction --no-ansi --no-progress -q)
-  fi
-  if [ ! -e "$WT/$SUB_PROJECT/vendor/autoload.php" ]; then
-    log "composer install ($SUB_PROJECT)"
-    (cd "$WT/$SUB_PROJECT" && composer install --no-interaction --no-ansi --no-progress -q)
-  fi
+  # Checks reach across sub-projects (docs reads apps/gateway/vendor), so
+  # install every Composer project, as Project 46's setup steps do.
+  local p
+  for p in . apps/cli apps/docs apps/gateway apps/e2e packages/php-sdk; do
+    if [ ! -e "$WT/$p/vendor/autoload.php" ]; then
+      log "composer install ($p)"
+      (cd "$WT/$p" && composer install --no-interaction --no-ansi --no-progress -q)
+    fi
+  done
 }
 
 # The commit that already carries this idempotency key, if any.

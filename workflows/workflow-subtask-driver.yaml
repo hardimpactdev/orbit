@@ -11,6 +11,10 @@ inputs:
       type: integer
       default: 1
       description: Guarded steps per work item per tick
+    workItems:
+      type: array
+      items: { type: string }
+      description: Work items to tick (default every active run)
 jobs:
   - name: tick
     steps:
@@ -21,6 +25,7 @@ jobs:
           methodName: tick
           inputs:
             maxSteps: ${{ inputs.maxSteps }}
+            workItems: '${{ has(inputs.workItems) ? inputs.workItems : null }}'
         dependsOn: []
         weight: 0
         allowFailure: false

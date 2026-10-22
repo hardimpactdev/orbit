@@ -5,6 +5,14 @@
 # when finished, result.json. A result.json that already exists means the key
 # is done: the effect never runs twice for one key.
 set -euo pipefail
+# Effects run with a minimal environment. Agent markers inherited from the
+# launching session (CLAUDECODE, AI_AGENT, ...) switch Pest to agent output
+# and break Orbit's own tests; a cron or serve launch would not have them.
+if [ -z "${RUN_EFFECT_CLEAN:-}" ]; then
+  exec env -i RUN_EFFECT_CLEAN=1 HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${USER:-$(id -un)}" \
+    PATH="$PATH" LANG="${LANG:-C.UTF-8}" TERM=dumb TMPDIR="${TMPDIR:-/tmp}" \
+    COMPOSER_HOME="${COMPOSER_HOME:-$HOME/.config/composer}" "$0" "$@"
+fi
 dir="$1"
 stage="$2"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -23,7 +31,9 @@ echo $$ > "$dir/pid"
 date -u +%FT%TZ >> "$dir/attempts"
 
 set +e
-"$here/effects/$stage.sh" >> "$dir/effect.log" 2>&1
+script="$here/effects/$stage.sh"
+[ -f "${SCRATCH_ROOT:-/fast/apps/orbit-swamp-scratch}/fake/$WORK_ITEM.json" ] && script="$here/effects/fake.sh"
+STAGE="$stage" "$script" >> "$dir/effect.log" 2>&1
 code=$?
 set -e
 if [ ! -f "$dir/result.json" ]; then

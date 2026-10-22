@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# tick-loop <interval-seconds> [work-item ...]
+# The phase 2 stand-in for a cron trigger: one subtask-driver run per interval.
+# Runs never overlap (each tick finishes before the next starts).
+set -uo pipefail
+. "$HOME/.config/swamp/env.sh"
+cd "$(dirname "$0")/.."
+interval="${1:-60}"; shift || true
+args=()
+if [ $# -gt 0 ]; then args=(--input "workItems=$(printf '%s\n' "$@" | jq -R . | jq -sc .)"); fi
+while true; do
+  start=$(date +%s)
+  swamp workflow run subtask-driver "${args[@]}" 2>&1 | grep -E '   tick │ [a-z0-9-]+: |rror|failed'
+  sleep $(( interval - ($(date +%s) - start) > 0 ? interval - ($(date +%s) - start) : 1 ))
+done

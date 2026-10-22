@@ -121,17 +121,16 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     }
   }
 
-  // Products are in: advance along the one transition that needs no human.
-  const auto = status.transitions.filter((t) =>
-    t.satisfied && !t.manual && !t.gates.some((g) => g.type === "human-approval")
-  );
+  // Products are in: advance along the one satisfied transition. Satisfied
+  // means every gate passed, so a human gate on it has been approved already.
+  const auto = status.transitions.filter((t) => t.satisfied && !t.manual);
   if (auto.length === 1) {
     killIf("before-advance", killAt, ctx);
     await call(ctx, f, "advance", { workItem, transition: auto[0].name });
     return { status, action: `advanced ${stage} --${auto[0].name}--> ${auto[0].to}`, waiting: null };
   }
   if (auto.length > 1) return { status, action: null, waiting: `several transitions satisfied: ${auto.map((t) => t.name)}` };
-  const limited = status.transitions.filter((t) => t.cycleLimitBlocked);
+  const limited = status.transitions.filter((t) => t.cycleLimitBlocked && t.gates.every((g) => g.pass));
   if (limited.length > 0) {
     return { status, action: null, waiting: `assistance: cycle limit; approve gateId=cycle-override:${limited[0].to}` };
   }
@@ -159,12 +158,12 @@ export const behavior = {
     tick: {
       description: "Take each work item one guarded step (dispatch, poll, record, or advance)",
       arguments: z.object({
-        workItems: z.array(z.string()).optional().describe("Default: every active run of the factory"),
+        workItems: z.array(z.string()).nullish().describe("Default: every active run of the factory"),
         maxSteps: z.number().int().min(1).default(1),
         killAt: z.enum(KILL_POINTS).optional().describe("Kill test: SIGKILL this process at that point"),
       }),
       execute: async (
-        args: { workItems?: string[]; maxSteps: number; killAt?: string },
+        args: { workItems?: string[] | null; maxSteps: number; killAt?: string },
         ctx: Ctx,
       ) => {
         const f = ctx.globalArgs.factory;
