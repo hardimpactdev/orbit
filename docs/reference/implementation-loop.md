@@ -606,7 +606,9 @@ Gateway uses stock Pest time-balanced shards to keep every full run short, on ma
 
 ### Gateway test time limits
 
-Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test. There is no suite-time target, CI-step timing gate, or headroom requirement. Record any remaining unsized case at or above two seconds with its measured time and cause for a focused fix.
+Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. The default is two seconds locally. The Gateway shard and privileged CI steps pass `--default-time-limit=5` through their existing Pest commands, giving unsized tests five seconds in CI. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
+
+CI permits five seconds because CPU contention slows work on shared hosts. Aborts at two seconds across changing tests, including pure renderers, are not evidence that those tests need rewriting. Investigate any failure that remains at five seconds as a real bug. There is no suite-time target, CI-step timing gate, or headroom requirement. Do not add per-test CI budgets or timing machinery.
 
 An exception uses a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Each case needs review; the class contains only the approved real-deadline cases, never unrelated tests. The approved classes are `DocumentTransportDeadlineTest`, with the native Guzzle connection and total-request deadlines, and `LinuxHostCtimeTest`, with real kernel-ctime aging through GNU `find`. They use stock PHPUnit `timeoutForLargeTests`, without an override. Installed PHPUnit supports sizes only on classes, and installed Pest cannot declare sizes. Do not substitute size-named groups or add custom timeout or sizing machinery.
 
@@ -630,7 +632,7 @@ Copy the initial committed Git repository into each private checkout. The analys
 
 A scheduler proof with fixed collaborators reuses its real scheduler graph within one case, including successive handoffs, CI-state reads and failure-budget ticks. Resolve a fresh graph after rebinding a collaborator. The fixture shares the immutable subtask runner only while building one graph and preserves caller-owned bindings. It does not cache the scheduler across cases. Freeze the clock before starting a handoff age-boundary proof so elapsed test execution cannot cross the boundary before an explicit time advance.
 
-Task VM source fixtures prepare read-only cache histories and publications once per worker, then copy complete private working and bare repositories. Finite Gateway-mirror Git commands and local Git predicates use the pipe-driven fixture runner. The real fetches, packs and imports still run. The cache importer checks the actual PHP version with core-only PHP and runs its standard-library Python without ambient site packages. It does not boot unused PHP extensions for each version read. Task VM source fixtures also use that local executor for finite Bash programs. Removal workers, cancellation and output-stream proofs keep their native runners.
+Task VM source fixtures use the same local executor for finite Bash programs. Each case owns its repositories, cache publications and imports. Proofs of removal, cancellation and streamed output still run the actual processes.
 
 Production deployment fixtures copy committed read-only Git seeds into private writable repositories instead of rebuilding the same history for each retained release. Each case still runs the real release programs, ACL changes and filesystem checks. Buffer finite Bash programs before execution so the shell does not read each source line from a process pipe.
 
@@ -640,7 +642,7 @@ Private DNS publication fixtures source their scripted service, socket, sleep an
 
 The shared Git cleanup regression runs stock Pest against a native fixture with real frozen release seeds and the class-cleanup trait. It does not boot a nested Laravel application merely to test class cleanup before the run directory is removed. The parent waits through PHP's `exec`, with captured output and an asserted exit code. It does not leave a Symfony pipe error handler installed while waiting for the child.
 
-Fixtures for Python programs that use only the standard library can use `StandardLibraryPython` to omit host site-package startup. Arguments, binary stdin, environment, exit status and execution in a fresh process remain real. `LocalShellSshExecutor` writes finite `bash -seu` stdin programs to private mode-`0600` files in PHP, then sources them in the real Bash process. It does not start `mktemp`, `cat` or `rm` merely to stage source. Arguments, shell status and protected-input ownership are preserved; PHP removes the source file after success or failure. Other command inputs remain byte-exact data.
+Fixtures for Python programs that use only the standard library can use `StandardLibraryPython` to omit host site-package startup. Arguments, binary stdin, environment, exit status and execution in a fresh process remain real. `LocalShellSshExecutor` buffers finite `bash -seu` stdin programs in private temporary files; other command arguments remain data. Protected inputs keep their caller-owned lifetime.
 
 Selected authentication, SSR and repeated-check cases can inspect actual local check artifacts after the real check exits. Dedicated status and output transport cases still use the remote reader. Do not use local artifact helpers for streaming or cancellation proofs.
 
@@ -658,7 +660,7 @@ CI does not restore or save Rector's cache. Every project's `composer rector` us
 
 The regression in `apps/docs/tests/Unit/ToolingBaselineRectorCacheTest.php` reads the project's Composer script in the test body and requires an exact `--clear-cache` argument. Removing the argument makes the test fail. `bin/tooling-baseline` keeps the Rector command identical in every project, and its drift test rejects removal of the argument from another project too.
 
-Running Rector twice from cold exceeded the stock two-second per-test limit on CI. The direct command assertion checks the setting Orbit owns instead of retesting Rector's cache implementation. No Rector work or assertions run in a class-level hook.
+Running Rector twice from cold adds unrelated work. The direct command assertion checks the setting Orbit owns instead of retesting Rector's cache implementation. No Rector work or assertions run in a class-level hook.
 
 Gateway timings were measured in the task workspace on Linux x86_64, with four CPUs, PHP 8.5.11, and Rector 2.6.7. They were 126.24 seconds for an uncached run and 0.65 seconds for a warm run before the fix. After adding `--clear-cache`, `composer rector` took 154.77 seconds on the first run and 118.92 seconds on the repeat. These are wall-clock samples, not a performance guarantee: checks now pay the full analysis cost on every run.
 

@@ -45,6 +45,7 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
@@ -71,31 +72,22 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
-use Tests\Support\FixtureProcessRunner;
 use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PlantedGitConfig;
-use Tests\Support\StandardLibraryPython;
 
 pest()->group('privileged');
-
-const ORB76_CACHE_PROJECTS = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
 
 beforeAll(function (): void {
     $seed = orb76_repository_seed();
     new Filesystem()->makeDirectory($seed, 0o755, true);
     orb76_create_remote_repository($seed, $seed.'/origin.git');
-    mkdir($seed.'/cache-runtime');
-    file_put_contents($seed.'/cache-runtime/php', '#!/bin/sh'."\n".'exec '.escapeshellarg(PHP_BINARY).' -n "$@"'."\n");
-    chmod($seed.'/cache-runtime/php', 0o500);
-    orb76_cached_repository_seed();
 });
 
 afterAll(function (): void {
     orb76_python_programs()->close();
-    new Filesystem()->deleteDirectory(orb76_cached_repository_seed()['directory']);
     new Filesystem()->deleteDirectory(orb76_repository_seed());
 });
 
@@ -171,8 +163,6 @@ beforeEach(function (): void {
     $catalog = new RemoteProgramCatalog;
     $this->ssh = $ssh;
     $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
-    $this->mirrorProcesses = new FixtureProcessRunner;
-    app()->instance(TaskVmGit::class, new TaskVmGit($this->mirrorProcesses, $this->sandbox.'/mirror', ['https', 'file']));
     $this->source = new RemoteDevelopmentInstanceSourceLifecycle(
         $ssh,
         $accounts,
@@ -249,30 +239,6 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($network)->toBe(['0', '0']);
 });
 
-it('keeps cached source seeds and both Git repositories private from each writable copy', function (): void {
-    $seed = orb76_cached_repository_seed();
-    $cacheRefs = ['refs/orbit/ci-cache/'.$seed['previous'], 'refs/orbit/ci-cache/'.$seed['main']];
-    sort($cacheRefs);
-    foreach (['first', 'second'] as $name) {
-        $directory = $this->sandbox.'/'.$name;
-        mkdir($directory);
-        orb76_copy_cached_repository($seed['directory'], $directory);
-    }
-    $first = $this->sandbox.'/first';
-    file_put_contents($first.'/work/README.md', "private change\n");
-    orb76_run(['git', '-C', $first.'/work', 'commit', '-am', 'Private change']);
-    orb76_run(['git', '-C', $first.'/work', 'push', 'origin', 'main']);
-    orb76_run(['git', '--git-dir='.$first.'/origin.git', 'update-ref', '-d', 'refs/orbit/ci-cache/'.$seed['previous']]);
-
-    foreach ([$seed['directory'], $this->sandbox.'/second'] as $directory) {
-        expect(file_get_contents($directory.'/work/README.md'))->toBe("uncached main\n")
-            ->and(trim(orb76_run(['git', '-C', $directory.'/work', 'rev-parse', 'HEAD'])->stdout))->toBe($seed['main'])
-            ->and(trim(orb76_run(['git', '-C', $directory.'/work', 'status', '--porcelain'])->stdout))->toBe('')
-            ->and(trim(orb76_run(['git', '--git-dir='.$directory.'/origin.git', 'rev-parse', 'refs/heads/main'])->stdout))->toBe($seed['main'])
-            ->and(trim(orb76_run(['git', '--git-dir='.$directory.'/origin.git', 'for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/'])->stdout))->toBe(implode("\n", $cacheRefs));
-    }
-});
-
 it('starts a new task workspace at main tip and imports the newest cached ancestor', function (bool $cachedHead): void {
     Log::spy();
     orb76_https_origin($this);
@@ -280,14 +246,28 @@ it('starts a new task workspace at main tip and imports the newest cached ancest
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Warm start', 'brief' => 'Start warm.', 'status' => TaskGroupStatus::Running]);
     orb76_task_vm($this->node)->update(['group_id' => $group->id]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
-    $seed = orb76_cached_repository_seed();
-    orb76_copy_cached_repository($seed['directory'], $this->sandbox);
-    if (! $cachedHead) {
-        orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/orbit/ci-cache/'.$seed['main']]);
+    $work = $this->sandbox.'/work';
+    $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
+    mkdir($work.'/bin');
+    copy(base_path('../../bin/ci-cache-ref'), $work.'/bin/ci-cache-ref');
+    file_put_contents($work.'/.gitignore', "**/vendor/\n");
+    foreach ($projects as $project) {
+        mkdir($work.'/'.$project, 0o755, true);
+        file_put_contents($work.'/'.$project.'/composer.lock', '{"packages":[]}');
+        file_put_contents($work.'/'.$project.'/pint.json', '{}');
+        orb76_cache_dependencies($work.'/'.$project);
     }
-    $projects = ORB76_CACHE_PROJECTS;
-    $main = $seed['main'];
-    $selected = $cachedHead ? $main : $seed['previous'];
+    orb76_run(['git', '-C', $work, 'add', '.']);
+    orb76_run(['git', '-C', $work, 'commit', '-m', 'Cache inputs']);
+    $previous = orb76_publish_ci_cache($this->sandbox, $projects);
+    file_put_contents($work.'/README.md', "uncached main\n");
+    orb76_run(['git', '-C', $work, 'commit', '-am', 'New main']);
+    $main = trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
+    if ($cachedHead) {
+        orb76_publish_ci_cache($this->sandbox, $projects);
+    }
+    orb76_run(['git', '-C', $work, 'push', 'origin', 'main']);
+    $selected = $cachedHead ? $main : $previous;
 
     try {
         $name = 'task-'.$group->id;
@@ -303,9 +283,7 @@ it('starts a new task workspace at main tip and imports the newest cached ancest
         foreach ($projects as $project) {
             orb76_cache_dependencies($checkout.'/'.$project);
         }
-        $import = orb76_run(['bash', '-c', 'cd "$1"; bash "$2"', '--', $checkout, resource_path('instances/ci-caches.sh')], environment: [
-            'PATH' => orb76_repository_seed().'/cache-runtime'.PATH_SEPARATOR.StandardLibraryPython::path(getenv('PATH') ?: ''),
-        ]);
+        $import = orb76_run(['bash', '-c', 'cd "$1"; bash "$2"', '--', $checkout, resource_path('instances/ci-caches.sh')]);
         expect($import->stdout)->not->toContain('cold');
         foreach ($projects as $project) {
             expect(file_get_contents($checkout.'/'.$project.'/vendor/pint.cache'))->toBe(orb76_pint_cache($selected))
@@ -323,7 +301,7 @@ it('starts a cache-enabled new task workspace cold at main tip when cache refs a
     orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
     if ($fetchFails) {
-        $runner = new class($this->mirrorProcesses) implements ProcessRunner
+        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
         {
             public function __construct(private ProcessRunner $runner) {}
 
@@ -3549,52 +3527,12 @@ function orb76_task_vm(Node $node): TaskVm
         'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200']);
 }
 
-/** @return array{directory: string, previous: string, main: string} */
-function orb76_cached_repository_seed(): array
-{
-    static $seed = null;
-    if ($seed === null) {
-        $directory = sys_get_temp_dir().'/orbit-source-cache-seed-'.bin2hex(random_bytes(16));
-        new Filesystem()->copyDirectory(orb76_repository_seed(), $directory);
-        $work = $directory.'/work';
-        mkdir($work.'/bin');
-        copy(dirname(__DIR__, 6).'/bin/ci-cache-ref', $work.'/bin/ci-cache-ref');
-        file_put_contents($work.'/.gitignore', "**/vendor/\n");
-        foreach (ORB76_CACHE_PROJECTS as $project) {
-            mkdir($work.'/'.$project, 0o755, true);
-            file_put_contents($work.'/'.$project.'/composer.lock', '{"packages":[]}');
-            file_put_contents($work.'/'.$project.'/pint.json', '{}');
-            orb76_cache_dependencies($work.'/'.$project);
-        }
-        orb76_run(['git', '-C', $work, 'add', '.']);
-        orb76_run(['git', '-C', $work, 'commit', '-m', 'Cache inputs']);
-        $previous = orb76_publish_ci_cache($directory, ORB76_CACHE_PROJECTS);
-        file_put_contents($work.'/README.md', "uncached main\n");
-        orb76_run(['git', '-C', $work, 'commit', '-am', 'New main']);
-        $main = trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
-        orb76_publish_ci_cache($directory, ORB76_CACHE_PROJECTS);
-        orb76_run(['git', '-C', $work, 'push', 'origin', 'main']);
-        $seed = ['directory' => $directory, 'previous' => $previous, 'main' => $main];
-    }
-
-    return $seed;
-}
-
-/** Copies complete repositories, including symlinks, without sharing mutable Git state. */
-function orb76_copy_cached_repository(string $seed, string $sandbox): void
-{
-    foreach (['work', 'origin.git'] as $name) {
-        new Filesystem()->deleteDirectory($sandbox.'/'.$name);
-    }
-    orb76_run(['cp', '-a', '--', $seed.'/work', $seed.'/origin.git', $sandbox]);
-}
-
 /** Use the installed Pest classes, but keep each fixture's imported quality caches private. */
 function orb76_cache_dependencies(string $project): void
 {
     if (! is_dir($project.'/vendor')) {
         mkdir($project.'/vendor');
-        symlink(dirname(__DIR__, 4).'/vendor/autoload.php', $project.'/vendor/autoload.php');
+        symlink(base_path('vendor/autoload.php'), $project.'/vendor/autoload.php');
     }
 }
 
@@ -3649,13 +3587,10 @@ function orb76_create_remote_repository(string $sandbox, string $repository): vo
     orb76_run(['git', '-C', $work, 'push', 'origin', 'main', 'dev']);
 }
 
-/**
- * @param  non-empty-list<string>  $arguments
- * @param  array<string, string|false>  $environment
- */
-function orb76_run(array $arguments, ?string $input = null, array $environment = []): CommandResult
+/** @param non-empty-list<string> $arguments */
+function orb76_run(array $arguments, ?string $input = null): CommandResult
 {
-    $process = new Process($arguments, env: $environment, input: $input);
+    $process = new Process($arguments, input: $input);
     $process->run();
     $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false);
     expect($result->succeeded())->toBeTrue($result->stderr);
@@ -3705,7 +3640,7 @@ function orb_checkout_process_running(int $pid): bool
 /** @param non-empty-list<string> $arguments */
 function orb178_run_allow_failure(array $arguments): CommandResult
 {
-    return new FixtureProcessRunner()->run(new ProcessInvocation($arguments));
+    return new NativeProcessRunner()->run(new ProcessInvocation($arguments));
 }
 
 function orb178_advance_remote(string $sandbox, string $ref): string

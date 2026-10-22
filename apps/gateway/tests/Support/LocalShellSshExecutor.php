@@ -10,7 +10,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use Closure;
-use RuntimeException;
 use Symfony\Component\Process\Process;
 
 /**
@@ -35,30 +34,13 @@ final class LocalShellSshExecutor implements SshExecutor
         if ($this->transformInput !== null) {
             $input = ($this->transformInput)($input ?? '');
         }
-        $program = null;
-        $arguments = $command->arguments;
-        try {
-            if ($arguments === ['bash', '-seu']
-                || array_slice($arguments, 0, 3) === ['bash', '-seu', '--']) {
-                $directory = $this->programDirectory ?? sys_get_temp_dir();
-                if (! is_dir($directory)) {
-                    throw new RuntimeException('The finite Bash program directory is missing.');
-                }
-                $program = tempnam($directory, '.orbit-program.');
-                if ($program === false || file_put_contents($program, $input ?? '') !== strlen($input ?? '')) {
-                    throw new RuntimeException('Could not stage the finite Bash program.');
-                }
-                $arguments = ['bash', '-ceu', 'fixture_program=$1; shift; source "$fixture_program" "$@"', 'bash', $program, ...array_slice($arguments, 3)];
-                $input = null;
-            }
-            $process = new Process($arguments, $this->workingDirectory, [...$this->environment, 'COMPOSER_AUTH' => false], $input);
-            $process->run();
-
-            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
-        } finally {
-            if (is_string($program)) {
-                unlink($program);
-            }
+        if ($command->arguments === ['bash', '-seu']
+            || array_slice($command->arguments, 0, 3) === ['bash', '-seu', '--']) {
+            $input = BufferedBashProgram::stdinPrelude($this->programDirectory ?? sys_get_temp_dir()).($input ?? '');
         }
+        $process = new Process($command->arguments, $this->workingDirectory, [...$this->environment, 'COMPOSER_AUTH' => false], $input);
+        $process->run();
+
+        return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
     }
 }
