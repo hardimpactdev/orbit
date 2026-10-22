@@ -389,7 +389,7 @@ jobs:
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     needs: changes
@@ -424,7 +424,7 @@ jobs:
       - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:

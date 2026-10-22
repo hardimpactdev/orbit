@@ -413,7 +413,7 @@ SH);
         expect($jobs['gateway-shards']['runs-on'])
             ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && (github.event_name != \'pull_request\' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}');
         expect($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
-            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact');
         expect($projectSteps['Verify Gateway shard coverage'])->toMatchArray([
             'if' => "matrix.project.directory == 'apps/gateway'",
             'run' => '../../bin/check-pest-shards',
@@ -537,7 +537,7 @@ it('keeps the whole privileged group required in one disposable CI job', functio
     expect($job)->not->toHaveKey('strategy');
     expect($job['if'])->toBe('fromJSON(needs.changes.outputs.jobs).privileged');
     $commands = implode("\n", array_column($job['steps'], 'run'));
-    expect($commands)->toContain('vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never');
+    expect($commands)->toContain('vendor/bin/pest --parallel --default-time-limit=5 --group=privileged --fail-on-empty-test-suite --compact --colors=never');
     expect($commands)->toContain('--group=privileged', '--fail-on-empty-test-suite')
         ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');

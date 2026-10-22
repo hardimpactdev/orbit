@@ -284,7 +284,19 @@ final class GatewayReleaseFixture implements ProcessRunner
     public function cleanup(): void
     {
         if (is_dir($this->base)) {
-            exec('find -P '.escapeshellarg($this->base).' -type d -exec chmod u+rwx {} \\; && rm -rf -- '.escapeshellarg($this->base));
+            $this->thawDirectories($this->base);
+            exec('rm -rf -- '.escapeshellarg($this->base));
+        }
+    }
+
+    private function thawDirectories(string $directory): void
+    {
+        // Restore access before opening traversal-only directories; never thaw files or symlink targets.
+        chmod($directory, (fileperms($directory) & 0o7777) | 0o700);
+        foreach (new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS) as $entry) {
+            if (! $entry->isLink() && $entry->isDir()) {
+                $this->thawDirectories($entry->getPathname());
+            }
         }
     }
 

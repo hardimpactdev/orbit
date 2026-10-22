@@ -75,6 +75,7 @@ use Symfony\Component\Process\Process;
 use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PlantedGitConfig;
 
 pest()->group('privileged');
@@ -3722,9 +3723,9 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
                 $payload = $command->protectedInput === null ? $input : stream_get_contents($command->protectedInput->stream());
                 $result = orb76_python_programs()->run($arguments[3], $program, $payload, $this->environment);
             } else {
-                $process = new Process($arguments, env: $this->environment, input: $command->protectedInput?->stream() ?? $input);
-                $process->run();
-                $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false);
+                $executor = new LocalShellSshExecutor(programDirectory: dirname($this->localOrigin));
+                $executor->environment = $this->environment;
+                $result = $executor->execute($connection, new RemoteCommand($arguments, $input, $command->protectedInput));
             }
         } finally {
             $command->protectedInput?->close();

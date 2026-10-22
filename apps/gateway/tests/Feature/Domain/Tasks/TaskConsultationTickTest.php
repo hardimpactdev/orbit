@@ -438,10 +438,11 @@ it('starts a fresh handoff failure budget after a pass and ignores other check h
         FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed once.'),
         FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed twice.'),
     ]));
+    $scheduler = app(TaskScheduler::class);
 
     foreach ([1, 2, 3] as $failure) {
-        app(TaskScheduler::class)->tick();
-        app(TaskScheduler::class)->tick();
+        $scheduler->tick();
+        $scheduler->tick();
     }
 
     expect($task->fresh()->assistance_requested)->toBeFalse()

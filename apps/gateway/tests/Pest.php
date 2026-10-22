@@ -2,35 +2,19 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
-use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Extensions\ExtensionStore;
-use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
-use App\Domain\Logs\LogStreamStore;
-use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCheckRunner;
-use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskTurnReceipts;
-use App\Domain\TaskVms\TaskVmPackageCacheMount;
-use App\Infrastructure\Activity\ActivityShutdownFinalizer;
-use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
-use App\Infrastructure\Logs\CacheLogStreamStore;
-use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Ssh\HostKeyScanner;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -42,28 +26,12 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Sleep;
-use Laravel\Ai\Classification;
-use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
-use Tests\Support\FakeHostKeyScanner;
-use Tests\Support\FakeNodeAgentRuntime;
-use Tests\Support\FakeNodeCaddyBuilds;
-use Tests\Support\FakeRouterLanIngressReconciler;
-use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskTurnReceipts;
-use Tests\Support\FakeTaskVmPackageCacheMount;
-use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\FeatureTestEnvironment;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
 use Tests\Support\LocalInstanceTransferTransport;
-use Tests\Support\NullTaskReviewDiff;
-use Tests\Support\RealStorageGuard;
-use Tests\Support\SshGuardedProcessRunner;
 use Tests\Support\TestToolchain;
-use Tests\Support\UnreachableSshExecutor;
 use Tests\Support\WithSharedGitFixtureCleanup;
 use Tests\TestCase;
 
@@ -75,6 +43,8 @@ require_once __DIR__.'/Support/TaskVmGroups.php';
 require_once __DIR__.'/Support/TaskSchedulerTickFixtures.php';
 require_once __DIR__.'/Support/ResponseFixtures.php';
 require_once __DIR__.'/Support/RedactionPcreFailure.php';
+require_once __DIR__.'/Support/ValkeyDeadlineClock.php';
+require_once __DIR__.'/Support/WebSocketWriteClock.php';
 require_once __DIR__.'/Helpers/MetricsRoleFixtures.php';
 require_once __DIR__.'/Helpers/WebSocketRoleFixtures.php';
 require_once __DIR__.'/Helpers/AgentViewFixtures.php';
@@ -92,45 +62,10 @@ uses(GuardsSudo::class)->in('Feature', 'Unit', 'Fixtures', 'Rehearsal');
 
 uses(TestCase::class, LazilyRefreshDatabase::class, WithCachedConfig::class, WithCachedRoutes::class)
     ->beforeEach(function (): void {
-        $this->realStorageGuard = RealStorageGuard::watch(storage_path('app'));
-        // Direct-file staging must be isolated too, not just writes through the Storage facade.
-        $this->temporaryStorage = sys_get_temp_dir().'/orbit-feature-storage-'.bin2hex(random_bytes(16));
-        app()->useStoragePath($this->temporaryStorage);
-        Storage::fake('local');
-        app()->instance(SshExecutor::class, new UnreachableSshExecutor);
-        app()->instance(TaskVmPackageCacheMount::class, new FakeTaskVmPackageCacheMount);
-        app()->instance(HostKeyScanner::class, new FakeHostKeyScanner);
-        $processes = new SshGuardedProcessRunner(app(NativeProcessRunner::class));
-        app()->instance(SshGuardedProcessRunner::class, $processes);
-        app()->instance(NativeProcessRunner::class, $processes);
-        app()->instance(VitePortRuntime::class, new FakeVitePortRuntime);
-        app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
-        app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
-        app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
-        app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
-        app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
-        test_share_scheduler_graph();
-        app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
-        // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
-        app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
-        // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
-        app()->instance(CacheAgentStateView::class, new CacheAgentStateView(Cache::store('array')));
-        app()->instance(LogStreamStore::class, new CacheLogStreamStore(Cache::store('array')));
-        // The same holds for the Node locks' file store.
-        app()->instance(NodeLocks::class, new NodeLocks(Cache::store('array')));
-        Classification::fake()->preventStrayClassifications();
-        // Transitions wait for private DNS answers to expire; tests assert those waits instead.
-        Sleep::fake(syncWithCarbon: true);
-        // A streamed response a test never consumed stays armed; each test starts with none.
-        ActivityShutdownFinalizer::forgetArmed();
+        $this->featureEnvironment = FeatureTestEnvironment::start();
     })
     ->afterEach(function (): void {
-        try {
-            $this->realStorageGuard->assertUnchanged();
-            app(SshGuardedProcessRunner::class)->assertNoStrayProcesses();
-        } finally {
-            File::deleteDirectory($this->temporaryStorage);
-        }
+        $this->featureEnvironment->finish();
     })
     ->in('Feature');
 

@@ -59,7 +59,7 @@ it('sources DNS commands and their recursive calls without using their executabl
     $harness = new PrivateDnsPublishHarness;
     $files = new Filesystem;
     $root = dirname($harness->recordsPath(), 3);
-    $commands = ['dnsmasq', 'systemctl', 'ss', 'sleep', 'systemd-analyze'];
+    $commands = ['dnsmasq', 'systemctl', 'ss', 'grep', 'sleep', 'systemd-analyze'];
     try {
         foreach ($commands as $name) {
             $path = $root.'/bin/'.$name;
@@ -91,6 +91,51 @@ it('sources DNS commands and their recursive calls without using their executabl
         $harness->cleanup();
     }
 });
+
+it('matches only the queried PID in scripted socket output without an executable grep', function (string $output, int $status): void {
+    $harness = new PrivateDnsPublishHarness;
+    $root = dirname($harness->recordsPath(), 3);
+    try {
+        file_put_contents($root.'/bin/grep', "#!/usr/bin/false\n");
+        $process = new Process($harness->shell());
+        $process->setInput('printf %s '.escapeshellarg($output).' | grep -q pid=4242,');
+        $process->run();
+        expect($process->getExitCode())->toBe($status)
+            ->and($process->getOutput())->toBe('')
+            ->and($process->getErrorOutput())->toBe('');
+    } finally {
+        $harness->cleanup();
+    }
+})->with([
+    'no listener' => ['', 1],
+    'listener owns socket' => ["UNCONN users:((\"php8.5\",pid=4242,fd=5))\n", 0],
+    'different PID prefix' => ["UNCONN users:((\"php8.5\",pid=14242,fd=5))\n", 1],
+    'different PID suffix' => ["UNCONN users:((\"php8.5\",pid=42420,fd=5))\n", 1],
+    'another line without a final newline' => ["unrelated\nLISTEN users:((\"php8.5\",pid=4242,fd=6))", 0],
+]);
+
+/** @param list<string> $arguments */
+it('delegates non-PID queries to real grep with their file arguments unchanged', function (array $arguments, string $contents, int $status, string $output): void {
+    $harness = new PrivateDnsPublishHarness;
+    $root = dirname($harness->recordsPath(), 3);
+    try {
+        $file = $root.'/grep-input';
+        file_put_contents($file, $contents);
+        $process = new Process($harness->shell());
+        $process->setInput('grep '.implode(' ', array_map(escapeshellarg(...), [...$arguments, $file])));
+        $process->run();
+        expect($process->getExitCode())->toBe($status)
+            ->and($process->getOutput())->toBe($output)
+            ->and($process->getErrorOutput())->toBe('');
+    } finally {
+        $harness->cleanup();
+    }
+})->with([
+    'retained release reference' => [['-qF', '--', '/release/keep/'], "ExecStart=/release/keep/serve.php\n", 0, ''],
+    'unreferenced release' => [['-qF', '--', '/release/prune/'], "ExecStart=/release/keep/serve.php\n", 1, ''],
+    'non-numeric PID expression' => [['-q', 'pid=.*,'], "users:((\"php8.5\",pid=4242,fd=6))\n", 0, ''],
+    'different option and preserved output' => [['-v', 'pid=4242,'], "unrelated\npid=4242,\n", 0, "unrelated\n"],
+]);
 
 it('keeps strict executable DNS wrappers backed by the same command definitions', function (): void {
     $harness = new PrivateDnsPublishHarness;

@@ -17,6 +17,7 @@ use Orbit\Extensions\Documents\Infrastructure\DocumentsFilesystem;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Process;
+use Tests\Support\DocumentSchedulerFixture;
 use Tests\Support\SubprocessFixture;
 use Tests\TestCase;
 
@@ -105,16 +106,9 @@ function deletion_work(): array
     return app(WorkDocumentCleanupAction::class)->handle();
 }
 
-function deletion_scheduler(string $command = 'schedule:work', ?string $staleToken = null): Process
+function deletion_scheduler(string $command = 'schedule:work', ?string $staleToken = null): DocumentSchedulerFixture
 {
-    $home = config()->string('orbit.home');
-
-    // Readiness and each tick share this fixture deadline.
-    return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/document_scheduler.php'), $command, '--no-interaction'], base_path(), [
-        'ORBIT_HOME' => $home, 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $home.'/runtime', 'APP_ENV' => 'testing',
-        'DB_DATABASE' => $home.'/database.sqlite', 'DB_URL' => '', 'APP_KEY' => config()->string('app.key'),
-        'ORBIT_DOCUMENT_SCHEDULER_SESSION' => $staleToken ?? false,
-    ], timeout: 120);
+    return new DocumentSchedulerFixture(config()->string('orbit.home'), $command, $staleToken);
 }
 
 function deletion_scheduler_clock(string $clock): void
@@ -124,24 +118,12 @@ function deletion_scheduler_clock(string $clock): void
     rename($home.'/scheduler-clock.next', $home.'/scheduler-clock');
 }
 
-function deletion_scheduler_start(Process $consumer): void
+function deletion_scheduler_start(DocumentSchedulerFixture $consumer): void
 {
     $consumer->start();
-    expect(SubprocessFixture::line($consumer))->toBe('scheduler-ready');
 }
 
-function deletion_scheduler_tick(Process $consumer, string $clock): array
+function deletion_scheduler_tick(DocumentSchedulerFixture $consumer, string $clock): array
 {
-    deletion_scheduler_clock($clock);
-    $path = config()->string('orbit.home').'/tick-'.str_replace(':', '-', $clock);
-    SubprocessFixture::waitUntil($consumer, static function () use ($path): bool {
-        clearstatcache(true, $path);
-
-        return is_file($path);
-    });
-    expect(is_file($path))->toBeTrue($consumer->getOutput().$consumer->getErrorOutput());
-    $tick = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-    expect($tick['exit_code'])->toBe(0);
-
-    return $tick;
+    return $consumer->tick($clock);
 }

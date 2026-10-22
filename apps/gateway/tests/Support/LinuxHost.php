@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use Pest\Contracts\HasPrintableTestCaseName;
 use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
@@ -102,13 +104,13 @@ final class LinuxHost
         return true;
     }
 
-    /** Builds the destination command for the already-selected Pest case. */
+    /** Builds the destination command for the already-selected Pest or native PHPUnit case. */
     public static function caseCommand(TestCase $test, string $root): string
     {
-        // Pest compiles each test file into a class that records its source file.
-        $file = $test::$__filename ?? throw new RuntimeException('The test does not name its Pest source file.');
+        // Pest's compiled class records its source; a native PHPUnit class is declared in its test file.
+        $file = $test instanceof HasPrintableTestCaseName ? $test::$__filename : new ReflectionClass($test)->getFileName();
 
-        if (! str_starts_with($file, $root.'/')) {
+        if (! is_string($file) || ! str_starts_with($file, $root.'/')) {
             throw new RuntimeException("The test file [{$file}] is outside the Gateway directory [{$root}].");
         }
 
@@ -242,8 +244,8 @@ final class LinuxHost
      */
     private static function filter(TestCase $test): string
     {
-        if (! method_exists($test, 'getPrintableTestCaseMethodName')) {
-            throw new RuntimeException('Only Pest tests can run on the Linux test host.');
+        if (! $test instanceof HasPrintableTestCaseName) {
+            return preg_quote($test->nameWithDataSet(), '/');
         }
 
         $description = (string) $test->getPrintableTestCaseMethodName();

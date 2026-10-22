@@ -2,9 +2,16 @@
 
 declare(strict_types=1);
 
+use Tests\Feature\Support\LinuxHostCtimeTest;
+
 require_once __DIR__.'/../../Support/LinuxHostCopyFixtures.php';
 
 pest()->group('subprocess');
+
+it('selects the native kernel ctime case for delegated execution', function (): void {
+    $method = 'test_removes_legacy_copies_whose_change_time_is_stale';
+    linux_host_assert_delegated_selection(new LinuxHostCtimeTest($method), $method);
+});
 
 it('preserves the selected case groups', function (array $selection): void {
     $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never', ...$selection];

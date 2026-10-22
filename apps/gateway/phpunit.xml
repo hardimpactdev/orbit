@@ -4,7 +4,7 @@
          bootstrap="tests/bootstrap.php"
          colors="true"
          enforceTimeLimit="true"
-         defaultTimeLimit="42"
+         defaultTimeLimit="2"
          failOnRisky="true"
          stopOnRisky="true"
 >

@@ -2,25 +2,17 @@
 
 declare(strict_types=1);
 
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\FindingRuleAnalysis;
 
-/**
- * Runs PHPStan on one file and decodes its JSON report from stdout only. Under an AI agent,
- * PHPStan writes guidance to stderr, which would corrupt the report.
- *
- * @return array{0: int, 1: array<string, mixed>, 2: string}
- */
-function analyseWithPhpstan(string $path): array
-{
-    $process = new Process(
-        ['./vendor/bin/phpstan', 'analyse', '--configuration=phpstan.neon', '--no-progress', '--error-format=json', $path],
-        env: ['PAO_DISABLE' => '1'],
-    );
-    $process->run();
-    $result = json_decode($process->getOutput(), true);
+beforeAll(function (): void {
+    FindingRuleAnalysis::shared();
+});
 
-    return [(int) $process->getExitCode(), is_array($result) ? $result : [], $process->getOutput().$process->getErrorOutput()];
-}
+afterAll(function (): void {
+    FindingRuleAnalysis::cleanup();
+});
 
 it('reports the three PHP finding rules and accepts allowed declarations', function (): void {
     $directory = sys_get_temp_dir().'/orbit-finding-rules-'.bin2hex(random_bytes(8));
@@ -33,21 +25,9 @@ it('reports the three PHP finding rules and accepts allowed declarations', funct
     };
 
     try {
-        $inlineVar = $directory.'/inline-var.php';
-        file_put_contents($inlineVar, <<<'PHP'
-<?php
-final class InlineOverride
-{
-    public function forbiddenOverride(): void
-    {
-        /**
-         * @var string $value
-         */
-        $value = 'value';
-    }
-}
-PHP);
-        [$status, $result, $output] = analyseWithPhpstan($inlineVar);
+        $analysis = FindingRuleAnalysis::shared();
+        $inlineVar = $analysis->path('inline-var.php');
+        [$status, $result, $output] = $analysis->forbidden;
         $messages = array_values(array_filter(
             $result['files'][$inlineVar]['messages'] ?? [],
             static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
@@ -56,15 +36,7 @@ PHP);
             ->and($messages)->toHaveCount(1)
             ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
 
-        $strtotime = $directory.'/strtotime.php';
-        file_put_contents($strtotime, <<<'PHP'
-<?php
-function forbidden_call(): int
-{
-    return strtotime('2026-01-01');
-}
-PHP);
-        [$status, $result, $output] = analyseWithPhpstan($strtotime);
+        $strtotime = $analysis->path('strtotime.php');
         $messages = $result['files'][$strtotime]['messages'] ?? [];
         expect($status)->toBe(1, $output)
             ->and($messages)->toHaveCount(1)
@@ -73,53 +45,22 @@ PHP);
                 'Calling strtotime() is forbidden, Use Carbon parsing instead of strtotime().',
             );
 
-        $allowed = $directory.'/Allowed.php';
-        file_put_contents($allowed, <<<'PHP'
-<?php
-final class Allowed
-{
-    /** @var string */
-    private string $property = 'value';
-
-    /**
-     * @param string $value
-     */
-    public function accept(string $value): string
-    {
-        // strtotime() in a comment is not a call.
-        return $value.$this->property;
-    }
-}
-PHP);
-        [$status, , $output] = analyseWithPhpstan($allowed);
-        expect($status)->toBe(0, $output);
+        $allowed = $analysis->path('Allowed.php');
+        [$allowedStatus, $allowedResult, $allowedOutput] = $analysis->allowed;
+        expect($allowedStatus)->toBe(0, $allowedOutput)
+            ->and($allowedResult['files'][$allowed]['messages'] ?? [])->toBe([]);
 
         foreach (['@phpstan-var', '@psalm-var'] as $annotation) {
-            $typedOverride = $directory.'/'.substr($annotation, 1).'.php';
-            file_put_contents($typedOverride, "<?php\nfinal class TypedOverride {\n    public function override(): void {\n        /** {$annotation} string \$value */\n        \$value = 'value';\n    }\n}\n");
-            [$status, $result, $output] = analyseWithPhpstan($typedOverride);
+            $typedOverride = $analysis->path(substr($annotation, 1).'.php');
             $messages = $result['files'][$typedOverride]['messages'] ?? [];
             expect($status)->toBe(1, $output)
                 ->and($messages)->toHaveCount(1)
                 ->and($messages[0]['identifier'])->toBe('orbit.inlineVarOverride');
         }
 
-        $outsideMethod = $directory.'/outside-method.php';
-        file_put_contents($outsideMethod, <<<'PHP'
-<?php
-/** @var string $global */
-$global = 'value';
-
-function allowed_function(): string
-{
-    /** @var string $value */
-    $value = 'value';
-
-    return $value;
-}
-PHP);
-        [$status, , $output] = analyseWithPhpstan($outsideMethod);
-        expect($status)->toBe(0, $output);
+        $outsideMethod = $analysis->path('outside-method.php');
+        expect($allowedStatus)->toBe(0, $allowedOutput)
+            ->and($allowedResult['files'][$outsideMethod]['messages'] ?? [])->toBe([]);
 
         $badImport = $directory.'/tests/BadImportTest.php';
         file_put_contents($badImport, <<<'PHP'
@@ -225,10 +166,13 @@ PHP);
 });
 
 it('recursively checks nested test files with the exact CI invocation', function (): void {
-    $project = dirname(__DIR__, 3);
-    $directory = $project.'/tests/.classification-fakes-'.bin2hex(random_bytes(6));
-    $nested = $directory.'/Deep';
-    mkdir($nested, 0777, true);
+    $directory = sys_get_temp_dir().'/orbit-classification-fakes-'.bin2hex(random_bytes(6));
+    $project = $directory.'/apps/gateway';
+    $nested = $project.'/tests/Deep';
+    mkdir($nested, 0o700, true);
+    mkdir($directory.'/bin', 0o700);
+    // Mirror the CI layout and argv, without reanalyzing unrelated repository tests twice.
+    symlink(dirname(__DIR__, 5).'/bin/check-classification-fakes', $directory.'/bin/check-classification-fakes');
     $fixture = $nested.'/NestedFakeTest.php';
     $check = static function () use ($project): Process {
         $process = new Process(['php', '../../bin/check-classification-fakes', 'tests'], $project);
@@ -247,64 +191,30 @@ it('recursively checks nested test files with the exact CI invocation', function
         $guarded = $check();
         expect($guarded->getExitCode())->toBe(0, $guarded->getErrorOutput());
     } finally {
-        unlink($fixture);
-        rmdir($nested);
-        rmdir($directory);
+        new Filesystem()->deleteDirectory($directory);
     }
 });
 
 it('reports method-body var overrides while allowing declaration docblocks', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-method-body-var-'.bin2hex(random_bytes(8));
-    mkdir($directory, 0777, true);
-    $fixture = $directory.'/MethodBodyVar.php';
+    $analysis = FindingRuleAnalysis::shared();
+    $fixture = $analysis->path('MethodBodyVar.php');
+    [$status, $result, $output] = $analysis->forbidden;
+    $messages = array_values(array_filter(
+        $result['files'][$fixture]['messages'] ?? [],
+        static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
+    ));
 
-    file_put_contents($fixture, <<<'PHP'
-<?php
-final class MethodBodyVarFixture
-{
-    /** @var string */
-    private string $property = 'value';
+    expect($status)->toBe(1, $output)
+        ->and($result['files'][$fixture]['messages'] ?? [])->toHaveCount(1)
+        ->and($messages)->toHaveCount(1)
+        ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
 
-    /**
-     * @param string $parameter
-     * @return string
-     */
-    public function allowedDeclarationDocs(string $parameter): string
-    {
-        return $parameter.$this->property;
-    }
+    $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
+    $sourceMessages = $result['files'][$existingSource]['messages'] ?? [];
+    $sourceOverrides = array_values(array_filter(
+        $sourceMessages,
+        static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
+    ));
 
-    public function forbiddenMethodBodyOverride(): void
-    {
-        /** @var string $value */
-        $value = 'value';
-    }
-}
-PHP);
-
-    try {
-        [$status, $result, $output] = analyseWithPhpstan($fixture);
-        $messages = array_values(array_filter(
-            $result['files'][$fixture]['messages'] ?? [],
-            static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
-        ));
-
-        expect($status)->toBe(1, $output)
-            ->and($result['files'][$fixture]['messages'] ?? [])->toHaveCount(1)
-            ->and($messages)->toHaveCount(1)
-            ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
-
-        $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
-        [, $sourceResult] = analyseWithPhpstan($existingSource);
-        $sourceMessages = $sourceResult['files'][$existingSource]['messages'] ?? [];
-        $sourceOverrides = array_values(array_filter(
-            $sourceMessages,
-            static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
-        ));
-
-        expect($sourceOverrides)->toBe([]);
-    } finally {
-        unlink($fixture);
-        rmdir($directory);
-    }
+    expect($sourceOverrides)->toBe([]);
 });

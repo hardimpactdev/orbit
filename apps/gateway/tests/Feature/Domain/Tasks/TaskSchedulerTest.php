@@ -1032,7 +1032,8 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         }
     });
 
-    $claimed = app(TaskScheduler::class)->claimNext();
+    $scheduler = app(TaskScheduler::class);
+    $claimed = $scheduler->claimNext();
     test_pass_baseline();
     $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
     $first = $claimed?->tasks->first();
@@ -1041,13 +1042,13 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         ->and($first?->status)->toBe(TaskStatus::Running)
         ->and($first?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-1')->sole()->id);
 
-    $reviewing = app(TaskScheduler::class)->settleImplementer($first ?? $group->tasks->first());
+    $reviewing = $scheduler->settleImplementer($first ?? $group->tasks->first());
 
     expect($reviewing->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($reviewing->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
         ->and($spawner->events)->toBe(['implementer:1', 'reviewer']);
 
-    $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+    $advanced = $scheduler->acceptReview($reviewing->tasks->first());
 
     expect($advanced->status)->toBe(TaskGroupStatus::Running)
         ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
@@ -1055,10 +1056,10 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         ->and($advanced->tasks->last()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-2')->sole()->id)
         ->and($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2']);
 
-    $lastReview = app(TaskScheduler::class)->settleImplementer($advanced->tasks->last());
+    $lastReview = $scheduler->settleImplementer($advanced->tasks->last());
 
     expect($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2', 'reviewer']);
-    $settled = app(TaskScheduler::class)->acceptReview($lastReview->tasks->last());
+    $settled = $scheduler->acceptReview($lastReview->tasks->last());
 
     expect($settled->status)->toBe(TaskGroupStatus::Settling)
         ->and($settled->tasks->pluck('status')->all())->toBe([
@@ -1700,7 +1701,8 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         app(TaskWorkspaceMcp::class),
     ));
 
-    $reviewing = app(TaskScheduler::class)->settleImplementer($first);
+    $scheduler = app(TaskScheduler::class);
+    $reviewing = $scheduler->settleImplementer($first);
     $thread = AgentThread::query()->where('task_id', $first->id)->where('role', 'reviewer')->sole();
     $opening = $driver->calls[0]['prompt'];
 
@@ -1727,7 +1729,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'author' => 'reviewer', 'posted_at' => now()]);
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
-    app(TaskScheduler::class)->settleImplementer($first->fresh(), new TaskThreadObservation(
+    $scheduler->settleImplementer($first->fresh(), new TaskThreadObservation(
         threadId: $thread->id,
         role: TaskThreadRole::Reviewer,
         sessState: AgentThreadState::Working->value,
@@ -1745,7 +1747,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-1');
     $first->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
-    app(TaskScheduler::class)->settleImplementer($first->fresh());
+    $scheduler->settleImplementer($first->fresh());
     $continued = $driver->calls[1]['message'];
 
     expect($driver->calls[1])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-1'])
@@ -1763,7 +1765,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $driver->failNextSend = true;
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
-    app(TaskScheduler::class)->settleImplementer($first->fresh());
+    $scheduler->settleImplementer($first->fresh());
     $replacement = AgentThread::query()->where('task_id', $first->id)->where('role', 'reviewer')->orderByDesc('id')->first();
     $replaced = $driver->calls[3]['prompt'];
 
@@ -1788,7 +1790,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'exit_code' => 0,
         'started_at' => now(),
     ]);
-    app(TaskScheduler::class)->settleImplementer($second->fresh());
+    $scheduler->settleImplementer($second->fresh());
     $next = AgentThread::query()->where('task_id', $second->id)->where('role', 'reviewer')->sole();
 
     expect($next->id)->not->toBe($replacement?->id)

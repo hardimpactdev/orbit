@@ -4,11 +4,23 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ManagedTaskCheckSeed;
+use Tests\Support\TaskCheckChild;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
 
 pest()->group('privileged');
+
+function managed_check_seed(): ManagedTaskCheckSeed
+{
+    static $seed = null;
+
+    return $seed ??= new ManagedTaskCheckSeed;
+}
+
+afterAll(function (): void {
+    managed_check_seed()->close();
+});
 
 beforeEach(function (): void {
     $this->directory = check_runner_directory();
@@ -19,47 +31,41 @@ afterEach(function (): void {
 });
 
 it('recovers an exact managed run and never exposes a result before descendants stop', function (): void {
-    $checkout = check_runner_checkout('true');
+    $checkout = managed_check_seed()->checkout($this->directory);
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $runner = check_runner(managed_check_seed()->transport($checkout));
     $runId = bin2hex(random_bytes(16));
-    $barrier = $this->directory.'/descendant-barrier';
+    $barrier = new TaskCheckChild($this->directory);
     $ready = $this->directory.'/descendant-ready';
-    if (! mkdir($barrier)) {
-        throw new RuntimeException('Could not create the observable barrier.');
-    }
-    $child = 'touch '.escapeshellarg($ready).'; while test -d '.escapeshellarg($barrier).'; do read -r -t 0.02 ignored || true; done; printf descendant > late.txt';
+    $child = 'touch '.escapeshellarg($ready).'; '.$barrier->readyCommand().'; '.$barrier->waitCommand().'; printf descendant > late.txt';
     $process = null;
     try {
         $process = $runner->start($instance, 'bash -c '.escapeshellarg($child).' >/dev/null 2>&1 &', runId: $runId);
         $recovered = $runner->recoverStart($instance, $runId);
         expect($recovered?->pid)->toBe($process->pid)->and($recovered?->started)->toBe($process->started);
-        $deadline = microtime(true) + 10;
-        while ((! file_exists($ready) || ! file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json')) && microtime(true) < $deadline) {
-            clearstatcache();
-        }
+        $barrier->awaitReady();
+        check_runner_wait_for_exit($process);
         expect(file_exists($ready))->toBeTrue()
             ->and(file_exists($checkout.'/.git/orbit/check-starts/'.$runId.'.result.json'))->toBeTrue()
             ->and($runner->read($instance, $process)->state)->toBe('running');
-        rmdir($barrier);
+        $barrier->release();
+        $barrier->waitForExit();
         $reading = check_runner_wait($runner, $instance, $process);
         expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
             ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
             ->and($reading->changedPaths)->toContain('late.txt')
             ->and($reading->causalityUncertain)->toBeTrue();
     } finally {
-        if (is_dir($barrier)) {
-            rmdir($barrier);
-        }
+        $barrier->release();
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
 });
 
 it('keeps finished managed results bound to their run when a newer check completes', function (): void {
-    $checkout = check_runner_checkout('true');
+    $checkout = managed_check_seed()->checkout($this->directory);
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $runner = check_runner(managed_check_seed()->transport($checkout));
     $runIds = [bin2hex(random_bytes(16)), bin2hex(random_bytes(16))];
     try {
         $first = $runner->start($instance, 'true', runId: $runIds[0]);
@@ -82,18 +88,15 @@ it('keeps finished managed results bound to their run when a newer check complet
 });
 
 it('records a failed uncertain outcome after a managed check terminates without a result', function (bool $cancel): void {
-    $checkout = check_runner_checkout('true');
+    $checkout = managed_check_seed()->checkout($this->directory);
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $runner = check_runner(managed_check_seed()->transport($checkout));
     $runId = bin2hex(random_bytes(16));
     $ready = $checkout.'/command-ready';
+    $child = new TaskCheckChild($this->directory);
     try {
-        $process = $runner->start($instance, 'touch command-ready; exec sleep 60', runId: $runId);
-        $deadline = microtime(true) + 10;
-        while (! file_exists($ready) && microtime(true) < $deadline) {
-            clearstatcache();
-            usleep(10_000);
-        }
+        $process = $runner->start($instance, 'touch command-ready; '.$child->readyCommand().'; '.$child->waitCommand(), runId: $runId);
+        $child->awaitReady();
         expect(file_exists($ready))->toBeTrue();
         if ($cancel) {
             $runner->cancel($instance, $process);
@@ -118,26 +121,22 @@ it('records a failed uncertain outcome after a managed check terminates without 
 })->with(['cancel' => [true], 'killed supervisor and descendants' => [false]]);
 
 it('keeps a lost managed supervisor fenced until its surviving descendant terminates', function (): void {
-    $checkout = check_runner_checkout('true');
+    $checkout = managed_check_seed()->checkout($this->directory);
     $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
+    $runner = check_runner(managed_check_seed()->transport($checkout));
     $runId = bin2hex(random_bytes(16));
-    $barrier = $this->directory.'/missing-result-barrier';
+    $barrier = new TaskCheckChild($this->directory);
     $ready = $this->directory.'/missing-result-ready';
-    mkdir($barrier);
-    $command = 'touch '.escapeshellarg($ready).'; while test -d '.escapeshellarg($barrier).'; do read -r -t 0.02 ignored || true; done; printf late > descendant.txt';
+    $command = 'touch '.escapeshellarg($ready).'; '.$barrier->readyCommand().'; '.$barrier->waitCommand().'; printf late > descendant.txt';
     try {
         $process = $runner->start($instance, 'bash -c '.escapeshellarg($command), runId: $runId);
-        $deadline = microtime(true) + 10;
-        while (! file_exists($ready) && microtime(true) < $deadline) {
-            clearstatcache();
-            usleep(10_000);
-        }
+        $barrier->awaitReady();
         expect(file_exists($ready))->toBeTrue();
         (new Process(['kill', '-KILL', (string) $process->pid]))->mustRun();
 
         expect($runner->read($instance, $process)->state)->toBe('running');
-        rmdir($barrier);
+        $barrier->release();
+        $barrier->waitForExit();
         $reading = check_runner_wait($runner, $instance, $process);
 
         expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
@@ -145,9 +144,7 @@ it('keeps a lost managed supervisor fenced until its surviving descendant termin
             ->and($reading->changedPaths)->toContain('descendant.txt')
             ->and(file_get_contents($checkout.'/descendant.txt'))->toBe('late');
     } finally {
-        if (is_dir($barrier)) {
-            rmdir($barrier);
-        }
+        $barrier->release();
         (new Process(['sudo', '-n', 'systemctl', 'stop', 'orbit-task-check-'.$runId.'.service']))->run();
         (new Process(['sudo', '-n', 'systemctl', 'reset-failed', 'orbit-task-check-'.$runId.'.service']))->run();
     }
