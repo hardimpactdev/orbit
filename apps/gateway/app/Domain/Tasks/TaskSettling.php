@@ -1219,7 +1219,7 @@ final readonly class TaskSettling
             && $repository->pullRequestNumber($group->pr_url) === null;
         if ($outside) {
             TaskAssistance::apply($group, AssistanceKind::Failure, null, TaskScheduler::ForeignPullRequestPrefix.$group->pr_url
-                .' is not in '.$repository->owner.'/'.$repository->name.'. Update the Project repository_url to the repository of that pull request, or complete or cancel the task.');
+                .' is not in '.$repository->owner.'/'.$repository->name.'. Update the Project repository_url to the repository of that pull request, or complete the task, which does not read GitHub.');
         } elseif ($group->assistance_kind === AssistanceKind::Failure && self::isForeignPullRequestReason($group->assistance_reason)) {
             TaskAssistance::apply($group);
         }

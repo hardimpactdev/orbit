@@ -2812,7 +2812,7 @@ it('asks for assistance while pr_url is outside the Project repository and clear
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $reason = TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit. Update the Project repository_url to the repository of that pull request, or complete or cancel the task.';
+    $reason = TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit. Update the Project repository_url to the repository of that pull request, or complete the task, which does not read GitHub.';
     $this->assertDatabaseHas('tasks', [
         'id' => $group->id, 'status' => 'settling', 'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Failure->value, 'assistance_reason' => $reason,
