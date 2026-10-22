@@ -85,7 +85,8 @@ final readonly class DestroyProjectAction
         $leases = TaskWorkspaceLeaseRecord::query()->where(static function (Builder $query) use ($groupIds, $taskIds): void {
             $query->whereIn('group_id', $groupIds)->orWhereIn('task_id', $taskIds);
         });
-        $lease = (clone $leases)->where('status', '!=', 'released')->first();
+        // A cancelled lease is a withdrawn waiter that never held the workspace.
+        $lease = (clone $leases)->whereNotIn('status', ['released', 'cancelled'])->first();
 
         if ($lease instanceof TaskWorkspaceLeaseRecord) {
             throw new ResourceOperationException(
@@ -95,7 +96,7 @@ final readonly class DestroyProjectAction
             );
         }
 
-        $leases->where('status', 'released');
+        $leases->whereIn('status', ['released', 'cancelled']);
 
         DB::table('task_workspace_operations')->whereIn('lease_id', (clone $leases)->select('id'))->delete();
         $leases->delete();

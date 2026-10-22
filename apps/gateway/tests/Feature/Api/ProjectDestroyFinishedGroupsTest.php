@@ -132,6 +132,22 @@ describe('Project removal with task history', function (): void {
         expect(DB::select('PRAGMA foreign_key_check'))->toBeEmpty();
     });
 
+    it('deletes a cancelled workspace lease with its finished group', function (): void {
+        $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
+        $history = projectDestroyTaskHistory($project, TaskGroupStatus::Cancelled);
+        $lease = $history['task_workspace_leases'][0];
+        DB::table('task_workspace_leases')->insert([
+            'instance_id' => $lease['instance_id'], 'group_id' => $lease['group_id'], 'task_id' => null,
+            'kind' => 'teardown', 'owner' => 'teardown', 'status' => 'cancelled', 'released_at' => now(),
+        ]);
+
+        $this->deleteJson("/api/v1/projects/{$project->id}")->assertOk();
+
+        $this->assertModelMissing($project);
+        expect(DB::table('task_workspace_leases')->count())->toBe(0)
+            ->and(DB::table('task_workspace_operations')->count())->toBe(0);
+    });
+
     it('returns 409 and preserves every row when a finished group has a VM that is not destroyed', function (TaskVmState $state): void {
         $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
         projectDestroyTaskHistory($project, TaskGroupStatus::Completed);
