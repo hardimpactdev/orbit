@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class WatchTaskBranchPullRequestAction
@@ -24,11 +25,13 @@ final readonly class WatchTaskBranchPullRequestAction
             return;
         }
         $group->loadMissing(['project', 'tasks']);
-        if (! $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
-            return;
-        }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
         if ($repository === null) {
+            return;
+        }
+        $moved = $this->movedPullRequestNumber($group, $repository);
+        $open = $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true));
+        if ($moved === null && ! $open) {
             return;
         }
         try {
@@ -48,12 +51,43 @@ final readonly class WatchTaskBranchPullRequestAction
                 break;
             }
         }
-        if ($selected !== null) {
-            $group->update([
-                'watched_pr_url' => $selected->url,
-                'watched_pr_number' => $selected->number,
-                'watched_pr_state' => $selected->state->value,
-            ]);
+        $attributes = $open && $selected !== null ? [
+            'watched_pr_url' => $selected->url,
+            'watched_pr_number' => $selected->number,
+            'watched_pr_state' => $selected->state->value,
+        ] : [];
+        // GitHub keeps the number when it transfers a repository. The task branch has a pull request
+        // with that number here, so it is the same pull request.
+        $followed = null;
+        foreach ($pullRequests as $pullRequest) {
+            if ($moved !== null && $pullRequest->number === $moved) {
+                $followed = $pullRequest->url;
+                $attributes['pr_url'] = $followed;
+                break;
+            }
         }
+        if ($attributes === []) {
+            return;
+        }
+        $previous = $group->pr_url;
+        $group->update($attributes);
+        if ($followed !== null) {
+            Log::warning('A task pull request URL followed its repository.', ['task_group_id' => $group->id, 'from' => $previous, 'to' => $followed]);
+        }
+    }
+
+    /**
+     * The number in pr_url when it names a pull request in another repository, as it does after the
+     * repository moved. Null when pr_url is unset or belongs to this repository.
+     */
+    private function movedPullRequestNumber(Task $group, GitHubRepository $repository): ?int
+    {
+        $url = $group->pr_url;
+        if (! is_string($url) || $url === '' || $repository->pullRequestNumber($url) !== null
+            || preg_match('#\Ahttps://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/([1-9][0-9]{0,9})\z#D', $url, $matches) !== 1) {
+            return null;
+        }
+
+        return (int) $matches[1];
     }
 }

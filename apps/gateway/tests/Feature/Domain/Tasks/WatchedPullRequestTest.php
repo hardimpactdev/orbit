@@ -191,3 +191,28 @@ it('does not list a watched pull request for a group without open subtasks', fun
     expect($group->fresh())->watched_pr_url->toBeNull()->pr_url->toBe('https://github.com/acme/orbit/pull/99');
     Http::assertNothingSent();
 })->with(['completed', 'failed', 'cancelled']);
+
+it('follows a repository move to the same pull request number on the task branch', function (string $subtaskStatus, array $rows, ?string $followed): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    $group = branch_watch_group(status: 'settling', subtaskStatus: $subtaskStatus);
+    $group->update(['pr_url' => 'https://github.com/old-owner/orbit/pull/42']);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls?*' => Http::response($rows),
+    ]);
+
+    app(WatchTaskBranchPullRequestAction::class)->execute($group);
+
+    $open = $subtaskStatus === 'todo';
+    expect($group->fresh())->pr_url->toBe($followed ?? 'https://github.com/old-owner/orbit/pull/42')
+        ->watched_pr_number->toBe($open && $rows !== [] ? $rows[0]['number'] : null)
+        ->assistance_reason->toBe('A product question.');
+})->with([
+    'open work, same number' => ['todo', [branch_watch_row(42)], 'https://github.com/acme/orbit/pull/42'],
+    'no open work, same number' => ['completed', [branch_watch_row(42)], 'https://github.com/acme/orbit/pull/42'],
+    'same number after a newer pull request' => ['todo', [branch_watch_row(43), branch_watch_row(42, 'closed')], 'https://github.com/acme/orbit/pull/42'],
+    'another number' => ['todo', [branch_watch_row(43)], null],
+    'no pull request' => ['completed', [], null],
+]);
