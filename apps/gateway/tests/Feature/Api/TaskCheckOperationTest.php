@@ -397,6 +397,33 @@ it('fails cleanly when the check start never reached the VM', function (bool $re
     expect($operation->error_code)->toBe('tasks.check_unreachable');
     expect($operation->lock_key)->toBeNull();
     expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
+    if ($recover) {
+        expect(TaskCheck::query()->count())->toBe(0);
+    } else {
+        $check = TaskCheck::query()->findOrFail($operation->state['check_id']);
+        expect($check->status)->toBe(TaskCheckStatus::Cancelled);
+        expect($check->pid)->toBe(0);
+        expect($check->finished_at)->not->toBeNull();
+    }
+    $task = $group->tasks()->firstOrFail();
+    $this->call('POST', '/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id.'/check/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.check_not_running');
+
+    $nextRunner = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $nextRunner);
+    $next = check_operation_start($group);
+    app(OperationRunner::class)->run($next->id);
+
+    expect($next->refresh()->status)->toBe(OperationStatus::Waiting);
+    expect($next->state['check_id'])->not->toBe($operation->state['check_id']);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->check_id)->toBe($next->state['check_id']);
+    expect($nextRunner->starts)->toBe(1);
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($next->id);
+
+    expect($next->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($next->result['outcome'])->toBe('passed');
+    expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
 })->with(['before dispatch' => false, 'recovery fences an absent start' => true]);
 
 it('recovers a lost start reply before public check cancellation and keeps ownership on 502', function (string $unreachable): void {

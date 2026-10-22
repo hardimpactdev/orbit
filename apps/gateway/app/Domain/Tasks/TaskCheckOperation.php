@@ -113,7 +113,7 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
                     $task = $group->tasks()->findOrFail($input->subtask);
                     $this->leases->run($group, 'check', 'operation:'.$operation->id, function () use ($run, $group, $task, $input): void {
                         $this->subtasks->recordSubtaskStart($task);
-                        $run->remember('check_id', fn (): int => $task->checks()->create([
+                        $pendingCheckId = $run->remember('check_id', fn (): int => $task->checks()->create([
                             'kind' => $input->phase, 'status' => TaskCheckStatus::Running,
                             'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now(),
                         ])->id);
@@ -123,6 +123,8 @@ final readonly class TaskCheckOperation implements OperationWaitingKind, Operati
                             $this->leases->startCheck($group, $task, $group->project->taskCheckCommand(), $setup, $deliverables);
                         } catch (TaskCheckException $exception) {
                             if ($exception->startNotDispatched) {
+                                TaskCheck::query()->whereKey($pendingCheckId)->where('status', TaskCheckStatus::Running)->where('pid', 0)
+                                    ->update(['status' => TaskCheckStatus::Cancelled, 'finished_at' => now()]);
                                 throw $exception;
                             }
                             // The recorded run may exist on the VM. Reconcile recovers its start on the next read.
