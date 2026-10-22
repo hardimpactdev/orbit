@@ -482,9 +482,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
-                    release="$releases/initial"
                     environment="$home/.env"
-                    release_environment="$release__APPLICATION_SUFFIX__/.env"
                     current="$home/current"
 
                     sudo test -d "$state_directory"
@@ -505,14 +503,9 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     test "$(sudo -u "$user" -H realpath -e -- "$home")" = "$home"
                     sudo -u "$user" -H test -d "$releases"
                     sudo -u "$user" -H test ! -L "$releases"
-                    sudo -u "$user" -H test -d "$release"
-                    sudo -u "$user" -H test ! -L "$release"
                     sudo -u "$user" -H test -f "$environment"
                     sudo -u "$user" -H test ! -L "$environment"
                     test "$(sudo -u "$user" -H stat -c %a -- "$environment")" = 600
-                    sudo -u "$user" -H test -L "$release_environment"
-                    test "$(sudo -u "$user" -H readlink -- "$release_environment")" = __ENVIRONMENT_TARGET__
-                    test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
@@ -531,6 +524,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     sudo -u "$user" -H test -d "$selected"
                     selected_environment="$selected__APPLICATION_SUFFIX__/.env"
                     sudo -u "$user" -H test -L "$selected_environment"
+                    test "$(sudo -u "$user" -H readlink -- "$selected_environment")" = __ENVIRONMENT_TARGET__
                     test "$(sudo -u "$user" -H realpath -e -- "$selected_environment")" = "$environment"
                     resolved_root=$(sudo -u "$user" -H realpath -m -- "$current/$relative_root")
                     case "$resolved_root" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
@@ -542,6 +536,81 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             ),
             step: 'production-release-layout',
             errorCode: 'app-prod.source_metadata_unsafe',
+        );
+    }
+
+    public function remove(Instance $instance): void
+    {
+        $instance->loadMissing(['project', 'node']);
+        [$user, $home] = $this->identity($instance);
+
+        if ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}") {
+            throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
+        }
+
+        $this->ssh->execute(
+            $instance->node,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->project->repository_url, $user, $home, (string) $instance->id],
+                input: <<<'BASH'
+                    cd /
+                    repository=$1
+                    user=$2
+                    home=$3
+                    instance=$4
+                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
+                    marker="$state_directory/release-layout"
+                    test "$home" = "/home/$user"
+
+                    if ! sudo test -e "$state_directory" && ! sudo test -L "$state_directory"; then
+                        if getent passwd "$user" >/dev/null; then exit 1; fi
+                        sudo test ! -e "$home"
+                        sudo test ! -L "$home"
+                        exit 0
+                    fi
+
+                    sudo test -d "$state_directory"
+                    sudo test ! -L "$state_directory"
+                    test "$(sudo stat -c %U:%G:%a -- "$state_directory")" = root:root:700
+                    sudo test -f "$marker"
+                    sudo test ! -L "$marker"
+                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
+                    actual=$(sudo base64 --wrap=0 -- "$marker")
+                    expected=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
+                    test "$actual" = "$expected"
+
+                    account_exists=0
+                    if entry=$(getent passwd "$user"); then
+                        account_exists=1
+                        test "$(printf '%s' "$entry" | cut -d: -f6)" = "$home"
+                        test "$(printf '%s' "$entry" | cut -d: -f7)" = /usr/sbin/nologin
+                        test "$(id -gn "$user")" = "$user"
+                        test "$(id -u "$user")" -lt 1000
+                        if pgrep -u "$user" >/dev/null; then exit 1; else test "$?" = 1; fi
+                    fi
+
+                    if sudo test -e "$home" || sudo test -L "$home"; then
+                        sudo test -d "$home"
+                        sudo test ! -L "$home"
+                        test "$(sudo realpath -e -- "$home")" = "$home"
+                        if [ "$account_exists" = 1 ]; then
+                            test "$(sudo stat -c %U:%G -- "$home")" = "$user:$user"
+                        fi
+                        sudo rm -r --one-file-system -- "$home"
+                    fi
+                    if [ "$account_exists" = 1 ]; then
+                        sudo userdel -- "$user"
+                    fi
+                    if getent passwd "$user" >/dev/null; then exit 1; fi
+                    sudo test ! -e "$home"
+                    sudo test ! -L "$home"
+                    sudo rm -r --one-file-system -- "$state_directory"
+                    sudo test ! -e "$state_directory"
+                    sudo test ! -L "$state_directory"
+                    BASH,
+            ),
+            step: 'production-source-cleanup',
+            errorCode: 'app-prod.source_cleanup_failed',
         );
     }
 

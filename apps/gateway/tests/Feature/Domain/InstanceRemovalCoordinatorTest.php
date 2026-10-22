@@ -20,7 +20,7 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -66,7 +66,7 @@ beforeEach(function (): void {
     $this->orb212EnvironmentLock = new Orb212CoordinatorEnvironmentLock;
     $this->orb131ProcessLock = new Orb131CoordinatorProcessAdmissionLock;
     $this->orb131ProcessRuntime = new Orb131CoordinatorProcessRuntimeManager;
-    $this->orb183Content = new Orb183CoordinatorContentRetention;
+    $this->orb183Content = new Orb183CoordinatorSourceRemoval;
     $this->orb181Coordinator = new DestroyInstanceAction(
         $this->orb181Inspector,
         $this->orb181Finalizer,
@@ -756,6 +756,7 @@ it('completes one production removal with retained-content evidence and no devel
             "prepare:{$instance->id}",
             "revalidate:{$instance->id}",
             "finalize:{$instance->id}",
+            "cleanup:{$instance->id}",
         ]);
 });
 
@@ -1603,8 +1604,21 @@ final class Orb181CoordinatorFinalizer implements DevelopmentInstanceSourceFinal
     }
 }
 
-final class Orb183CoordinatorContentRetention implements ProductionInstanceContentRetention
+final class Orb183CoordinatorSourceRemoval implements ProductionInstanceSourceRemoval
 {
+    public bool $failCleanup = false;
+
+    public ?Closure $onCleanup = null;
+
+    public function cleanup(InstanceRemovalMember $member): void
+    {
+        $this->calls[] = "cleanup:{$member->instance_id}";
+        ($this->onCleanup ?? static function (): void {})();
+        if ($this->failCleanup) {
+            throw new ResourceOperationException('app-prod.source_cleanup_failed', 'Production home cleanup failed.', 502);
+        }
+    }
+
     /** @var list<string> */
     public array $calls = [];
 
@@ -1798,4 +1812,29 @@ it('refuses to cascade create rollback into another registered instance', functi
         ->toThrow(ResourceOperationException::class, 'Create rollback cannot remove other Instances.')
         ->and(Instance::query()->count())->toBe(3)
         ->and(InstanceRemoval::query()->count())->toBe(0);
+});
+
+it('keeps production removal incomplete when user and home cleanup fails and retries after runtime withdrawal', function (): void {
+    $instance = orb181_coordinator_instance(environment: 'production');
+    $this->orb183Content->failCleanup = true;
+    $this->orb183Content->onCleanup = function () use ($instance): void {
+        expect($this->orb181Projector->calls)->toContain("runtime:{$instance->id}");
+        expect(Process::query()->where('owner_type', Instance::class)->where('owner_id', $instance->id)->exists())->toBeFalse();
+        expect(Schedule::query()->where('instance_id', $instance->id)->exists())->toBeFalse();
+    };
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(InstanceRemovalException::class);
+
+    $removal = InstanceRemoval::query()->sole();
+    expect($removal->status)->toBe(InstanceRemovalStatus::Failed);
+    expect($removal->failed_step->value)->toBe('runtime_cleanup');
+    expect($removal->members()->sole()->runtime_cleaned_at)->toBeNull();
+    expect($instance->refresh()->status)->toBe(InstanceState::Removing);
+    $this->orb183Content->failCleanup = false;
+
+    $completed = $this->orb181Coordinator->execute($instance, false);
+
+    expect($completed->status)->toBe(InstanceRemovalStatus::Completed);
+    expect(Instance::query()->find($instance->id))->toBeNull();
+    expect(array_count_values($this->orb183Content->calls)["cleanup:{$instance->id}"])->toBe(2);
 });

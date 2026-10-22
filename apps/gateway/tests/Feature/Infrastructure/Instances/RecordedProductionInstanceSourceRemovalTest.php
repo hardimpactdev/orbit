@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -27,7 +29,7 @@ afterEach(function (): void {
     $this->files->deleteDirectory($this->sandbox);
 });
 
-it('records retained production identity without changing content bytes or ownership', function (): void {
+it('keeps production content until runtime cleanup and removes only an unused identity', function (bool $shared): void {
     $project = Project::query()->create([
         'name' => 'Retained',
         'slug' => 'retained',
@@ -50,6 +52,8 @@ it('records retained production identity without changing content bytes or owner
             'name' => 'production',
             'environment' => 'production',
             'checkout_path' => $this->checkout,
+            'production_user' => 'orbit-app-'.$project->id,
+            'production_home' => '/home/orbit-app-'.$project->id,
             'branch' => null,
             'starting_commit' => str_repeat('a', 40),
             'status' => InstanceState::SourceResolved,
@@ -69,7 +73,8 @@ it('records retained production identity without changing content bytes or owner
             $this->cleared[] = $instance->id;
         }
     };
-    $retention = new RecordedProductionInstanceContentRetention($layout);
+    $source = Mockery::mock(ProductionInstanceSourceLifecycle::class);
+    $retention = new RecordedProductionInstanceSourceRemoval($layout, $source);
     $inventory = $retention->inventory($instance);
     $member = new InstanceRemovalMember([
         'instance_id' => $instance->id,
@@ -111,4 +116,19 @@ it('records retained production identity without changing content bytes or owner
         ->toBe($identityBefore['gid'])
         ->and($identityAfter['mode'])
         ->toBe($identityBefore['mode']);
-});
+
+    if ($shared) {
+        $other = $instance->replicate();
+        $other->name = 'other';
+        $other->project_id = Project::query()->create([
+            'name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'root' => 'public',
+        ])->id;
+        $other->save();
+        $source->shouldNotReceive('remove');
+        expect(fn () => $retention->cleanup($member))->toThrow(ResourceOperationException::class, 'Another Instance on the Node uses this production account.');
+        expect(file_get_contents($this->marker))->toBe($bytesBefore);
+    } else {
+        $source->shouldReceive('remove')->once()->withArgs(static fn (Instance $removed): bool => $removed->is($instance));
+        $retention->cleanup($member);
+    }
+})->with([false, true]);

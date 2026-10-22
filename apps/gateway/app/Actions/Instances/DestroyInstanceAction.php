@@ -28,7 +28,7 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -66,7 +66,7 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         private ProcessAdmissionLock $processAdmissions,
         private CascadeInstanceProcessesAction $processes,
         private AppDevSourceOperationLock $sourceLock,
-        private ProductionInstanceContentRetention $productionContent,
+        private ProductionInstanceSourceRemoval $productionSource,
         private RouteStateResolver $routeState,
         private ?CascadeInstanceSchedulesAction $schedules = null,
         private ?RecordEventBroadcaster $broadcaster = null,
@@ -103,7 +103,10 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         if ($instance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$instance->id],
-                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade, $requirePreActivation),
+                fn (): InstanceRemoval => $this->sourceLock->synchronized(
+                    $instance->node_id,
+                    fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade, $requirePreActivation),
+                ),
             );
         }
 
@@ -458,7 +461,7 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         $snapshot = $instance->refresh()->load($this->removalRelations());
         $this->assertSupported($snapshot);
         $route = $this->productionRoute($snapshot);
-        $inventory = $this->productionContent->inventory($snapshot);
+        $inventory = $this->productionSource->inventory($snapshot);
         $this->withdrawUnactivatedReplacements(collect([$snapshot]));
         $this->removeWebRootRoutes(collect([$snapshot]));
 
@@ -1003,7 +1006,7 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         InstanceRemovalMember $member,
     ): void {
         if ($member->environment === 'production') {
-            $this->productionContent->prepare($member);
+            $this->productionSource->prepare($member);
             $member->update(['source_prepared_at' => now()]);
 
             return;
@@ -1029,8 +1032,8 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         InstanceRemovalMember $member,
     ): void {
         if ($member->environment === 'production') {
-            $this->productionContent->revalidate($member);
-            $receipt = $this->productionContent->finalize($member);
+            $this->productionSource->revalidate($member);
+            $receipt = $this->productionSource->finalize($member);
             $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
 
             return;
@@ -1055,6 +1058,9 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         // development removal converges its Node from stored state, which drops any pool left behind.
         if ($member->runtime_published || $member->route_id !== null || $member->environment === 'development') {
             $this->routes->cleanupRuntime($member);
+        }
+        if ($member->environment === 'production') {
+            $this->productionSource->cleanup($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);
     }
@@ -1093,7 +1099,7 @@ final readonly class DestroyInstanceAction implements InstanceRemover
         }
 
         if ($member->environment === 'production') {
-            $this->productionContent->revalidate($member);
+            $this->productionSource->revalidate($member);
 
             return;
         }

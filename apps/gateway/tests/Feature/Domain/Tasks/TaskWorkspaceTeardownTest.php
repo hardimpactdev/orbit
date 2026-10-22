@@ -18,7 +18,7 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -313,7 +313,7 @@ function task_teardown_harness(): TaskTeardownHarness
         new TaskTeardownProcessLock,
         app(CascadeInstanceProcessesAction::class),
         new TaskTeardownSourceLock,
-        app(ProductionInstanceContentRetention::class),
+        app(ProductionInstanceSourceRemoval::class),
         app(RouteStateResolver::class),
         app(CascadeInstanceSchedulesAction::class),
         lifecycle: $harness->transport->runner(),

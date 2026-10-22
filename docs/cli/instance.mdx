@@ -311,7 +311,7 @@ orbit instance:logs 12 --follow
 
 ## orbit instance:destroy
 
-Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. See [Instance removal](/reference/instance-removal).
+Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. A production removal deletes its user, home, application data, and source state after runtime cleanup. See [Instance removal](/reference/instance-removal).
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]

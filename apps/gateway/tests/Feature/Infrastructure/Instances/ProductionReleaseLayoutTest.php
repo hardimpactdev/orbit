@@ -17,12 +17,16 @@ use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\BufferedBashProgram;
 
 it('derives production serving paths through current and resolves PHP roots after a release switch', function (): void {
     $node = Node::query()->create([
@@ -185,7 +189,7 @@ it('authenticates a selected release before publication and clears only its serv
             'realpath -e -- "$selected_environment"',
             'case "$resolved_root" in "$selected"|"$selected"/*)',
             $environmentPath,
-            'readlink -- "$release_environment")" = '.$target,
+            'readlink -- "$selected_environment")" = '.$target,
         )
         ->and($ssh->commands[1]->arguments[8])
         ->toBe('1')
@@ -273,4 +277,150 @@ function orb216_release_layout_lifecycle(array $results): array
         $ssh,
         $instance,
     ];
+}
+
+it('validates and clears the selected release after initial has been pruned', function (string $webRoot, string $suffix, string $target): void {
+    [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([
+        new CommandResult(0, '', '', 1, false), new CommandResult(0, '', '', 1, false),
+    ]);
+    $instance->update(['root' => $webRoot]);
+    $layout->validateCurrent($instance);
+    $layout->clearCurrent($instance);
+    $sandbox = sys_get_temp_dir().'/orbit-pruned-layout-'.bin2hex(random_bytes(6));
+    $home = "$sandbox/home";
+    mkdir("$sandbox/state", 0700, true);
+    mkdir("$home/releases/20261022090000-a$suffix/public", 0700, true);
+    file_put_contents("$home/.env", 'APP_ENV=production');
+    chmod("$home/.env", 0600);
+    symlink($target, "$home/releases/20261022090000-a$suffix/.env");
+    symlink('releases/20261022090000-a', "$home/current");
+    $user = get_current_user();
+    $group = posix_getgrgid(posix_getegid())['name'];
+    file_put_contents("$sandbox/state/release-layout", $instance->project->repository_url."\0$user\0$home\0initial\0");
+    chmod("$sandbox/state/release-layout", 0600);
+
+    try {
+        foreach ($ssh->commands as $command) {
+            $input = str_replace([
+                'state_directory="/var/lib/orbit/app-instance-sources/$instance"',
+                'test "$home" = "/home/$user"', '= root:root',
+                '! -group "$user"',
+            ], [
+                'state_directory="'.$sandbox.'/state"', 'test -d "$home"', '= '.escapeshellarg("$user:$group"),
+                '! -group '.escapeshellarg($group),
+            ], $command->input);
+            $sudo = 'sudo() { if [ "${1:-}" = -u ]; then shift 3; fi; "$@"; }'."\n";
+            $input = str_replace('stat -c %G -- "$current")" = "$user"', 'stat -c %G -- "$current")" = '.escapeshellarg($group), $input);
+            new Process(['bash', '-seu', '--', $instance->project->repository_url, $user, $home, (string) $instance->id, $webRoot, $command->arguments[8]], input: BufferedBashProgram::stdinPrelude($sandbox).$sudo.$input)->mustRun();
+        }
+        expect(is_link("$home/current"))->toBeFalse();
+        expect(is_dir("$home/releases/initial"))->toBeFalse();
+        expect(file_get_contents("$home/.env"))->toBe('APP_ENV=production');
+    } finally {
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+})->with(['root' => ['public', '', '../../.env'], 'nested' => ['server/web/public', '/server/web', '../../../../.env']]);
+
+it('removes production data and account after pruning and can resume partial cleanup', function (string $state): void {
+    [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([new CommandResult(0, '', '', 1, false)]);
+    $user = "orbit-app-{$instance->project_id}";
+    $instance->update(['production_user' => $user, 'production_home' => "/home/$user"]);
+    $layout->remove($instance);
+    [$sandbox, $process] = production_cleanup_program($ssh->commands[0], $state);
+
+    try {
+        $process->mustRun();
+        expect(is_dir("$sandbox/home"))->toBeFalse();
+        expect(file_exists("$sandbox/account"))->toBeFalse();
+        expect(is_dir("$sandbox/state"))->toBeFalse();
+        expect(file_get_contents("$sandbox/foreign/upload"))->toBe('foreign-data');
+        $process->mustRun();
+    } finally {
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+})->with(['deployed', 'home-removed', 'account-removed', 'completed']);
+
+it('fails production cleanup without deleting its evidence when a resource remains or ownership differs', function (string $state): void {
+    [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([new CommandResult(0, '', '', 1, false)]);
+    $user = "orbit-app-{$instance->project_id}";
+    $instance->update(['production_user' => $user, 'production_home' => "/home/$user"]);
+    $layout->remove($instance);
+    [$sandbox, $process] = production_cleanup_program($ssh->commands[0], $state);
+
+    try {
+        expect($process->run())->not->toBe(0);
+        expect(is_dir("$sandbox/state"))->toBeTrue();
+        expect(file_get_contents("$sandbox/foreign/upload"))->toBe('foreign-data');
+        if (in_array($state, ['wrong-marker', 'home-symlink', 'live-process'], true)) {
+            expect(file_exists("$sandbox/account"))->toBeTrue();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+})->with(['wrong-marker', 'home-symlink', 'live-process', 'userdel-fails', 'userdel-lies', 'rm-lies', 'state-rm-lies']);
+
+/** @return array{string, Process} */
+function production_cleanup_program(RemoteCommand $command, string $state): array
+{
+    $sandbox = sys_get_temp_dir().'/orbit-production-cleanup-'.bin2hex(random_bytes(6));
+    $home = "$sandbox/home";
+    $user = $command->arguments[4];
+    $owner = posix_getpwuid(posix_geteuid())['name'];
+    $group = posix_getgrgid(posix_getegid())['name'];
+    mkdir("$sandbox/state", 0700, true);
+    mkdir("$sandbox/foreign", 0700, true);
+    file_put_contents("$sandbox/foreign/upload", 'foreign-data');
+    file_put_contents("$sandbox/account", 'present');
+    file_put_contents("$sandbox/state/release-layout", $command->arguments[3]."\0$user\0$home\0initial\0");
+    chmod("$sandbox/state/release-layout", 0600);
+    mkdir("$home/releases/20261022090000-a", 0700, true);
+    file_put_contents("$home/.env", 'secret');
+    file_put_contents("$home/database.sqlite", 'application-data');
+    symlink("$sandbox/foreign", "$home/shared-link");
+    if ($state === 'home-removed' || $state === 'completed') {
+        new Filesystem()->deleteDirectory($home);
+    }
+    if ($state === 'account-removed' || $state === 'completed') {
+        unlink("$sandbox/account");
+    }
+    if ($state === 'completed') {
+        new Filesystem()->deleteDirectory("$sandbox/state");
+    }
+    if ($state === 'wrong-marker') {
+        file_put_contents("$sandbox/state/release-layout", 'foreign-marker');
+    }
+    if ($state === 'home-symlink') {
+        new Filesystem()->deleteDirectory($home);
+        symlink("$sandbox/foreign", $home);
+    }
+    $program = str_replace([
+        'state_directory="/var/lib/orbit/app-instance-sources/$instance"',
+        'test "$home" = "/home/$user"', 'root:root:700', 'root:root:600', '= "$user:$user"',
+    ], [
+        'state_directory="'.$sandbox.'/state"', 'test "$home" = '.escapeshellarg($home),
+        escapeshellarg("$owner:$group:700"), escapeshellarg("$owner:$group:600"), '= '.escapeshellarg("$owner:$group"),
+    ], $command->input);
+    $stubs = 'sandbox='.escapeshellarg($sandbox)."\n".'state='.escapeshellarg($state)."\n".<<<'BASH'
+        getent() {
+            [ -f "$sandbox/account" ] || return 2
+            printf '%s:x:999:999::%s:/usr/sbin/nologin\n' "$user" "$home"
+        }
+        id() { if [ "$1" = -gn ]; then printf '%s\n' "$user"; else printf '999\n'; fi; }
+        pgrep() { if [ "$state" = live-process ]; then return 0; else return 1; fi; }
+        sudo() {
+            if [ "$1" = userdel ]; then
+                [ "$state" != userdel-fails ] || return 1
+                [ "$state" != userdel-lies ] || return 0
+                rm -- "$sandbox/account"
+                return
+            fi
+            if [ "$1" = rm ] && [ "$state" = rm-lies ]; then return 0; fi
+            if [ "$1" = rm ] && [ "$state" = state-rm-lies ] && [ "${@: -1}" = "$sandbox/state" ]; then return 0; fi
+            "$@"
+        }
+        BASH;
+    $arguments = $command->arguments;
+    $arguments[5] = $home;
+
+    return [$sandbox, new Process($arguments, input: BufferedBashProgram::stdinPrelude($sandbox).$stubs."\n".$program)];
 }

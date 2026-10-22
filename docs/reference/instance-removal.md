@@ -14,7 +14,7 @@ covers:
 
 # Instance removal
 
-`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal keeps the application content in the production home. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
+`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
@@ -125,10 +125,10 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 
 | Step | Work |
 | --- | --- |
-| `source_preparation` | Record the source identity, or the production content to keep. |
+| `source_preparation` | Record the source identity. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside the removed Instance](#processes-inside-the-removed-instance), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
-| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
+| `source_finalization` | For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
+| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files. Drop [owned databases](#owned-databases), then remove the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
@@ -184,7 +184,9 @@ Closed transfer records stay after removal, with their Instance references clear
 
 ### Production content
 
-Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. It keeps `releases/`, `.env`, `env/`, `database.sqlite`, the production user, and `/etc/orbit/php-fpm/<production-user>/local.conf`. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
+Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. After runtime cleanup it removes the production user, the whole production home (including releases, environment files, shared data, and SQLite files), and `/var/lib/orbit/app-instance-sources/<instance-id>`. The production home stays until runtime cleanup completes. Removal authenticates the source marker owned by root without requiring the prunable `initial` release.
+
+It verifies that the account, home, and state directory are gone before completing removal. A failure leaves the Instance `removing` for retry; it never reports completed while these resources remain. Another Instance using the same production identity on the Node blocks deletion. `/etc/orbit/php-fpm/<production-user>/local.conf` stays. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
 
 ## Progress and retry
 

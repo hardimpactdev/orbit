@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
-use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 
-final readonly class RecordedProductionInstanceContentRetention implements ProductionInstanceContentRetention
+final readonly class RecordedProductionInstanceSourceRemoval implements ProductionInstanceSourceRemoval
 {
     public function __construct(
         private ProductionReleaseLayout $releaseLayout,
+        private ProductionInstanceSourceLifecycle $source,
     ) {}
 
     public function inventory(Instance $instance): InstanceSourceInventory
@@ -79,6 +81,20 @@ final readonly class RecordedProductionInstanceContentRetention implements Produ
         return hash('sha256', "production-retained\0{$member->source_digest}");
     }
 
+    public function cleanup(InstanceRemovalMember $member): void
+    {
+        $this->assertRecorded($member);
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail($member->instance_id);
+
+        if (Instance::query()->where('node_id', $instance->node_id)
+            ->where('production_user', $instance->production_user)
+            ->whereKeyNot($instance->id)->exists()) {
+            throw new ResourceOperationException('app-prod.user_in_use', 'Another Instance on the Node uses this production account.', 409);
+        }
+
+        $this->source->remove($instance);
+    }
+
     private function assertRecorded(InstanceRemovalMember $member): void
     {
         $instance = Instance::query()->with('project')->find($member->instance_id);
@@ -134,7 +150,7 @@ final readonly class RecordedProductionInstanceContentRetention implements Produ
     {
         throw new ResourceOperationException(
             errorCode: 'instance.removal_conflict',
-            message: "Production Instance [{$name}] retained-content evidence changed during removal.",
+            message: "Production Instance [{$name}] source evidence changed during removal.",
             status: 409,
         );
     }
