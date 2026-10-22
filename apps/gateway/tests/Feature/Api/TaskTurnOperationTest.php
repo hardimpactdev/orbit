@@ -193,6 +193,37 @@ describe('tasks.turn', function (): void {
         expect($operation->result['receipt'])->toBeNull();
     });
 
+    it('keeps the recorded turn owned after a terminal subtask update and stores its receipt', function (string $status): void {
+        [$group, $task] = turn_operation_group();
+        $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('ready_for_review', 'Recorded turn result.')]);
+        $driver = turn_operation_fakes($receipts);
+        $operation = turn_operation_start($group, $task);
+        app(OperationRunner::class)->run($operation->id);
+        $thread = AgentThread::query()->sole();
+        $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+
+        $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['status' => $status])->assertOk();
+        turn_operation_finish($operation, $driver, AgentThreadState::Working);
+
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($lease->refresh()->status)->toBe('held');
+        expect($lease->thread_id)->toBe($thread->id);
+        expect($thread->refresh()->state)->toBe(AgentThreadState::Working);
+        expect($receipts->reads())->toBe(0);
+
+        turn_operation_finish($operation, $driver);
+
+        expect($operation->status)->toBe(OperationStatus::Succeeded);
+        expect($operation->result['thread'])->toBe($thread->id);
+        expect($operation->result['receipt']['summary'])->toBe('Recorded turn result.');
+        expect($receipts->cleared)->toHaveCount(1);
+        expect($operation->lock_key)->toBeNull();
+        expect($lease->refresh()->status)->toBe('released');
+        expect($task->refresh()->status->value)->toBe($status);
+        expect(array_column($driver->calls, 'operation'))->toBe(['create', 'send']);
+    })->with(['completed', 'failed']);
+
     it('stores a blocked receipt without starting a consult or question or assistance', function (): void {
         [$group, $task] = turn_operation_group();
         $driver = turn_operation_fakes(new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Need input.', 'Which contract?', cause: 'contract_gap')]));
@@ -263,6 +294,49 @@ describe('tasks.turn', function (): void {
         expect($operation->result['after']['tree'])->toBe(str_repeat('c', 40));
         expect($operation->result['after_reset']['tree'])->toBe(str_repeat('b', 40));
     })->with(['done', 'failed', 'cancelled']);
+
+    it('records and resets reviewer changes after a terminal subtask update', function (string $status): void {
+        [$group, $task] = turn_operation_group();
+        $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('approved')]);
+        $driver = turn_operation_fakes($receipts);
+        $check = turn_operation_check($task);
+        $diff = ['diff' => '+reviewer change', 'files' => [['path' => 'oops.txt', 'insertions' => 1, 'deletions' => 0]]];
+        $this->mock(TaskReviewDiff::class)->shouldReceive('read')->once()->withArgs(fn (Instance $instance, string $commit): bool => $instance->id === $group->taskable_id && $commit === $check->commit_sha)->andReturn($diff);
+        $this->mock(TaskReviewReset::class)->shouldReceive('reset')->once()->withArgs(fn (Instance $instance, string $commit): bool => $instance->id === $group->taskable_id && $commit === $check->commit_sha)->andReturnUsing(function () use ($group): void {
+            expect(TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->where('status', 'held')->sole()->kind)->toBe('turn_result');
+            app(TaskCheckRunner::class)->head = str_repeat('a', 40);
+            app(TaskCheckRunner::class)->tree = str_repeat('b', 40);
+        });
+        $operation = turn_operation_start($group, $task, ['role' => 'reviewer', 'check' => $check->id]);
+        app(OperationRunner::class)->run($operation->id);
+        $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+        app(TaskCheckRunner::class)->head = str_repeat('c', 40);
+        app(TaskCheckRunner::class)->tree = str_repeat('d', 40);
+
+        $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['status' => $status])->assertOk();
+        turn_operation_finish($operation, $driver, AgentThreadState::Working);
+
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($lease->refresh()->status)->toBe('held');
+        expect($operation->result)->toBeNull();
+        expect($receipts->reads())->toBe(0);
+        expect(app(TaskCheckRunner::class)->tree)->toBe(str_repeat('d', 40));
+
+        turn_operation_finish($operation, $driver);
+
+        expect($operation->status)->toBe(OperationStatus::Succeeded);
+        expect($operation->result['receipt']['outcome'])->toBe('approved');
+        expect($receipts->cleared)->toHaveCount(1);
+        expect($operation->result['difference'])->toBe($diff);
+        expect($operation->result['after']['head'])->toBe(str_repeat('c', 40));
+        expect($operation->result['after']['tree'])->toBe(str_repeat('d', 40));
+        expect($operation->result['after_reset'])->toBe(['head' => $check->commit_sha, 'tree' => str_repeat('b', 40)]);
+        expect($operation->lock_key)->toBeNull();
+        expect($lease->refresh()->status)->toBe('released');
+        expect($task->refresh()->status->value)->toBe($status);
+        expect(array_column($driver->calls, 'operation'))->toBe(['create', 'send']);
+    })->with(['completed', 'failed']);
 
     it('continues a reviewer for a consult and never resets its changes', function (): void {
         [$group, $task] = turn_operation_group();

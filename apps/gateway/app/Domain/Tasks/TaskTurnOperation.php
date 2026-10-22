@@ -127,7 +127,6 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
     {
         $group = Task::topLevel()->findOrFail($operation->target_id);
         $input = TaskTurnData::from($operation->input);
-        $this->operations->requireCurrentSubtask($group, $input->subtask);
         $instance = $this->workspace($group);
         $thread = $input->thread === 'new'
             ? AgentThread::query()->firstOrCreate(['external_id' => 'pending:operation-'.$operation->id, 'runtime_key' => 'node:'.$instance->node_id, 'driver' => 'pi'], [
@@ -165,17 +164,17 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
             return $this->execution->synchronized($run->operation()->target_id, function () use ($run): mixed {
                 $operation = $run->operation();
                 $group = Task::topLevel()->findOrFail($operation->target_id);
-                $this->operations->requireOpenExternal($group);
                 if ($operation->current_step === 'turn_workspace') {
                     $this->vms->node($group);
 
                     return null;
                 }
                 $input = TaskTurnData::from($operation->input);
-                $task = $this->operations->requireCurrentSubtask($group, $input->subtask);
                 $thread = $this->thread($operation);
+                // Admission belongs to start. Board updates cannot end ownership of the recorded turn.
                 $this->leases->reconcile($group);
                 if ($operation->current_step === 'prepare_turn') {
+                    $task = $group->tasks()->findOrFail($input->subtask);
                     $lease = $this->leases->turn($group, $input->threadRole(), 'thread:'.$thread->id, $thread->id);
 
                     return $this->leases->within($lease, function () use ($group, $task, $input, $thread): array {
@@ -218,9 +217,7 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
     {
         $this->execution->synchronized($operation->target_id, function () use ($operation): void {
             $group = Task::topLevel()->findOrFail($operation->target_id);
-            $this->operations->requireOpenExternal($group);
             $input = TaskTurnData::from($operation->input);
-            $this->operations->requireCurrentSubtask($group, $input->subtask);
             $thread = $this->thread($operation);
             $driver = $this->drivers->get('pi');
             $prompt = 'Do not fetch or push. '.($input->threadRole() === TaskThreadRole::Reviewer ? 'Review read-only. Do not change the checkout. ' : '')
