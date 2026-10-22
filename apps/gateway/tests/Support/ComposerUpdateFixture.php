@@ -45,7 +45,8 @@ final class ComposerUpdateFixture
         ], env: ['COMPOSER_ALLOW_SUPERUSER' => '1'], timeout: 30))->mustRun();
     }
 
-    public static function run(string $path, string $deadline, ?Closure $cancelled = null, float $timeout = 15.0): CommandResult
+    /** @param array<string, string> $environment */
+    public static function run(string $path, string $deadline, ?Closure $cancelled = null, float $timeout = 15.0, array $environment = []): CommandResult
     {
         return new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: [
@@ -55,7 +56,7 @@ final class ComposerUpdateFixture
             ],
             timeout: $timeout,
             terminateGraceSeconds: ComposerDependencyUpdateProgram::TerminateGraceSeconds,
-            environment: ['COMPOSER_ALLOW_SUPERUSER' => '1'],
+            environment: ['COMPOSER_ALLOW_SUPERUSER' => '1', ...$environment],
             protectedInput: ProtectedInput::holdOpen(),
             cancelled: $cancelled,
         ));

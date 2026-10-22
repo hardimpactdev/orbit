@@ -49,12 +49,14 @@ final readonly class VitePlusUpdateFixture
         return $directory.'/vp';
     }
 
-    public function run(string $root, string $vp, string $deadline, ?Closure $cancelled = null, float $timeout = 15.0): CommandResult
+    /** @param array<string, string> $environment */
+    public function run(string $root, string $vp, string $deadline, ?Closure $cancelled = null, float $timeout = 15.0, array $environment = []): CommandResult
     {
         return new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: [...\dependency_update_supervisor_host()->launcher(), $this->program, $this->label, $root, $vp, $deadline],
             timeout: $timeout,
             terminateGraceSeconds: $this->terminateGraceSeconds,
+            environment: $environment,
             protectedInput: ProtectedInput::holdOpen(),
             cancelled: $cancelled,
         ));

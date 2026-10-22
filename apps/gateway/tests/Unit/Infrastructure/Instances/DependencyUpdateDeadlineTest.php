@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
 use Tests\Support\ComposerUpdateFixture;
+use Tests\Support\DependencyUpdateClock;
 use Tests\Support\SubprocessFixture;
 use Tests\Support\VitePlusUpdateFixture;
 
@@ -13,9 +14,9 @@ it('stops delayed Composer hooks when the remote deadline expires', function ():
     $root = ComposerUpdateFixture::directory();
 
     try {
-        ComposerUpdateFixture::write($root, SubprocessFixture::DelayedHook);
-        // Two seconds leave at least one full second for Composer to start its hook.
-        $result = ComposerUpdateFixture::run($root, '2');
+        ComposerUpdateFixture::write($root, DependencyUpdateClock::DelayedHook);
+        $environment = DependencyUpdateClock::install($root);
+        $result = ComposerUpdateFixture::run($root, '2', environment: $environment);
 
         expect($result->exitCode)->toBe(124);
         expect(is_file($root.'/start-marker'))->toBeTrue();
@@ -32,10 +33,11 @@ it('stops delayed Composer hooks when the remote deadline expires', function ():
 
 it('stops delayed Vite+ hooks when the remote deadline expires', function (VitePlusUpdateFixture $fixture): void {
     $root = $fixture->directory();
-    $vp = $fixture->vp(SubprocessFixture::DelayedHook);
+    $vp = $fixture->vp(DependencyUpdateClock::DelayedHook);
 
     try {
-        $result = $fixture->run($root, $vp, '2');
+        $environment = DependencyUpdateClock::install($root);
+        $result = $fixture->run($root, $vp, '2', environment: $environment);
 
         expect($result->exitCode)->toBe(124);
         expect(is_file($root.'/start-marker'))->toBeTrue();
