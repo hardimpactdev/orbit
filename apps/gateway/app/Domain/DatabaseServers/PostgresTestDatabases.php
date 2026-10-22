@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseConnection;
 
 /** Exact names shared by PostgreSQL pool creation, conflict checks, rollback and destruction. */
 final readonly class PostgresTestDatabases
@@ -21,6 +22,18 @@ final readonly class PostgresTestDatabases
         return strlen($normalized) <= $maximum
             ? $normalized
             : substr($normalized, 0, $maximum - 9).'_'.substr(sha1($normalized), 0, 8);
+    }
+
+    /** @return list<string> */
+    public function recordedNames(DatabaseConnection $connection): array
+    {
+        if ($connection->test_database === null) {
+            return [];
+        }
+
+        return $connection->test_processes === null
+            ? [$connection->test_database]
+            : $this->names($connection->test_database, $connection->test_processes);
     }
 
     /** @return non-empty-list<string> The serial test database followed by its worker databases. */

@@ -53,6 +53,7 @@ final readonly class CreateServerDatabaseAction
         private RecordEventBroadcaster $broadcaster,
         private ValkeyServerAdmin $valkey,
         private PostgresTestDatabases $postgresTests,
+        private RepairPostgresTestDatabasesAction $repairTests,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
@@ -101,7 +102,20 @@ final readonly class CreateServerDatabaseAction
             throw new ResourceOperationException('validation.failed', 'Test processes require a PostgreSQL server and an Instance.', 422);
         }
 
-        if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
+        $existing = DatabaseConnection::query()->where('slug', $slug)->first();
+        if ($existing !== null) {
+            if ($server->driver === DatabaseDriver::Pgsql
+                && $existing->driver === DatabaseDriver::Pgsql
+                && $instance !== null
+                && $existing->database_server_id === $server->id
+                && $existing->owner_instance_id === $instance->id
+                && $existing->database === $database
+                && $existing->test_database === $this->names->testDatabase($database)
+                && $existing->test_processes === $testProcesses
+                && $existing->locale === $locale) {
+                return $this->repairTests->execute($server, $existing);
+            }
+
             throw $this->slugConflict($slug);
         }
 

@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
+use App\Actions\Doctor\DatabaseServerDoctorProbe;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\PostgresStatements;
+use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -27,6 +31,10 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\ParallelTesting;
+use Illuminate\Testing\Concerns\TestDatabases;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\TestCase;
@@ -562,6 +570,129 @@ it('refuses changing a managed PostgreSQL locale after creation', function (): v
     $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => 'C.UTF-8'])->assertCreated();
     $this->patchJson('/api/v1/database-connections/mealou', ['locale' => 'C'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect(DatabaseConnection::query()->sole()->locale)->toBe('C.UTF-8');
+});
+
+describe('PostgreSQL test pool repair', function (): void {
+    it('detects and repairs members lost through Laravel without changing surviving databases', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            server_database_live_postgres($this, $psql);
+            $connection = DatabaseConnection::query()->where('slug', 'app')->sole();
+            $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+            $psql("\\connect app\nSET ROLE dlf_feature_x; CREATE TABLE application_data (id int); INSERT INTO application_data VALUES (42);\n\\connect app_test_test_2\nSET ROLE dlf_feature_x; CREATE TABLE survivor (id int); INSERT INTO survivor VALUES (17);\n");
+            $before = $psql("SELECT datname || ':' || oid FROM pg_database WHERE datname IN ('app', 'app_test_test_2') ORDER BY datname;");
+            $psql('ALTER DATABASE app_test_test_1 CONNECTION LIMIT 0;');
+            $default = config('database.default');
+            config()->set('database.connections.pgsql_pool', ['driver' => 'pgsql', 'host' => $directory, 'port' => 5432, 'database' => 'app_test', 'username' => 'dlf_feature_x', 'password' => '', 'charset' => 'utf8', 'search_path' => 'public', 'sslmode' => 'disable']);
+            config()->set('database.default', 'pgsql_pool');
+            $probe = new class
+            {
+                use TestDatabases {
+                    ensureTestDatabaseExists as public ensure;
+                }
+            };
+            ParallelTesting::resolveTokenUsing(fn (): int => 1);
+            try {
+                expect(fn () => $probe->ensure('app_test'))->toThrow(QueryException::class, 'permission denied to create database');
+            } finally {
+                DB::purge('pgsql_pool');
+                config()->set('database.default', $default);
+                ParallelTesting::resolveTokenUsing(null);
+            }
+            $psql('DROP DATABASE app_test;');
+            $doctor = app(DatabaseServerDoctorProbe::class);
+            $context = new DoctorNodeContext($this->dbNode, new NodeInspectionData(true, 'linux', 'amd64', true));
+            $report = $doctor->inspect($context);
+            expect(array_column($report->issues, 'code'))->toBe(['database_server.test_database_missing', 'database_server.test_database_missing']);
+            expect(array_column($report->issues, 'observed'))->toBe(['app_test', 'app_test_test_1']);
+
+            $restored = null;
+            foreach ([1, 2] as $attempt) {
+                $this->postJson('/api/v1/database-connections', $request)->assertOk()->assertJsonPath('data.id', $connection->id);
+                $state = $psql("SELECT datname || ':' || oid FROM pg_database WHERE datname IN ('app', 'app_test_test_2') ORDER BY datname;\n\\connect app\nSELECT id FROM application_data;\n\\connect app_test_test_2\nSELECT id FROM survivor;");
+                expect($state)->toBe($before."\n42\n17");
+                $identities = $psql("SELECT oid FROM pg_database WHERE datname LIKE 'app%' ORDER BY datname;");
+                $restored ??= $identities;
+                expect($identities)->toBe($restored);
+            }
+            expect($doctor->inspect($context)->issues)->toBe([]);
+            expect($psql("SELECT datname || ':' || pg_get_userbyid(datdba) FROM pg_database WHERE datname IN ('app_test', 'app_test_test_1') ORDER BY datname;"))->toBe("app_test:dlf_feature_x\napp_test_test_1:dlf_feature_x");
+            expect($psql("\\connect app_test_test_1\nSELECT has_schema_privilege('dlf_feature_x', 'public', 'USAGE, CREATE')::text;\n\\connect app_test\nSELECT has_schema_privilege('dlf_feature_x', 'public', 'USAGE, CREATE')::text; SELECT rolcreatedb::text FROM pg_roles WHERE rolname = 'dlf_feature_x';"))->toBe("true\ntrue\nfalse");
+            $this->assertDatabaseCount('database_connections', 1);
+            $this->assertDatabaseCount('database_users', 1);
+        });
+    });
+
+    it('refuses a different pool retry with 409 before running SQL', function (array $change): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+        $this->postJson('/api/v1/database-connections', $request)->assertCreated();
+        $this->admin->statements = [];
+        $this->postJson('/api/v1/database-connections', [...$request, ...$change])->assertConflict()->assertJsonPath('error.code', 'database.slug_conflict');
+        expect($this->admin->sql())->toBe('');
+    })->with(['count' => [['test_processes' => 3]], 'default count' => [['test_processes' => 8]], 'locale' => [['locale' => 'C']]]);
+
+    it('keeps partial repairs for retry and leaves a missing primary database missing', function (): void {
+        postgres_statements_server(function (Closure $psql): void {
+            server_database_live_postgres($this, $psql);
+            $psql('DROP DATABASE app; DROP DATABASE app_test; DROP DATABASE app_test_test_1;');
+            $fail = true;
+            $admin = Mockery::mock(DatabaseServerAdmin::class);
+            $admin->shouldReceive('execute')->andReturnUsing(static function (DatabaseServer $server, string $sql) use ($psql, &$fail): array {
+                if ($fail && str_contains($sql, 'CREATE DATABASE "app_test_test_1"')) {
+                    $fail = false;
+                    throw new ResourceOperationException('database.server_command_failed', 'Simulated transport failure.', 502);
+                }
+                $output = $psql($sql);
+
+                return $output === '' ? [] : explode("\n", $output);
+            });
+            app()->instance(DatabaseServerAdmin::class, $admin);
+            $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+            $this->postJson('/api/v1/database-connections', $request)->assertStatus(502)->assertJsonPath('error.code', 'database.server_command_failed');
+            expect($psql("SELECT datname FROM pg_database WHERE datname IN ('app_test', 'app_test_test_1') ORDER BY datname;"))->toBe('app_test');
+            $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            $this->postJson('/api/v1/database-connections', $request)->assertOk();
+            expect($psql("SELECT datname FROM pg_database WHERE datname LIKE 'app%' ORDER BY datname;"))->toBe("app_test\napp_test_test_1\napp_test_test_2");
+        });
+    });
+
+    it('refuses a missing managed role with 409 without creating databases or a role', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+        $this->postJson('/api/v1/database-connections', $request)->assertCreated();
+        $this->admin->statements = [];
+        $this->postJson('/api/v1/database-connections', $request)->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->not->toContain('CREATE', 'ALTER', 'DROP');
+    });
+
+    it('restores the recorded builtin locale and refuses a retry during database removal', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2, 'locale' => 'C.UTF-8'];
+        $this->postJson('/api/v1/database-connections', $request)->assertCreated();
+        $this->admin->statements = [];
+        $this->admin->rows['SELECT rolname'] = ['dlf_feature_x'];
+        $this->admin->rows['AND pg_get_userbyid'] = [];
+        $this->admin->rows['SELECT datname'] = ['app_test', 'app_test_test_2'];
+        $lock = app(DatabaseRemovalLock::class);
+        $lock->run([$this->server->id], function () use ($request): void {
+            $this->postJson('/api/v1/database-connections', $request)->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
+        });
+        expect($this->admin->sql())->toBe('');
+        $this->postJson('/api/v1/database-connections', $request)->assertOk();
+        expect($this->admin->sql())->toContain('CREATE DATABASE "app_test_test_1" OWNER "dlf_feature_x" TEMPLATE template0 ENCODING \'UTF8\' LOCALE_PROVIDER builtin BUILTIN_LOCALE \'C.UTF-8\';');
+        expect($this->admin->sql())->not->toContain('CREATE DATABASE "app_test"', 'CREATE DATABASE "app_test_test_2"', 'DROP', 'ALTER ROLE');
+    });
+
+    it('refuses foreign pool members with 409 before restoring anything', function (): void {
+        postgres_statements_server(function (Closure $psql): void {
+            server_database_live_postgres($this, $psql);
+            $psql('DROP DATABASE app_test; ALTER DATABASE app_test_test_2 OWNER TO orbit_test;');
+            $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])
+                ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+            expect($psql("SELECT datname FROM pg_database WHERE datname = 'app_test';"))->toBe('');
+            expect($psql("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'app_test_test_2';"))->toBe('orbit_test');
+        });
+    });
 });
 
 describe('managed PostgreSQL test databases', function (): void {

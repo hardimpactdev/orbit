@@ -60,7 +60,7 @@ final class DatabaseConnectionsController extends Controller
         return response()->json([
             'data' => DatabaseConnectionData::fromModel($connection)->toArray(),
             'meta' => $this->meta($request),
-        ], 201);
+        ], $connection->wasRecentlyCreated ? 201 : 200);
     }
 
     public function show(Request $request, DatabaseConnection $databaseConnection): JsonResponse

@@ -80,7 +80,7 @@ orbit database:create app-dev --server=services-postgres --instance=60 --test-pr
 orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
 ```
 
-The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. An identical Instance-owned PostgreSQL create retry [restores missing test pool members](/reference/database-servers#repair-a-postgresql-test-pool) and returns the recorded connection. Other duplicate slugs return `database.slug_conflict` and leave the existing record unchanged.
 
 Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
 

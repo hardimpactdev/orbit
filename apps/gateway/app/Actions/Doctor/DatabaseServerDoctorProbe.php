@@ -10,6 +10,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\PostgresStatements;
+use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\DatabaseServerDoctorIssueCode;
@@ -47,7 +48,9 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
             ->where('node_id', $node->id)
             ->where(static fn ($query) => $query->where('driver', DatabaseDriver::Redis)
                 ->orWhere('private_endpoints_managed', true)
-                ->orWhere(static fn (Builder $query) => $query->where('driver', DatabaseDriver::Pgsql)->whereHas('databaseConnections.users')))
+                ->orWhere(static fn (Builder $query) => $query->where('driver', DatabaseDriver::Pgsql)
+                    ->where(static fn (Builder $query) => $query->whereHas('databaseConnections.users')
+                        ->orWhereHas('databaseConnections', static fn (Builder $query) => $query->whereNotNull('test_database')))))
             ->whereHas('process', static fn ($query) => $query->where('desired_state', DesiredProcessState::Running))
             ->with(['node', 'databaseConnections.users'])
             ->orderBy('id')
@@ -81,6 +84,16 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 
                     if ($server->driver === DatabaseDriver::Pgsql) {
                         foreach ($server->databaseConnections as $connection) {
+                            $names = new PostgresTestDatabases()->recordedNames($connection);
+                            if ($names !== []) {
+                                $present = $this->sql->execute($server, new PostgresStatements()->databasesIn($names));
+                                foreach (array_diff($names, $present) as $name) {
+                                    $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::TestDatabaseMissing,
+                                        "Connection [{$connection->slug}] is missing recorded test database [{$name}]. Retry its original database:create request to restore missing members.",
+                                        'present', $name);
+                                }
+                            }
+
                             foreach ($connection->users as $user) {
                                 $attribute = $this->sql->execute($server, new PostgresStatements()->replicationAttribute($user->username));
                                 $expected = $user->replication ? 'true' : 'false';

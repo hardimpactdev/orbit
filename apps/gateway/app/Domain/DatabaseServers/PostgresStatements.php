@@ -29,13 +29,14 @@ final readonly class PostgresStatements
             ."ALTER ROLE {$name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE {$attribute} PASSWORD ".$this->literal($verifier).";\n";
     }
 
-    public function createDatabase(string $database, ?string $locale = null): string
+    public function createDatabase(string $database, ?string $locale = null, ?string $owner = null): string
     {
         if ($locale !== null && ! in_array($locale, ['C', 'C.UTF-8'], true)) {
             throw new ResourceOperationException('validation.failed', 'PostgreSQL builtin locale must be C or C.UTF-8.', 422);
         }
 
         return 'CREATE DATABASE '.$this->identifier($database)
+            .($owner === null ? '' : ' OWNER '.$this->identifier($owner))
             .($locale === null ? '' : " TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE ".$this->literal($locale)).";\n";
     }
 
@@ -229,6 +230,13 @@ final readonly class PostgresStatements
         }
 
         return 'SELECT datname FROM pg_database WHERE datname IN ('.implode(', ', array_map($this->literal(...), $databases)).");\n";
+    }
+
+    /** @param non-empty-list<string> $databases */
+    public function databasesNotOwnedBy(array $databases, string $username): string
+    {
+        return rtrim(trim($this->databasesIn($databases)), ';')
+            .' AND pg_get_userbyid(datdba) <> '.$this->literal($username).";\n";
     }
 
     public function userNamed(string $username): string
