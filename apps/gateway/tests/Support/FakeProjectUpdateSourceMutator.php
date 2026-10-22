@@ -20,6 +20,9 @@ final class FakeProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
     /** @var list<int> */
     public array $switchedInstances = [];
 
+    /** @var list<int> */
+    public array $restoredBranches = [];
+
     public bool $refuseRepositoryPreflight = false;
 
     public bool $failOriginChange = false;
@@ -71,7 +74,7 @@ final class FakeProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
                 continue;
             }
 
-            $byPath[$path] = ['path' => $path, 'previous_url' => $previousUrl, 'current_url' => $newUrl, 'mutated' => false, 'attempted' => true];
+            $byPath[$path] = ['instance_id' => $checkout->id, 'path' => $path, 'previous_url' => $previousUrl, 'current_url' => $newUrl, 'mutated' => false, 'attempted' => true];
             if ($record !== null) {
                 $record(array_values($byPath));
             }
@@ -130,5 +133,8 @@ final class FakeProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
         $this->switchedInstances[] = $instance->id;
     }
 
-    public function restoreDefaultBranch(Instance $instance, string $previousBranch): void {}
+    public function restoreDefaultBranch(Instance $instance, string $previousBranch): void
+    {
+        $this->restoredBranches[] = $instance->id;
+    }
 }

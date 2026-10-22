@@ -423,6 +423,62 @@ describe('App repository reconciliation', function (): void {
             ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
     });
 
+    it('restores a switched default branch when a later origin change fails', function (): void {
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+
+        expect(fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            new UpdateProjectData(
+                typeProvided: false, type: null, slugProvided: false, slug: null,
+                repositoryUrlProvided: true, repositoryUrl: 'https://github.com/acme/site.git',
+                defaultBranchProvided: true, defaultBranch: 'stable', rootProvided: false, root: null,
+            ),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect($this->fixture->sources->switchedInstances)->toBe([$this->fixture->defaultInstance->id])
+            ->and($this->fixture->sources->restoredBranches)->toBe([$this->fixture->defaultInstance->id])
+            ->and($this->fixture->defaultInstance->refresh()->branch)->toBe('main')
+            ->and(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack);
+    });
+
+    it('resumes a parked task VM before it restores its origin, and keeps the rollback open meanwhile', function (): void {
+        Bus::fake([ResumeTaskVm::class]);
+        $node = Node::query()->create(['name' => 'tvm-rollback', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.134', 'wireguard_ip' => '10.44.0.134']);
+        $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'settling']);
+        $vm = test_task_vm($group, $node);
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+            'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+        $this->fixture->sources->failOriginRestores = 1;
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project->refresh(),
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        expect($update)->toThrow(ResourceOperationException::class);
+        $vm->update(['state' => TaskVmState::Parked]);
+        expect($update)->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.task_vm_parked');
+        });
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RollingBack);
+        Bus::assertDispatched(ResumeTaskVm::class);
+
+        $vm->update(['state' => TaskVmState::Ready]);
+        $update();
+
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->sources->originRestores)->toContain('/home/orbit/apps/acme/workspace');
+    });
+
     it('keeps the evidence of a real checkout that changed before a later one failed, and restores it', function (): void {
         $sandbox = sys_get_temp_dir().'/orbit-app-update-partial-'.Str::uuid();
         $git = static function (array $arguments): void {
@@ -461,7 +517,7 @@ describe('App repository reconciliation', function (): void {
             expect($origin("{$sandbox}/first"))->toBe('https://github.com/acme/site.git')
                 ->and(array_column($recorded, 'mutated', 'instance_id'))->toBe([$checkouts[0]->id => true, $checkouts[1]->id => false]);
 
-            chmod("{$sandbox}/second/.git", 0755);
+            // The second checkout never changed, so its restore writes nothing and passes while it stays read-only.
             $mutator->restoreOrigins($recorded);
 
             expect($origin("{$sandbox}/first"))->toBe('git@github.com:acme/site.git')

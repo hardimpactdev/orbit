@@ -142,7 +142,8 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 <<<'BASH'
                     path=$1
                     url=$2
-                    git -C "$path" remote set-url origin -- "$url"
+                    # An origin that never changed is not written, so a read-only checkout cannot hold the rollback.
+                    test "$(git -C "$path" config --get remote.origin.url)" = "$url" || git -C "$path" remote set-url origin -- "$url"
                     BASH,
                 'app-update-repository-restore',
                 'project.repository_origin_failed',
