@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
@@ -12,6 +13,8 @@ use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -29,14 +32,17 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
@@ -594,6 +600,9 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var list<string> */
     public array $firewallReads = [];
 
+    /** @var list<list<string>> */
+    public array $dnsQueries = [];
+
     public ?string $failCaddy = null;
 
     public bool $failHttp = false;
@@ -601,6 +610,17 @@ final class CertificateOrderNodes implements SshExecutor
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
+        if ($command->arguments === ['getent', 'ahostsv4', 'sync.example.com']) {
+            $this->dnsQueries[] = $command->arguments;
+
+            return new CommandResult(0, "172.67.204.181 STREAM sync.example.com\n", '', 1, false);
+        }
+        if ($command->arguments === ['resolvectl', 'query', '--interface=orbit', '--protocol=dns', '--cache=no', '--type=A', 'sync.example.com']) {
+            $this->dnsQueries[] = $command->arguments;
+
+            // Only ~orbit is routed here, with DefaultRoute=no. Public names are ineligible.
+            return new CommandResult(1, '', 'No appropriate name servers or networks for name found', 1, false);
+        }
         if (($command->arguments[0] ?? null) === 'curl' && in_array('--noproxy', $command->arguments, true)) {
             $upstream = parse_url(array_last($command->arguments));
             expect($command->arguments)->toContain('--head', 'Host: sync.example.com')->not->toContain('--fail', '--location');
@@ -854,3 +874,64 @@ it('limits native public Process Doctor firewall reads to selected authorized No
     expect($edge['families'][0]['checked'])->toBe(1)
         ->and($this->nodes->firewallReads)->toContain($this->beast->wireguard_ip);
 });
+
+it('checks public Process Route DNS through Orbit instead of the Ingress system resolver', function (string $address, int $flags, bool $truncated, array $codes): void {
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
+    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
+    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
+    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp']], 'status' => 'active']);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
+    app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
+    $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])->assertCreated();
+    $edge = Mockery::mock(PublicRouteEdgeInspector::class);
+    $edge->shouldReceive('inspect')->once()->andReturn(new PublicRouteEdgeObservation(true, true, true, true));
+    app()->instance(PublicRouteEdgeInspector::class, $edge);
+    app(VpnSettings::class)->configure('10.44.0.0/24', dnsServer: '10.44.0.1');
+    $server = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
+    expect($server)->toBeResource();
+    stream_set_timeout($server, 1);
+    $endpoint = stream_socket_get_name($server, false);
+    $port = (int) substr($endpoint, strrpos($endpoint, ':') + 1);
+    $queries = [];
+    app()->bind(SocketPrivateDnsUpstream::class, function ($app, array $parameters) use ($server, $port, $address, $flags, $truncated, &$queries): SocketPrivateDnsUpstream {
+        expect($parameters['host'])->toBe('10.44.0.1')
+            ->and($parameters['port'])->toBe(53);
+
+        return new SocketPrivateDnsUpstream('127.0.0.1', $port, 1.0,
+            waitForSocket: static function ($socket, bool $write, float $timeout) use ($server, $address, $flags, $truncated, &$queries): bool {
+                if ($write) {
+                    return true;
+                }
+                $request = stream_socket_recvfrom($server, 65535, 0, $peer);
+                $codec = new PrivateDnsMessageCodec;
+                $query = $codec->decodeQuestion($request);
+                $queries[] = $query->question->normalizedName();
+                $response = $codec->encodeAnswer($query, PrivateDnsAnswer::a($address));
+                $response = substr_replace($response, pack('n', $flags), 2, 2);
+                stream_socket_sendto($server, $truncated ? substr($response, 0, -1) : $response, 0, $peer);
+                $read = [$socket];
+                $writeable = $except = [];
+
+                return stream_select($read, $writeable, $except, 1) === 1;
+            });
+    });
+    $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
+    $scope = new DoctorInspectionScope([$ingress->id => $context, $this->beast->id => new DoctorNodeContext($this->beast, $context->inspection)]);
+
+    try {
+        $report = app(RouteDoctorProbe::class)->inspect($context->withScope($scope));
+
+        expect($report->checked)->toBe(1)
+            ->and(array_map(static fn ($issue) => $issue->code, $report->issues))->toBe($codes)
+            ->and($queries)->toBe(['sync.example.com'])
+            ->and($this->nodes->dnsQueries)->toBeEmpty();
+    } finally {
+        fclose($server);
+    }
+})->with([
+    'managed record is correct while system DNS returns Cloudflare' => ['10.44.0.4', 0x8400, false, []],
+    'managed record points at the Process Node instead of the Ingress' => ['10.44.0.7', 0x8400, false, ['route.dns_mismatch']],
+    'resolver returns SERVFAIL' => ['10.44.0.4', 0x8002, false, ['route.inspection_failed']],
+    'query output is truncated' => ['10.44.0.4', 0x8400, true, ['route.inspection_failed']],
+]);
