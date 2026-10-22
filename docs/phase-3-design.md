@@ -1,6 +1,6 @@
 # Phase 3 design: Swamp on the Orbit Gateway
 
-Status: Nick chose option B, built as B1 then B2 (2026-10-22). Nothing here changes Orbit yet.
+Status: Nick chose option B, built as B1 then B2 (2026-10-22). The Orbit side is ADR 0229 in hardimpactdev/orbit#1455 (docs only); it supersedes the operation list below where they differ.
 
 ## Settled
 
