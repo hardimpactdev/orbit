@@ -85,6 +85,10 @@ it('attaches mysql keys into stored Instance env and redacts the password', func
     ]);
     expect(DatabaseConnectionTarget::query()->sole()->prefix)->toBe('DB');
 
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/app", ['prefix' => 'DB'])
+        ->assertOk()->assertJsonPath('data.changed', false);
+    expect(DatabaseConnectionTarget::query()->count())->toBe(1);
+
     $activity = Activity::query()->where('request_id', $attach->json('meta.request_id'))->sole();
     $encoded = json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR);
 
