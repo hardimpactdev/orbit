@@ -331,7 +331,10 @@ describe('App repository reconciliation', function (): void {
                 return 'main';
             }
 
-            public function verify(string $repository, string $branch, ProjectSourceAccess $source): void {}
+            public function verify(string $repository, string $branch, ProjectSourceAccess $source): void
+            {
+                $this->resolved[] = $repository.'@'.$branch;
+            }
         };
         $this->app->instance(RepositoryDefaultBranchResolver::class, $branches);
         $update = fn () => app(UpdateProjectAction::class)->execute(
@@ -349,7 +352,7 @@ describe('App repository reconciliation', function (): void {
             Bus::assertDispatched(ResumeTaskVm::class);
         } else {
             $update();
-            expect($branches->resolved)->toBe(['https://github.com/acme/site.git'])
+            expect($branches->resolved)->toBe(['https://github.com/acme/site.git@main'])
                 ->and($this->fixture->sources->originMutations)->toContain('/home/orbit/apps/acme/workspace')
                 ->and($this->fixture->project->refresh()->repository_url)->toBe('https://github.com/acme/site.git');
         }

@@ -422,7 +422,7 @@ final readonly class UpdateProjectAction
 
             if ($update->requested_repository_url !== $project->repository_url) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
-                $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url);
+                $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url, $update->requested_default_branch);
                 $this->sources->preflightRepository(
                     $plan['checkouts'],
                     $project->repository_url,
@@ -453,26 +453,29 @@ final readonly class UpdateProjectAction
 
     /**
      * A task workspace's preflight cannot read the proposed repository, because a task VM gets no token. The
-     * Gateway reads it once instead. A parked task VM cannot run the preflight: Orbit resumes it and refuses.
+     * Gateway checks the default branch there once instead. A parked task VM cannot run the preflight: Orbit resumes it and refuses.
      *
      * @param  list<Instance>  $checkouts
      */
-    private function preflightTaskWorkspaces(Project $project, array $checkouts, string $repositoryUrl): void
+    private function preflightTaskWorkspaces(Project $project, array $checkouts, string $repositoryUrl, ?string $requestedDefaultBranch): void
     {
         $vms = array_filter(array_map(static fn (Instance $checkout): ?TaskVm => TaskVm::forNode($checkout->node_id), $checkouts));
         if ($vms === []) {
             return;
         }
-        foreach ($vms as $vm) {
-            if (! app(WakeTaskVmAction::class)->forVm($vm)) {
-                throw new ResourceOperationException(
-                    errorCode: 'project.task_vm_parked',
-                    message: 'Task VM ['.$vm->name.'] is parked. Orbit is resuming it. Retry the update when it is ready.',
-                    status: 409,
-                );
-            }
+        // Every parked VM starts resuming before the one refusal, so a single retry can run.
+        $parked = array_values(array_filter($vms, static fn (TaskVm $vm): bool => ! app(WakeTaskVmAction::class)->forVm($vm)));
+        if ($parked !== []) {
+            throw new ResourceOperationException(
+                errorCode: 'project.task_vm_parked',
+                message: 'Task VM ['.implode(', ', array_map(static fn (TaskVm $vm): string => $vm->name, $parked)).'] is parked. Orbit is resuming it. Retry the update when it is ready.',
+                status: 409,
+            );
         }
-        $this->branches->resolve($repositoryUrl, $project->source_access);
+        // A requested default branch is already verified there.
+        if ($requestedDefaultBranch === null) {
+            $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
+        }
     }
 
     private function prepare(ProjectUpdate $update): void
