@@ -11,12 +11,3 @@ require_once __DIR__.'/Helpers/SelfUpdateFixtures.php';
 require_once __DIR__.'/Support/SubprocessFixture.php';
 
 uses(TestCase::class)->in('Feature');
-
-pest()
-    ->tia()
-    ->locally()
-    ->filtered();
-
-$tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
-
-pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');

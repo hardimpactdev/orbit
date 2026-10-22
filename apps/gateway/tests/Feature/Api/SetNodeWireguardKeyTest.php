@@ -27,8 +27,6 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
     beforeEach(function (): void {
         $this->travelTo(new DateTimeImmutable('2026-08-25T12:00:00Z'));

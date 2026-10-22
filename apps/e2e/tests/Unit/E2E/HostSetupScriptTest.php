@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /** How the script derives the seed disk's udev path; the Gateway's TopologySeedContractTest checks the result. */
 const HOST_SETUP_SEED_DEVICE = '/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_${seed_device//-/--}';
 

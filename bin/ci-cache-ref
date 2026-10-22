@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Publish and import SHA-bound, cache-only Git refs. No workspace credentials or artifact transport."""
+"""Publish and import SHA-bound Git refs that hold main CI's Pint and PHPStan caches. No workspace credentials or
+artifact transport."""
 import argparse
-from datetime import datetime, timezone
 import hashlib
-import importlib.machinery
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,10 +12,14 @@ import subprocess
 import sys
 import tempfile
 
-loader = importlib.machinery.SourceFileLoader('tia_cache', str(Path(__file__).with_name('tia-cache')))
-spec = importlib.util.spec_from_loader(loader.name, loader)
-tia = importlib.util.module_from_spec(spec)
-loader.exec_module(tia)
+PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+# Each tool's configuration file and the cache that `composer check` writes.
+QUALITY = {
+    'pint': ('pint.json', 'vendor/pint.cache'),
+    'phpstan': ('phpstan.neon', 'vendor/phpstan/cache/resultCache.php'),
+}
+SCHEMA = 3
+SHA = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
 NAMESPACE = 'refs/orbit/ci-cache/'
 MAX_FILES = 1024
 MAX_BYTES = 64 * 1024 * 1024
@@ -33,17 +35,38 @@ def git(root, *args, data=None, environment=None):
 
 
 def sha(value):
-    if not isinstance(value, str) or not tia.SHA.fullmatch(value):
+    if not isinstance(value, str) or not SHA.fullmatch(value):
         raise ValueError('Invalid tested code SHA.')
     return value
 
 
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def blob(root, commit, path):
+    """Return a file's bytes at a commit, or None when the commit has no such file."""
+    result = subprocess.run(['git', '-C', str(root), 'cat-file', 'blob', f'{commit}:{path}'], capture_output=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def is_ancestor(root, ancestor, descendant):
+    return subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', ancestor, descendant],
+                          capture_output=True).returncode == 0
+
+
+def payload_file(directory, name):
+    path = directory / name
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f'The CI cache payload has no regular {name}.')
+    return path.read_bytes()
+
+
 def allowed(path):
-    for project in tia.PROJECTS:
+    for project in PROJECTS:
         prefix = project + '/'
         if path.startswith(prefix):
-            relative = path[len(prefix):]
-            return relative in ('manifest.json', 'graph.json', 'quality/pint', 'quality/phpstan')
+            return path[len(prefix):] in ('manifest.json', *('quality/' + tool for tool in QUALITY))
     return False
 
 
@@ -74,28 +97,20 @@ def validate(root, directory, commit, projects):
     """Validate the complete publication before any private executable cache is written."""
     for project in projects:
         source = directory / project
-        manifest = json.loads(tia.artifact_file(source, 'manifest.json'))
-        if (not isinstance(manifest, dict) or manifest.get('schema') != 2 or manifest.get('project') != project
+        manifest = json.loads(payload_file(source, 'manifest.json'))
+        if (not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA or manifest.get('project') != project
                 or manifest.get('commit') != commit
                 or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))
                 or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_attempt', '')))
-                or not isinstance(manifest.get('inputs'), dict)
                 or not isinstance(manifest.get('configurations'), dict)
                 or not re.fullmatch(r'\d+\.\d+', str(manifest.get('php', '')))):
             raise ValueError('CI cache manifest identity differs from the selected SHA.')
-        graph = tia.artifact_file(source, 'graph.json')
-        data = json.loads(graph)
-        if not isinstance(data, dict) or not isinstance(data.get('fingerprint'), dict):
-            raise ValueError('CI cache graph is invalid.')
-        graph_commit = tia.validate_graph(root, graph.decode(), {'fingerprint': data['fingerprint']}, commit)
-        if graph_commit != commit or tia.digest(graph) != manifest.get('graph_sha256'):
-            raise ValueError('CI cache graph differs from the selected SHA or checksum.')
         quality = manifest.get('quality')
-        if not isinstance(quality, dict) or any(tool not in tia.QUALITY for tool in quality):
+        if not isinstance(quality, dict) or any(tool not in QUALITY for tool in quality):
             raise ValueError('CI cache quality manifest is invalid.')
-        expected_files = {'manifest.json', 'graph.json'}
+        expected_files = {'manifest.json'}
         for tool, checksum in quality.items():
-            if tia.digest(tia.artifact_file(source, 'quality/' + tool)) != checksum:
+            if digest(payload_file(source, 'quality/' + tool)) != checksum:
                 raise ValueError(f'CI cache {tool} checksum differs.')
             if tool not in manifest['configurations']:
                 raise ValueError(f'CI cache {tool} configuration is missing.')
@@ -106,17 +121,13 @@ def validate(root, directory, commit, projects):
 
 
 def validate_code(root, directory, commit):
-    for project in tia.PROJECTS:
+    for project in PROJECTS:
         manifest = json.loads((directory / project / 'manifest.json').read_text())
-        inputs = {name: tia.digest(data) for name in tia.TEST_INPUTS
-                  if (data := tia.blob(root, commit, project + '/' + name)) is not None}
-        if manifest['inputs'] != inputs:
-            raise ValueError('CI cache inputs differ from the tested code commit.')
         for tool, checksum in manifest['configurations'].items():
-            if tool not in tia.QUALITY:
+            if tool not in QUALITY:
                 raise ValueError('Unknown CI cache tool configuration.')
-            configuration = tia.blob(root, commit, project + '/' + tia.QUALITY[tool][0])
-            if configuration is None or tia.digest(configuration) != checksum:
+            configuration = blob(root, commit, project + '/' + QUALITY[tool][0])
+            if configuration is None or digest(configuration) != checksum:
                 raise ValueError('CI cache tool configuration differs from the tested commit.')
 
 
@@ -124,11 +135,11 @@ def stage(root, exports, destination, commit):
     found = set()
     for manifest in exports.rglob('manifest.json'):
         project = json.loads(manifest.read_text()).get('project')
-        if project not in tia.PROJECTS or project in found:
+        if project not in PROJECTS or project in found:
             raise ValueError('Unknown or duplicate project export.')
         found.add(project)
         shutil.copytree(manifest.parent, destination / project, symlinks=True)
-    if found != set(tia.PROJECTS):
+    if found != set(PROJECTS):
         raise ValueError('The successful run did not export every Composer project.')
     files = list(destination.rglob('*'))
     if any(path.is_symlink() or (path.is_file() and not allowed(str(path.relative_to(destination)))) for path in files):
@@ -136,8 +147,8 @@ def stage(root, exports, destination, commit):
     regular = [path for path in files if path.is_file()]
     if len(regular) > MAX_FILES or sum(path.stat().st_size for path in regular) > MAX_BYTES:
         raise ValueError('CI cache exports exceed the payload limits.')
-    validate(root, destination, commit, tia.PROJECTS)
-    manifests = [json.loads((destination / project / 'manifest.json').read_text()) for project in tia.PROJECTS]
+    validate(root, destination, commit, PROJECTS)
+    manifests = [json.loads((destination / project / 'manifest.json').read_text()) for project in PROJECTS]
     if len({manifest['run_id'] for manifest in manifests}) != 1:
         raise ValueError('CI cache exports do not come from the same workflow run.')
     for manifest in manifests:
@@ -180,49 +191,132 @@ def publish(root, exports, commit, remote):
 
 def validate_existing(root, ref, directory, commit):
     payload(root, ref, directory)
-    validate(root, directory, commit, tia.PROJECTS)
+    validate(root, directory, commit, PROJECTS)
     validate_code(root, directory, commit)
 
 
-def prune(root, remote, now=None):
+def prune(root, remote):
+    """Keep only the newest published main commit's ref, so a workspace never selects an older cache baseline."""
     git(root, 'fetch', '--no-tags', '--prune', remote, f'+{NAMESPACE}*:{NAMESPACE}*')
+    # Another main run may have published a newer commit than this checkout holds.
+    git(root, 'fetch', '--no-tags', remote, 'refs/heads/main')
     refs = []
-    for line in git(root, 'for-each-ref', '--format=%(refname) %(committerdate:unix)', NAMESPACE).decode().splitlines():
-        ref, timestamp = line.split()
+    for ref in git(root, 'for-each-ref', '--format=%(refname)', NAMESPACE).decode().splitlines():
         tested = sha(ref[len(NAMESPACE):])
         # Source ancestry, never publication completion time, determines the newest successful main baseline.
         git(root, 'cat-file', '-e', tested + '^{commit}')
-        refs.append((ref, tested, int(timestamp)))
+        refs.append((ref, tested))
     newest = None
-    for ref, tested, _ in refs:
-        if newest is None or tia.is_ancestor(root, newest[1], tested):
+    for ref, tested in refs:
+        if newest is None or is_ancestor(root, newest[1], tested):
             newest = (ref, tested)
-    cutoff = (now or datetime.now(timezone.utc).timestamp()) - 14 * 86400
-    for ref, _, timestamp in refs:
-        if timestamp < cutoff and ref != newest[0]:
+    for ref, _ in refs:
+        if ref != newest[0]:
             git(root, 'push', remote, ':' + ref)
 
 
 def import_ref(root, commit):
     sha(commit)
     ref = NAMESPACE + commit
-    if not tia.is_ancestor(root, commit, 'HEAD'):
+    if not is_ancestor(root, commit, 'HEAD'):
         print(f'CI caches cold: selected baseline {commit} is not an ancestor of HEAD.')
         return
     with tempfile.TemporaryDirectory(prefix='orbit-ci-import-') as temporary:
         directory = Path(temporary)
         try:
             payload(root, ref, directory)
-            validate(root, directory, commit, tia.PROJECTS)
+            validate(root, directory, commit, PROJECTS)
             validate_code(root, directory, commit)
         except (ValueError, RuntimeError, KeyError, TypeError, UnicodeError, OSError) as error:
             print(f'CI caches cold for {commit}: {error}')
             return
-        for project in tia.PROJECTS:
+        for project in PROJECTS:
+            manifest = json.loads((directory / project / 'manifest.json').read_text())
             try:
-                tia.import_ci(root, project, directory / project, commit)
-            except (tia.StaleBaseline, ValueError) as error:
+                import_quality(root, project, directory / project, manifest, commit)
+            except ValueError as error:
                 print(f'[{project}] CI caches cold: {error}')
+
+
+def php(root, code):
+    result = subprocess.run(['php', '-r', code], cwd=root, capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or f'php exited {result.returncode}')
+    return result.stdout.strip()
+
+
+def pint_mismatch(root, project, data):
+    """Pint discards a cache written by another PHP version, so compare the full version the cache records."""
+    try:
+        recorded = json.loads(data).get('php')
+    except (ValueError, AttributeError):
+        recorded = None
+    if not isinstance(recorded, str) or not recorded:
+        return ['the cache records no PHP version']
+    runtime = php(root / project, 'echo PHP_VERSION;')
+    return [] if recorded == runtime else [f'PHP {runtime} differs from CI PHP {recorded}']
+
+
+def phpstan_mismatch(root, project, data):
+    """PHPStan discards a result cache written on another PHP build. Compare the PHP version that its metadata records;
+    the extensions it also compares stay unchecked, so the import note says the cache may still run cold."""
+    recorded = re.search(rb's:10:"phpVersion";i:(\d+);', data[:262144])
+    if recorded is None:
+        return ['the cache records no PHP version']
+    cached, runtime = int(recorded.group(1)), int(php(root / project, 'echo PHP_VERSION_ID;'))
+    version = lambda value: f'{value // 10000}.{value // 100 % 100}.{value % 100}'
+    return [] if cached == runtime else [f'PHP {version(runtime)} differs from CI PHP {version(cached)}']
+
+
+QUALITY_MISMATCH = {'pint': pint_mismatch, 'phpstan': phpstan_mismatch}
+
+
+def write_new(path, data):
+    """Write a cache only where none exists: a concurrent first run of the tool wins over this copy."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def import_quality(root, project, directory, manifest, commit):
+    """Write the Pint and PHPStan caches where they are absent and the tool would use them: the same lock file and
+    tool configuration as the tested commit, and the runtime facts that each tool compares itself."""
+    for tool, expected in sorted(manifest['quality'].items()):
+        configuration, cache = QUALITY[tool]
+        destination = root / project / cache
+        if os.path.lexists(destination):
+            print(f'[{project}] kept existing {tool} cache', flush=True)
+            continue
+        data = payload_file(directory, 'quality/' + tool)
+        if not data or digest(data) != expected:
+            raise ValueError(f'The CI {tool} cache checksum differs.')
+        differs = [name for name in ('composer.lock', configuration)
+                   if not (root / project / name).is_file()
+                   or blob(root, commit, f'{project}/{name}') != (root / project / name).read_bytes()]
+        reasons = [f'{", ".join(differs)} differs from CI'] if differs else []
+        if not reasons:
+            try:
+                reasons = QUALITY_MISMATCH[tool](root, project, data)
+            except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+                reasons = [f'its metadata cannot be read: {str(error).strip() or type(error).__name__}']
+        if reasons:
+            print(f'[{project}] {tool} cache not imported, it runs cold: {"; ".join(reasons)}', flush=True)
+            continue
+        try:
+            write_new(destination, data)
+        except FileExistsError:
+            continue
+        note = '; PHPStan may still run cold if the PHP build differs' if tool == 'phpstan' else ''
+        print(f'[{project}] imported CI {tool} cache{note}', flush=True)
 
 
 def main():
@@ -244,5 +338,5 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, RuntimeError, OSError, tia.CommandFailure) as error:
+    except (ValueError, RuntimeError, OSError) as error:
         sys.exit(str(error))

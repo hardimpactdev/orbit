@@ -34,8 +34,6 @@ use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->fixture = new GatewayReleaseFixture;
     $this->live = $this->fixture->layout->currentPath();

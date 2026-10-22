@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * The names of the topology seed (ADR 0222) live in four places that never load each other: the Gateway, which attaches
  * the disk; the program that builds the seed; the harness, which copies Nodes; and host setup in the task VM, which

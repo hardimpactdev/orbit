@@ -6,7 +6,7 @@ on:
   # (docs/reference/tasks.md#handoff-ci). No pull request has such a branch as head.
   push:
     branches: [main, 'task-*-handoff']
-  # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
+  # A nightly run on main tests every project in full, as a manual dispatch does.
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -26,35 +26,44 @@ env:
   COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
   # The one definition of the two kinds of run. A handoff push is Orbit's push of a task handoff commit to
   # task-*-handoff, never a manual run or another task-* branch. A change run tests a change before it merges: a pull
-  # request or a handoff push, and every job treats both alike. Steps read these values. GitHub reads no env in a
-  # job's `if` or `runs-on`, so the two jobs that decide there spell out CHANGE_RUN verbatim, and a test pins that.
+  # request or a handoff push, and every job treats both alike. Steps read these values; a change run differs only
+  # in its cache keys and change bases. The changes job selects projects; selected suites always run in full.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
 
 jobs:
+  changes:
+    name: Changed projects
+    runs-on: ubuntu-26.04
+    outputs:
+      matrix: ${{ steps.changes.outputs.matrix }}
+      jobs: ${{ steps.changes.outputs.jobs }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Test project mapping
+        run: python3 -m unittest discover -s tools -p test_ci_changes.py
+      - name: Select touched projects
+        id: changes
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          CHANGE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 bin/ci-changes --base "$CHANGE_BASE" --head "$CHANGE_HEAD" --github-output "$GITHUB_OUTPUT"
+
   project:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).project
     name: ${{ matrix.project.name }}
-    # On a change run (env.CHANGE_RUN, spelled out) this Gateway job checks quality on any orbit-shard runner while
-    # all shards run independently. A full run keeps one six-worker recording run on Sabre. Fork PRs never run
-    # on self-hosted runners.
-    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (!(github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')) && fromJSON('["self-hosted", "sabre"]') || (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]')) || 'ubuntu-26.04' }}
+    # This Gateway job checks quality on any orbit-shard runner while the Gateway shards run its tests, on every event.
+    # Fork PRs never run on self-hosted runners.
+    runs-on: ${{ matrix.project.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
-      matrix:
-        project:
-          - name: CLI
-            directory: apps/cli
-          - name: Docs
-            directory: apps/docs
-          - name: Gateway
-            directory: apps/gateway
-          - name: E2E
-            directory: apps/e2e
-          - name: PHP SDK
-            directory: packages/php-sdk
-
-    env:
-      ORBIT_TIA_DIRECTORY: .orbit-tia
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
 
     defaults:
       run:
@@ -105,7 +114,7 @@ jobs:
 
       - name: Set up Homebrew
         if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
 
       - name: Install Gateway system dependencies
         if: matrix.project.directory == 'apps/gateway' && runner.environment == 'github-hosted'
@@ -128,6 +137,11 @@ jobs:
       - name: Install dependencies
         if: matrix.project.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
+
+      - name: Check that every environment variable is documented
+        if: matrix.project.directory == 'apps/docs'
+        working-directory: .
+        run: php bin/env-docs
 
       # The Docs merge proof needs Gateway route discovery, not its test or analysis tools.
       - name: Install generated merge proof dependencies
@@ -185,7 +199,7 @@ jobs:
         uses: ./.github/actions/no-sudo
 
       - name: Verify Gateway shard coverage
-        if: matrix.project.directory == 'apps/gateway' && env.CHANGE_RUN == 'true'
+        if: matrix.project.directory == 'apps/gateway'
         run: ../../bin/check-pest-shards
 
       - name: Run project quality checks
@@ -208,9 +222,10 @@ jobs:
           path: ${{ matrix.project.directory }}/vendor/pint.cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
-      - name: Run full PR test suite
-        if: matrix.project.directory != 'apps/gateway' && env.CHANGE_RUN == 'true'
-        run: vendor/bin/pest --parallel --no-tia --compact
+      # The Gateway shards run the Gateway suite.
+      - name: Run full test suite
+        if: matrix.project.directory != 'apps/gateway'
+        run: vendor/bin/pest --parallel --compact
 
       - name: Identify immutable Ubuntu snapshot metadata
         id: ubuntu-snapshot
@@ -251,85 +266,66 @@ jobs:
           path: ${{ runner.temp }}/ubuntu-snapshot-metadata
           key: ${{ steps.ubuntu-metadata.outputs.cache-primary-key }}
 
-      # Full mode records the graph without using it to select tests, on every event but a change run.
-      # Gateway's phpunit.xml excludes privileged; a CLI exclusion would disable TIA recording.
-      - name: Run full test suite and refresh Pest TIA graph
-        if: env.CHANGE_RUN != 'true'
-        run: vendor/bin/pest --parallel --tia --fresh --compact
-
       - name: Run redaction cases without PCRE JIT
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
-        # --no-tia prevents Pest's restart from dropping ini options and TIA from selecting which tests run.
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT" --no-tia
+        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
 
-      # A full run records this commit in the graph.
-      # Stage the same-run exports for the cache-ref publisher and the background main cache store.
-      - name: Export main caches
+      # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
+      # the cache-ref publisher. Task workspaces import them; CI exports no test graph.
+      - name: Export main quality caches
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           PROJECT: ${{ matrix.project.directory }}
+          EXPORT: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, shutil, subprocess
           from pathlib import Path
-          graph = Path('.orbit-tia/graph.json')
-          data = json.loads(graph.read_text())
-          baseline = data['baselines']['main']
-          if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
-              raise SystemExit('The main graph must describe this tested commit.')
-          tested = {result['file'] for result in baseline['results'].values()}
-          if set(data['edges']) - tested:
-              raise SystemExit('The main graph must have a result for every linked test file.')
-          quality = {}
-          Path('.orbit-tia/quality').mkdir(exist_ok=True)
-          for tool, source in (('pint', 'vendor/pint.cache'), ('phpstan', 'vendor/phpstan/cache/resultCache.php')):
+          export = Path(os.environ['EXPORT'])
+          (export / 'quality').mkdir(parents=True)
+          quality, configurations = {}, {}
+          for tool, config, source in (('pint', 'pint.json', 'vendor/pint.cache'),
+                                       ('phpstan', 'phpstan.neon', 'vendor/phpstan/cache/resultCache.php')):
               if Path(source).is_file() and Path(source).stat().st_size:
-                  shutil.copyfile(source, f'.orbit-tia/quality/{tool}')
+                  shutil.copyfile(source, export / 'quality' / tool)
                   quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
-          files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
+                  configurations[tool] = hashlib.sha256(Path(config).read_bytes()).hexdigest()
           manifest = {
-              'schema': 2,
+              'schema': 3,
               'project': os.environ['PROJECT'],
               'commit': os.environ['GITHUB_SHA'],
               'run_id': os.environ['GITHUB_RUN_ID'],
               'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'configurations': {tool: hashlib.sha256(Path(config).read_bytes()).hexdigest()
-                                 for tool, config in (('pint', 'pint.json'), ('phpstan', 'phpstan.neon')) if tool in quality},
-              'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
-              'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
+              'configurations': configurations,
               'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
                                     check=True, capture_output=True, text=True).stdout,
               'quality': quality,
           }
-          Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          (export / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
 
-      - name: Publish main caches
+      - name: Publish main quality caches
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
-          path: |
-            ${{ matrix.project.directory }}/.orbit-tia/graph.json
-            ${{ matrix.project.directory }}/.orbit-tia/manifest.json
-            ${{ matrix.project.directory }}/.orbit-tia/quality/
-          include-hidden-files: true
+          name: ci-cache-${{ strategy.job-index }}-${{ github.sha }}
+          path: ${{ runner.temp }}/ci-cache/${{ matrix.project.directory }}
           if-no-files-found: error
           retention-days: 14
 
-  # Change runs use the static stock shard matrix below as the only source of the shard count. Main keeps one recording run for a complete TIA graph.
+  # Every run uses the static stock shard matrix below as the only source of the shard count.
   gateway-shards:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).gateway-shards
     name: Gateway shards
-    # env.CHANGE_RUN, spelled out.
-    if: github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff')
     # Sabre and the Beast/Shark containers carry orbit-shard. Fork PRs use hosted runners.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5]
     defaults:
       run:
         working-directory: apps/gateway
@@ -368,7 +364,7 @@ jobs:
 
       - name: Set up Homebrew
         if: runner.environment == 'github-hosted'
-        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+        uses: Homebrew/actions/setup-homebrew@eb02c69dbabdb66ff183c614f4ce7ab3c077592c # 2026.10.12.1
 
       - name: Install Gateway system dependencies
         if: runner.environment == 'github-hosted'
@@ -393,9 +389,11 @@ jobs:
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: vendor/bin/pest --parallel --no-tia --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
+        run: vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).privileged
     name: Gateway privileged
     # Only a disposable hosted runner may run this group: passwordless sudo, never fleet-host root.
     runs-on: ubuntu-26.04
@@ -426,10 +424,12 @@ jobs:
       - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+        run: vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).remote-programs
     name: Remote programs
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -459,6 +459,10 @@ jobs:
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
           if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
+      - name: Check runner PostgreSQL setup
+        run: |
+          shellcheck tools/ci-runners/setup.sh
+          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py' -v
       # ORBIT_TEST_DOCKER also starts Valkey from a bootstrapped ACL file in Docker.
       - name: Pull the current Valkey test image
         run: |
@@ -470,6 +474,8 @@ jobs:
         run: bin/remote-programs-check
 
   api-reference:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).api-reference
     name: API reference
     runs-on: ubuntu-26.04
 
@@ -489,9 +495,6 @@ jobs:
       - name: Reject App-domain names
         run: php bin/project-vocabulary
 
-      - name: Check that every environment variable is documented
-        run: php bin/env-docs
-
       - name: Check that the projects share their tooling baseline
         run: php bin/tooling-baseline
       - name: Check that every docs page is in the site navigation
@@ -510,6 +513,8 @@ jobs:
         run: bin/mcp-tools --check
 
   web:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).web
     name: Web
     runs-on: ubuntu-26.04
 
@@ -584,6 +589,8 @@ jobs:
           retention-days: 14
 
   pi-server:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).pi-server
     name: Pi server
     runs-on: ubuntu-26.04
 
@@ -636,6 +643,8 @@ jobs:
         run: bun run build
 
   agent:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).agent
     name: Rust agent
     runs-on: ubuntu-26.04
     defaults:
@@ -647,55 +656,30 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
-      # A change run that changes neither the agent nor this workflow cannot change the agent build.
-      # Pushes to main and manual runs always build it.
-      - name: Detect agent changes
-        id: changes
-        working-directory: .
-        run: |
-          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
-          base=HEAD^1
-          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
-          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
-            echo "agent=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "agent=false" >> "$GITHUB_OUTPUT"
-            echo "The change does not touch apps/agent or ci.yml; skipping the agent build."
-          fi
       - name: Install Rust toolchain
-        if: steps.changes.outputs.agent == 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
           components: clippy,rustfmt
       - name: Restore Rust caches
-        if: steps.changes.outputs.agent == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/agent
       - name: Install cross compiler
-        if: steps.changes.outputs.agent == 'true'
         run: command -v cross >/dev/null || cargo install cross --locked
       - name: Check formatting
-        if: steps.changes.outputs.agent == 'true'
         run: cargo fmt --all -- --check
       - name: Run clippy
-        if: steps.changes.outputs.agent == 'true'
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run tests
-        if: steps.changes.outputs.agent == 'true'
         run: cargo test --locked
       - name: Build static x86_64 binary
-        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target x86_64-unknown-linux-musl
       - name: Build static aarch64 binary
-        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target aarch64-unknown-linux-musl
 
       # Keep this after the builds so a version bump can prove its binaries before tagging.
-      # Always check delivery, including recipe-only pull requests that skip the Rust build.
+      # Shared recipe and delivery tooling select this job through bin/ci-changes.
       - name: Install Python test tools
         working-directory: .
         run: |
@@ -711,6 +695,8 @@ jobs:
           python3 tools/check_agent_release.py
 
   desktop:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).desktop
     name: Desktop app
     runs-on: ubuntu-26.04
     defaults:
@@ -722,23 +708,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          # A handoff push needs main's history to find where its branch left main. A string, because 0 is falsy.
-          fetch-depth: ${{ env.HANDOFF_PUSH == 'true' && '0' || '2' }}
-      # A change run that changes neither the desktop app nor this workflow cannot change its build.
-      # Pushes to main and manual runs always check it.
-      - name: Detect desktop changes
-        id: changes
-        working-directory: .
-        run: |
-          # A pull request's merge commit has main as its first parent; a handoff push compares with where its branch left main.
-          base=HEAD^1
-          if [ "$HANDOFF_PUSH" = true ]; then base=$(git merge-base origin/main HEAD); fi
-          if [ "$CHANGE_RUN" != true ] || git diff --name-only "$base" HEAD | grep -qE '^(apps/desktop/|\.github/workflows/ci\.yml$)'; then
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "desktop=false" >> "$GITHUB_OUTPUT"
-            echo "The change does not touch apps/desktop or ci.yml; skipping the desktop checks."
-          fi
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -746,53 +715,46 @@ jobs:
 
       - name: Set up Bun
         id: bun
-        if: steps.changes.outputs.desktop == 'true'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
       - name: Restore Bun downloads
-        if: steps.changes.outputs.desktop == 'true' && (github.ref != 'refs/heads/main' || github.event_name == 'pull_request')
+        if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - name: Cache Bun downloads on main
-        if: steps.changes.outputs.desktop == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('**/bun.lock') }}
       - name: Install dependencies
-        if: steps.changes.outputs.desktop == 'true'
         run: bun install --frozen-lockfile
       # Tauri links WebKitGTK on Linux; https://v2.tauri.app/start/prerequisites/ lists these packages.
       - name: Install the Tauri system libraries
-        if: steps.changes.outputs.desktop == 'true'
         timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
       - name: Install Rust toolchain
-        if: steps.changes.outputs.desktop == 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy,rustfmt
       - name: Restore Rust caches
-        if: steps.changes.outputs.desktop == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/desktop/src-tauri
       - name: Check formatting
-        if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
       - name: Run clippy
-        if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
 
   publish-ci-cache:
     name: Publish CI cache ref
     needs: [required]
-    # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
+    # Publish only after Required checks passes on main, never for a pull request, fork or other branch.
     if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     permissions:
@@ -805,33 +767,33 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: sandbox-tia-*-${{ github.sha }}
+          pattern: ci-cache-*-${{ github.sha }}
           path: ${{ runner.temp }}/ci-cache-exports
-      - name: Publish immutable tested-SHA ref and prune old cache refs
+      - name: Publish immutable tested-SHA ref and prune older cache refs
         run: python3 bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"
 
   required:
     name: Required checks
     if: always()
-    needs: [project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
+    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
     runs-on: ubuntu-26.04
     steps:
-      - name: Require every project to pass
+      - name: Require every selected project to pass
         env:
-          PROJECT_RESULT: ${{ needs.project.result }}
-          GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
-          PRIVILEGED_RESULT: ${{ needs.privileged.result }}
-          REMOTE_PROGRAMS_RESULT: ${{ needs.remote-programs.result }}
-          API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
-          WEB_RESULT: ${{ needs.web.result }}
-          PI_SERVER_RESULT: ${{ needs.pi-server.result }}
-          AGENT_RESULT: ${{ needs.agent.result }}
-          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
-            if [ "$CHANGE_RUN" = true ]; then
-              test "$GATEWAY_SHARDS_RESULT" = success
-            else
-              test "$GATEWAY_SHARDS_RESULT" = skipped
-            fi
-          }
+          python3 - <<'PYTHON'
+          import json, os, sys
+          needs = json.loads(os.environ['NEEDS'])
+          if needs['changes']['result'] != 'success':
+              sys.exit('Project detection did not succeed')
+          selected = json.loads(needs['changes']['outputs']['jobs'])
+          if set(selected) != set(needs) - {'changes'}:
+              sys.exit('Missing project selections')
+          for job, touched in selected.items():
+              if type(touched) is not bool:
+                  sys.exit(f'{job}: invalid selection')
+              result = needs[job]['result']
+              if result != 'success' and not (result == 'skipped' and not touched):
+                  sys.exit(f'{job}: {result}')
+          PYTHON

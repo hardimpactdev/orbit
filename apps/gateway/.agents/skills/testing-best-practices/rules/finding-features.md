@@ -18,7 +18,7 @@ Search for a feature in this table before you write the code by hand.
 | Find code with no types | type coverage |
 | Reduce the time of a slow suite | parallel, profiling |
 | Split the suite across CI jobs | sharding, `--update-shards` |
-| Run only the tests that a change affects | Test Impact Analysis, `--tia` |
+| Run only the tests that a change affects | test file paths, filtering |
 | Assert that a value has a known format | validation expectations |
 | Run one test while you debug | filtering, `--bail`, `--dirty` |
 

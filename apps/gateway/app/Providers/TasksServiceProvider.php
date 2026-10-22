@@ -153,8 +153,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             TaskGitHubReviewsCommand::class,
             TickTaskSessionsCommand::class,
         ]);
-        // Observers are declared on the models with ObservedBy. Calling observe() here would load those
-        // models during every boot, so test impact analysis would rerun unrelated tests after a model edit.
 
         // {group} is the top-level task. The Task scope itself returns only subtasks.
         Route::bind('group', static function (string $value): Task {

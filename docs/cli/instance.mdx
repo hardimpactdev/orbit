@@ -743,7 +743,7 @@ An unknown attachment returns `database.attachment_missing`.
 Add a [Reverb app](/reference/websocket-apps) on an Instance and write its credentials into the stored environment configuration. An Instance has one app. Adding another app replaces it.
 
 ```bash
-orbit instance:websocket:add <app> --instance=SELECTOR [--json]
+orbit instance:websocket:add <app> --instance=SELECTOR [--public] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -753,6 +753,7 @@ orbit instance:websocket:add <app> --instance=SELECTOR [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
+| `--public` | omitted | Publish on the existing public app Route and project its domain. Requires a production Laravel Instance with no `/app` or `/apps` route collisions. |
 
 The Gateway writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. The response names the keys and never returns their values. The Gateway's own app, `gateway`, returns `websocket.app_reserved`.
 
@@ -760,7 +761,7 @@ The Gateway writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_K
 orbit instance:websocket:add hauzer --instance=12
 ```
 
-Add changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
+With `--public`, the Gateway also rebuilds Caddy on the existing app Route. Reattaching the same app without the flag preserves its public Route. See [public Reverb](/reference/websocket-apps#publish-on-the-existing-public-app-route). Add changes the stored environment; it does not write the workload `.env`. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
 
 ## orbit instance:websocket:remove
 

@@ -1,11 +1,11 @@
 ---
 title: "Test impact analysis misses declaration data"
-description: "The fixture and history evidence behind full PR suites and fast TIA inside the task loop."
+description: "The fixture and history evidence behind full PR suites and Orbit's decision to run no test impact analysis."
 ---
 
 # Test impact analysis misses declaration data
 
-This audit informed Nick’s 2026-10-19 decision in [Feature delivery](/reference/implementation-loop#full-suites-gate-merges-tia-serves-the-task-loop). No declaration selector is built.
+This audit informed Nick’s 2026-10-19 and 2026-10-20 decisions in [Feature delivery](/reference/implementation-loop#full-suites-gate-merges): full suites gate every merge, and Orbit runs no test impact analysis. No declaration selector is built.
 
 ## Fixture evidence
 

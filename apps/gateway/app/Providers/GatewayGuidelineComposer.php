@@ -71,9 +71,9 @@ final class GatewayGuidelineComposer extends GuidelineComposer
                     [
                         '- Keep the versioned Gateway API consistent with its existing typed Spatie Data response objects. Do not introduce Eloquent Resources beside the established contract without an explicit API migration.',
                         '- Keep models focused on persisted control-plane state. Add a factory or seeder only when an executing test or explicit bootstrap workflow needs it.',
-                        '- Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests.',
-                        '- Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present.',
-                        '- After the TIA tests pass, follow the root `AGENTS.md` check policy for task and non-task work. Follow the root contributor guide for CI and independent review.',
+                        '- Run the tests that cover the change with stock Pest. Pass a file path or `--filter=testName` to `vendor/bin/pest --compact`.',
+                        "- Run the project's full suite with `composer test`.",
+                        '- After those tests pass, follow the root `AGENTS.md` check policy for task and non-task work. Follow the root contributor guide for CI and independent review.',
                     ],
                     $block['body'],
                 );

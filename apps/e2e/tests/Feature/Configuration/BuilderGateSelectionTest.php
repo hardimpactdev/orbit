@@ -5,8 +5,6 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Tests\Support\TemporaryPaths;
 
-pest()->group('subprocess');
-
 /** @return list<string> */
 function orb277_projects(): array
 {
@@ -17,30 +15,6 @@ function orb277_projects(): array
 function orb277_selected_projects(): array
 {
     return ['repository', ...orb277_projects()];
-}
-
-/**
- * Print the TIA directory a project's guidance configuration resolves, without the parent run's Pest state.
- */
-function orb277_tia_directory(string $root, string|false $override): string
-{
-    $process = new Process(['vendor/bin/pest', '--configuration=phpunit.guidance.xml', '--baseline'], $root, [
-        'COLLISION_PRINTER' => false,
-        'ORBIT_TIA_DIRECTORY' => $override,
-        'PARATEST' => false,
-        'PEST_TIA' => false,
-        'PEST_TIA_BASELINED' => false,
-        'PEST_TIA_FILTERED' => false,
-        'PEST_TIA_LOCALLY' => false,
-        'TEST_TOKEN' => false,
-        'UNIQUE_TEST_TOKEN' => false,
-    ]);
-    $process->setTimeout(120);
-    $process->mustRun();
-    $output = trim($process->getOutput());
-    $compact = json_decode($output, true);
-
-    return is_array($compact) && is_string($compact['raw'][0] ?? null) ? $compact['raw'][0] : $output;
 }
 
 /** @return array{root: string, path: string} */
@@ -394,22 +368,6 @@ SH);
         expect($composer['scripts']['check'])->toBe(['Composer\\Config::disableProcessTimeout', 'bin/review-check']);
     });
 
-    it('records guidance checks into a separate TIA cache in every project', function (string $project): void {
-        $repository = realpath(base_path('../..'));
-        $root = $repository.'/'.$project;
-        $composer = json_decode((string) file_get_contents($root.'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
-        $guidance = $root.'/vendor/.orbit-guidance-tia';
-
-        expect($composer['scripts']['guidance:check'])->toBe('../../bin/guidance-check');
-        expect(orb277_tia_directory($root, 'vendor/.orbit-guidance-tia'))->toBe($guidance);
-        expect(orb277_tia_directory($root, false))->toBe($root.'/.orbit-tia');
-
-        $ignored = new Process(['git', 'check-ignore', '-q', $project.'/vendor/.orbit-guidance-tia/graph.json'], $repository);
-        $ignored->run();
-
-        expect($ignored->getExitCode())->toBe(0, 'The guidance cache must stay out of the candidate tree.');
-    })->with(orb277_projects());
-
     it('checks changed Pest setup and helper sources for guarded classification fakes', function (): void {
         $fixture = orb277_gate_fixture();
         $root = $fixture['root'];
@@ -453,7 +411,7 @@ PHP);
 
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt)->not->toHaveKeys(['test_base', 'warnings'])
-            ->and($commands->filter(static fn (string $command): bool => preg_match('/\bpest\b|\btest:affected\b|--no-tia|^bun run test\b/', $command) === 1)->all())
+            ->and($commands->filter(static fn (string $command): bool => preg_match('/\bpest\b|\bcomposer test\b|^bun run test\b/', $command) === 1)->all())
             ->toBe([]);
     });
 });

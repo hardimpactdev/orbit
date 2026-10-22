@@ -150,46 +150,6 @@ uses()
     })
     ->in('Feature/Extensions/Conn');
 
-pest()
-    ->tia()
-    ->locally()
-    ->filtered();
-
-$tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
-
-pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');
-
-// The Gateway reads these as programs and catalogues, not as PHP, so coverage never records them.
-// A change reruns the tests that cover that file, and no others.
-pest()->tia()->watch([
-    'tests/Fixtures/valkey/*.json' => 'tests/Unit/Domain/DatabaseServers/ValkeyAclUserTest.php',
-    'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
-    'resources/tasks/metadata' => 'tests/Feature/Infrastructure/Tasks',
-    'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
-    'resources/mcp/tools.json' => 'tests/Feature/Mcp',
-    'resources/remote/lib/recipe.py' => 'tests/Feature/Fleet',
-    'resources/remote/docker/*.py' => 'tests/Feature/Fleet/DockerMigrationTest.php',
-    'tests/Fixtures/machine-software/converge_node_test.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
-    'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
-    'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
-    'extensions/ai-router/resources/*.py' => 'tests/Unit/Extensions/AiRouter/Infrastructure/AiRouterCollectorValkeyClientTest.php',
-    'extensions/ai-router/resources/remote/**/*.sh' => 'tests/Feature/Extensions/AiRouter/Actions/AiRouterCutoverTest.php',
-    'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
-    'resources/instances/tia-baseline.py' => 'tests/Feature/Domain/TiaBaselineSetupTest.php',
-    'resources/instances/ci-caches.sh' => 'tests/Feature/Domain/CiCacheSetupTest.php',
-    'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
-    'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
-    'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
-    // Remote programs. bin/remote-programs-check lints them and runs tests/Programs; Pest reruns their PHP callers.
-    'resources/remote/bootstrap.py' => 'tests/Feature/Infrastructure/RemotePrograms',
-    'resources/remote/lib/program.py' => 'tests/Feature/Infrastructure/RemotePrograms',
-    'resources/remote/lib/source-removal.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
-    'resources/remote/instances/*.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
-    'resources/remote/database-servers/*.py' => 'tests/Feature/Api/ValkeyDatabaseServersTest.php',
-    'tests/Programs/*.py' => 'tests/Feature/Infrastructure/RemotePrograms',
-    'ruff.toml' => 'tests/Feature/Infrastructure/RemotePrograms',
-]);
-
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
 function store_deploy_steps(Instance $instance, array $steps): void
 {

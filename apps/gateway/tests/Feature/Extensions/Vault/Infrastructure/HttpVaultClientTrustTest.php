@@ -12,8 +12,6 @@ use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Infrastructure\BitwardenCrypto;
 use Orbit\Extensions\Vault\Infrastructure\HttpVaultClient;
 
-pest()->group('subprocess');
-
 require_once __DIR__.'/../../../../Support/OrbitHttps.php';
 
 beforeEach(function (): void {

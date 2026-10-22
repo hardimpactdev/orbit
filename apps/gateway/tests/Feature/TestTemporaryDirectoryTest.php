@@ -6,8 +6,6 @@ use Symfony\Component\Process\Process;
 use Tests\Support\TestOrbitHome;
 use Tests\Support\TestTemporaryDirectory;
 
-pest()->group('subprocess');
-
 function test_temporary_directory_probe(string $tmpdir): Process
 {
     $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'

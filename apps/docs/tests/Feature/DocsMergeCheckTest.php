@@ -7,8 +7,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /** @param list<string> $arguments */
 function docsMergeGit(string $root, array $arguments): string
 {

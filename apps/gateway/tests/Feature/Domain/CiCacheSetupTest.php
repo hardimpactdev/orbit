@@ -15,8 +15,6 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 
-pest()->group('subprocess');
-
 function ci_setup_run(string $checkout, string $command): Process
 {
     $process = new Process(['bash', '-c', $command], $checkout);
@@ -34,8 +32,6 @@ describe('CI main cache setup', function (): void {
     beforeEach(function (): void {
         $this->checkout = sys_get_temp_dir().'/orbit-ci-cache-test-'.bin2hex(random_bytes(8));
         File::ensureDirectoryExists($this->checkout.'/bin');
-        file_put_contents($this->checkout.'/bin/tia-cache', '#!/bin/sh');
-        chmod($this->checkout.'/bin/tia-cache', 0755);
         file_put_contents($this->checkout.'/bin/ci-cache-ref', <<<'PYTHON'
             import pathlib, sys
             pathlib.Path('imports.log').write_text(' '.join(sys.argv[1:]))
@@ -83,11 +79,11 @@ describe('CI main cache setup', function (): void {
     });
 
     it('fails the step on a write failure or missing required tooling', function (bool $missing): void {
-        $missing ? unlink($this->checkout.'/bin/tia-cache') : file_put_contents($this->checkout.'/import-exit', '1');
+        $missing ? unlink($this->checkout.'/bin/ci-cache-ref') : file_put_contents($this->checkout.'/import-exit', '1');
         $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
 
         expect($process->getExitCode())->toBe(1);
-    })->with(['an import failure' => false, 'no bin/tia-cache' => true]);
+    })->with(['an import failure' => false, 'no bin/ci-cache-ref' => true]);
 
     it('runs cold without a recorded task baseline rather than choosing the newest main ref', function (): void {
         ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
@@ -124,6 +120,6 @@ describe('CI main cache setup', function (): void {
             ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)
             ->and(fn () => $transport->runner()->run($instance, LifecyclePhase::Teardown))->toThrow(ResourceOperationException::class, 'setup-only')
             ->and(GatewaySetupSteps::owns(LifecycleStep::ImportCiCaches))->toBeTrue()
-            ->and(GatewaySetupSteps::owns('bin/tia-cache import-ci'))->toBeFalse();
+            ->and(GatewaySetupSteps::owns('@orbit/tia-baseline'))->toBeFalse();
     });
 });

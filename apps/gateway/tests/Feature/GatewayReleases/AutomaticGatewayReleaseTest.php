@@ -9,8 +9,6 @@ use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Tests\Support\GatewayReleasePipeline;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->pipeline = new GatewayReleasePipeline;
 });

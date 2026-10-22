@@ -2,7 +2,7 @@
     "schema_version": 1,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261021T000000Z"
+        "snapshot": "20261022T000000Z"
     },
     "architectures": [
         "amd64",
@@ -246,7 +246,7 @@
         "libnss3": {
             "source": "ubuntu",
             "package": "libnss3",
-            "version": "2:3.120-1ubuntu2.1"
+            "version": "2:3.120-1ubuntu2.2"
         },
         "libpango-1.0-0": {
             "source": "ubuntu",

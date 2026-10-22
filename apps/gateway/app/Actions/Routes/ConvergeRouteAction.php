@@ -24,6 +24,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Route;
@@ -63,6 +64,9 @@ final readonly class ConvergeRouteAction
             return $this->convergeTrackingPlacement($route, $placement, $deferPlacementWithdrawal);
         }
 
+        if ($domain !== $route->domain || ($publication !== null && $publication !== $route->publication)) {
+            WebSocketRouteSelection::assertMutable($route);
+        }
         $domain = RouteDomain::validate($domain);
         $targetIds = $this->targetIds($route);
 

@@ -1367,7 +1367,7 @@
     },
     {
       "source": "/decisions/0054-maintain-main-caches-asynchronously",
-      "destination": "/reference/implementation-loop#maintenance-runs-in-the-background"
+      "destination": "/reference/implementation-loop#only-main-ci-publishes"
     },
     {
       "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",

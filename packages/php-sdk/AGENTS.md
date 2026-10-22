@@ -36,6 +36,6 @@ Laravel or Boost support.
 - Review matching SDK requests, exceptions, correlation behavior, and tests
   before inventing a transport pattern.
 - Use Pest 5 with `describe()` and `it()`.
-- Use `composer test:affected` for Pest development checks. CI runs checks across all projects.
+- During development, run the Pest tests that cover the change with a file path or `--filter`. CI runs checks across all projects.
 - Follow the root `AGENTS.md` check policy for task and non-task work. Run
   `git diff --check -- packages/php-sdk` from the monorepo root before handoff.

@@ -189,9 +189,15 @@ Before it changes anything, the installer checks the machine:
 Then it gets the files:
 
 1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
-2. It downloads each pinned file that is not installed at its version. It tries `artifact_mirror` first, then the pin's URL.
+2. It downloads missing pinned files with one `curl --parallel --parallel-max 4` process per source pass. It tries `artifact_mirror` first, then the pin's URL for files with transport failures.
+
+   Each file uses a separate candidate path. All files pass verification before rollback preparation and serial package installation. An interrupt stops the curl process and its active transfers before the installer exits.
+
+   Each transfer has a 15-second connection limit. Each source pass divides a 300-second budget across its batches of four transfers and sets curl's total transfer limit accordingly. Both source passes fit within 600 seconds of the installer's 900-second limit.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
-4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one. A file already there is not downloaded again. The cache grows with each build; an operator can delete the files of builds that no machine runs.
+4. It keeps every file in `/var/cache/orbit/php-packages`. A cached file with the expected digest is not downloaded again. A corrupt entry is replaced.
+
+   Cache writes stage a complete file in the cache directory, check its digest, then rename it atomically into place. The cache grows with each build; an operator can delete the files of builds that no machine runs.
 
 Then it keeps the installed build for a rollback:
 
@@ -559,7 +565,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
 4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
-5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
+5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
@@ -1176,7 +1182,7 @@ Configure the Project like this:
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, a fresh workspace gets the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
+Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
 
 The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches seeded from the read-only host cache.
 

@@ -50,7 +50,7 @@ it('caches only Bun downloads before installs and only writes them on main', fun
     'project' => ['project', "(matrix.project.directory == 'apps/gateway' || matrix.project.directory == 'apps/docs') && "],
     'web' => ['web', ''],
     'pi-server' => ['pi-server', ''],
-    'desktop' => ['desktop', "steps.changes.outputs.desktop == 'true' && "],
+    'desktop' => ['desktop', ''],
 ]);
 
 it('never shares installed dependency trees or caches Playwright browsers', function (): void {

@@ -184,7 +184,6 @@ use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
-use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Releases\GatewayReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertWebhook;
@@ -205,6 +204,8 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketRouteInspector;
+use App\Domain\WebSocket\WebSocketRoutePublisher;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
@@ -287,7 +288,6 @@ use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\GitHub\HttpGitHubApi;
-use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
@@ -403,6 +403,8 @@ use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
+use App\Infrastructure\WebSocket\NativeWebSocketRouteInspector;
+use App\Infrastructure\WebSocket\NativeWebSocketRoutePublisher;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
@@ -537,7 +539,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
-        TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
@@ -564,6 +565,8 @@ final class ApplicationServiceProvider extends ServiceProvider
         AnalyticsStatsKeyStore::class => NativeAnalyticsStatsKeyStore::class,
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
+        WebSocketRouteInspector::class => NativeWebSocketRouteInspector::class,
+        WebSocketRoutePublisher::class => NativeWebSocketRoutePublisher::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
     ];
 

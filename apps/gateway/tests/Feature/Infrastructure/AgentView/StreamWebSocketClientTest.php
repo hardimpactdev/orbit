@@ -20,8 +20,6 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 /**
  * A scripted TLS WebSocket server in a child process, with a certificate for `reverb.orbit`
  * that only this test trusts.

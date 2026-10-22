@@ -146,6 +146,12 @@ it('requires consent in noninteractive human mode before sending a mutation', fu
 ]);
 
 describe('instance:websocket commands', function (): void {
+    it('passes the public Route selection only when requested', function (bool $public): void {
+        $mockClient = MockClient::global([AddInstanceWebSocketAppRequest::class => websocket_attachment_cli_response('attach')]);
+        $this->artisan('instance:websocket:add', ['--instance' => '12', 'app' => 'hauzer', '--json' => true, '--public' => $public])->assertExitCode(0);
+        expect($mockClient->getLastRequest()->body()->all())->toBe($public ? ['public' => true] : []);
+    })->with([true, false]);
+
     it('passes an explicit Instance ID or Route domain to the Gateway', function (string $command, string $requestClass, string $operation, string $selector): void {
         $mockClient = MockClient::global([$requestClass => websocket_attachment_cli_response($operation)]);
 

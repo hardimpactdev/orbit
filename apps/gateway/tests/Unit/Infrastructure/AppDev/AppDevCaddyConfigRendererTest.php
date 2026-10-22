@@ -9,6 +9,8 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
+use Tests\Support\TestToolchain;
 
 it('proxies the reserved development-server path to loopback on a development site', function (): void {
     $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
@@ -465,3 +467,116 @@ describe('analytics tracking site', function (): void {
             ->and(caddy_adapt($configuration)->succeeded())->toBeTrue();
     });
 });
+
+it('routes only the selected Pusher paths before the existing application handler in real Caddy', function (bool $php): void {
+    $site = new DevelopmentSite(
+        nodeId: 4, nodeAddress: '10.44.0.4', scope: 'app-instance-72',
+        checkoutPath: $php ? '/home/orbit-mealou/current' : '', documentRoot: $php ? 'public' : '', phpVersion: $php ? '8.5' : null, domain: 'mealou.app',
+        upstreamAddresses: $php ? [] : ['10.44.0.20:443', '10.44.0.21:443'], environment: 'production', publicListener: true,
+        websocketKey: 'mealou-key', websocketAppId: 'mealou-id',
+    );
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([$site]));
+    $adapted = caddy_adapt(CaddyGlobalOptions::render().$configuration);
+    expect($adapted->exitCode)->toBe(0, $adapted->stderr);
+    $json = json_decode($adapted->stdout, true, flags: JSON_THROW_ON_ERROR);
+    expect($adapted->stdout)->toContain('reverb.orbit:443')->toContain('reverb.orbit')
+        ->toContain(DevelopmentCaddyConfigRenderer::ORBIT_ROOT_CA_PATH)->not->toContain('insecure_skip_verify');
+
+    // Keep Caddy's adapted route ordering and matchers. Replace only the destinations with
+    // distinct responses, so this local test needs neither fleet certificates nor a Reverb server.
+    $replace = function (array $value) use (&$replace): array {
+        if (($value['handler'] ?? null) === 'file_server') {
+            return ['handler' => 'static_response', 'status_code' => 200, 'body' => 'application'];
+        }
+        if (($value['handler'] ?? null) === 'reverse_proxy') {
+            return ['handler' => 'static_response', 'status_code' => 200,
+                'body' => $value['upstreams'][0]['dial'] === 'reverb.orbit:443' ? 'reverb' : 'application'];
+        }
+        foreach ($value as $key => $part) {
+            if ($key === 'encodings') {
+                $value[$key] = array_map(static fn (array $encoding): object => (object) $encoding, $part);
+            } elseif (is_array($part)) {
+                $value[$key] = $replace($part);
+            }
+        }
+
+        return $value;
+    };
+    $json = $replace($json);
+    $listener = stream_socket_server('tcp://127.0.0.1:0', $error, $message);
+    expect($listener)->toBeResource();
+    $address = stream_socket_get_name($listener, false);
+    fclose($listener);
+    $server = array_key_first($json['apps']['http']['servers']);
+    $json['admin'] = ['disabled' => true];
+    $json['apps']['http']['servers'][$server]['listen'] = [$address];
+    $json['apps']['http']['servers'][$server]['automatic_https'] = ['disable' => true];
+    unset($json['logging'], $json['apps']['tls'], $json['apps']['http']['servers'][$server]['tls_connection_policies'], $json['apps']['http']['servers'][$server]['logs']);
+    $path = tempnam(sys_get_temp_dir(), 'orbit-public-reverb-');
+    file_put_contents($path, json_encode($json, JSON_THROW_ON_ERROR));
+    $process = new Process([TestToolchain::require('caddy', 'install caddy'), 'run', '--config', $path]);
+    try {
+        $process->start();
+        $process->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'serving initial configuration'));
+        $signed = '?auth_key=mealou-key&auth_signature=signature&auth_timestamp=123&auth_version=1.0';
+        foreach ([
+            ['GET', '/app/mealou-key?protocol=7', true, 'reverb'],
+            ['GET', '/app/mealou%2Dkey?protocol=7', true, 'reverb'],
+            ['GET', '/app/other-key/../mealou-key', true, '404'],
+            ['GET', '/app/other-key/%2e%2e/mealou-key', true, '404'],
+            ['GET', '/app/other-key%2f..%2fmealou-key', true, '404'],
+            ['GET', '//app/mealou-key', true, '404'],
+            ['GET', '/APP/mealou-key', true, '404'],
+            ['GET', '/app/MEALOU-KEY', true, '404'],
+            ['GET', '/app/mealou-key', false, '404'],
+            ['POST', '/app/mealou-key', true, '404'],
+            ['GET', '/app/hauzer-key', true, '404'],
+            ['GET', '/app/mealou-key/more', true, '404'],
+            ['POST', '/apps/mealou-id/events'.$signed, false, 'reverb'],
+            ['POST', '/apps/other-id/../mealou-id/events'.$signed, false, '404'],
+            ['POST', '/apps/other-id/%2e%2e/mealou-id/events'.$signed, false, '404'],
+            ['GET', '/apps/other-id/../mealou-id/channels'.$signed, false, '404'],
+            ['GET', '/apps/other-id/%2e%2e/mealou-id/channels'.$signed, false, '404'],
+            ['POST', '/apps/mealou-id/events'.$signed.'&auth_key=other-key', false, '404'],
+            ['POST', '/apps/mealou-id/events?auth_key=other-key&'.substr($signed, 1), false, '404'],
+            ['POST', '/apps/mealou-id/events'.$signed.'&auth_key=mealou-key', false, '404'],
+            ['GET', '/apps/mealou-id/channels'.$signed.'&auth_key=other-key', false, '404'],
+            ['GET', '/apps/mealou-id/channels?auth_key=other-key&'.substr($signed, 1), false, '404'],
+            ['GET', '/apps/mealou-id/channels'.$signed.'&auth_key=mealou-key', false, '404'],
+            ['POST', '/apps/mealou-id/batch_events'.$signed, false, 'reverb'],
+            ['GET', '/apps/mealou-id/channels/private-room/users'.$signed, false, 'reverb'],
+            ['POST', '/apps/mealou-id/users/123/terminate_connections'.$signed, false, 'reverb'],
+            ['POST', '/apps/hauzer-id/events'.$signed, false, '404'],
+            ['POST', '/apps/mealou-id/events'.str_replace('mealou-key', 'hauzer-key', $signed), false, '404'],
+            ['POST', '/apps/mealou-id/events', false, '404'],
+            ['GET', '/apps/mealou-id/events'.$signed, false, '404'],
+            ['POST', '/apps/mealou-id/internal'.$signed, false, '404'],
+            ['GET', '/apps', false, '404'],
+            ['GET', '/app', false, '404'],
+            ['GET', '/internal/registry', false, 'application'],
+            ['GET', '/dashboard', false, 'application'],
+            ['POST', '/broadcasting/auth', false, 'application'],
+        ] as [$method, $uri, $upgrade, $expected]) {
+            $socket = stream_socket_client('tcp://'.$address, $error, $message, 3);
+            expect($socket)->toBeResource($process->getErrorOutput());
+            stream_set_timeout($socket, 3);
+            fwrite($socket, $method.' '.$uri." HTTP/1.1\r\nHost: mealou.app\r\nConnection: ".($upgrade ? 'keep-alive, Upgrade' : 'close')."\r\n".($upgrade ? "Upgrade: websocket\r\n" : '')."Content-Length: 0\r\n\r\n");
+            $response = '';
+            while (! str_contains($response, "\r\n\r\n")) {
+                $line = fgets($socket);
+                if ($line === false) {
+                    break;
+                }
+                $response .= $line;
+            }
+            if (preg_match('/Content-Length: (\d+)/i', $response, $length) === 1 && (int) $length[1] > 0) {
+                $response .= fread($socket, (int) $length[1]);
+            }
+            fclose($socket);
+            expect($response)->toContain($expected);
+        }
+    } finally {
+        $process->stop();
+        unlink($path);
+    }
+})->with(['proxy pool' => false, 'production PHP' => true]);

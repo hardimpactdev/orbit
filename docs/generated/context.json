@@ -2371,7 +2371,6 @@
             "concepts": [
                 "Activity",
                 "Deployment",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2782,6 +2781,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Route",
                 "Task",
                 "Tool"
             ],
@@ -3020,6 +3020,7 @@
             "concepts": [
                 "Access grant",
                 "Deployment",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -3191,8 +3192,7 @@
             "concepts": [
                 "Gateway",
                 "Instance",
-                "Process",
-                "Task"
+                "Process"
             ],
             "governing_adrs": []
         },

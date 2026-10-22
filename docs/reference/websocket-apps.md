@@ -81,9 +81,68 @@ An Instance holds at most one app. A second add replaces the first app's values.
 
 The CLI command is `instance:websocket:remove <app> --instance=<instance>`. It asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode.
 
-Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
+Add and remove change the stored environment. A public attachment also rebuilds the existing Route’s Caddy sites. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
 
 `reverb.orbit` is a private name. Only machines on the WireGuard network reach it.
+
+## Publish on the existing public app Route
+
+Use `orbit instance:websocket:add mealou-prod --instance=72 --public`, then `orbit env:sync --instance=72`. This creates no Route or DNS record. The existing Ingress listener, Let's Encrypt certificate, and firewall rules stay in use. Caddy proxies the selected app's Pusher paths to `https://reverb.orbit:443` over WireGuard with Orbit CA and hostname verification. All other traffic keeps its application handler.
+
+The attachment stores the existing public app Route ID and projects its domain into `REVERB_HOST`, with `REVERB_PORT=443` and `REVERB_SCHEME=https`. Reattaching the same app without `--public` preserves that choice. Credential rotation preserves it too. Detach and reattach without `--public` to select the private endpoint. API callers can send `{"public": false}` to select it directly; omitted `public` preserves a same-app selection.
+
+If a replacement also targets the Instance, attachment selects the app Route without a web root with the lowest ID and checks its public eligibility. A shared Route cannot select different Reverb apps. Replacing an Instance’s own app is allowed if no other Instance selects the previous app. Attachment refuses an unfinished Route transition. Remove the selecting attachments before changing the Route domain, publication, or target set.
+
+Caddy admits only `GET /app/<attached-key>` WebSocket upgrades and the attached app ID's known Pusher API paths and methods with its `auth_key`. Caddy compares the decoded, uncleaned path with case-sensitive matchers, so dot segments, repeated slashes, and case changes cannot select another app. API requests must have exactly one `auth_key` value. Reverb verifies the API signatures. Other `/app`, `/app/*`, `/apps`, and `/apps/*` requests receive 404. `/internal/*` follows the application handler and never reaches Reverb. Paths and query strings stay unchanged.
+
+The socket matcher supports HTTP/1.1 upgrades. Caddy 2.11.7 does not advertise HTTP/2 extended CONNECT; recheck this matcher if a Caddy upgrade enables RFC 8441.
+
+The registry permits any origin to subscribe to public channels with the public key. Channel authorization remains on the application `/broadcasting/auth` endpoint; an app key is public and does not authorize private subscriptions.
+
+Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including case variants and root parameter routes that may cover those prefixes. The check uses the existing `instances.inspect-source` program as the production user. The root Laravel fallback is allowed; Caddy reserves the Pusher prefixes before it. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment.
+
+Attachment and detachment commit stored intent before building Caddy. On build failure, retry public attachment to publish. To repair a withdrawal, run `orbit node:converge <node> --force` on every affected serving Node. A plain converge compares code digests and can skip a changed attachment. Synchronize the environment after attachment or rotation. Route inspection and publication run synchronously under the projection lock. A slow or unreachable target can delay other projection work; retry after it finishes.
+
+### Website build and protection
+
+For the website build, set:
+
+```dotenv
+VITE_REVERB_HOST=mealou.app
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
+VITE_REVERB_APP_KEY=<mealou-prod public key>
+```
+
+Never expose `REVERB_APP_SECRET`. `env:sync` does not rebuild JavaScript: rebuild and deploy assets with these values. Permit `wss://mealou.app` in CSP `connect-src`. Update native clients that embed the private endpoint.
+
+Stock Orbit Caddy has no request-rate limiter. This publication adds no handshake, per-IP, or HTTP API throttling. The registry supplies no connection cap or message-rate policy. Reverb's request and message size defaults are 10,000 bytes. Payload caps are not rate protection.
+
+From outside WireGuard, open `wss://mealou.app/app/<public-key>?protocol=7&client=js&version=8.4.0&flash=false` with a real WebSocket client. Require valid public TLS and a `pusher:connection_established` frame. Verify another app's key and app ID fail. Subscribe with the application's normal authenticated client, trigger an approved broadcast, and require immediate receipt. The handshake alone does not prove delivery.
+
+### Production rollout: Mealou, then Hauzer
+
+Run these steps only after the Gateway and CLI versions containing public attachment are installed. Use the existing public app Routes. No DNS, Route creation, certificate, or firewall step is needed. The app-prod origin at `85.9.211.193` already serves `mealou.app` with valid public TLS; public DNS can remain behind its current proxy.
+
+For Mealou (Instance 72):
+
+1. Read `orbit websocket:app:show mealou-prod` and keep its public `key` for the client test. Do not rotate credentials for this rollout. Confirm the registry operation is applied on Services.
+2. Run `orbit instance:websocket:add mealou-prod --instance=72 --public`. This inspects the current Laravel routes, stores the existing Route selection, and rebuilds its serving Caddy sites.
+3. Run `orbit env:sync --instance=72`. Verify effective values `REVERB_HOST=mealou.app`, `REVERB_PORT=443`, and `REVERB_SCHEME=https`. Restart publishers that retain old configuration.
+4. Rebuild and deploy website assets with the four Vite values above. Permit `wss://mealou.app` in CSP. Point the iPhone build at `mealou.app:443` over TLS.
+5. On a machine outside WireGuard, run `websocat 'wss://mealou.app/app/<mealou-prod-key>?protocol=7&client=js&version=8.4.0&flash=false'`. Require trusted TLS, HTTP 101, and `pusher:connection_established`. Send `{"event":"pusher:subscribe","data":{"channel":"orbit-rollout-72"}}` and require `pusher_internal:subscription_succeeded`.
+6. Publish the test event below from Instance 72's current application directory as its production user. Use its selected PHP binary. Require external receipt of `orbit.rollout` with the same nonce.
+7. Verify another app's key and ID receive 404. Check normal pages and `/broadcasting/auth`. Trigger an ordinary update on the signed-in phone over Wi-Fi and 5G. Require immediate receipt after reconnect.
+
+A changed production sync refreshes the existing config cache and FPM opcache. It restarts running Processes that opt into deploy restarts. The test publisher uses the application's existing Reverb credentials without printing them. It exercises the signed HTTP publish through `/apps/<mealou-app-id>/events` and delivery through the public socket:
+
+```bash
+php8.5 -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $app->make("broadcast")->connection("reverb")->broadcast(["orbit-rollout-72"], "orbit.rollout", ["nonce" => "mealou-public-route-check"]);'
+```
+
+For Hauzer (Instance 71), repeat after Mealou passes: run `orbit instance:websocket:add hauzer-prod --instance=71 --public`, then `orbit env:sync --instance=71`. Use `hauzer.app`, the `hauzer-prod` public key, `orbit-rollout-71`, and a distinct nonce for the same external handshake and broadcast test. Build its website with `VITE_REVERB_HOST=hauzer.app`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`, and its own `VITE_REVERB_APP_KEY`.
+
+To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succeeds, then reattach without `--public` and sync the environment. This restores the private endpoint; public phone clients cannot use that endpoint. A failed withdrawal build needs `orbit node:converge <node> --force` on each affected serving Node because the attachment intent has already been removed.
 
 ## The Reverb server
 
@@ -155,3 +214,7 @@ The Gateway blocks Node deletion while a required Reverb process remains. A fail
 Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
 
 The first release provisions one process per Node. Multiple workers on one Node need separate callback routes and service provisioning before production use. Two-process tests cover apply confirmation and stock Redis broadcasting.
+
+### Reverb shares the application domain
+
+The public app Route already owns DNS, TLS, and firewall publication. Reserving its Pusher prefixes avoids another hostname. The attachment stores its Route selection so rotation cannot reset the host to the private endpoint. Reverb accepts configured keys independently of HTTP Host, so Caddy checks the selected key and app ID before proxying. Route collision inspection makes the reserved paths explicit.

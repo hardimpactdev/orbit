@@ -367,6 +367,8 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'database_server.inspection_failed',
         ],
         'route' => [
+            'route.websocket_collision',
+            'route.websocket_inspection_failed',
             'route.lifecycle_not_active',
             'route.domain_reserved',
             'route.dns_mismatch',

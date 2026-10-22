@@ -33,8 +33,6 @@ use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     // These lifecycle tests need real commits, not RefreshDatabase's enclosing transaction.
     DB::rollBack();

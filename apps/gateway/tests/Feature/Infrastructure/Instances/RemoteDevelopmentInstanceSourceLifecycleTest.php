@@ -221,14 +221,11 @@ it('starts a new task workspace at main tip and imports the newest cached ancest
     $work = $this->sandbox.'/work';
     $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
     mkdir($work.'/bin');
-    copy(base_path('../../bin/tia-cache'), $work.'/bin/tia-cache');
     copy(base_path('../../bin/ci-cache-ref'), $work.'/bin/ci-cache-ref');
-    chmod($work.'/bin/tia-cache', 0o755);
-    file_put_contents($work.'/.gitignore', "**/vendor/\n**/.orbit-tia/\n");
+    file_put_contents($work.'/.gitignore', "**/vendor/\n");
     foreach ($projects as $project) {
-        mkdir($work.'/'.$project.'/tests', 0o755, true);
+        mkdir($work.'/'.$project, 0o755, true);
         file_put_contents($work.'/'.$project.'/composer.lock', '{"packages":[]}');
-        file_put_contents($work.'/'.$project.'/tests/Pest.php', "<?php\n");
         file_put_contents($work.'/'.$project.'/pint.json', '{}');
         orb76_cache_dependencies($work.'/'.$project);
     }
@@ -261,9 +258,8 @@ it('starts a new task workspace at main tip and imports the newest cached ancest
         $import = orb76_run(['bash', '-c', 'cd "$1"; bash "$2"', '--', $checkout, resource_path('instances/ci-caches.sh')]);
         expect($import->stdout)->not->toContain('cold');
         foreach ($projects as $project) {
-            $graph = json_decode(file_get_contents($checkout.'/'.$project.'/.orbit-tia/graph.json'), true, flags: JSON_THROW_ON_ERROR);
-            expect($graph['baselines']['main']['sha'])->toBe($selected)
-                ->and(file_get_contents($checkout.'/'.$project.'/vendor/pint.cache'))->toBe(json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => []], JSON_THROW_ON_ERROR));
+            expect(file_get_contents($checkout.'/'.$project.'/vendor/pint.cache'))->toBe(orb76_pint_cache($selected))
+                ->and(file_exists($checkout.'/'.$project.'/.orbit-tia'))->toBeFalse();
         }
         Log::shouldHaveReceived('info')->with('CI cache baseline selected.', ['project_id' => $this->orbitApp->id, 'tip' => $main, 'baseline' => $selected, 'distance' => $cachedHead ? 0 : 1])->once();
         expect($this->source->resolve($instance)->startingCommit)->toBe($main);
@@ -3599,7 +3595,17 @@ function orb76_cache_dependencies(string $project): void
     }
 }
 
-/** @param list<string> $projects */
+/** A Pint cache that names the commit it was published for, so a test can tell which ref it came from. */
+function orb76_pint_cache(string $sha): string
+{
+    return json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => [$sha => 1]], JSON_THROW_ON_ERROR);
+}
+
+/**
+ * Publish a quality-only CI cache ref for the work tree's HEAD, in the schema-3 layout that main CI exports.
+ *
+ * @param  list<string>  $projects
+ */
 function orb76_publish_ci_cache(string $sandbox, array $projects): string
 {
     $work = $sandbox.'/work';
@@ -3609,24 +3615,11 @@ function orb76_publish_ci_cache(string $sandbox, array $projects): string
     foreach ($projects as $project) {
         $directory = $payload.'/'.$project;
         mkdir($directory.'/quality', 0o755, true);
-        $fingerprint = json_decode(orb76_run(['php', '-r', <<<'PHP'
-            require $argv[1].'/vendor/autoload.php';
-            echo json_encode(Pest\Plugins\Tia\Fingerprint::compute($argv[1]), JSON_THROW_ON_ERROR);
-            PHP, $work.'/'.$project])->stdout, true, flags: JSON_THROW_ON_ERROR);
-        $graph = json_encode(['schema' => 1, 'fingerprint' => $fingerprint,
-            'files' => ['tests/ExampleTest.php'], 'edges' => ['tests/ExampleTest.php' => [0]],
-            'baselines' => ['main' => ['sha' => $sha, 'tree' => [], 'results' => ['example' => ['status' => 0, 'file' => 'tests/ExampleTest.php']]]],
-        ], JSON_THROW_ON_ERROR);
-        $pint = json_encode(['php' => PHP_VERSION, 'version' => 'fixture', 'rules' => [], 'hashes' => []], JSON_THROW_ON_ERROR);
-        $inputs = [];
-        foreach (['composer.lock', 'tests/Pest.php'] as $input) {
-            $inputs[$input] = hash_file('sha256', $work.'/'.$project.'/'.$input);
-        }
-        file_put_contents($directory.'/graph.json', $graph);
+        $pint = orb76_pint_cache($sha);
         file_put_contents($directory.'/quality/pint', $pint);
-        file_put_contents($directory.'/manifest.json', json_encode(['schema' => 2, 'project' => $project, 'commit' => $sha,
-            'run_id' => '123', 'run_attempt' => '1', 'inputs' => $inputs, 'php' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
-            'graph_sha256' => hash('sha256', $graph), 'quality' => ['pint' => hash('sha256', $pint)],
+        file_put_contents($directory.'/manifest.json', json_encode(['schema' => 3, 'project' => $project, 'commit' => $sha,
+            'run_id' => '123', 'run_attempt' => '1', 'php' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
+            'quality' => ['pint' => hash('sha256', $pint)],
             'configurations' => ['pint' => hash_file('sha256', $work.'/'.$project.'/pint.json')],
         ], JSON_THROW_ON_ERROR));
     }

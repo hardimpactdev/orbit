@@ -7,8 +7,6 @@ use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 it('waits for a complete readiness line and ignores later output', function (): void {
     $server = Mockery::mock(Process::class);
     $server->shouldReceive('getTimeout')->once()->andReturn(10.0);

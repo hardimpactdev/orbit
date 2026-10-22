@@ -1071,7 +1071,7 @@ Setup commands run in a login shell from a private temporary script file, which 
 
 Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
 
-The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
+The Orbit repository's own check seeds its quality caches, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
 A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
 
@@ -1807,9 +1807,9 @@ The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the works
 
 ### The full suite runs in CI at each handoff
 
-On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite in [one shard per shared runner](/reference/implementation-loop#gateway-shards).
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes. CI runs the Gateway suite in [five stock Pest shards](/reference/implementation-loop#gateway-shards) on every event.
 
-The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
+The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Implementers run the tests that cover their change for fast feedback; Orbit runs [no test impact analysis](/reference/implementation-loop#full-suites-gate-merges).
 
 CI runs on the push of the handoff commit to `task-{id}-handoff`, not on a pull request. Orbit sends one push. GitHub can report more than one run of a workflow on the same commit, so only the newest run for each workflow, event, and branch counts. A draft pull request per handoff was rejected. It needs draft conversions, conflict reads, a new push when its head moves, and timing rules for its suites. The merge gate checks the task's pull request against the latest base anyway.
 

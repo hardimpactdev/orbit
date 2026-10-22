@@ -5,8 +5,6 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 /**
  * A repository with one project that Pint, Rector, and PHPStan check, committed on main.
  *
