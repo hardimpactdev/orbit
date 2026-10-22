@@ -409,3 +409,13 @@ orbit tasks:check <group> --subtask=<id> --phase=baseline|handoff [--idempotency
 ```
 
 Run a baseline or handoff check through `tasks.check` on the Gateway. The group must use external orchestration and have a workspace. The subtask must be its current open subtask. A terminal prompts for missing inputs; machine mode requires them. The command follows waits for VM resume, workspace ownership, and the detached check. A failed check is a successful operation with `result.outcome=failed`; inspect the result, including deliverables and redacted output. A passed handoff records its commit. Ctrl-C stops following. Use `operation:cancel` to stop the check, or `tasks:cancel` to end the group. See [Check an external group](/reference/tasks#check-an-external-group).
+
+## orbit tasks:publish
+
+Push a passed handoff check's commit for an external group. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
+
+```bash
+orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."
+```
+
+The optional `group` argument is the numeric task group ID. `--check` supplies the passed handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.

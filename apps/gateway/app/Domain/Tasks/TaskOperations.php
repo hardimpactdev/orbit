@@ -98,6 +98,9 @@ final readonly class TaskOperations
         if ($operation instanceof Operation) {
             $this->extension->execute();
             $this->cancel->execute($operation, targetEnding: $subtask === null);
+            if (! $operation->refresh()->status->terminal()) {
+                throw new ResourceOperationException('operation.target_busy', 'The task publish job must finish before this group can end.', 409, details: ['operation_id' => $operation->id]);
+            }
         }
     }
 }

@@ -155,7 +155,7 @@ describe('publish and fetch', function (): void {
         ]);
     });
 
-    it('pushes once from the Gateway mirror even when the tick and publish job repeat, without sending a token to the VM', function (bool $handoff): void {
+    it('pushes once from the Gateway mirror even when the tick and publish job repeat, without sending a token to the VM', function (bool $handoff, bool $external): void {
         $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
         {
             /** @var list<list<string>> */
@@ -185,6 +185,10 @@ describe('publish and fetch', function (): void {
         (new Process(['git', 'init', '--quiet', $root.'/vm']))->mustRun();
         $git($root.'/vm', 'remote', 'add', 'origin', 'git@github.com:acme/shop.git');
         $group = tvm_glue_group();
+        if ($external) {
+            Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
+            $group->refresh();
+        }
         tvm_glue_workspace($group)->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
         $group = $group->fresh() ?? $group;
         $transport = new StreamingLocalShellSshExecutor;
@@ -238,7 +242,59 @@ describe('publish and fetch', function (): void {
             GitRemoteRedirect::clear();
             TestOrbitHome::clearScratch();
         }
-    })->with(['task branch' => false, 'handoff branch' => true]);
+    })->with(['tick task branch' => [false, false], 'tick handoff branch' => [true, false], 'external task branch' => [false, true]]);
+
+    it('records missing Workflows permission on the existing publish job without leaking its token', function (): void {
+        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+        {
+            public function __construct(private ProcessRunner $runner) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                if (in_array('push', $invocation->arguments, true)) {
+                    return new CommandResult(1, '', 'refusing to allow a GitHub App to create or update workflow .github/workflows/ci.yml without `workflows` permission ghs_push', 0, false);
+                }
+
+                return $this->runner->run($invocation);
+            }
+        };
+        app()->instance(ProcessRunner::class, $runner);
+        $root = TestOrbitHome::scratch('tvm-workflow-refusal');
+        mkdir($root, 0700, true);
+        $git = static fn (string $directory, string ...$arguments): string => trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
+        (new Process(['git', 'init', '--quiet', '--bare', '-b', 'main', $root.'/origin.git']))->mustRun();
+        (new Process(['git', 'init', '--quiet', '-b', 'main', $root.'/upstream']))->mustRun();
+        $git($root.'/upstream', 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+        $git($root.'/upstream', 'push', '--quiet', $root.'/origin.git', 'main');
+        GitRemoteRedirect::global($root.'/origin.git', 'https://github.com/acme/shop.git');
+        (new Process(['git', 'init', '--quiet', $root.'/vm']))->mustRun();
+        $group = tvm_glue_group();
+        Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
+        tvm_glue_workspace($group)->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
+        $group->refresh();
+        app()->instance(SshExecutor::class, new StreamingLocalShellSshExecutor);
+        try {
+            app(TaskWorkspaceLease::class)->run($group, 'workspace_fast_forward', 'fetch-test', fn () => app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main'));
+            $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
+            $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
+            $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
+            Queue::fake([PublishTaskVmCommit::class]);
+            $publisher = app(GitHubTaskPullRequestPublisher::class);
+            expect(fn () => $publisher->push($group, $commit))->toThrow(TaskPullRequestException::class);
+
+            Queue::pushed(PublishTaskVmCommit::class)->sole()->handle($publisher);
+
+            $vm = TaskVm::forGroup($group);
+            expect($vm->publish_state)->toBe(TaskVmPublishState::Failed);
+            expect($vm->publish_error_code)->toBe('tasks.workflows_permission');
+            expect($vm->publish_error)->toContain('Workflows');
+            expect($vm->publish_error)->not->toContain('ghs_push');
+            Queue::assertPushed(PublishTaskVmCommit::class, 1);
+        } finally {
+            GitRemoteRedirect::clear();
+            TestOrbitHome::clearScratch();
+        }
+    });
 
     it('reports a failed or lost publish job once, then queues the push again', function (array $row, string $reason): void {
         tvm_glue_ssh();

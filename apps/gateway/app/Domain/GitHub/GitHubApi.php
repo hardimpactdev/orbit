@@ -130,6 +130,9 @@ interface GitHubApi
      */
     public function deleteBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): void;
 
+    /** Updates only the title and body of an existing pull request. */
+    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $title, string $body): void;
+
     /**
      * Opens the pull request, or returns the open one that already has this head.
      *

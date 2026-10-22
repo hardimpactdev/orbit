@@ -97,6 +97,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
@@ -302,6 +303,7 @@ describe('repository guidance bootstrap', function (): void {
             ProvisionTaskGroupRequest::class,
             CheckTaskGroupRequest::class,
             TurnTaskGroupRequest::class,
+            PublishTaskGroupRequest::class,
             CancelTaskGroupRequest::class,
             CompleteTaskGroupRequest::class,
             CreateSubtaskRequest::class,
@@ -566,7 +568,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, turn, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')

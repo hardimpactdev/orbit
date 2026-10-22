@@ -264,6 +264,15 @@ trait FollowsOperations
             }
         }
 
+        if ($operation->kind === 'tasks.publish') {
+            foreach (['branch' => 'Branch', 'commit' => 'Commit', 'pull_request_url' => 'Pull request'] as $field => $label) {
+                $value = $operation->result[$field] ?? null;
+                if (is_string($value)) {
+                    $this->writeHumanMessage($label.': '.$value);
+                }
+            }
+        }
+
         $selected = $operation->result['selected_release'] ?? null;
 
         if (is_string($selected)) {

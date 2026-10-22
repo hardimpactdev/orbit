@@ -124,6 +124,8 @@ Publishing has no path without the App. Without an installation that covers the 
 
 GitHub refuses a token that asks for a permission the installation has not accepted, with 422 and the message "The permissions requested are not granted to this installation." The assistance reason quotes that message. The account owner accepts the permissions in the installation settings on GitHub.
 
+For an external group, [`tasks.publish`](/reference/tasks#publish-an-external-group) uses the same Gateway push and token. Its optional pull request step looks for an open pull request before creating one or updating its title and body. It requests no reviewers.
+
 ## How Orbit watches a task pull request
 
 Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes conflicts, failed checks, and trusted requested changes.

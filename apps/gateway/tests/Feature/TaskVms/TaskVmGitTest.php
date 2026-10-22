@@ -161,6 +161,47 @@ describe('publish from the VM', function (): void {
         $this->sent = new ArrayObject;
     });
 
+    it('skips an identical remote tip without invoking push for checked publication', function (): void {
+        $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+        $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
+        {
+            public int $pushes = 0;
+
+            public function __construct(private ProcessRunner $runner) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                if (in_array('push', $invocation->arguments, true)) {
+                    $this->pushes++;
+                }
+
+                return $this->runner->run($invocation);
+            }
+        };
+        $git = new TaskVmGit($runner, $this->mirrors, ['https', 'file']);
+
+        $git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
+
+        expect($runner->pushes)->toBe(0);
+        expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved);
+        tvm_git_expect_no_token();
+    });
+
+    it('refuses a divergent task branch without force for checked publication', function (): void {
+        $other = tvm_git_commit($this->root.'/upstream', 'other.php');
+        tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'HEAD:task-7']);
+        $this->git->fetch($this->project, ['task-7'], $this->access, 'tasks.push_failed');
+
+        try {
+            $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
+            $this->fail('A divergent branch must fail.');
+        } catch (RuntimeConvergenceException $exception) {
+            expect($exception->errorCode)->toBe('tasks.not_fast_forward');
+        }
+
+        expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($other);
+    });
+
     it('takes the approved commit into the mirror and pushes exactly that commit to GitHub', function (): void {
         $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
 

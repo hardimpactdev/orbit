@@ -39,6 +39,7 @@ use Throwable;
  * @property string|null $publish_branch
  * @property TaskVmPublishState|null $publish_state
  * @property string|null $publish_error
+ * @property string|null $publish_error_code
  * @property Carbon|null $publish_queued_at
  * @property Carbon|null $publish_started_at
  * @property string|null $provider_id
@@ -76,7 +77,7 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
-        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];

@@ -13,6 +13,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
@@ -189,7 +190,8 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     private function publishFromVm(Task $group, string $branch, string $commit): void
     {
         $vm = TaskVm::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
-        if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState) {
+        if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState
+            && ! ($group->groupOrchestration() === TaskOrchestration::External && $vm->publish_state === TaskVmPublishState::Failed)) {
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;
             }
@@ -214,7 +216,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
         $vm->update([
             'publish_commit' => $commit, 'publish_branch' => $branch, 'publish_state' => TaskVmPublishState::Queued,
-            'publish_error' => null, 'publish_queued_at' => now(), 'publish_started_at' => null,
+            'publish_error' => null, 'publish_error_code' => null, 'publish_queued_at' => now(), 'publish_started_at' => null,
         ]);
         PublishTaskVmCommit::dispatch($vm->id, $commit, $branch);
 
@@ -232,6 +234,9 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     {
         $group = $vm->group;
         if (! $group instanceof Task) {
+            return;
+        }
+        if (! TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued)->exists()) {
             return;
         }
         app(TaskWorkspaceLease::class)->run($group, 'publication', 'publish-vm:'.$vm->id.':'.$commit,
@@ -271,16 +276,17 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     // The handoff branch holds only commits for CI, and the workspace can leave its history, as when it
                     // follows an incoming pull request's head. So a handoff replaces it, over the tip just fetched.
                     replace: $branch === TaskRemoteBranch::handoff($group),
+                    checkedPublish: $group->groupOrchestration() === TaskOrchestration::External,
                 );
             } catch (RuntimeConvergenceException $exception) {
                 $this->failedPush($exception, $token);
             }
         } catch (TaskPullRequestException $exception) {
-            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => $exception->getMessage()]);
+            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => $exception->getMessage(), 'publish_error_code' => $exception->errorCode]);
 
             return;
         } catch (GitHubApiException $exception) {
-            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => 'The task branch could not be pushed: '.$exception->getMessage()]);
+            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => 'The task branch could not be pushed: '.$exception->getMessage(), 'publish_error_code' => 'tasks.push_failed']);
 
             return;
         }
@@ -316,7 +322,9 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             $message .= "\n".$tail;
         }
 
-        throw new TaskPullRequestException($message, previous: $exception);
+        $failure = new TaskPullRequestException($message, previous: $exception);
+        $failure->errorCode = $this->refusedWorkflow($stderr) ? 'tasks.workflows_permission' : $exception->errorCode;
+        throw $failure;
     }
 
     private function refusedWorkflow(string $stderr): bool

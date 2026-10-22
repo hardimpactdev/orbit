@@ -73,6 +73,7 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
+| `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
@@ -166,6 +167,8 @@ An event never carries output. Reverb can lose an event, for example while the s
 
 `operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
 
+When a waiting `tasks.publish` has started its push, cancellation is deferred without an error. It returns the waiting record and keeps the group held until the job records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
+
 A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
 
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
@@ -184,7 +187,7 @@ Each active run has a deadline of 1,600 seconds; time between waiting reads does
 
 ### A waiting step
 
-A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. `tasks.provision` waits for VM capacity and readiness, `tasks.check` waits for VM resume, workspace ownership, and its detached check, and `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end; deploy and rollback keep their current execution.
+A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. `tasks.provision` waits for VM capacity and readiness, `tasks.check` waits for VM resume, workspace ownership, and its detached check, and `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end; deploy and rollback keep their current execution. `tasks.publish` waits for VM resume and its queued push.
 
 A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
 
@@ -243,6 +246,10 @@ These codes belong to every operation.
 A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.
 
 ## Why it works this way
+
+### Publish waits for its existing job
+
+`tasks.publish` uses the approval push job and reads its stored result while waiting. It holds no operations worker during the VM transfer. A cancel before the job starts invalidates the queued record; a cancel afterward keeps the group held until the job ends, because stopping a push cannot prove that GitHub did not receive it.
 
 ### A task check returns evidence
 

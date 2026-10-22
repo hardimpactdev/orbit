@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\PublishTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/publish",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.not_orchestrated",
+            "message": "This task group uses tick orchestration.",
+            "details": {}
+        }
+    }
+}

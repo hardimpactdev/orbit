@@ -134,6 +134,10 @@ final readonly class OperationRunner
                 if ($operation->cancel_requested_at !== null) {
                     try {
                         $this->waitingStep($kind, $operation, $waiting)->stop($run);
+                    } catch (OperationStopPending) {
+                        $this->restoreWaiting($operation, $waiting);
+
+                        return;
                     } catch (Throwable $exception) {
                         $this->restoreWaiting($operation, $waiting);
                         Log::warning('A waiting step could not confirm its stop.', ['operation' => $operation->id, 'error' => $exception->getMessage()]);
@@ -189,6 +193,9 @@ final readonly class OperationRunner
             $kind = $this->kinds->for($operation->kind);
             try {
                 $this->stopWaiting($operation, $step, $kind, new OperationRun($operation, $this->store));
+            } catch (OperationStopPending) {
+                // The existing delayed read will confirm completion before releasing the target.
+                return;
             } catch (ResourceOperationException $exception) {
                 if (! $targetEnding || $exception->status !== 502) {
                     throw $exception;
