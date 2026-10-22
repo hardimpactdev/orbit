@@ -319,7 +319,7 @@ In `apps/docs`, `composer check` also runs the documentation lint, the API fixtu
 
 Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
-Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file, in place of `pestphp/pest`. Orbit configures none of its test-impact features. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
+Each project requires stock `pestphp/pest` from its lock file. Stock Pest includes test impact analysis, which turns on with `--tia` or `--locally`, a `PEST_TIA` environment variable, or a `tia()` configuration. Orbit uses none of them, and a contract test checks the project scripts, the PHPUnit configuration, the workflows, the CI actions, and the `bin` scripts. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
 
 Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. Every Pest case remains subject to the two-second limit. The external generated-merge proof runs sequentially in the quality step, separate from ParaTest; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "340d45c7d683b9f83eb0210bb1d9a594",
+    "content-hash": "cdf62ffdc3fc8ddc02fdeae1670c2cfe",
     "packages": [
         {
             "name": "brick/math",
@@ -2556,7 +2556,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "37d13c35e1d452b48e94d7964b42da1acb0e2f99"
+                "reference": "25ec609a7966185fe3300cbc5d6ef9579c12ad0d"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.13 || ^3.1",
@@ -2568,7 +2568,7 @@
                 "laravel/pao": "^1.1",
                 "laravel/pint": "^1.32",
                 "laravel/vet": "^0.2.1",
-                "nckrtl/pestphp-monorepo": "dev-main",
+                "pestphp/pest": "^5.3",
                 "phpstan/phpstan": "^2.2.13",
                 "phpunit/phpunit": "^13.0",
                 "rector/rector": "^2.3",
@@ -7800,131 +7800,6 @@
             "time": "2026-08-11T10:17:44+00:00"
         },
         {
-            "name": "nckrtl/pestphp-monorepo",
-            "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "1a7b957430bf47f46f075a516f30d02218704b57"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/1a7b957430bf47f46f075a516f30d02218704b57",
-                "reference": "1a7b957430bf47f46f075a516f30d02218704b57",
-                "shasum": ""
-            },
-            "require": {
-                "brianium/paratest": "^7.26.1",
-                "nunomaduro/collision": "^8.9.5",
-                "nunomaduro/termwind": "^2.4.0",
-                "pestphp/pest-plugin": "^5.0.0",
-                "pestphp/pest-plugin-arch": "^5.0.0",
-                "pestphp/pest-plugin-mutate": "^5.0.2",
-                "pestphp/pest-plugin-profanity": "^5.0.1",
-                "php": "^8.4",
-                "phpunit/phpunit": "^13.4.2",
-                "symfony/process": "^8.1.7"
-            },
-            "conflict": {
-                "filp/whoops": "<2.18.3",
-                "laravel/boost": "<2.6.0",
-                "phpunit/phpunit": ">13.4.2",
-                "sebastian/exporter": "<7.0.0",
-                "webmozart/assert": "<1.11.0"
-            },
-            "replace": {
-                "pestphp/pest": "5.3.2"
-            },
-            "require-dev": {
-                "pestphp/pest-dev-tools": "^5.0.0",
-                "pestphp/pest-plugin-browser": "^5.1.2",
-                "pestphp/pest-plugin-phpstan": "^5.2.2",
-                "pestphp/pest-plugin-rector": "^5.0.6",
-                "pestphp/pest-plugin-type-coverage": "^5.0.3",
-                "psy/psysh": "^0.12.24"
-            },
-            "default-branch": true,
-            "bin": [
-                "bin/pest"
-            ],
-            "type": "library",
-            "extra": {
-                "pest": {
-                    "plugins": [
-                        "Pest\\Mutate\\Plugins\\Mutate",
-                        "Pest\\Plugins\\Configuration",
-                        "Pest\\Plugins\\Bail",
-                        "Pest\\Plugins\\Cache",
-                        "Pest\\Plugins\\Coverage",
-                        "Pest\\Plugins\\Init",
-                        "Pest\\Plugins\\Environment",
-                        "Pest\\Plugins\\Help",
-                        "Pest\\Plugins\\Memory",
-                        "Pest\\Plugins\\Only",
-                        "Pest\\Plugins\\Printer",
-                        "Pest\\Plugins\\ProcessIsolation",
-                        "Pest\\Plugins\\Profile",
-                        "Pest\\Plugins\\Retry",
-                        "Pest\\Plugins\\Snapshot",
-                        "Pest\\Plugins\\Verbose",
-                        "Pest\\Plugins\\Version",
-                        "Pest\\Plugins\\Shard",
-                        "Pest\\Plugins\\Tia",
-                        "Pest\\Plugins\\Parallel"
-                    ]
-                },
-                "phpstan": {
-                    "includes": [
-                        "extension.neon"
-                    ]
-                }
-            },
-            "autoload": {
-                "files": [
-                    "src/Functions.php",
-                    "src/Pest.php"
-                ],
-                "psr-4": {
-                    "Pest\\": "src/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Nuno Maduro",
-                    "email": "enunomaduro@gmail.com"
-                }
-            ],
-            "description": "Pest with test-impact analysis for Composer monorepos and Git worktrees.",
-            "homepage": "https://github.com/nckrtl/pestphp-monorepo",
-            "keywords": [
-                "framework",
-                "pest",
-                "php",
-                "test",
-                "testing",
-                "unit"
-            ],
-            "support": {
-                "issues": "https://github.com/nckrtl/pestphp-monorepo/issues",
-                "source": "https://github.com/nckrtl/pestphp-monorepo"
-            },
-            "funding": [
-                {
-                    "url": "https://www.paypal.com/paypalme/enunomaduro",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/nunomaduro",
-                    "type": "github"
-                }
-            ],
-            "time": "2026-10-19T18:04:59+00:00"
-        },
-        {
             "name": "nikic/php-parser",
             "version": "v5.9.0",
             "source": {
@@ -7980,6 +7855,126 @@
                 "source": "https://github.com/nikic/PHP-Parser/tree/v5.9.0"
             },
             "time": "2026-09-13T18:51:52+00:00"
+        },
+        {
+            "name": "pestphp/pest",
+            "version": "v5.3.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/pestphp/pest.git",
+                "reference": "73fe04f8c30a734fe2e269a71d4628cdf7131062"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/pestphp/pest/zipball/73fe04f8c30a734fe2e269a71d4628cdf7131062",
+                "reference": "73fe04f8c30a734fe2e269a71d4628cdf7131062",
+                "shasum": ""
+            },
+            "require": {
+                "brianium/paratest": "^7.26.1",
+                "nunomaduro/collision": "^8.9.5",
+                "nunomaduro/termwind": "^2.4.0",
+                "pestphp/pest-plugin": "^5.0.0",
+                "pestphp/pest-plugin-arch": "^5.0.0",
+                "pestphp/pest-plugin-mutate": "^5.0.2",
+                "pestphp/pest-plugin-profanity": "^5.0.1",
+                "php": "^8.4",
+                "phpunit/phpunit": "^13.4.2",
+                "symfony/process": "^8.1.7"
+            },
+            "conflict": {
+                "filp/whoops": "<2.18.3",
+                "laravel/boost": "<2.6.0",
+                "phpunit/phpunit": ">13.4.2",
+                "sebastian/exporter": "<7.0.0",
+                "webmozart/assert": "<1.11.0"
+            },
+            "require-dev": {
+                "pestphp/pest-dev-tools": "^5.0.0",
+                "pestphp/pest-plugin-browser": "^5.1.2",
+                "pestphp/pest-plugin-phpstan": "^5.2.2",
+                "pestphp/pest-plugin-rector": "^5.0.6",
+                "pestphp/pest-plugin-type-coverage": "^5.0.3",
+                "psy/psysh": "^0.12.24"
+            },
+            "bin": [
+                "bin/pest"
+            ],
+            "type": "library",
+            "extra": {
+                "pest": {
+                    "plugins": [
+                        "Pest\\Mutate\\Plugins\\Mutate",
+                        "Pest\\Plugins\\Configuration",
+                        "Pest\\Plugins\\Bail",
+                        "Pest\\Plugins\\Cache",
+                        "Pest\\Plugins\\Coverage",
+                        "Pest\\Plugins\\Init",
+                        "Pest\\Plugins\\Environment",
+                        "Pest\\Plugins\\Help",
+                        "Pest\\Plugins\\Memory",
+                        "Pest\\Plugins\\Only",
+                        "Pest\\Plugins\\Printer",
+                        "Pest\\Plugins\\ProcessIsolation",
+                        "Pest\\Plugins\\Profile",
+                        "Pest\\Plugins\\Retry",
+                        "Pest\\Plugins\\Snapshot",
+                        "Pest\\Plugins\\Verbose",
+                        "Pest\\Plugins\\Version",
+                        "Pest\\Plugins\\Shard",
+                        "Pest\\Plugins\\Tia",
+                        "Pest\\Plugins\\Parallel"
+                    ]
+                },
+                "phpstan": {
+                    "includes": [
+                        "extension.neon"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/Functions.php",
+                    "src/Pest.php"
+                ],
+                "psr-4": {
+                    "Pest\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Nuno Maduro",
+                    "email": "enunomaduro@gmail.com"
+                }
+            ],
+            "description": "The elegant PHP Testing Framework.",
+            "keywords": [
+                "framework",
+                "pest",
+                "php",
+                "test",
+                "testing",
+                "unit"
+            ],
+            "support": {
+                "issues": "https://github.com/pestphp/pest/issues",
+                "source": "https://github.com/pestphp/pest/tree/v5.3.2"
+            },
+            "funding": [
+                {
+                    "url": "https://www.paypal.com/paypalme/enunomaduro",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/nunomaduro",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-10-12T17:28:57+00:00"
         },
         {
             "name": "pestphp/pest-plugin",
@@ -10821,8 +10816,7 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "nckrtl/orbit-php-sdk": 20,
-        "nckrtl/pestphp-monorepo": 20
+        "nckrtl/orbit-php-sdk": 20
     },
     "prefer-stable": true,
     "prefer-lowest": false,
