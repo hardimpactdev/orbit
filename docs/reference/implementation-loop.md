@@ -113,6 +113,8 @@ GitHub's repository SHA-pinning policy and Dependabot security updates must be e
 
 The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job container. After Bun setup and dependency installation, `bunx playwright install --with-deps --only-shell chromium webkit` installs Chromium's headless shell, WebKit, and their system libraries before the tests. All test launches are headless, so CI does not download the unused full Chromium browser. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time.
 
+The install step pins the runner’s Ubuntu mirror list to Canonical’s HTTPS archive, as the Desktop job does. Apt retries failed downloads three times and sets 30-second connection and data inactivity timeouts for HTTP and HTTPS. Playwright uses its built-in five download attempts across its download URLs, with a 30-second download connection timeout. The step stops after 10 minutes.
+
 ### One PHP build in CI
 
 Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/hardimpactdev/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.

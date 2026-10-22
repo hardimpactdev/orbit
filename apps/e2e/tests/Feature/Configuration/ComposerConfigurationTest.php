@@ -196,6 +196,23 @@ describe('Composer configuration', function (): void {
         }
     });
 
+    it('bounds Web browser installation and retries downloads through Canonical and Playwright', function (): void {
+        $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
+        $install = $steps['Install the test browsers'];
+
+        expect($install['timeout-minutes'] ?? null)->toBe(10)
+            ->and($install['env']['PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT'] ?? null)->toBe('30000');
+        expect($install['run'])->toContain(
+            "echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt",
+            'Acquire::Retries "3";',
+            'Acquire::http::Timeout "30";',
+            'Acquire::https::Timeout "30";',
+            'sudo tee /etc/apt/apt.conf.d/80-download-retries',
+            'bunx playwright install --with-deps --only-shell chromium webkit',
+        );
+    });
+
     it('publishes only the Pint and PHPStan caches of main as SHA-bound refs after Required checks', function (): void {
         $source = (string) file_get_contents(base_path('../../.github/workflows/ci.yml'));
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
