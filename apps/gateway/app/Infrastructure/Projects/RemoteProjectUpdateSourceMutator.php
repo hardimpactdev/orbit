@@ -28,7 +28,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $read = null;
 
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
-            // A task VM gets no token; the Gateway's mirror reads the repository for it.
+            // A task VM gets no token. UpdateProjectAction reads the proposed repository on the Gateway instead.
             $network = ! TaskVm::forNode($checkout->node_id) instanceof TaskVm;
             if ($network) {
                 $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);

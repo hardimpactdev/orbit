@@ -8,18 +8,23 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProjectUpdate;
 use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -301,6 +306,69 @@ describe('App repository reconciliation', function (): void {
         // A retry with that evidence changes nothing again.
         expect($mutator->changeOrigins($workspaces, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', $evidence))->toBe($evidence)
             ->and($ssh->commands)->toHaveCount(6);
+    });
+
+    it('reads the proposed repository on the Gateway for a task workspace and refuses a parked task VM', function (TaskVmState $state): void {
+        Bus::fake([ResumeTaskVm::class]);
+        $node = Node::query()->create(['name' => 'tvm-e2e', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.133', 'wireguard_ip' => '10.44.0.133']);
+        $group = Task::topLevel()->create(['project_id' => $this->fixture->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'settling']);
+        test_task_vm($group, $node)->update(['state' => $state]);
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/home/orbit/apps/acme/workspace', 'branch' => 'task-'.$group->id,
+            'status' => InstanceState::Active, 'task_workspace_owner_id' => $group->id,
+        ]);
+        $branches = new class implements RepositoryDefaultBranchResolver
+        {
+            /** @var list<string> */
+            public array $resolved = [];
+
+            public function resolve(string $repository, ProjectSourceAccess $source): string
+            {
+                $this->resolved[] = $repository;
+
+                return 'main';
+            }
+
+            public function verify(string $repository, string $branch, ProjectSourceAccess $source): void {}
+        };
+        $this->app->instance(RepositoryDefaultBranchResolver::class, $branches);
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        if ($state === TaskVmState::Parked) {
+            expect($update)->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('project.task_vm_parked');
+            });
+            expect($branches->resolved)->toBe([])
+                ->and($this->fixture->sources->originMutations)->toBe([])
+                ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+            Bus::assertDispatched(ResumeTaskVm::class);
+        } else {
+            $update();
+            expect($branches->resolved)->toBe(['https://github.com/acme/site.git'])
+                ->and($this->fixture->sources->originMutations)->toContain('/home/orbit/apps/acme/workspace')
+                ->and($this->fixture->project->refresh()->repository_url)->toBe('https://github.com/acme/site.git');
+        }
+    })->with([
+        'ready' => [TaskVmState::Ready],
+        'parked' => [TaskVmState::Parked],
+    ]);
+
+    it('restores origin evidence written before rows named their Instance by its path', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        $this->app->instance(SshExecutor::class, $ssh);
+
+        $this->app->make(RemoteProjectUpdateSourceMutator::class)->restoreOrigins([[
+            'path' => '/srv/orbit/apps/acme/default', 'previous_url' => 'git@github.com:acme/site.git',
+            'current_url' => 'https://github.com/acme/site.git', 'mutated' => true,
+        ]]);
+
+        expect($ssh->commands)->toHaveCount(1)
+            ->and($ssh->connections[0]->host)->toBe($this->fixture->defaultInstance->node->wireguard_ip);
     });
 
     it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {

@@ -210,7 +210,7 @@ Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
 
-A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout. A task workspace on a task VM gets its new `origin` too, but its preflight does not read the proposed repository there: a task VM gets no token, and the Gateway's mirror reads for it ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
+A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout. A task workspace on a task VM gets its new `origin` too. Its preflight checks the checkout but does not read the proposed repository there, because a task VM gets no token ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). The Gateway reads the proposed repository once instead. A parked task VM refuses the update with `project.task_vm_parked`; Orbit resumes it, and the update can run again when it is ready.
 
 Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node.
 
@@ -253,6 +253,7 @@ The Gateway returns these codes for Project requests.
 | `project.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
 | `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
 | `project.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
+| `project.task_vm_parked` | A task workspace's VM is parked. Orbit resumes it; retry the update. |
 | `project.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
 | `project.production_ownership_changed` | A production Instance changed during the update. |
 | `project.production_repository_mismatch` | A production home records another repository than the new URL. `details.instance_id` names the Instance. |

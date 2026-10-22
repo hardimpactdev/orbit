@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -32,6 +33,7 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
+use App\Models\TaskVm;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -420,6 +422,7 @@ final readonly class UpdateProjectAction
 
             if ($update->requested_repository_url !== $project->repository_url) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
+                $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url);
                 $this->sources->preflightRepository(
                     $plan['checkouts'],
                     $project->repository_url,
@@ -446,6 +449,30 @@ final readonly class UpdateProjectAction
             'status' => ProjectUpdateStatus::Preflighted,
             'inventory' => $inventory,
         ]);
+    }
+
+    /**
+     * A task workspace's preflight cannot read the proposed repository, because a task VM gets no token. The
+     * Gateway reads it once instead. A parked task VM cannot run the preflight: Orbit resumes it and refuses.
+     *
+     * @param  list<Instance>  $checkouts
+     */
+    private function preflightTaskWorkspaces(Project $project, array $checkouts, string $repositoryUrl): void
+    {
+        $vms = array_filter(array_map(static fn (Instance $checkout): ?TaskVm => TaskVm::forNode($checkout->node_id), $checkouts));
+        if ($vms === []) {
+            return;
+        }
+        foreach ($vms as $vm) {
+            if (! app(WakeTaskVmAction::class)->forVm($vm)) {
+                throw new ResourceOperationException(
+                    errorCode: 'project.task_vm_parked',
+                    message: 'Task VM ['.$vm->name.'] is parked. Orbit is resuming it. Retry the update when it is ready.',
+                    status: 409,
+                );
+            }
+        }
+        $this->branches->resolve($repositoryUrl, $project->source_access);
     }
 
     private function prepare(ProjectUpdate $update): void
