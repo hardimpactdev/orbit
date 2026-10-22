@@ -1265,6 +1265,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0230-preserve-work-across-gateway-releases.md",
+            "title": "Preserve work across Gateway releases",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0206",
+                "0209",
+                "0218",
+                "0230"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1327,7 +1354,8 @@
                 "0223",
                 "0224",
                 "0225",
-                "0226"
+                "0226",
+                "0230"
             ]
         },
         {
