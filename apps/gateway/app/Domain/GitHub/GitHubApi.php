@@ -154,6 +154,14 @@ interface GitHubApi
     /** Merge the base into exactly the observed head, without rebasing or force-pushing. */
     public function updatePullRequestBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $headSha): TaskBranchUpdate;
 
+    /**
+     * GitHub's numeric id of the repository, following GitHub's redirect from a renamed or transferred
+     * repository. Null when the repository does not exist or the token cannot see it. A rate limit throws.
+     *
+     * @throws GitHubApiException
+     */
+    public function repositoryId(#[SensitiveParameter] string $token, GitHubRepository $repository): ?int;
+
     /** @throws GitHubApiException */
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;
 

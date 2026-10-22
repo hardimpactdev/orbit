@@ -91,3 +91,35 @@ describe('HttpGitHubApi requested reviewers', function (): void {
             ->toThrow(GitHubApiException::class, 'GitHub refused the reviewer request (422): Review cannot be requested from pull request author.');
     });
 });
+
+describe('HttpGitHubApi repository id', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+    });
+
+    it('follows the redirect of a transferred repository to its id', function (): void {
+        Http::fake([
+            'https://api.github.com/repos/old-owner/shop' => Http::response('', 301, ['Location' => 'https://api.github.com/repositories/7']),
+            'https://api.github.com/repositories/7' => Http::response(['id' => 7, 'full_name' => 'acme/shop']),
+        ]);
+
+        expect(app(GitHubApi::class)->repositoryId('ghs_read', GitHubRepository::fromOrigin('https://github.com/old-owner/shop.git')))->toBe(7);
+    });
+
+    it('reads a missing or hidden repository as null', function (int $status): void {
+        Http::fake(['https://api.github.com/repos/acme/shop' => Http::response(['message' => 'Not Found'], $status)]);
+
+        expect(app(GitHubApi::class)->repositoryId('ghs_read', GitHubRepository::fromOrigin('https://github.com/acme/shop.git')))->toBeNull();
+    })->with(['not found' => [404], 'forbidden' => [403]]);
+
+    it('fails on a rate limit, a server failure, or an answer without an id', function (int $status, array $body, array $headers): void {
+        Http::fake(['https://api.github.com/repos/acme/shop' => Http::response($body, $status, $headers)]);
+
+        expect(fn (): ?int => app(GitHubApi::class)->repositoryId('ghs_read', GitHubRepository::fromOrigin('https://github.com/acme/shop.git')))
+            ->toThrow(GitHubApiException::class);
+    })->with([
+        'rate limit' => [403, ['message' => 'API rate limit exceeded'], ['x-ratelimit-remaining' => '0']],
+        'server failure' => [502, ['message' => 'Bad gateway'], []],
+        'no id' => [200, [], []],
+    ]);
+});

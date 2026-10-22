@@ -129,6 +129,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->updatePullRequestBranch($token, $repository, $number, $headSha);
     }
 
+    public function repositoryId(#[SensitiveParameter] string $token, GitHubRepository $repository): ?int
+    {
+        return $this->github->repositoryId($token, $repository);
+    }
+
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest
     {
         return $this->github->pullRequest($token, $repository, $number);
