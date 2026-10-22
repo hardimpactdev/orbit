@@ -4480,6 +4480,7 @@ export interface components {
             root?: string | null;
             effective_root?: string | null;
             selected_branch?: string | null;
+            deployment_branch?: string | null;
             branch_override?: string | null;
             starting_commit?: string | null;
             detached?: boolean;

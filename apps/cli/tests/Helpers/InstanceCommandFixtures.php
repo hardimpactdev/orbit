@@ -23,6 +23,7 @@ function instance_payload(?array $removal = null): array
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'dev',
+        'deployment_branch' => null,
         'branch_override' => null,
         'starting_commit' => str_repeat('a', times: 40),
         'seed_path' => null,
@@ -69,6 +70,7 @@ function registration_payload(): array
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
         'selected_branch' => 'main',
+        'deployment_branch' => null,
     ];
 
     return [

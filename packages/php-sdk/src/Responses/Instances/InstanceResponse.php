@@ -30,6 +30,7 @@ use SensitiveParameter;
  *     root: string|null,
  *     effective_root: string|null,
  *     selected_branch: string|null,
+ *     deployment_branch: string|null,
  *     branch_override: string|null,
  *     starting_commit: string|null,
  *     seed_path: string|null,
@@ -63,6 +64,7 @@ use SensitiveParameter;
  *     root: string|null,
  *     effective_root: string|null,
  *     selected_branch: string|null,
+ *     deployment_branch: string|null,
  *     branch_override: string|null,
  *     starting_commit: string|null,
  *     seed_path: string|null,
@@ -120,6 +122,7 @@ final readonly class InstanceResponse
         public ?InstanceAutoDeployResponse $autoDeploy = null,
         /** @var list<string> */
         public array $warnings = [],
+        public ?string $deploymentBranch = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -148,6 +151,7 @@ final readonly class InstanceResponse
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
             effectiveRoot: is_string($data['effective_root'] ?? null) ? $data['effective_root'] : null,
             selectedBranch: is_string($data['selected_branch'] ?? null) ? $data['selected_branch'] : null,
+            deploymentBranch: is_string($data['deployment_branch'] ?? null) ? $data['deployment_branch'] : null,
             branchOverride: is_string($data['branch_override'] ?? null) ? $data['branch_override'] : null,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
             detached: ($data['detached'] ?? null) === true,
@@ -184,6 +188,7 @@ final readonly class InstanceResponse
             'root' => $this->root,
             'effective_root' => $this->effectiveRoot,
             'selected_branch' => $this->selectedBranch,
+            'deployment_branch' => $this->deploymentBranch,
             'branch_override' => $this->branchOverride,
             'starting_commit' => $this->startingCommit,
             'seed_path' => $this->seedPath,

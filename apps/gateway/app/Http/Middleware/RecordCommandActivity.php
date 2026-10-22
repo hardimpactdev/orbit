@@ -571,6 +571,10 @@ final readonly class RecordCommandActivity
             return $this->appUpdateInput($request);
         }
 
+        if ($command === 'instance:update') {
+            return $this->instanceUpdateInput($request);
+        }
+
         if ($command === 'instance:transfer') {
             return $this->instanceTransferInput($request);
         }
@@ -602,7 +606,6 @@ final readonly class RecordCommandActivity
                 'instance:teardown-step:update',
                 'instance:teardown-step:destroy',
                 'instance:setup',
-                'instance:update',
             ], true)
         ) {
             return [];
@@ -722,6 +725,24 @@ final readonly class RecordCommandActivity
         }
 
         return $safe;
+    }
+
+    /** @return array<array-key, mixed> */
+    private function instanceUpdateInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['branch', 'shared_paths', 'auto_deploy']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $branch = $input['branch'] ?? null;
+
+        if (! is_string($branch) || ! GitBranchName::isValid($branch)) {
+            return [];
+        }
+
+        return $this->inputSanitizer->sanitizeProperties(['branch' => $branch]);
     }
 
     /** @return array{release: string}|array{} */
