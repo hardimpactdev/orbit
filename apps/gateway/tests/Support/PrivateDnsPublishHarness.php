@@ -161,6 +161,22 @@ final readonly class PrivateDnsPublishHarness
                 return 0
             }
             BASH);
+        // Socket output is scripted; match its numeric PID without an executable per retry.
+        $this->writeShim('grep', str_replace('__REAL_GREP__', escapeshellarg(TestToolchain::require('grep', 'install grep')), <<<'BASH'
+            grep() {
+                if [ "$#" -ne 2 ] || [ "$1" != -q ] || [[ ! "$2" =~ ^pid=[0-9]+,$ ]]; then
+                    command __REAL_GREP__ "$@"
+                    return
+                fi
+                local line needle="$2"
+                while IFS= read -r line || [ -n "$line" ]; do
+                    if [[ "$line" == *"$needle"* ]]; then
+                        return 0
+                    fi
+                done
+                return 1
+            }
+            BASH));
         // A waiting publication gives the listener time to load the catalog. A confirming listener does so here.
         $this->writeShim('sleep', <<<BASH
             sleep() {
@@ -180,12 +196,11 @@ final readonly class PrivateDnsPublishHarness
     }
 
     /** @return list<string> */
-    /** @return list<string> */
     public function shell(): array
     {
         $functions = 'export PATH='.escapeshellarg(StandardLibraryPython::path((string) getenv('PATH')))."\n"
             .BashFixtureFileReader::forFile($this->loadedPath());
-        foreach (['dnsmasq', 'systemctl', 'ss', 'sleep', 'systemd-analyze'] as $name) {
+        foreach (['dnsmasq', 'systemctl', 'ss', 'grep', 'sleep', 'systemd-analyze'] as $name) {
             // These known definitions localize variables and never change the caller's options.
             $functions .= 'source '.escapeshellarg($this->root.'/bin/'.$name.'.bash')."\n";
         }

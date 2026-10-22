@@ -20,6 +20,7 @@ use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\ForkedPythonPrograms;
@@ -32,10 +33,12 @@ require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
 
 beforeAll(function (): void {
     tmpdir_programs();
+    tmpdir_repository_seed();
 });
 
 afterAll(function (): void {
     tmpdir_programs()->close();
+    new Filesystem()->deleteDirectory(tmpdir_repository_seed());
 });
 
 function tmpdir_programs(): ForkedPythonPrograms
@@ -211,16 +214,88 @@ function tmpdir_ready(string $checkout): string
     }
 }
 
+function tmpdir_repository_seed(): string
+{
+    static $seed = null;
+    if ($seed === null) {
+        $seed = sys_get_temp_dir().'/orbit-tmpdir-repository-'.bin2hex(random_bytes(8));
+        (new Process(['git', 'init', '-q', $seed]))->mustRun();
+        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'start'], $seed))->mustRun();
+    }
+
+    return $seed;
+}
+
 function tmpdir_checkout(string $directory, string $name): string
 {
     $checkout = $directory.'/'.$name;
-    (new Process(['git', 'init', '-q', $checkout]))->mustRun();
-    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'start'], $checkout))->mustRun();
+    if (! File::copyDirectory(tmpdir_repository_seed(), $checkout)) {
+        throw new RuntimeException('Could not copy the TMPDIR check repository.');
+    }
 
     return $checkout;
 }
 
+/** @param Closure(RemoteTaskCheckRunner, Instance, TaskCheckProcess): void $probe */
+function tmpdir_assert_nonallocating_probe(Closure $probe): void
+{
+    $test = test();
+    $scripts = [];
+    $checkout = tmpdir_checkout($test->directory, 'polls');
+    $instance = tmpdir_instance($checkout, 'polls');
+    $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
+
+    $process = $runner->start($instance, tmpdir_running_command($checkout));
+    $path = tmpdir_ready($checkout);
+    expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+        ->and(is_dir($path))->toBeTrue()
+        ->and(tmpdir_script_allocates($scripts[0] ?? ''))->toBeTrue();
+    $test->allocated = [...$test->allocated, $path];
+    $child = $path.'/granted';
+    mkdir($child, 0755);
+    file_put_contents($child.'/file', 'keep');
+    (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
+    $mode = fileperms($path) & 0777;
+    $inode = fileinode($path);
+    $afterStart = count($scripts);
+
+    $probe($runner, $instance, $process);
+
+    clearstatcache(true, $path);
+    expect(is_dir($path))->toBeTrue()
+        ->and(fileperms($path) & 0777)->toBe($mode)
+        ->and(fileinode($path))->toBe($inode)
+        ->and((new Process(['getfacl', '-cp', $child.'/file']))->mustRun()->getOutput())->toContain('user:nobody:r');
+    expect(array_map(tmpdir_script_allocates(...), array_slice($scripts, $afterStart)))->each->toBeFalse();
+
+    $beforeCancel = count($scripts);
+    $runner->cancel($instance, $process);
+    $finished = tmpdir_wait($runner, $instance, $process);
+
+    expect($finished->state)->toBe('lost')
+        ->and(is_dir($path))->toBeFalse()
+        ->and(tmpdir_script_allocates($scripts[$beforeCancel] ?? ''))->toBeFalse();
+}
+
 describe('workspace TMPDIR', function (): void {
+    it('keeps checkout files and Git state private from the seed and other cases', function (): void {
+        $seed = tmpdir_repository_seed();
+        $first = tmpdir_checkout($this->directory, 'first-copy');
+        $second = tmpdir_checkout($this->directory, 'second-copy');
+        $initial = (new Process(['git', '-C', $seed, 'rev-parse', 'HEAD']))->mustRun()->getOutput();
+        file_put_contents($first.'/private-file', 'private bytes');
+        (new Process(['git', '-C', $first, 'add', 'private-file']))->mustRun();
+        (new Process(['git', '-C', $first, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'private']))->mustRun();
+        (new Process(['git', '-C', $first, 'config', 'fixture.private', 'yes']))->mustRun();
+        expect((new Process(['git', '-C', $first, 'rev-parse', 'HEAD']))->mustRun()->getOutput())->not->toBe($initial);
+        foreach ([$seed, $second] as $unchanged) {
+            expect((new Process(['git', '-C', $unchanged, 'rev-parse', 'HEAD']))->mustRun()->getOutput())->toBe($initial)
+                ->and((new Process(['git', '-C', $unchanged, 'status', '--porcelain']))->mustRun()->getOutput())->toBe('')
+                ->and((new Process(['git', '-C', $unchanged, 'config', '--get', 'fixture.private']))->run())->toBe(1)
+                ->and(is_file($unchanged.'/private-file'))->toBeFalse();
+        }
+    });
+
     it('runs login commands in its private fixture home without changing the caller', function (): void {
         $home = $this->directory.'/home';
         File::ensureDirectoryExists($home, 0700);
@@ -262,7 +337,7 @@ describe('workspace TMPDIR', function (): void {
         $shared = $this->directory.'/prior-shared';
         File::ensureDirectoryExists($shared.'/phpstan');
         chmod($shared.'/phpstan', 0500);
-        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && printf %s "$TMPDIR"';
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && analysis_result=$(<"$TMPDIR/phpstan/result") && printf %s "$analysis_result" > phpstan-result && printf %s "$TMPDIR"';
         // Each phase records its TMPDIR; capture the same final permissions once, rather than overwriting them three times.
         $permissions = 'getfacl -cp "$TMPDIR" > tmp-acl && stat -c %a:%u "$TMPDIR" > tmp-stat';
         // The old layout really fails on permissions, not on an assertion about the new path.
@@ -472,43 +547,15 @@ describe('workspace TMPDIR', function (): void {
             ->and(is_dir($nested))->toBeFalse();
     });
 
-    it('allocates a check TMPDIR only when start runs, never on status, cancel, or snapshot', function (): void {
-        $scripts = [];
-        $checkout = tmpdir_checkout($this->directory, 'polls');
-        $instance = tmpdir_instance($checkout, 'polls');
-        $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
+    it('allocates a check TMPDIR only on start, not on status or cancel', function (): void {
+        tmpdir_assert_nonallocating_probe(function (RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): void {
+            expect($runner->read($instance, $process)->state)->toBe('running');
+        });
+    });
 
-        $process = $runner->start($instance, tmpdir_running_command($checkout));
-        $path = tmpdir_ready($checkout);
-        expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
-            ->and(is_dir($path))->toBeTrue()
-            ->and(tmpdir_script_allocates($scripts[0] ?? ''))->toBeTrue();
-        $this->allocated[] = $path;
-        $child = $path.'/granted';
-        mkdir($child, 0755);
-        file_put_contents($child.'/file', 'keep');
-        (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
-        $mode = fileperms($path) & 0777;
-        $inode = fileinode($path);
-        $afterStart = count($scripts);
-
-        $reading = $runner->read($instance, $process);
-        $snapshot = $runner->snapshot($instance);
-
-        expect($reading->state)->toBe('running')
-            ->and($snapshot->head)->toBe($process->head)
-            ->and(is_dir($path))->toBeTrue()
-            ->and(fileperms($path) & 0777)->toBe($mode)
-            ->and(fileinode($path))->toBe($inode)
-            ->and((new Process(['getfacl', '-cp', $child.'/file']))->mustRun()->getOutput())->toContain('user:nobody:r');
-        expect(array_map(tmpdir_script_allocates(...), array_slice($scripts, $afterStart)))->each->toBeFalse();
-
-        $beforeCancel = count($scripts);
-        $runner->cancel($instance, $process);
-        $finished = tmpdir_wait($runner, $instance, $process);
-
-        expect($finished->state)->toBe('lost')
-            ->and(is_dir($path))->toBeFalse()
-            ->and(tmpdir_script_allocates($scripts[$beforeCancel] ?? ''))->toBeFalse();
+    it('allocates a check TMPDIR only on start, not on snapshot or cancel', function (): void {
+        tmpdir_assert_nonallocating_probe(function (RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): void {
+            expect($runner->snapshot($instance)->head)->toBe($process->head);
+        });
     });
 });

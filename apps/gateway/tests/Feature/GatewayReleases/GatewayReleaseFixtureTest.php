@@ -138,23 +138,30 @@ it('copies adopted releases without retaining a seed or another cases Git worktr
 
 it('removes frozen directories without changing file modes through private hard links', function (int $mode): void {
     $fixture = GatewayReleaseFixture::create();
-    $outside = $fixture->base.'-linked-file';
+    $outside = $fixture->base.'-linked-directory';
     try {
-        file_put_contents($outside, 'keep these bytes');
-        chmod($outside, 0o444);
-        mkdir($fixture->base.'/frozen', 0o700);
-        link($outside, $fixture->base.'/frozen/file');
+        mkdir($outside, 0o700);
+        file_put_contents($outside.'/file', 'keep these bytes');
+        chmod($outside.'/file', 0o444);
+        mkdir($fixture->base.'/frozen/nested', 0o700, true);
+        link($outside.'/file', $fixture->base.'/frozen/nested/file');
+        symlink($outside, $fixture->base.'/frozen/nested/outside');
+        chmod($outside, 0o500);
+        chmod($fixture->base.'/frozen/nested', $mode);
         chmod($fixture->base.'/frozen', $mode);
 
         $fixture->cleanup();
         clearstatcache();
         expect(is_dir($fixture->base))->toBeFalse()
-            ->and(fileperms($outside) & 0o777)->toBe(0o444)
-            ->and(file_get_contents($outside))->toBe('keep these bytes');
+            ->and(fileperms($outside) & 0o777)->toBe(0o500)
+            ->and(fileperms($outside.'/file') & 0o777)->toBe(0o444)
+            ->and(file_get_contents($outside.'/file'))->toBe('keep these bytes');
     } finally {
         $fixture->cleanup();
-        if (is_file($outside)) {
-            unlink($outside);
+        if (is_dir($outside)) {
+            chmod($outside, 0o700);
+            unlink($outside.'/file');
+            rmdir($outside);
         }
     }
 })->with(['read-only' => 0o500, 'traversal-only' => 0o100]);

@@ -457,6 +457,7 @@ it('commits nothing and reads no CI for a Project without review and merge', fun
 })->with(['no merge check' => [null], 'a merge check without review and merge' => ['Required checks']]);
 
 it('asks for assistance once when no GitHub Actions suite started ten minutes after the push', function (): void {
+    $this->freezeSecond();
     $github = ci_github();
     [, $task] = ci_handoff();
 
