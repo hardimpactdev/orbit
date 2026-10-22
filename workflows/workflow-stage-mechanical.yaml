@@ -53,21 +53,19 @@ jobs:
         weight: 0
         allowFailure: false
       - name: install
-        description: "composer install in every Composer project (checks read across them)"
-        forEach:
-          item: dir
-          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        description: "composer install in every Composer project, one fan-out execution"
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
-          methodName: install
+          modelName: '${{ "composer-" + inputs.workItem }}'
+          methodName: install_all
           inputs:
-            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            root: '${{ inputs.worktree }}'
+            dirs: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
             key: '${{ inputs.key }}'
         dependsOn:
           - step: worktree
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: committed
@@ -84,13 +82,13 @@ jobs:
             planCommit: '${{ inputs.planCommit }}'
         dependsOn:
           - step: install
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: discard
         description: "Drop partial work of a killed attempt"
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "mechanical", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelIdOrName: orbit-stage
@@ -104,17 +102,17 @@ jobs:
             planCommit: '${{ inputs.planCommit }}'
         dependsOn:
           - step: committed
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: update
         description: "composer update within constraints"
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "mechanical", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
+          modelName: '${{ "composer-" + inputs.workItem }}'
           methodName: update
           inputs:
             dir: '${{ inputs.worktree + "/" + inputs.subProject }}'
@@ -122,12 +120,14 @@ jobs:
         dependsOn:
           - step: discard
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+          - step: committed
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: commit
         description: "@swamp/git commit with the key as a trailer (nothing to commit is allowed)"
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "mechanical", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelType: "@swamp/git"
@@ -140,6 +140,8 @@ jobs:
         dependsOn:
           - step: update
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+          - step: committed
+            condition: { type: succeeded }
         weight: 0
         allowFailure: true
       - name: report

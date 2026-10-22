@@ -53,31 +53,29 @@ jobs:
         weight: 0
         allowFailure: false
       - name: install
-        description: "composer install in every Composer project (checks read across them)"
-        forEach:
-          item: dir
-          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        description: "composer install in every Composer project, one fan-out execution"
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
-          methodName: install
+          modelName: '${{ "composer-" + inputs.workItem }}'
+          methodName: install_all
           inputs:
-            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            root: '${{ inputs.worktree }}'
+            dirs: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
             key: '${{ inputs.key }}'
         dependsOn:
           - step: worktree
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: check
         description: "composer check (skipped when this key already has a result)"
         guard: >-
-          ${{ data.latest("composer", "script-" + inputs.key + "-check").?attributes.?command.orValue("") != "" }}
+          ${{ data.latest("composer-" + inputs.workItem, "script-" + inputs.key + "-check").?attributes.?command.orValue("") != "" }}
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
+          modelName: '${{ "composer-" + inputs.workItem }}'
           methodName: script
           inputs:
             dir: '${{ inputs.worktree + "/" + inputs.subProject }}'
@@ -85,17 +83,17 @@ jobs:
             name: check
         dependsOn:
           - step: install
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: test
         description: "composer test, the full suite (skipped when check failed or this key has a result)"
         guard: >-
-          ${{ data.latest("composer", "script-" + inputs.key + "-test").?attributes.?command.orValue("") != "" || !data.latest("composer", "script-" + inputs.key + "-check").attributes.passed }}
+          ${{ data.latest("composer-" + inputs.workItem, "script-" + inputs.key + "-test").?attributes.?command.orValue("") != "" || !data.latest("composer-" + inputs.workItem, "script-" + inputs.key + "-check").attributes.passed }}
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
+          modelName: '${{ "composer-" + inputs.workItem }}'
           methodName: script
           inputs:
             dir: '${{ inputs.worktree + "/" + inputs.subProject }}'

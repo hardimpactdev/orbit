@@ -56,14 +56,19 @@ jobs:
         description: "the reviewer (Claude via agent-runner) answers"
         task:
           type: model_method
-          modelIdOrName: agent-claude
+          modelType: "@swamp/agent-runner"
+          modelName: '${{ "agent-claude-" + inputs.workItem }}'
           methodName: run
           inputs:
+            provider: claude
+            version: 2.1.292
+            auth: cli
+            defaultModel: claude-opus-5-5
             prompt: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.text }}'
             readOnly: true
         dependsOn:
           - step: prompt
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: report

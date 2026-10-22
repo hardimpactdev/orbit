@@ -54,21 +54,19 @@ jobs:
         weight: 0
         allowFailure: false
       - name: install
-        description: "composer install in every Composer project (checks read across them)"
-        forEach:
-          item: dir
-          in: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
+        description: "composer install in every Composer project, one fan-out execution"
         task:
           type: model_method
           modelType: "@nckrtl/composer"
-          modelName: composer
-          methodName: install
+          modelName: '${{ "composer-" + inputs.workItem }}'
+          methodName: install_all
           inputs:
-            dir: '${{ inputs.worktree + "/" + self.dir }}'
+            root: '${{ inputs.worktree }}'
+            dirs: '${{ [".", "apps/cli", "apps/docs", "apps/gateway", "apps/e2e", "packages/php-sdk"] }}'
             key: '${{ inputs.key }}'
         dependsOn:
           - step: worktree
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: committed
@@ -85,12 +83,12 @@ jobs:
             planCommit: '${{ inputs.planCommit }}'
         dependsOn:
           - step: install
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: discard
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "implement", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelIdOrName: orbit-stage
@@ -104,12 +102,12 @@ jobs:
             planCommit: '${{ inputs.planCommit }}'
         dependsOn:
           - step: committed
-            condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: prompt
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "implement", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelIdOrName: orbit-stage
@@ -124,17 +122,22 @@ jobs:
         dependsOn:
           - step: discard
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+          - step: committed
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: agent
         description: "one Codex turn via CLIProxyAPI (agent-runner run_codex)"
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "implement", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
-          modelIdOrName: agent-codex
+          modelType: "@swamp/agent-runner"
+          modelName: '${{ "agent-codex-" + inputs.workItem }}'
           methodName: run_codex
           inputs:
+            provider: codex
+            version: 0.146.0
             key: '${{ inputs.key }}'
             prompt: '${{ data.latest("orbit-stage", "prompt-" + inputs.key).attributes.text }}'
             cwd: '${{ inputs.worktree }}'
@@ -145,11 +148,13 @@ jobs:
         dependsOn:
           - step: prompt
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+          - step: committed
+            condition: { type: succeeded }
         weight: 0
         allowFailure: false
       - name: commit
         guard: >-
-          ${{ data.latest("orbit-stage", "committed-" + inputs.key).?attributes.?commit.orValue(null) != null }}
+          ${{ model.method("orbit-stage", "committed", {"workItem": inputs.workItem, "stage": "implement", "key": inputs.key, "worktree": inputs.worktree, "subProject": inputs.subProject, "planCommit": inputs.planCommit}).dataHandles[0].?attributes.?commit.orValue(null) != null }}
         task:
           type: model_method
           modelType: "@swamp/git"
@@ -162,6 +167,8 @@ jobs:
         dependsOn:
           - step: agent
             condition: { type: or, conditions: [{ type: succeeded }, { type: skipped }] }
+          - step: committed
+            condition: { type: succeeded }
         weight: 0
         allowFailure: true
       - name: report

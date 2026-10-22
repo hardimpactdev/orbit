@@ -69,6 +69,25 @@ export const behavior = {
         return { dataHandles: [h] };
       },
     },
+    install_all: {
+      description: "composer install in several directories in one execution (one lock, not one per directory)",
+      arguments: z.object({ root: z.string(), dirs: z.array(z.string()), key: z.string() }),
+      execute: async (args: { root: string; dirs: string[]; key: string }, ctx: Ctx) => {
+        const results = await Promise.all(args.dirs.map(async (d) => {
+          const dir = d === "." ? args.root : `${args.root}/${d}`;
+          return { dir, ...(await composer(dir, ["install", "--no-progress", "-q"], ctx.signal)) };
+        }));
+        const failed = results.filter((r) => r.exitCode !== 0);
+        if (failed.length > 0) {
+          throw new Error(failed.map((r) => `composer install in ${r.dir} failed:\n${tail(r.output, 2000)}`).join("\n"));
+        }
+        const h = await ctx.writeResource("result", `install-${args.key}`, {
+          dir: args.root, command: `install ${args.dirs.join(" ")}`, exitCode: 0, passed: true,
+          outputTail: "", durationMs: Math.max(...results.map((r) => r.durationMs)),
+        });
+        return { dataHandles: [h] };
+      },
+    },
     update: {
       description: "composer update within the declared constraints; records every locked package that moved",
       arguments: z.object({ dir: z.string(), key: z.string() }),

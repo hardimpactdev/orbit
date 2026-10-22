@@ -236,7 +236,11 @@ export const behavior = {
           return { dataHandles: [h] };
         }
 
-        const comp = (n: string) => one(ctx, `modelName == "${ctx.globalArgs.composer}" && name == "${n}"`);
+        // One Composer definition per work item (composer-<workItem>) avoids the
+        // per-definition lock; runs from before that change used the shared one.
+        const comp = async (n: string) =>
+          (await one(ctx, `modelName == "composer-${a.workItem}" && name == "${n}"`)) ??
+            (await one(ctx, `modelName == "${ctx.globalArgs.composer}" && name == "${n}"`));
         const artifacts: Record<string, Record<string, unknown>> = {};
         const evidence: Record<string, unknown> = { status: "failed", runId: a.runId };
 
@@ -272,7 +276,8 @@ export const behavior = {
           };
           if (!failed) artifacts["candidate"] = { commit: head, diffstat };
         } else if (a.stage === "implement") {
-          const run = (await one(ctx, `modelName == "agent-codex" && name == "run-${a.key}"`))?.attributes;
+          const run = ((await one(ctx, `modelName == "agent-codex-${a.workItem}" && name == "run-${a.key}"`)) ??
+            (await one(ctx, `modelName == "agent-codex" && name == "run-${a.key}"`)))?.attributes;
           const commit = await committedFor(ctx, a);
           const o = run ? implementOutcome(String(run.output)) : { outcome: "error" as const, text: "no agent output" };
           const outcome = run && Number(run.exitCode) !== 0 ? "error" : o.outcome;
@@ -284,7 +289,7 @@ export const behavior = {
             ...(outcome === "blocked" ? { question: o.text } : { summary: o.text }),
           };
         } else if (a.stage === "consult") {
-          const run = ((await ctx.queryData(`modelName == "agent-claude" && specName == "runResult" && workflowRunId == "${a.runId}"`)) as Rec[])[0]?.attributes;
+          const run = ((await ctx.queryData(`modelType == "@swamp/agent-runner" && specName == "runResult" && workflowRunId == "${a.runId}"`)) as Rec[])[0]?.attributes;
           const j = run ? firstJson(String(run.output)) : null;
           const q = (await envelope(ctx, a.workItem, "change-summary"))?.payload.question;
           if (j && typeof j.answer === "string") {
@@ -292,7 +297,7 @@ export const behavior = {
             artifacts["consult-answer"] = { question: String(q ?? ""), answer: j.answer, needsPerson: j.needsPerson === true };
           }
         } else if (a.stage === "review") {
-          const rv = ((await ctx.queryData(`modelName == "agent-claude" && specName == "reviewResult" && workflowRunId == "${a.runId}"`)) as Rec[])[0]?.attributes;
+          const rv = ((await ctx.queryData(`modelType == "@swamp/agent-runner" && specName == "reviewResult" && workflowRunId == "${a.runId}"`)) as Rec[])[0]?.attributes;
           if (rv) {
             evidence.status = "succeeded";
             artifacts["code-review"] = { summary: String(rv.body ?? ""), findings: toFactoryFindings((rv.findings ?? []) as never[]) };
