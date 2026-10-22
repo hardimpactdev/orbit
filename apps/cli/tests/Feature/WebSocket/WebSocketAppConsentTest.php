@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Support\Console\TerminalText;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Instances\UnsetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
 use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
 use Symfony\Component\Process\Process;
@@ -60,18 +59,6 @@ it('requires affirmative consent and restores the terminal before returning', fu
         new Filesystem()->deleteDirectory($directory);
     }
 })->with([
-    'remove path proxy' => [[
-        'arguments' => ['instance:path-proxy:unset', '--instance=71'],
-        'prompt' => 'Remove the path proxy from Instance [71]?',
-        'question' => 'Remove the path proxy from Instance [71]? Its public endpoint stops serving the Process.',
-        'endpoint' => '/api/v1/instances/71/path-proxy',
-        'success' => 'Path proxy removed.',
-        'cancelled' => 'Path proxy removal cancelled.',
-        'replies' => [[
-            'class' => UnsetInstancePathProxyRequest::class,
-            'body' => ['data' => ['instance_id' => 71], 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']],
-        ]],
-    ]],
     'destroy app' => [[
         'arguments' => ['websocket:app:destroy', 'hauzer'],
         'prompt' => 'Destroy WebSocket app [hauzer]?',

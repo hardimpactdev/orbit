@@ -902,36 +902,6 @@ orbit instance:dependencies:update [--project=DOMAIN] [--json]
 
 See [Update a development Instance](/reference/instance-dependencies#update-a-development-instance) for the steps it runs.
 
-## orbit instance:path-proxy:set
-
-Reserve a prefix on the Instance's existing public app Route and proxy it to a WireGuard-only Docker Process. See [path proxy requirements and recovery](/reference/routes#publish-a-process-under-an-app-path). These commands support `--json`.
-
-```bash
-orbit instance:path-proxy:set --instance=hauzer.app --process=123 --port=8080 [--prefix=/powersync] [--json]
-```
-
-`--instance` accepts a positive Instance ID or exact Route domain. `--process` is the Node-owned Docker Process ID. `--port` is its exact TCP published port bound to the Node's WireGuard address. `--prefix` defaults to `/powersync` and selects one lowercase top-level segment. The result includes the public endpoint. Repeat set to change or repair the publication. The command changes no environment values.
-
-## orbit instance:path-proxy:show
-
-Read the Instance's stored path proxy, including its endpoint and whether publication is enabled.
-
-```bash
-orbit instance:path-proxy:show --instance=hauzer.app [--json]
-```
-
-`--instance` accepts a positive Instance ID or exact Route domain. A missing proxy returns `path_proxy.missing`.
-
-## orbit instance:path-proxy:unset
-
-Withdraw the handler and keep the app Route and Process.
-
-```bash
-orbit instance:path-proxy:unset --instance=hauzer.app [--force] [--json]
-```
-
-`--instance` accepts a positive Instance ID or exact Route domain. `--force` skips the default-No confirmation. JSON and noninteractive calls require `--force`, or return `path_proxy.confirmation_required`. Retry a failed removal to finish its Caddy builds.
-
 ## Related
 
 - [`project`](/cli/project) owns the repository and source defaults that an Instance inherits.

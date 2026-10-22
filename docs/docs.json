@@ -432,9 +432,6 @@
               "DELETE /api/v1/instances/{instance}/log-streams/{stream}",
               "PUT /api/v1/instances/{instance}/log-streams/{stream}",
               "GET /api/v1/instances/{instance}/logs",
-              "DELETE /api/v1/instances/{instance}/path-proxy",
-              "GET /api/v1/instances/{instance}/path-proxy",
-              "PUT /api/v1/instances/{instance}/path-proxy",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
               "POST /api/v1/instances/{instance}/rename",
@@ -1641,7 +1638,7 @@
     },
     {
       "source": "/decisions/0231-publish-a-process-under-an-app-route-path",
-      "destination": "/reference/routes#a-process-shares-the-app-domain-through-one-reserved-path"
+      "destination": "/reference/routes#a-service-owns-its-hostname"
     }
   ]
 }

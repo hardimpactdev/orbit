@@ -18,6 +18,8 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 `websocket:app:destroy` and `instance:websocket:remove` use `--force` for destructive consent, like their Database siblings. Their default-No prompts name the app and the effect. JSON and non-interactive calls without `--force` return `websocket.confirmation_required`. See [Reverb app commands](/cli/websocket).
 
+When removing a command, remove its response fixtures and CLI replay tests together. `bin/cli-contract --changed` accepts that retirement. A remaining fixture without a replay still fails; a replay that uses a deleted fixture still runs and fails.
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.

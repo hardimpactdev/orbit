@@ -92,7 +92,7 @@ class ProductionRouteInspectionTest(unittest.TestCase):
         os.symlink(self.release, f'{self.home}/current')
         with open(f'{self.release}/artisan', 'w') as handle:
             handle.write('<?php file_put_contents("booted", "yes"); echo "[]";')
-        self.payload = {'inspection': 'laravel_routes', 'prefixes': ['/app', '/apps'], 'home': self.home,
+        self.payload = {'inspection': 'laravel_routes', 'home': self.home,
                         'application': f'{self.home}/current', 'php': shutil.which('php')}
 
     def test_refuses_a_current_link_outside_releases_without_booting_the_application(self):
@@ -110,18 +110,14 @@ class ProductionRouteInspectionTest(unittest.TestCase):
         self.assertEqual((outcome, data), ('path_mismatch', {}))
         self.assertFalse(os.path.exists(f'{self.release}/booted'))
 
-    def test_checks_the_selected_path_prefix_without_reserving_a_sibling(self):
-        for uri, collision in [('powersync/sync/stream', True), ('PowerSync/write-checkpoint2.json', True),
-                               ('power{suffix}', True), ('powersync{suffix?}', True),
-                               ('{prefix}sync', True), ('pow{middle}sync', True),
-                               ('powersync.{format?}', True), ('power{one}{two}', True),
-                               ('power{suffix}-other', False), ('power.sync', False),
-                               ('powersync-other', False), ('app/id', False), ('{page?}', True),
-                               ('{fallbackPlaceholder}', False)]:
+    def test_reserves_only_reverb_paths_and_leaves_service_paths_to_the_application(self):
+        for uri, collision in [('app/id', True), ('APPS/id', True), ('{page?}', True),
+                               ('powersync/sync/stream', False), ('power{suffix}', False),
+                               ('app-other', False), ('application', False), ('{fallbackPlaceholder}', False)]:
             with self.subTest(uri=uri):
                 with open(f'{self.release}/artisan', 'w') as handle:
                     handle.write('<?php echo json_encode([["uri" => "' + uri + '"]]);')
-                outcome, data = result('instances.inspect-source', {**self.payload, 'prefixes': ['/powersync']})
+                outcome, data = result('instances.inspect-source', self.payload)
                 self.assertEqual((outcome, data), ('routes_inspected', {'collision': collision}))
 
     def test_checks_parameters_inside_the_reverb_path_segments(self):

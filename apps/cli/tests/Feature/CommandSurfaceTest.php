@@ -128,9 +128,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:destroy',
         'instance:list',
         'instance:logs',
-        'instance:path-proxy:set',
-        'instance:path-proxy:show',
-        'instance:path-proxy:unset',
         'instance:register',
         'instance:release:list',
         'instance:rename',
@@ -828,9 +825,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name' => null, 'sqlite-source-path' => null, 'force' => false, 'json' => false],
         ],
         'instance:update' => [['instance'], ['branch' => null, 'shared-paths' => null, 'auto-deploy' => null, 'json' => false]],
-        'instance:path-proxy:set' => [[], ['instance' => null, 'process' => null, 'port' => null, 'prefix' => '/powersync', 'json' => false]],
-        'instance:path-proxy:show' => [[], ['instance' => null, 'json' => false]],
-        'instance:path-proxy:unset' => [[], ['instance' => null, 'force' => false, 'json' => false]],
         'instance:websocket:add' => [['app'], ['instance' => null, 'public' => false, 'json' => false]],
         'instance:websocket:remove' => [['app'], ['instance' => null, 'force' => false, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
@@ -1285,9 +1279,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ...$profileMissing,
         ],
         'instance:update' => [['instance' => '1', '--branch' => 'main'], ...$profileMissing],
-        'instance:path-proxy:set' => [['--instance' => '71', '--process' => '123', '--port' => '8080'], ...$profileMissing],
-        'instance:path-proxy:show' => [['--instance' => '71'], ...$profileMissing],
-        'instance:path-proxy:unset' => [['--instance' => '71', '--force' => true], ...$profileMissing],
         'instance:websocket:add' => [['--instance' => '12', 'app' => 'hauzer'], ...$profileMissing],
         'instance:websocket:remove' => [['--instance' => '12', 'app' => 'hauzer', '--force' => true], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
@@ -1584,3 +1575,7 @@ it('refuses a malformed lifecycle rebalance before contacting the Gateway', func
         ->expectsOutputToContain('lifecycle_step.rebalance_invalid')
         ->assertFailed();
 })->with(['instance:setup-step:create', 'instance:teardown-step:update'])->with(['build-assets', 'build-assets=slow', '=360']);
+
+it('does not register removed Instance path proxy commands', function (string $operation): void {
+    expect(app(Kernel::class)->all())->not->toHaveKey('instance:path-proxy:'.$operation);
+})->with(['set', 'show', 'unset']);

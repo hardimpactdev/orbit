@@ -6,7 +6,6 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\PathProxy;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -15,10 +14,8 @@ use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Instance;
-use App\Models\InstancePathProxy;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -199,20 +196,6 @@ final readonly class DevelopmentSiteRepository
             $binding = $bindings->first(static fn ($target): bool => $target->route?->domain === $site->domain);
 
             return $binding === null ? $site : $site->withWebSocket($binding->webSocketApp->key, $binding->webSocketApp->pusherId());
-        });
-        $proxies = InstancePathProxy::query()->with(['route', 'process.owner'])->where('enabled', true)->get();
-        $sites = $sites->map(static function (DevelopmentSite $site) use ($proxies): DevelopmentSite {
-            $proxy = $proxies->first(static fn (InstancePathProxy $proxy): bool => $proxy->route->domain === $site->domain);
-            if ($proxy === null) {
-                return $site;
-            }
-            try {
-                $upstream = PathProxy::upstream($proxy->process, $proxy->port);
-            } catch (ResourceOperationException) {
-                $upstream = null;
-            }
-
-            return $site->withPathProxy($proxy->prefix, $upstream);
         });
         $sites = $this->withoutDuplicateSecondarySites($sites);
 

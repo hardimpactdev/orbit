@@ -185,7 +185,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
      */
     private function forwardingTargets(DevelopmentSite $site): array
     {
-        $targets = $site->pathProxyUpstream === null ? [] : [$site->pathProxyUpstream];
+        $targets = [];
 
         foreach ($site->proxyAddresses() as $address) {
             if (str_starts_with($address, 'unix/')) {

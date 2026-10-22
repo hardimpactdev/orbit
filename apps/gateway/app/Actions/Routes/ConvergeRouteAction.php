@@ -12,7 +12,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\PathProxy;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
@@ -67,7 +66,6 @@ final readonly class ConvergeRouteAction
 
         if ($domain !== $route->domain || ($publication !== null && $publication !== $route->publication)) {
             WebSocketRouteSelection::assertMutable($route);
-            PathProxy::assertRouteMutable($route);
         }
         $domain = RouteDomain::validate($domain);
         $targetIds = $this->targetIds($route);

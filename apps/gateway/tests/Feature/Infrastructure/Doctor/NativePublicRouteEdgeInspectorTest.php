@@ -24,7 +24,6 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
-use App\Models\InstancePathProxy;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -70,25 +69,6 @@ describe('a separate Ingress', function (): void {
 
         expect(public_edge_observe($this))->toBe([true, true, true])
             ->and(public_edge_forwarding($this))->toBeTrue();
-    });
-
-    it('checks the path proxy upstream from the Ingress as well as the Router', function (): void {
-        $listener = public_edge_listener();
-        $port = (int) substr((string) stream_socket_get_name($listener, false), strlen('127.0.0.1:'));
-        $services = Node::query()->create(['name' => 'path-service', 'wireguard_ip' => '127.0.0.1', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
-        $process = $services->processes()->create(['name' => 'powersync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['127.0.0.1:'.$port.':80']], 'status' => LifecycleStatus::Active]);
-        InstancePathProxy::query()->create(['instance_id' => $this->route->targets()->sole()->instance_id, 'route_id' => $this->route->id, 'process_id' => $process->id, 'port' => $port, 'prefix' => '/powersync', 'enabled' => true]);
-        try {
-            public_edge_publish($this->caddy, $this->ingress);
-            expect(public_edge_forwarding($this))->toBeTrue();
-            fclose($listener);
-            $listener = null;
-            expect(public_edge_forwarding($this))->toBeFalse();
-        } finally {
-            if (is_resource($listener)) {
-                fclose($listener);
-            }
-        }
     });
 
     it('reports a Router address that the Ingress cannot reach', function (): void {

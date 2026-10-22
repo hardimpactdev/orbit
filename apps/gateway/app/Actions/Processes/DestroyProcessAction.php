@@ -6,7 +6,6 @@ namespace App\Actions\Processes;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Instances\PathProxy;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRemovalGuard;
@@ -44,7 +43,6 @@ final readonly class DestroyProcessAction
     public function execute(#[SensitiveParameter] Process $process, bool $removedByOwningRole = false): Process
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
-            PathProxy::assertProcessMutable($fresh);
             if (! $removedByOwningRole) {
                 foreach ($this->guards as $guard) {
                     $guard->assertRemovable($fresh);
