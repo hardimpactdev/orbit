@@ -48,15 +48,6 @@ final readonly class TaskScheduler
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
 
-    /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
-    public const string PiServerRestartError = 'The Pi server restarted during the turn.';
-
-    /** One continue, on the same thread, after that restart. It does not ask for assistance. */
-    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
-
-    /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
-    public const int PiServerRestartResumeLimit = 2;
-
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -388,31 +379,6 @@ final readonly class TaskScheduler
     public function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
         $this->consults->requestAssistance($task, $group, $reason, $observation, $kind, $question, $handled, $source);
-    }
-
-    /**
-     * Clears successful provider retries and reconciles pending Pi restart resumes from the acting thread (ADR 0167).
-     * An accepted key is not sent again. A different turn does not reuse it either.
-     */
-    public function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
-    {
-        $this->consults->reconcilePiRestart($task, $acting);
-    }
-
-    /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
-    public function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
-    {
-        return $this->consults->retryProviderFailure($task, $group, $acting);
-    }
-
-    /**
-     * Resumes a Pi turn that failed only because the server restarted (ADR 0167).
-     *
-     * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
-     */
-    public function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
-    {
-        return $this->consults->resumePiServerRestart($task, $group, $acting);
     }
 
     public function clearUnavailable(Task $group): void

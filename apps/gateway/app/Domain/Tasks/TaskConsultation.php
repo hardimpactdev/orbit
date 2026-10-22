@@ -13,20 +13,12 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class TaskConsultation
 {
-    private const string PiRestartPending = 'pending';
-
-    private const string PiRestartAccepted = 'accepted';
-
-    private const string PiRestartSuperseded = 'superseded';
-
     public function __construct(
         private TaskSubtaskRunner $runner,
         private AgentSpawner $spawner,
@@ -462,12 +454,9 @@ final readonly class TaskConsultation
         if ($reviewer === null || $this->isWorking($reviewer)) {
             return;
         }
-        $this->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if (! $this->retryProviderFailure($task, $group, $reviewer) && $this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
-                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation, AssistanceKind::Failure);
-            }
+            $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation, AssistanceKind::Failure);
 
             return;
         }
@@ -859,165 +848,6 @@ final readonly class TaskConsultation
                 }
             }
         });
-    }
-
-    /**
-     * Clears successful provider retries and reconciles pending Pi restart resumes from the acting thread (ADR 0167).
-     * An accepted key is not sent again. A different turn does not reuse it either.
-     */
-    public function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
-    {
-        $retry = $task->provider_retry;
-        if ($retry !== null && $retry['thread_id'] === $acting->threadId) {
-            if ($acting->sessState === AgentThreadState::Done->value || $acting->sessState === AgentThreadState::Idle->value) {
-                $task->update(['provider_retry' => null]);
-            } elseif (is_string($acting->turnId) && $acting->turnId !== '' && $acting->turnId === $task->pi_restart_key) {
-                // A server restart during a provider retry must not buy a fresh budget.
-                $task->update(['provider_retry' => [...$retry, 'key' => $acting->turnId]]);
-            }
-        }
-        if ($task->pi_restart_reservation !== self::PiRestartPending || (int) $task->pi_restart_thread_id !== $acting->threadId) {
-            return;
-        }
-        $turnId = $acting->turnId;
-        if (! is_string($turnId) || $turnId === '') {
-            return;
-        }
-        if ($turnId === $task->pi_restart_key) {
-            $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
-
-            return;
-        }
-        if ($turnId !== $task->pi_restart_source_turn_id) {
-            $task->update(['pi_restart_reservation' => self::PiRestartSuperseded]);
-        }
-    }
-
-    /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
-    public function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
-    {
-        TaskGroupGuard::requireTick($group);
-        if (! in_array($acting->providerError, ['overloaded', 'rate_limited', 'server_error'], true)
-            || ! is_string($acting->turnId) || $acting->turnId === ''
-            || AgentThread::query()->find($acting->threadId)?->driver !== 'pi') {
-            return false;
-        }
-
-        $retry = $task->provider_retry;
-        if ($retry !== null && ($retry['thread_id'] !== $acting->threadId
-            || ! in_array($acting->turnId, [$retry['source_turn_id'], $retry['key']], true))) {
-            $retry = null;
-        }
-        if ($retry === null || $acting->turnId !== $retry['source_turn_id']) {
-            $history = $retry['history'] ?? [];
-            $attempt = count($history) + 1;
-            if ($attempt > 4) {
-                $this->requestAssistance($task, $group, "Provider retries exhausted after 4 retries.\n"
-                    .implode("\n", $history)."\nFinal failure: turn {$acting->turnId}, {$acting->providerError}.");
-
-                return true;
-            }
-            $due = now()->addMinutes(2 ** ($attempt - 1))->toIso8601String();
-            $entry = "Provider retry {$attempt}/4: {$acting->role->value} turn {$acting->turnId}, {$acting->providerError}; due {$due}.";
-            $retry = [
-                'thread_id' => $acting->threadId, 'source_turn_id' => $acting->turnId,
-                'key' => (string) Str::uuid(), 'due_at' => $due, 'history' => [...$history, $entry],
-            ];
-            DB::transaction(function () use ($task, $group, $acting, $retry, $entry): void {
-                $task->update(['provider_retry' => $retry]);
-                TaskComment::query()->create([
-                    'task_group_id' => $group->id, 'task_id' => $task->id, 'agent_thread_id' => $acting->threadId,
-                    'type' => TaskCommentType::ProviderRetry, 'body' => $entry, 'author' => 'orbit', 'posted_at' => now(),
-                ]);
-            });
-        }
-        if (now()->lt(Carbon::parse($retry['due_at']))) {
-            return true;
-        }
-        $thread = AgentThread::query()->findOrFail($acting->threadId);
-        app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $acting, $thread, $retry): void {
-            if (! app(TaskWorkspaceLease::class)->retrying($thread, $retry['key'])) {
-                app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
-                $this->turnFetcher->beforeTurn($group);
-            }
-        });
-        try {
-            $this->actor->resumeInterruptedTurn($group, $acting,
-                'Your previous turn failed because of a transient provider error. Continue the same assignment from the existing workspace. Check git status and git diff before continuing, and hand off with the turn command.',
-                $retry['key']);
-        } catch (AgentDriverException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return true;
-        }
-        $this->clearCommunicationFailures($task);
-
-        return true;
-    }
-
-    /**
-     * Resumes a Pi turn that failed only because the server restarted (ADR 0167).
-     *
-     * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
-     */
-    public function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
-    {
-        TaskGroupGuard::requireTick($group);
-        $record = AgentThread::query()->find($acting->threadId);
-        if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
-            return 'skip';
-        }
-        if (! is_string($acting->turnId) || $acting->turnId === '') {
-            return 'skip';
-        }
-        if ($task->pi_restart_reservation === self::PiRestartPending
-            && (int) $task->pi_restart_thread_id === $acting->threadId
-            && $acting->turnId === $task->pi_restart_source_turn_id
-            && is_string($task->pi_restart_key)
-            && $task->pi_restart_key !== '') {
-            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
-
-            return 'handled';
-        }
-        if ((int) $task->pi_restart_resumes >= TaskScheduler::PiServerRestartResumeLimit) {
-            return 'assist';
-        }
-        $key = (string) Str::uuid();
-        $task->update([
-            'pi_restart_resumes' => (int) $task->pi_restart_resumes + 1,
-            'pi_restart_key' => $key,
-            'pi_restart_thread_id' => $acting->threadId,
-            'pi_restart_source_turn_id' => $acting->turnId,
-            'pi_restart_reservation' => self::PiRestartPending,
-        ]);
-        $this->sendPiRestartResume($task, $group, $acting, $key);
-
-        return 'handled';
-    }
-
-    /** Only Pi restart failures can resume a task-agent turn. */
-    private function isServerRestartError(string $driver, ?string $error): bool
-    {
-        return $driver === 'pi' && $error === TaskScheduler::PiServerRestartError;
-    }
-
-    private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
-    {
-        $thread = AgentThread::query()->findOrFail($acting->threadId);
-        app(TaskWorkspaceLease::class)->withThreadLock($thread, function () use ($group, $acting, $thread, $key): void {
-            if (! app(TaskWorkspaceLease::class)->retrying($thread, $key)) {
-                app(TaskWorkspaceLease::class)->turn($group, $acting->role, 'thread:'.$acting->threadId, $acting->threadId);
-                $this->turnFetcher->beforeTurn($group);
-            }
-        });
-        try {
-            $this->actor->resumeInterruptedTurn($group, $acting, TaskScheduler::PiServerRestartContinue, $key);
-        } catch (AgentDriverException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        $this->clearCommunicationFailures($task);
     }
 
     /** The reviewer thread for this subtask, preferring the one the group currently points at. */

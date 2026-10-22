@@ -107,7 +107,7 @@ A task moves through these statuses from preparation to its end.
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
 
-An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, server-restart resume, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves the latest reviewed, unpublished head on origin; a failed push keeps the VM and requests removal assistance. A stopped VM also stays while that push is unconfirmed.
+An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves the latest reviewed, unpublished head on origin; a failed push keeps the VM and requests removal assistance. A stopped VM also stays while that push is unconfirmed.
 
 The Gateway keeps task checks and their stored output, consumed turn receipts as comments, other comments, approval records, and Activity after workspace removal. [Readable agent transcripts](#archive-finished-threads) are copied before a ready VM is deleted. Unconsumed receipt files, raw VM logs, approved commits that no final review approved in review-and-merge groups, other unpublished Git objects, uncommitted edits, and unreadable transcripts are not durable Gateway evidence and go with the VM.
 
@@ -796,7 +796,7 @@ Each attempt gets one reminder for rubric failures other than a failed handoff c
 
 Failed handoff checks have a separate budget per subtask. The first three consecutive failures each send a reminder with the exit code and the end of the output. The fourth asks for assistance. A passing handoff check resets the count. Baseline checks and other rubric failures keep their own rules.
 
-An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A reviewer's `blocked` receipt asks for direction at once, with the summary and the question as the reason. A `failed` acting thread asks for assistance at once, unless it is a [server restart](#recover-a-pi-server-restart).
+An implementer's `blocked` receipt starts a [consult](#consult-the-reviewer). A reviewer's `blocked` receipt asks for direction at once, with the summary and the question as the reason. A `failed` acting thread asks for assistance at once.
 
 A failed read, send, commit, push, or script install is a communication failure. The tick retries it and moves on to other subtasks. The fifth consecutive failure asks for assistance with the last error.
 
@@ -913,29 +913,11 @@ A resolution posted while nothing is asked is stored and not sent. Every comment
 
 ### Retry a transient provider error
 
-When Pi reports a transient provider failure, Orbit retries the interrupted work on the same thread, in the same workspace and role. It waits 1, 2, 4, then 8 minutes before each of at most four retries. The scheduler does not sleep; it sends the retry on the first tick after the delay. Implementer, reviewer, final-review, and consult turns use this rule.
+Pi Durable retries transient provider errors inside the same turn, workspace, and role. It waits 1, 2, 4, then 8 minutes before each of at most four retries. Durable stores the deadline and resumes the sleep after restart. The Gateway tick never sends provider retries for the `pi` driver. Implementer, reviewer, final-review, and consult turns use this rule.
 
-Pi classifies only the assistant's provider-error stop reason, never tool output or the agent's prose. Structured provider codes for overload, rate limiting, and HTTP 429 or 5xx take precedence. When Pi only preserves a provider message, it accepts a narrow set of capacity messages. Authentication, exhausted quota, refusals, output limits, tool errors, and check failures are not retried. Older Pi servers without the classification keep the ordinary failure path.
+Pi classifies only the assistant's provider-error stop reason, never tool output or the agent's prose. Structured provider codes for overload, rate limiting, and HTTP 429 or 5xx take precedence. Authentication, exhausted quota, refusals, output limits, tool errors, and check failures are not retried. While waiting, the thread stays `working`; its state includes the attempt, provider category, and due time so the board can show the wait. Retry attempts remain in the transcript. After the fourth retry fails, the thread ends `failed` with its provider category and Orbit asks for failure assistance. No retry reads a handoff receipt or advances the subtask.
 
-Each reserved retry posts a `provider_retry` comment with its attempt number, provider category, failed turn ID, and due time. The reservation and comment commit together before the send. Retries use a durable send key, so a lost response resends the same key without consuming another attempt. A new unrelated turn or a successful turn starts a fresh retry budget; repeated failures of the retry turn share the original budget. A server-restart resume does not reset that budget.
-
-After the fourth retry fails, Orbit asks for failure assistance as usual, with the failed turn IDs, categories, and retry times in the reason. It does not ask for assistance while waiting for provider capacity. Communication failures while sending a retry still use the existing communication-failure assistance policy. No retry reads a handoff receipt or advances the subtask.
-
-### Recover a Pi server restart
-
-A turn that failed only because its agent server restarted is not a failed subtask. The tick resumes it on the same thread with one message: `Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.` It does not ask for assistance and does not read a receipt first.
-
-| Driver | Restart errors |
-| --- | --- |
-| `pi` | `The Pi server restarted during the turn.` |
-
-One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` A restart error without a turn id asks for assistance at once. Other errors follow [provider retry](#retry-a-transient-provider-error) or ask for assistance at once.
-
-The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, and the interrupted turn id, and it counts the resume. The Pi driver sends that key.
-
-The tick repeats the same key only while the reservation is pending and the thread still shows the interrupted turn. A repeated key starts no second turn.
-
-A Pi thread whose turn id is the key has accepted the reservation. A thread that shows another turn supersedes the reservation. A reservation made for one role is never sent to the other.
+A Pi server restart resumes the same Durable turn. The thread stays `working`; the Gateway sends no replacement turn and holds no restart-resume reservation. A task parked after Durable's restart limit ends `failed` and asks for assistance. See [Pi server restarts](/reference/pi-server#restarts).
 
 ## Project check
 

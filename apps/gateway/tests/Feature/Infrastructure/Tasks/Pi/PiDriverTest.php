@@ -327,7 +327,20 @@ describe('transcript and observation', function (): void {
         expect($observation->state)->toBe(AgentThreadState::Failed)->and($observation->error)->toBe('quota exceeded');
     });
 
-    it('carries only recognized provider classifications on failed turns', function (string $state, ?string $category, ?string $expected): void {
+    it('shows a Durable provider retry wait on a working thread', function (): void {
+        $notice = 'Waiting for provider retry 2/4 (overloaded) at 2026-10-22T15:00:00Z.';
+        Http::fake([PI_BASE.'/sessions/session-1*' => Http::response([
+            ...pi_snapshot('working', error: $notice), 'providerError' => 'overloaded',
+        ])]);
+
+        $observation = pi_driver()->read(pi_thread(pi_node()), null);
+
+        expect($observation->state)->toBe(AgentThreadState::Working)
+            ->and($observation->toArray()['error'])->toBe($notice)
+            ->and($observation->providerError)->toBe('overloaded');
+    });
+
+    it('carries only recognized provider classifications on failed and retrying turns', function (string $state, ?string $category, ?string $expected): void {
         Http::fake([PI_BASE.'/sessions/session-1*' => Http::response([
             ...pi_snapshot($state, error: 'Provider failure'), 'providerError' => $category,
         ])]);
@@ -336,6 +349,7 @@ describe('transcript and observation', function (): void {
 
         expect($observation->providerError)->toBe($expected);
     })->with([
+        ['working', 'overloaded', 'overloaded'],
         ['failed', 'overloaded', 'overloaded'],
         ['failed', 'rate_limited', 'rate_limited'],
         ['failed', 'server_error', 'server_error'],

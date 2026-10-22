@@ -2545,23 +2545,21 @@ it('asks for a failure when the consult reviewer thread fails', function (): voi
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
 });
 
-it('resumes a consult reviewer after a server restart', function (): void {
+it('asks for assistance when a consult reviewer reports a terminal restart failure', function (): void {
     [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
         FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
     ]);
 
     app(TaskScheduler::class)->tick();
     $state->reviewer = 'error';
-    $state->reviewerError = TaskScheduler::PiServerRestartError;
+    $state->reviewerError = 'The Pi server restarted during the turn.';
 
     app(TaskScheduler::class)->tick();
 
-    $resume = tick_reviewer_starts($dispatcher)[1] ?? null;
-    expect($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
-        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
-        ->and($resume['message']['text'] ?? null)->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
-        ->and($resume['commandId'] ?? null)->toBe($task->fresh()?->pi_restart_key)
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
+        ->and(tick_reviewer_starts($dispatcher))->toHaveCount(1)
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
 });
 
