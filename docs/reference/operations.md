@@ -29,9 +29,9 @@ Every operation has the same fields, whatever its kind.
 | `kind` | What runs, `<family>.<verb>`, such as `instance.deploy` |
 | `target_type`, `target_id` | The record the operation changes, such as `instance` and `15` |
 | `input` | The validated request body. `instance.deploy` takes `{}`, and `instance.rollback` takes `{ release }` |
-| `status` | `queued`, `running`, `succeeded`, `failed`, or `cancelled`. The last three are terminal and never change again |
+| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. The last three are terminal and never change again |
 | `sequence` | A number that grows with every change of the operation or one of its steps |
-| `current_step` | The name of the running step, or null |
+| `current_step` | The name of the running or waiting step, or null |
 | `failed_step`, `error_code` | For a failed operation, the step that ended it and its error code. `failed_step` is null when the operation failed outside a step |
 | `result` | What the operation produced, or null until it ends |
 | `cancel_requested` | Whether someone asked the operation to stop |
@@ -48,7 +48,7 @@ A cancelled operation has an `error_code` only when a rollback superseded it: `o
 | --- | --- |
 | `name` | Unique within the operation, such as `source_preparation` or `before_activation.migrate` |
 | `position` | The step's place, from 1 |
-| `status` | `pending`, `running`, `succeeded`, `failed`, or `cancelled` |
+| `status` | `pending`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled` |
 | `resumable` | Whether the step may run again after a lost worker |
 | `sequence` | The operation's `sequence` when this step last changed |
 | `started_at`, `finished_at` | ISO 8601 times, or null |
@@ -115,7 +115,7 @@ The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([
 
 | Filter | Contract |
 | --- | --- |
-| `status` | `queued`, `running`, `succeeded`, `failed`, or `cancelled` |
+| `status` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled` |
 | `kind` | Two names joined by `.`, `<family>.<verb>`, such as `instance.deploy`. At most 64 characters |
 | `target_type` | One name, such as `instance`. At most 32 characters |
 | `target_id` | A positive integer |
@@ -150,7 +150,9 @@ An event never carries output. Reverb can lose an event, for example while the s
 
 ## Cancel an operation
 
-`operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
+`operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A waiting operation calls its current step’s stop hook at once and becomes `cancelled` only after the hook confirms the stop. Orbit records the cancel request before calling the hook. When the hook cannot confirm the stop, the request answers with that step’s error, such as HTTP 502. The operation and step stay `waiting`, keep the target, and retry the stop on the next delayed read.
+
+A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
 
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
@@ -158,13 +160,21 @@ A deploy or rollback ignores a cancel request once its `activation` step succeed
 
 ## How an operation runs
 
-The job `RunOperation` runs on the `operations` queue, which has one worker. One operation runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host and process ID, for people. While the attempt runs, it holds the operation's attempt lease, an exclusive lock on a file under `ORBIT_HOME/locks/operations`. The lease ends with the attempt's code, also when an error escapes it, and with the worker process.
+The job `RunOperation` runs on the `operations` queue, which has one worker. One operation job runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host and process ID, for people. While the attempt runs, it holds the operation's attempt lease, an exclusive lock on a file under `ORBIT_HOME/locks/operations`. The lease ends with the attempt's code, also when an error escapes it, and with the worker process.
 
 An error that escapes the attempt fails the operation with `operation.failed`. When the Gateway cannot even record that, for example while its database is locked, the operation stays `running` with a free lease until the sweep recovers it.
 
 The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
 
-An operation runs at most 1,600 seconds, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy or rollback, its error code is `deployment.deadline_exceeded`.
+Each active run has a deadline of 1,600 seconds; time between waiting reads does not count toward it, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy or rollback, its error code is `deployment.deadline_exceeded`.
+
+### A waiting step
+
+A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. No production kind uses waiting yet; deploy and rollback keep their current execution.
+
+A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
+
+The kind supplies the current step’s read and stop hooks. A read returns the step’s result or asks to wait again; a stop returns only when it confirms the work stopped, otherwise it throws the step’s error. Both run under the operation’s attempt lease. The runner stores step results through the same path as a synchronous step and then continues the kind, skipping succeeded steps.
 
 ### One operation per target
 
@@ -175,11 +185,12 @@ An operation holds its target from the start request to its terminal status. A s
 `orbit:operations-sweep` runs every minute as a [scheduled job](/reference/gateway-queue#scheduled-work). It queues the job again for:
 
 - each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
-- each `queued` operation whose job was queued more than 10 minutes ago and has not started.
+- each `queued` operation whose job was queued more than 10 minutes ago and has not started, and
+- each `waiting` operation whose next read is more than twice its delay overdue. This is the only sweep rule for a waiting operation; a free attempt lease does not make it a lost running attempt.
 
-The sweep queues a stale `queued` operation again only while the `operations` queue holds no waiting or delayed job and the operation's attempt lease is free. It refreshes the operation's status and dispatch time under that lease, then releases the lease before publishing the replacement. An idle worker can then run the replacement as soon as it appears. With one worker, an operation that waits behind a long one still has a waiting job, so the sweep adds no second one.
+The sweep queues a stale `queued` operation again only while the `operations` queue holds no pending start or delayed start job and the operation's attempt lease is free. It refreshes the operation's status and dispatch time under that lease, then releases the lease before publishing the replacement. An idle worker can then run the replacement as soon as it appears. With one worker, an operation that waits behind a long one still has a waiting job, so the sweep adds no second one.
 
-Redis reservations do not count as waiting jobs. A reservation proves that a process popped the job, not that its handler runs. In particular, a Horizon metadata error can discard a popped job while the worker stays alive. Such a reservation must not block recovery until the 1,800-second reservation expiry. The sweep can recover a queued operation after 10 minutes, at the next scheduled sweep, while its old reservation still exists. If the old copy later reaches the handler, the attempt lease and conditional claim prevent a second execution.
+Delayed waiting reads do not count as waiting jobs for queued recovery. Redis reservations do not count as waiting jobs. A reservation proves that a process popped the job, not that its handler runs. In particular, a Horizon metadata error can discard a popped job while the worker stays alive. Such a reservation must not block recovery until the 1,800-second reservation expiry. The sweep can recover a queued operation after 10 minutes, at the next scheduled sweep, while its old reservation still exists. If the old copy later reaches the handler, the attempt lease and conditional claim prevent a second execution.
 
 The next worker then looks at the step that was running:
 
@@ -191,6 +202,8 @@ The next worker then looks at the step that was running:
 | Already ended `failed` | It never runs again. The operation fails at that step with `operation.worker_lost` |
 
 The kind finishes its domain record in both failure cases. A lost deploy or rollback ends its history row as `failed` with the boundary of that step.
+
+A lost worker during a waiting read reads the same work again, even when starting that step is not resumable. It never restarts that work. An operation still fails after three lost workers.
 
 A resumed operation plans its steps again. When the plan differs from the first attempt, for example because someone added a deploy step in between, it fails with `operation.plan_changed`.
 
@@ -230,6 +243,12 @@ An orchestrator can lose a response or move to another Node. A key scoped to the
 ### One job, many steps
 
 One job holds the Instance's operation lock for the whole run, so no environment change or Route change slips in between two steps. Each step as its own job would remove the 1,600-second bound but leave the lock free between jobs. Every deploy that ran in a request before, at most 570 seconds, fits in one job.
+
+### Waiting releases the worker, not the target
+
+Work outside the worker can outlast a job’s 1,600-second deadline. Keeping the worker blocked would stall every other operation. Ending the job at a waiting step lets those operations run while the target hold still prevents conflicting work. Making every step a separate job would release a deploy’s Instance lock between steps, so only an explicit wait ends a job. Reads observe existing work and do not consume the worker-loss attempt budget. The orchestrator sets the overall time budget; a second timeout inside Orbit would compete with it.
+
+A delayed job can be lost. Recovering only a read that is more than twice its delay overdue gives normal delivery time to work and prevents a wait from becoming stranded. Counting these delayed reads as queued starts would prevent the sweep from recovering an unrelated lost start. A waiting cancel must confirm the stop before freeing the target, or a new operation could overlap work that still runs. Saving the cancel request first makes an unconfirmed stop retryable.
 
 ### Resume only what can run again
 

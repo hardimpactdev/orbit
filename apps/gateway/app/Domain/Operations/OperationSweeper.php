@@ -67,6 +67,31 @@ final readonly class OperationSweeper
             }
         }
 
+        foreach (Operation::query()->where('status', OperationStatus::Waiting->value)->orderBy('id')->get() as $operation) {
+            $eligible = false;
+            $this->lease->hold($operation->id, function () use ($operation, &$eligible): void {
+                $operation->refresh();
+
+                if ($operation->status !== OperationStatus::Waiting || $operation->next_read_at === null
+                    || $operation->wait_delay_seconds === null
+                    || ! $operation->next_read_at->copy()->addSeconds(2 * $operation->wait_delay_seconds)->isPast()) {
+                    return;
+                }
+
+                $this->store->change($operation, ['next_read_at' => Carbon::now()]);
+                $eligible = true;
+            });
+
+            if ($eligible) {
+                try {
+                    $this->dispatcher->dispatchRead($operation);
+                    $count++;
+                } catch (Throwable $exception) {
+                    Log::error('The operation sweep could not queue a waiting read.', ['operation' => $operation->id, 'error' => $exception->getMessage()]);
+                }
+            }
+        }
+
         return $count;
     }
 

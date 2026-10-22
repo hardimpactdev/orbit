@@ -12,7 +12,7 @@ An external orchestrator owns the lifecycle of task work: its stages, gates, bud
 
 In progress.
 
-The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons.
+The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The shared waiting status, delayed step reads, and stop hooks are built; [Operations](/reference/operations#a-waiting-step) owns their contract and reasons. No production kind uses them yet.
 
 Nick decided this on 2026-10-22. On the same day he decided that every step of a task runs in the group's task VM, and that Pi stays inside the VM on the Pi Durable harness. He then decided that an external group bypasses the tick, so step 1 does not wait for ADR 0224.
 

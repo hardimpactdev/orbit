@@ -343,6 +343,30 @@ describe('operation commands', function (): void {
         expect(Artisan::call('operation:list', ['--status' => 'sleeping', '--json' => true, '--no-interaction' => true]))->toBe(1);
     });
 
+    it('lists waiting operations and passes the filter to the Gateway', function (): void {
+        $mock = MockClient::global([
+            ListOperationsRequest::class => MockResponse::make(['data' => [cli_operation(['status' => 'waiting', 'current_step' => 'external'])], 'meta' => []]),
+        ]);
+
+        expect(Artisan::call('operation:list', ['--status' => 'waiting', '--no-interaction' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain('waiting', 'external');
+        $mock->assertSent(static fn ($request): bool => $request instanceof ListOperationsRequest && $request->query()->all() === ['status' => 'waiting']);
+    });
+
+    it('follows a waiting step until it succeeds without settling it as failed', function (): void {
+        $seen = [];
+        cli_deploy_gateway([
+            cli_operation(['status' => 'waiting', 'sequence' => 3, 'current_step' => 'source_preparation'], [cli_step('source_preparation', 1, 'waiting', 3)]),
+            cli_operation(['status' => 'waiting', 'sequence' => 5, 'current_step' => 'source_preparation'], [cli_step('source_preparation', 1, 'waiting', 5)]),
+            cli_operation(['status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null], [cli_step('source_preparation', 1, 'succeeded', 7)]),
+        ], $seen);
+
+        expect(Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain('Prepared source', 'Deployment succeeded.')
+            ->and(Artisan::output())->not->toContain('Deployment failed.')
+            ->and($seen)->toBe(['after_sequence=0', 'after_sequence=3', 'after_sequence=5']);
+    });
+
     it('shows an operation with its steps and output', function (): void {
         MockClient::global([
             ShowOperationRequest::class => cli_operation_response(cli_operation(['status' => 'failed', 'failed_step' => 'before_activation.migrate', 'error_code' => 'deployment.step_failed'], [

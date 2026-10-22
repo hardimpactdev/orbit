@@ -143,7 +143,7 @@ trait FollowsOperations
                 do {
                     $operation = $follower->next($operation);
                     $this->absorb($progress, $operation);
-                } while (! $operation->terminal() && in_array($this->operationSteps[$running]->status ?? 'running', ['pending', 'running'], true));
+                } while (! $operation->terminal() && in_array($this->operationSteps[$running]->status ?? 'running', ['pending', 'running', 'waiting'], true));
 
                 return $operation;
             });
@@ -190,7 +190,7 @@ trait FollowsOperations
                 continue;
             }
 
-            if ($step->status === 'running') {
+            if (in_array($step->status, ['running', 'waiting'], true)) {
                 return $name;
             }
 
@@ -210,7 +210,7 @@ trait FollowsOperations
                 continue;
             }
 
-            if (! $final && in_array($step->status, ['pending', 'running'], true)) {
+            if (! $final && in_array($step->status, ['pending', 'running', 'waiting'], true)) {
                 return;
             }
 
@@ -235,7 +235,7 @@ trait FollowsOperations
 
         $progress->complete($name, match ($step->status) {
             'succeeded' => ProgressState::Success,
-            'running' => ProgressState::Warning,
+            'running', 'waiting' => ProgressState::Warning,
             default => ProgressState::Failure,
         }, $step->errorCode ?? '');
     }

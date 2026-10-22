@@ -30,6 +30,7 @@ final readonly class OperationRunner
         private OperationWorker $worker,
         private CommandDeadline $deadline,
         private OperationAttemptLease $lease,
+        private OperationDispatcher $dispatcher,
     ) {}
 
     /**
@@ -39,10 +40,28 @@ final readonly class OperationRunner
      */
     public function run(int $operationId): void
     {
-        $this->lease->hold($operationId, function () use ($operationId): void {
+        $this->execute($operationId, false);
+    }
+
+    public function read(int $operationId): void
+    {
+        $this->execute($operationId, true);
+    }
+
+    private function execute(int $operationId, bool $read): void
+    {
+        $this->lease->hold($operationId, function () use ($operationId, $read): void {
             $operation = Operation::query()->find($operationId);
 
-            if (! $operation instanceof Operation || ! $this->store->claim($operation, $this->worker->current())) {
+            if (! $operation instanceof Operation) {
+                return;
+            }
+
+            $claimed = $read
+                ? $this->store->claimWaiting($operation, $this->worker->current())
+                : $this->store->claim($operation, $this->worker->current());
+
+            if (! $claimed) {
                 return;
             }
 
@@ -82,8 +101,9 @@ final readonly class OperationRunner
         }
 
         $lost = $this->interruptedStep($operation);
+        $lostRead = $lost !== null && $operation->wait_delay_seconds !== null;
 
-        if ($lost !== null && (! $lost->resumable || $operation->attempts > self::MaximumAttempts)) {
+        if ($lost !== null && ((! $lostRead && ! $lost->resumable) || $operation->attempts > self::MaximumAttempts)) {
             $this->failLostStep($kind, $operation, $lost->name);
 
             return;
@@ -96,7 +116,9 @@ final readonly class OperationRunner
         }
 
         if ($lost !== null) {
-            $this->store->change($operation, ['current_step' => null], $lost, ['status' => OperationStepStatus::Pending]);
+            $this->store->change($operation, ['current_step' => $lostRead ? $lost->name : null], $lost, [
+                'status' => $lostRead ? OperationStepStatus::Waiting : OperationStepStatus::Pending,
+            ]);
         }
 
         $run = new OperationRun($operation, $this->store);
@@ -105,7 +127,33 @@ final readonly class OperationRunner
         $end = $this->deadline->startRequest(self::DeadlineSeconds, CommandDeadline::CleanupReserveSeconds);
 
         try {
+            $waiting = $operation->steps()->where('status', OperationStepStatus::Waiting->value)->first();
+
+            if ($waiting instanceof OperationStep) {
+                if ($operation->cancel_requested_at !== null) {
+                    try {
+                        $this->waitingStep($kind, $operation, $waiting)->stop($run);
+                    } catch (Throwable $exception) {
+                        $this->restoreWaiting($operation, $waiting);
+                        Log::warning('A waiting step could not confirm its stop.', ['operation' => $operation->id, 'error' => $exception->getMessage()]);
+
+                        return;
+                    }
+
+                    $this->finishStoppedStep($operation, $waiting, $kind);
+
+                    return;
+                }
+
+                $reader = $this->waitingStep($kind, $operation, $waiting);
+                $run->step($waiting->name, fn (): mixed => $reader->read($run), cancellable: false);
+            }
+
             $outcome = $kind->run($operation, $run);
+        } catch (OperationWaitRequested) {
+            $this->queueRead($operation);
+
+            return;
         } catch (OperationPlanChanged) {
             $this->abandon($kind, $operation, OperationOutcome::failed('operation.plan_changed'), null);
 
@@ -124,6 +172,62 @@ final readonly class OperationRunner
         }
 
         $this->finish($operation, $outcome, $outcome->status === OperationStatus::Failed ? $this->failedStep($operation) : null);
+    }
+
+    /** A direct cancel confirms the step stopped before it frees the target. Errors reach the caller unchanged. */
+    public function cancelWaiting(Operation $operation): void
+    {
+        $this->lease->hold($operation->id, function () use ($operation): void {
+            $operation->refresh();
+
+            if ($operation->status !== OperationStatus::Waiting) {
+                return;
+            }
+
+            $step = $operation->steps()->where('status', OperationStepStatus::Waiting->value)->sole();
+            $this->stopWaiting($operation, $step, $this->kinds->for($operation->kind), new OperationRun($operation, $this->store));
+        });
+    }
+
+    private function waitingStep(OperationKind $kind, Operation $operation, OperationStep $step): OperationWaitingStep
+    {
+        if (! $kind instanceof OperationWaitingKind) {
+            throw new \LogicException('A waiting operation must supply its step hooks.');
+        }
+
+        return $kind->waitingStep($operation, $step->name);
+    }
+
+    private function stopWaiting(Operation $operation, OperationStep $step, OperationKind $kind, OperationRun $run): void
+    {
+        $this->waitingStep($kind, $operation, $step)->stop($run);
+        $this->finishStoppedStep($operation, $step, $kind);
+    }
+
+    private function finishStoppedStep(Operation $operation, OperationStep $step, OperationKind $kind): void
+    {
+        $this->store->change($operation, [], $step, ['status' => OperationStepStatus::Cancelled, 'finished_at' => Carbon::now()]);
+        $this->abandon($kind, $operation, OperationOutcome::cancelled(), null);
+    }
+
+    private function restoreWaiting(Operation $operation, OperationStep $step): void
+    {
+        $this->store->change($operation, [
+            'status' => OperationStatus::Waiting,
+            'worker' => null,
+            'next_read_at' => Carbon::now()->addSeconds($operation->wait_delay_seconds ?? throw new \LogicException('A waiting step needs a delay.')),
+        ], $step, ['status' => OperationStepStatus::Waiting]);
+        $this->queueRead($operation);
+    }
+
+    private function queueRead(Operation $operation): void
+    {
+        try {
+            $this->dispatcher->dispatchRead($operation);
+        } catch (Throwable $exception) {
+            // The wait was stored first. The overdue-read sweep recovers a failed publish too.
+            Log::error('A waiting operation could not queue its next read.', ['operation' => $operation->id, 'error' => $exception->getMessage()]);
+        }
     }
 
     /** Fails the operation at a step whose attempt was lost, so a person's command never runs twice. */
@@ -190,6 +294,8 @@ final readonly class OperationRunner
             'current_step' => null,
             'lock_key' => null,
             'worker' => null,
+            'next_read_at' => null,
+            'wait_delay_seconds' => null,
             'finished_at' => $now,
         ], $copyError ? $failed : null, $copyError ? ['error_code' => $outcome->errorCode] : []);
     }

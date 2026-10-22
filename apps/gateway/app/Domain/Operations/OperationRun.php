@@ -148,22 +148,33 @@ final class OperationRun
             throw new OperationCancelled;
         }
 
+        $reading = $step->status === OperationStepStatus::Waiting;
         $this->current = $step;
-        $this->tail = '';
-        $this->truncated = false;
+        $this->tail = $reading ? ($step->output ?? '') : '';
+        $this->truncated = $reading && $step->output_truncated;
         $this->dirty = false;
         $this->flushedAt = ($this->clock)();
         $this->store->change($this->operation, ['current_step' => $name], $step, [
             'status' => OperationStepStatus::Running,
-            'started_at' => Carbon::now(),
+            'started_at' => $reading ? $step->started_at : Carbon::now(),
             'finished_at' => null,
             'error_code' => null,
-            'output' => null,
-            'output_truncated' => false,
+            ...$this->outputChanges(),
         ]);
 
         try {
             $value = $work();
+        } catch (OperationWaitRequested $wait) {
+            $this->store->change($this->operation, [
+                'status' => OperationStatus::Waiting,
+                'worker' => null,
+                'wait_delay_seconds' => $wait->delaySeconds,
+                'next_read_at' => Carbon::now()->addSeconds($wait->delaySeconds),
+            ], $step, ['status' => OperationStepStatus::Waiting, ...$this->outputChanges()]);
+            $this->current = null;
+            $this->dirty = false;
+
+            throw $wait;
         } catch (OperationStepFailed $exception) {
             $this->finish($step, OperationStepStatus::Failed, $exception->errorCode);
 
@@ -177,6 +188,16 @@ final class OperationRun
         $this->finish($step, OperationStepStatus::Succeeded, null, $value);
 
         return $value;
+    }
+
+    /** Ends this job without ending the step. The next job reads its existing work. */
+    public function wait(int $delaySeconds): never
+    {
+        if ($this->current === null || $delaySeconds < 1) {
+            throw new LogicException('Only a running step can wait, with a positive delay.');
+        }
+
+        throw new OperationWaitRequested($delaySeconds);
     }
 
     /** Appends output of the running step. Output outside a step is dropped. */
@@ -213,7 +234,7 @@ final class OperationRun
 
     private function finish(OperationStep $step, OperationStepStatus $status, ?string $errorCode, mixed $value = null): void
     {
-        $changes = ['current_step' => null];
+        $changes = ['current_step' => null, 'wait_delay_seconds' => null, 'next_read_at' => null];
 
         if ($status === OperationStepStatus::Succeeded) {
             $state = $this->operation->state ?? [];

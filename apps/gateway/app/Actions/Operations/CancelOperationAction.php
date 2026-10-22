@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,7 @@ use Illuminate\Support\Carbon;
  */
 final readonly class CancelOperationAction
 {
-    public function __construct(private OperationStore $store) {}
+    public function __construct(private OperationStore $store, private OperationRunner $runner) {}
 
     public function execute(Operation $operation): Operation
     {
@@ -27,6 +28,7 @@ final readonly class CancelOperationAction
         }
 
         $this->store->cancelQueued($operation);
+        $this->runner->cancelWaiting($operation);
 
         return $operation->refresh();
     }
