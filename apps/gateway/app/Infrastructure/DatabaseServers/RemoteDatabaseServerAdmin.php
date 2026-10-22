@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
@@ -20,18 +21,21 @@ use App\Models\Process;
 use SensitiveParameter;
 
 /**
- * Runs `mysql` as root inside the server's container with `docker exec`, over SSH to its Node.
+ * Runs the fixed MySQL or PostgreSQL admin client inside the server's container with `docker exec`, over SSH to its Node.
  *
  * The first line of protected standard input is the root password. The script reads it into
- * MYSQL_PWD and hands it to `docker exec` through the environment, so it never reaches an
+ * the client password variable and hands it to `docker exec` through the environment, so it never reaches an
  * argument list or a file. The rest of standard input is the SQL.
  */
 final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 {
     public const string EXECUTE_SCRIPT = <<<'BASH'
-        IFS= read -r MYSQL_PWD
-        export MYSQL_PWD
-        exec sudo --preserve-env=MYSQL_PWD docker container exec -i --env MYSQL_PWD -- "$1" mysql --user=root --batch --skip-column-names
+        container=$1
+        password_variable=$2
+        shift 2
+        IFS= read -r "$password_variable"
+        export "$password_variable"
+        exec sudo "--preserve-env=$password_variable" docker container exec -i --env "$password_variable" -- "$container" "$@"
         BASH;
 
     /**
@@ -46,11 +50,14 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 
     /** TCP reaches only the final server: the image's first-start server listens on its socket alone. */
     public const string READY_SCRIPT = <<<'BASH'
-        IFS= read -r MYSQL_PWD
-        export MYSQL_PWD
+        container=$1
         deadline=$((SECONDS + $2))
+        password_variable=$3
+        shift 3
+        IFS= read -r "$password_variable"
+        export "$password_variable"
         while :; do
-            if printf 'SELECT 1;\n' | sudo --preserve-env=MYSQL_PWD docker container exec -i --env MYSQL_PWD -- "$1" mysql --protocol=TCP --host=127.0.0.1 --user=root --batch --skip-column-names >/dev/null 2>&1; then
+            if printf 'SELECT 1;\n' | sudo "--preserve-env=$password_variable" docker container exec -i --env "$password_variable" -- "$container" "$@" >/dev/null 2>&1; then
                 exit 0
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
@@ -77,7 +84,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
             $server,
             self::READY_SCRIPT,
             'orbit-database-server-ready',
-            [(string) $timeoutSeconds],
+            [(string) $timeoutSeconds, ...$this->client($server, tcp: true)],
             '',
             (float) ($timeoutSeconds + 60),
         );
@@ -91,7 +98,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
             $server,
             self::EXECUTE_SCRIPT,
             'orbit-database-server-sql',
-            [],
+            $this->client($server),
             $sql,
             self::COMMAND_TIMEOUT_SECONDS,
         );
@@ -115,6 +122,9 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 
     public function copyDatabase(DatabaseServer $server, string $source, string $target): void
     {
+        if ($server->driver !== DatabaseDriver::Mysql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance database cloning requires MySQL.', 422);
+        }
         foreach ([$source, $target] as $database) {
             if (preg_match('/\A[A-Za-z0-9_]{1,64}\z/D', $database) !== 1) {
                 throw $this->failed($server);
@@ -133,6 +143,16 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
         if (! $result->succeeded()) {
             throw $this->failed($server);
         }
+    }
+
+    /** @return list<string> */
+    private function client(DatabaseServer $server, bool $tcp = false): array
+    {
+        if ($server->driver === DatabaseDriver::Pgsql) {
+            return ['PGPASSWORD', 'psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'];
+        }
+
+        return ['MYSQL_PWD', 'mysql', ...($tcp ? ['--protocol=TCP', '--host=127.0.0.1'] : []), '--user=root', '--batch', '--skip-column-names'];
     }
 
     /** @param list<string> $arguments */

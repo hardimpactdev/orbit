@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
@@ -31,6 +32,9 @@ final readonly class CreateInstanceServerDatabaseAction
 
     public function execute(Instance $instance, DatabaseServer $server): DatabaseConnection
     {
+        if ($server->driver !== DatabaseDriver::Mysql) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
+        }
         $instance->loadMissing(['project', 'node']);
 
         try {

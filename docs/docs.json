@@ -76,6 +76,7 @@
               "reference/gateway-environment",
               "reference/database-connections",
               "reference/database-servers",
+              "reference/postgresql-migration",
               "reference/websocket-apps",
               "reference/vaultwarden",
               "reference/processes-and-schedules",
@@ -1623,6 +1624,10 @@
     {
       "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",
       "destination": "/reference/websocket-apps#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0227-manage-postgresql-and-private-database-endpoints",
+      "destination": "/reference/database-servers#why-it-works-this-way"
     }
   ]
 }

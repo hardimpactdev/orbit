@@ -421,3 +421,29 @@ it('transports Valkey ACL inputs with omitted and explicit empty lists kept dist
         ->and(new CreateDatabaseConnectionRequest('queue', server: 'cache', patterns: [], allow: [])->body()->all())
         ->toBe(['slug' => 'queue', 'server' => 'cache', 'patterns' => [], 'allow' => []]);
 });
+
+it('transports an explicit attachment network together with its prefix', function (string $network): void {
+    expect(new AddInstanceDatabaseRequest(12, 'catalog', 'CATALOG_DB', network: $network)->body()->all())
+        ->toBe(['prefix' => 'CATALOG_DB', 'network' => $network]);
+})->with(['lan', 'wireguard']);
+
+it('keeps a managed LAN host separate from the default connection host', function (): void {
+    $response = DatabaseConnectionResponse::fromGatewayData([
+        'id' => 1, 'slug' => 'catalog', 'driver' => 'pgsql', 'host' => '10.44.0.3', 'lan_host' => '10.0.0.6',
+        'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'has_password' => true,
+    ], 'request-1');
+
+    expect($response->host)->toBe('10.44.0.3')->and($response->lanHost)->toBe('10.0.0.6')
+        ->and($response->toArray())->toMatchArray(['host' => '10.44.0.3', 'lan_host' => '10.0.0.6']);
+});
+
+it('transports and preserves a chosen PostgreSQL builtin locale', function (): void {
+    expect(new CreateDatabaseConnectionRequest(slug: 'mealou', server: 'services-postgres', locale: 'C.UTF-8')->body()->all())
+        ->toBe(['slug' => 'mealou', 'server' => 'services-postgres', 'locale' => 'C.UTF-8']);
+    $response = DatabaseConnectionResponse::fromGatewayData([
+        'id' => 1, 'slug' => 'mealou', 'driver' => 'pgsql', 'node_id' => 17, 'host' => '10.44.0.3',
+        'port' => 5434, 'database' => 'mealou', 'path' => null, 'username' => 'mealou', 'has_password' => true,
+        'locale' => 'C.UTF-8',
+    ], 'request-1');
+    expect($response->locale)->toBe('C.UTF-8')->and($response->toArray()['locale'])->toBe('C.UTF-8');
+});

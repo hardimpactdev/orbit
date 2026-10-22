@@ -54,6 +54,7 @@ final class StoreDatabaseConnectionRequest extends FormRequest
             patterns: isset($validated['patterns']) ? ValidatedData::stringList($validated['patterns']) : [],
             allow: isset($validated['allow']) ? ValidatedData::stringList($validated['allow']) : [],
             database: self::nullableInt($validated, 'database'),
+            locale: self::nullableString($validated, 'locale'),
         );
     }
 

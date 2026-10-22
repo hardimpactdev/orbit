@@ -20,6 +20,6 @@ it('tags the collector reconvergence as a connection update hook', function (): 
 it('tags cache ownership as a connection removal guard', function (): void {
     $guards = iterator_to_array(app()->tagged(DatabaseConnectionRemovalGuard::class));
 
-    expect($guards)->toHaveCount(1)
-        ->and($guards[0])->toBeInstanceOf(AiRouterConnectionOwnership::class);
+    expect(array_map(static fn (DatabaseConnectionRemovalGuard $guard): string => $guard::class, $guards))
+        ->toContain(AiRouterConnectionOwnership::class);
 });

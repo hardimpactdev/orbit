@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -35,9 +37,9 @@ final readonly class AnalyticsStorageProcessGuard
 
         $this->assertImage(
             $postgres,
-            self::POSTGRES_IMAGE_PATTERN,
+            $this->managedPostgres($postgres) ? '/(?:^|\/)postgres:18(?:[.-][A-Za-z0-9._-]*)?(?:@|$)/' : self::POSTGRES_IMAGE_PATTERN,
             'analytics.postgres_unsupported',
-            'a PostgreSQL 16 Process',
+            'a PostgreSQL 16 or managed PostgreSQL 18 Process',
         );
         $this->assertImage(
             $clickhouse,
@@ -118,6 +120,9 @@ final readonly class AnalyticsStorageProcessGuard
             if ($node instanceof Node && is_string($node->wireguard_ip) && $mapping->bindAddress === $node->wireguard_ip) {
                 continue;
             }
+            if ($node instanceof Node && $this->managedPostgres($process) && is_string($node->lan_ip) && $mapping->bindAddress === $node->lan_ip) {
+                continue;
+            }
 
             throw new ResourceOperationException(
                 errorCode: 'analytics.storage_port_not_wireguard_bound',
@@ -147,5 +152,10 @@ final readonly class AnalyticsStorageProcessGuard
             message: "Process [{$process->name}] is not a Node-targeted Process.",
             status: 422,
         );
+    }
+
+    private function managedPostgres(Process $process): bool
+    {
+        return DatabaseServer::query()->where('process_id', $process->id)->where('driver', DatabaseDriver::Pgsql->value)->exists();
     }
 }

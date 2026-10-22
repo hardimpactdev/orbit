@@ -89,6 +89,10 @@ final readonly class CreateDatabaseServerAction
             );
         }
 
+        DatabaseServerProcess::validatePrivateAddresses($node);
+        if ($data->driver === DatabaseDriver::Pgsql && preg_match(DatabaseServerProcess::POSTGRES_TAG_PATTERN, $data->tag) !== 1) {
+            throw new ResourceOperationException('validation.failed', 'Managed PostgreSQL requires a major 18 image tag.', 422);
+        }
         $adoption = null;
 
         if ($data->processId !== null) {
@@ -104,6 +108,8 @@ final readonly class CreateDatabaseServerAction
 
         $reserved = $this->reserve($data, $node, $adoption);
         $server = $reserved['server'];
+        // Only an explicit create/retry opts an existing server into private publication checks.
+        $server->update(['private_endpoints_managed' => true]);
 
         if ($server->status !== LifecycleStatus::Active) {
             if ($server->driver === DatabaseDriver::Redis) {
@@ -114,7 +120,13 @@ final readonly class CreateDatabaseServerAction
             }
         } elseif ($server->driver === DatabaseDriver::Redis) {
             $this->converge->execute($server);
+        } else {
+            $this->provision($server, $node);
         }
+        $this->reconcilePublications($server, $node);
+        $server->load('process');
+
+        $server->update(['failed_step' => null, 'error_code' => null]);
 
         return ['server' => $server->refresh(), 'created' => $reserved['created']];
     }
@@ -187,7 +199,7 @@ final readonly class CreateDatabaseServerAction
     private function provision(DatabaseServer $server, Node $node): void
     {
         $server->update([
-            'status' => LifecycleStatus::Provisioning,
+            'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Provisioning,
             'failed_step' => null,
             'error_code' => null,
         ]);
@@ -280,7 +292,7 @@ final readonly class CreateDatabaseServerAction
             return $operation();
         } catch (ResourceOperationException|ProcessOperationException $exception) {
             $server->update([
-                'status' => LifecycleStatus::Failed,
+                'status' => $server->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
                 'failed_step' => $step,
                 'error_code' => $exception->errorCode,
             ]);
@@ -326,7 +338,7 @@ final readonly class CreateDatabaseServerAction
         $this->recreate($process, static function (Process $fresh): array {
             $runtimeConfig = $fresh->runtime_config;
             $environment = is_array($runtimeConfig['environment'] ?? null) ? $runtimeConfig['environment'] : [];
-            unset($environment[DatabaseServerProcess::ROOT_PASSWORD_VARIABLE]);
+            unset($environment[DatabaseServerProcess::ROOT_PASSWORD_VARIABLE], $environment['POSTGRES_PASSWORD']);
 
             return ['runtime_config' => [...$runtimeConfig, 'environment' => $environment]];
         });
@@ -418,5 +430,21 @@ final readonly class CreateDatabaseServerAction
             message: "Database server [{$slug}] already exists with a different Node, driver, tag, port, or Process.",
             status: 409,
         );
+    }
+
+    private function reconcilePublications(DatabaseServer $server, Node $node): void
+    {
+        $process = $server->process;
+        if (! $process instanceof Process) {
+            return;
+        }
+        $containerPort = $server->driver->defaultPort() ?? 3306;
+        $ports = DatabaseServerProcess::publishedPorts($node, $server->port, $containerPort);
+        if (($process->runtime_config['ports'] ?? []) === $ports) {
+            return;
+        }
+        $this->step($server, 'publication', fn () => $this->recreate($process, static fn (Process $fresh): array => [
+            'runtime_config' => [...$fresh->runtime_config, 'ports' => $ports],
+        ]));
     }
 }

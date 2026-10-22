@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseConnections;
 
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
+use App\Models\Node;
 
 /**
- * The prefixed env keys of a connection. Host and port are always the record's own values, also
- * for an Instance on the connection's Node: Orbit publishes databases on the WireGuard address.
+ * Prefixed connection keys. Explicit LAN selection requires active Nodes with IPv4 LAN addresses;
+ * the default keeps the connection's recorded host and port.
  */
 final readonly class DatabaseConnectionEnvProjection
 {
@@ -31,7 +35,7 @@ final readonly class DatabaseConnectionEnvProjection
      *     port: int|null
      * }
      */
-    public function project(DatabaseConnection $connection, string $prefix): array
+    public function project(DatabaseConnection $connection, string $prefix, string $network = 'wireguard', ?Node $consumer = null): array
     {
         $managed = $this->managedKeys($prefix);
         $values = [$this->key($prefix, 'CONNECTION') => $connection->driver->value];
@@ -51,6 +55,15 @@ final readonly class DatabaseConnectionEnvProjection
         }
 
         $host = (string) $connection->host;
+        $server = $connection->server;
+        if ($network === 'lan') {
+            if (! $server instanceof DatabaseServer || ! $consumer instanceof Node || $server->node->status !== LifecycleStatus::Active || $consumer->status !== LifecycleStatus::Active || filter_var($server->node->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || filter_var($consumer->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new ResourceOperationException('database.lan_unavailable', 'Both Nodes must be active with an IPv4 LAN address.', 422);
+            }
+            $host = (string) $server->node->lan_ip;
+        } elseif ($network !== 'wireguard') {
+            throw new ResourceOperationException('validation.failed', 'The network must be wireguard or lan.', 422);
+        }
         $port = (int) $connection->port;
         $values[$this->key($prefix, 'HOST')] = $host;
         $values[$this->key($prefix, 'PORT')] = (string) $port;

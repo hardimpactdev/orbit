@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $host
  * @property int|null $port
  * @property string|null $database
+ * @property string|null $locale
  * @property string|null $test_database
  * @property string|null $path
  * @property string|null $username
@@ -46,6 +47,7 @@ final class DatabaseConnection extends Model
         'host',
         'port',
         'database',
+        'locale',
         'test_database',
         'path',
         'username',

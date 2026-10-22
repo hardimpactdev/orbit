@@ -171,7 +171,7 @@ A job that Redis lost runs again only when its owner queues it again. For exampl
 
 ## ACL users
 
-After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-valkey-server-with-doctor) checks the users.
+After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-server-with-doctor) checks the users.
 
 | User | Keys | Commands | Used by |
 | --- | --- | --- | --- |

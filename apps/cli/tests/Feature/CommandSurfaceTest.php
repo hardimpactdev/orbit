@@ -607,6 +607,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'username' => null,
                 'password' => null,
                 'server' => null,
+                'locale' => null,
                 'instance' => null,
                 'pattern' => [],
                 'allow' => [],
@@ -708,7 +709,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:database:add' => [
             ['slug'],
-            ['instance' => null, 'prefix' => null, 'json' => false],
+            ['instance' => null, 'prefix' => null, 'network' => null, 'json' => false],
         ],
         'instance:database:remove' => [
             ['slug'],

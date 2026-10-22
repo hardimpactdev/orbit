@@ -43,6 +43,8 @@ final readonly class DatabaseConnectionResponse
         public ?string $server = null,
         public ?int $ownerInstanceId = null,
         public ?string $testDatabase = null,
+        public ?string $lanHost = null,
+        public ?string $locale = null,
     ) {
         if ($id < 1 || ($nodeId !== null && $nodeId < 1) || ($ownerInstanceId !== null && $ownerInstanceId < 1)) {
             throw new InvalidArgumentException('Invalid Database connection response identifier.');
@@ -71,6 +73,8 @@ final readonly class DatabaseConnectionResponse
         $redactor = new CredentialRedactor;
 
         return new self(
+            lanHost: self::nullableText($data, 'lan_host', self::HOST_MAX_LENGTH, $redactor),
+            locale: self::nullableText($data, 'locale', 32, $redactor),
             id: self::requiredInteger($data, 'id'),
             slug: self::requiredPattern($data, 'slug', self::SLUG_PATTERN, self::SLUG_MAX_LENGTH),
             driver: self::requiredPattern($data, 'driver', self::DRIVER_PATTERN, self::DRIVER_MAX_LENGTH),
@@ -111,6 +115,14 @@ final readonly class DatabaseConnectionResponse
 
         if ($this->usersCount !== null) {
             $data['users_count'] = $this->usersCount;
+        }
+
+        if ($this->locale !== null) {
+            $data['locale'] = $this->locale;
+        }
+
+        if ($this->lanHost !== null) {
+            $data['lan_host'] = $this->lanHost;
         }
 
         return $data;

@@ -33,6 +33,7 @@ final readonly class AttachDatabaseConnectionAction
         #[SensitiveParameter]
         ?string $prefix,
         bool $forClone = false,
+        string $network = 'wireguard',
     ): DatabaseConnectionAttachmentData {
         $normalizedPrefix = DatabaseConnectionPrefix::normalize($prefix);
 
@@ -41,6 +42,7 @@ final readonly class AttachDatabaseConnectionAction
             $connection,
             $normalizedPrefix,
             $forClone,
+            $network,
         ): DatabaseConnectionAttachmentData {
             $instance->refresh();
 
@@ -55,7 +57,7 @@ final readonly class AttachDatabaseConnectionAction
             $context = $forClone
                 ? $this->contexts->resolveForClone($instance, requireActiveNode: false)
                 : $this->contexts->resolve($instance, requireActiveNode: false);
-            $projected = $this->projection->project($connection, $normalizedPrefix);
+            $projected = $this->projection->project($connection, $normalizedPrefix, $network, $instance->node);
 
             return DB::transaction(function () use (
                 $instance,
@@ -63,13 +65,14 @@ final readonly class AttachDatabaseConnectionAction
                 $normalizedPrefix,
                 $context,
                 $projected,
+                $network,
             ): DatabaseConnectionAttachmentData {
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     [
                         'instance_id' => $instance->id,
                         'prefix' => $normalizedPrefix,
                     ],
-                    ['database_connection_id' => $connection->id],
+                    ['database_connection_id' => $connection->id, 'network' => $network],
                 );
 
                 $forgotten = $this->store->forget($context, $projected['forget'], 'attach');

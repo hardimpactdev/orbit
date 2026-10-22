@@ -17,6 +17,8 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process#orbit-processcreate) lists the accepted combinations.
 
+`database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
+
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 
 `gateway:release:rollback` switches Gateway code to a retained release. It leaves the database in place; [Gateway recovery](/reference/gateway-recovery#roll-back) describes database restoration.
@@ -46,7 +48,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record, and with `--server` the database itself |
 | `database:server` | `create` and `destroy` | A [Database server](/reference/database-servers) and its Docker Node Process |
-| `database:user` | `create` | A MySQL user on a database that lives on a [Database server](/reference/database-servers#add-a-user) |
+| `database:user` | `create` | A MySQL or PostgreSQL user on a database that lives on a [Database server](/reference/database-servers#add-a-user) |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
 | `github:app` | `install` and `destroy` | The Gateway's [GitHub App](/reference/github-app) |
 | `instance` | `create` and `destroy` | An Instance |

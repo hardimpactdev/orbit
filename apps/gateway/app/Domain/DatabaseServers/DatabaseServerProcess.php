@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -20,6 +25,8 @@ use SensitiveParameter;
  */
 final readonly class DatabaseServerProcess
 {
+    public const string POSTGRES_TAG_PATTERN = '/\A18(?:\.[0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]*)?\z/D';
+
     public const string ROOT_PASSWORD_VARIABLE = 'MYSQL_ROOT_PASSWORD';
 
     public const int CONTAINER_PORT = 3306;
@@ -41,16 +48,15 @@ final readonly class DatabaseServerProcess
             targetId: $node->id,
             name: $server->slug,
             runtime: ProcessRuntime::Docker,
-            command: ['mysqld'],
-            image: 'mysql:'.$server->tag,
+            command: [$server->driver === DatabaseDriver::Pgsql ? 'postgres' : 'mysqld'],
+            image: ($server->driver === DatabaseDriver::Pgsql ? 'postgres:' : 'mysql:').$server->tag,
             workingDirectory: null,
-            environment: [self::ROOT_PASSWORD_VARIABLE => $rootPassword],
-            // WireGuard only: Docker publishes around the host firewall, so a server never
-            // listens on a public address.
-            ports: [self::publishedPort($node, $server->port)],
+            environment: [self::passwordVariable($server) => $rootPassword],
+            // Bind each private address explicitly; Docker publication bypasses UFW.
+            ports: self::publishedPorts($node, $server->port, $server->driver === DatabaseDriver::Pgsql ? 5432 : self::CONTAINER_PORT),
             volumes: [[
                 'source' => self::volume($server->slug),
-                'target' => '/var/lib/mysql',
+                'target' => $server->driver === DatabaseDriver::Pgsql ? '/var/lib/postgresql' : '/var/lib/mysql',
                 'read_only' => false,
             ]],
             restartPolicy: 'unless-stopped',
@@ -73,7 +79,7 @@ final readonly class DatabaseServerProcess
             image: self::valkeyImage($server->tag),
             workingDirectory: self::VALKEY_DATA_DIRECTORY,
             environment: [],
-            ports: [self::publishedPort($node, $server->port, self::VALKEY_CONTAINER_PORT)],
+            ports: self::publishedPorts($node, $server->port, self::VALKEY_CONTAINER_PORT),
             volumes: [[
                 'source' => $volume,
                 'target' => self::VALKEY_DATA_DIRECTORY,
@@ -124,6 +130,60 @@ final readonly class DatabaseServerProcess
     {
         $environment = $process->runtime_config['environment'] ?? null;
 
-        return is_array($environment) && array_key_exists(self::ROOT_PASSWORD_VARIABLE, $environment);
+        return is_array($environment) && (array_key_exists(self::ROOT_PASSWORD_VARIABLE, $environment) || array_key_exists('POSTGRES_PASSWORD', $environment));
+    }
+
+    public static function passwordVariable(DatabaseServer $server): string
+    {
+        return $server->driver === DatabaseDriver::Pgsql ? 'POSTGRES_PASSWORD' : self::ROOT_PASSWORD_VARIABLE;
+    }
+
+    /** @return list<string> */
+    public static function publishedPorts(Node $node, int $port, int $containerPort): array
+    {
+        $ports = [self::publishedPort($node, $port, $containerPort)];
+        if (is_string($node->lan_ip) && $node->lan_ip !== '') {
+            $ports[] = "{$node->lan_ip}:{$port}:{$containerPort}";
+        }
+
+        return $ports;
+    }
+
+    public static function lanHost(DatabaseServer $server): ?string
+    {
+        $address = $server->node->lan_ip;
+        if (! $server->private_endpoints_managed || $server->status !== LifecycleStatus::Active || ! self::ipv4($address)) {
+            return null;
+        }
+        $publications = $server->process?->runtime_config['ports'] ?? [];
+        foreach (is_array($publications) ? $publications : [] as $spec) {
+            $mapping = is_string($spec) ? DockerPublishedPort::parse($spec) : null;
+            if ($mapping !== null && $mapping->bindAddress === $address && $mapping->publishedPort === $server->port) {
+                return $address;
+            }
+        }
+
+        return null;
+    }
+
+    public static function validatePrivateAddresses(Node $node): void
+    {
+        if (! self::privateIpv4($node->wireguard_ip) || (filled($node->lan_ip) && ! self::privateIpv4($node->lan_ip))) {
+            throw new ResourceOperationException('validation.failed', 'Database publication requires private IPv4 addresses.', 422);
+        }
+    }
+
+    private static function privateIpv4(?string $address): bool
+    {
+        if (! is_string($address) || ! self::ipv4($address)) {
+            return false;
+        }
+
+        return array_any(['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], fn ($range) => Ipv4Subnet::from($range)->contains($address));
+    }
+
+    private static function ipv4(?string $address): bool
+    {
+        return is_string($address) && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
     }
 }

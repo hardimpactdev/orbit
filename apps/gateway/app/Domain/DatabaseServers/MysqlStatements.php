@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\ResourceOperationException;
 use SensitiveParameter;
 
@@ -18,6 +19,11 @@ final readonly class MysqlStatements
     private const string DATABASE_NAME_PATTERN = '/\A[A-Za-z0-9_]{1,64}\z/D';
 
     private const string USER_NAME_PATTERN = '/\A[A-Za-z0-9_]{1,32}\z/D';
+
+    public function forDriver(DatabaseDriver $driver): self|PostgresStatements
+    {
+        return $driver === DatabaseDriver::Pgsql ? new PostgresStatements : $this;
+    }
 
     public function ensureUser(string $username, #[SensitiveParameter] string $password): string
     {
@@ -51,7 +57,7 @@ final readonly class MysqlStatements
     }
 
     /** Replace the user's privileges on one database. The first grant makes the revoke safe for a new user. */
-    public function replaceGrant(string $database, string $username, bool $readOnly): string
+    public function replaceGrant(string $database, string $username, bool $readOnly, ?string $owner = null): string
     {
         $quoted = $this->database($database);
         $user = $this->account($username);

@@ -7,6 +7,7 @@ namespace App\Domain\Doctor;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\InstanceEnvironmentValue;
@@ -44,8 +45,8 @@ final readonly class DatabaseConnectionDoctorInspection
 
         try {
             $stored = $this->storedValues($attachment->instance_id);
-            $projected = $this->projection->project($connection, $attachment->prefix);
-        } catch (DecryptException) {
+            $projected = $this->projection->project($connection, $attachment->prefix, $attachment->network, $attachment->instance->node);
+        } catch (DecryptException|ResourceOperationException) {
             return [$this->issue(
                 DatabaseConnectionDoctorIssueCode::InspectionFailed,
                 DoctorIssueKind::Unverifiable,
@@ -78,7 +79,7 @@ final readonly class DatabaseConnectionDoctorInspection
     ): ?DoctorIssueData {
         try {
             $unhealthy = $this->unhealthy($connection);
-        } catch (DecryptException) {
+        } catch (DecryptException|ResourceOperationException) {
             return $this->issue(
                 DatabaseConnectionDoctorIssueCode::InspectionFailed,
                 DoctorIssueKind::Unverifiable,

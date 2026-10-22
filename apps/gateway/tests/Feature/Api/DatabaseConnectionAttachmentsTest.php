@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -14,9 +16,11 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -463,3 +467,45 @@ final class DatabaseAttachmentAccess implements InstanceEnvironmentReader, Insta
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 }
+
+it('persists explicit LAN selection between active LAN Nodes and keeps WireGuard as the default', function (): void {
+    $node = $this->instance->node;
+    $node->update(['lan_ip' => '10.0.0.4']);
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => LifecycleStatus::Active]);
+    $this->caller->update(['lan_ip' => '10.0.0.6']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->caller->id, 'name' => 'managed-pg', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.0.0.6:5434:5432']], 'status' => 'active', 'desired_state' => 'running']);
+    $server->update(['private_endpoints_managed' => true, 'process_id' => $process->id]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'node_id' => $server->node_id, 'host' => $this->caller->wireguard_ip, 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    $url = "/api/v1/instances/{$this->instance->id}/database-connections/catalog";
+    $this->putJson($url, ['network' => 'lan'])->assertOk()->assertJsonPath('data.host', '10.0.0.6');
+    expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('lan')->and(stored_env($this->instance)['DB_HOST'])->toBe('10.0.0.6');
+    $this->putJson($url, ['network' => 'wireguard'])->assertOk()->assertJsonPath('data.host', $connection->host);
+    expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('wireguard');
+});
+
+it('refuses LAN selection without a server Node before writing environment values', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'external', 'driver' => 'pgsql', 'host' => 'db.example.test', 'port' => 5432, 'database' => 'app', 'username' => 'app', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/external", ['network' => 'lan'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'database.lan_unavailable');
+    expect(DatabaseConnectionTarget::query()->count())->toBe(0)->and(stored_env($this->instance))->toBe([]);
+});
+
+it('keeps external LAN aliases unchanged in attachments and Doctor', function (): void {
+    $this->caller->update(['lan_ip' => '10.0.0.6']);
+    DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => true]);
+    DatabaseConnection::query()->create(['slug' => 'lan-alias', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'host' => '10.0.0.6', 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/lan-alias", ['prefix' => 'DB'])
+        ->assertOk()->assertJsonPath('data.host', '10.0.0.6');
+    expect(app(DatabaseConnectionDoctorInspection::class)->attachment(DatabaseConnectionTarget::query()->sole()))->toBe([]);
+});
+
+it('refuses LAN attachments when either Node is inactive or lacks an IPv4 LAN address', function (string $side, string $field, ?string $value): void {
+    $this->caller->update(['lan_ip' => '10.0.0.6']);
+    $this->instance->node->update(['lan_ip' => '10.0.0.4']);
+    ($side === 'server' ? $this->caller : $this->instance->node)->update([$field => $value]);
+    $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active']);
+    DatabaseConnection::query()->create(['slug' => 'catalog', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'host' => '10.44.0.3', 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    expect(fn () => app(DatabaseConnectionEnvProjection::class)->project(DatabaseConnection::query()->sole(), 'DB', 'lan', $this->instance->node))
+        ->toThrow(ResourceOperationException::class);
+    expect(DatabaseConnectionTarget::query()->count())->toBe(0);
+})->with(['server', 'consumer'])->with([['status', 'failed'], ['lan_ip', null], ['lan_ip', '::1']]);

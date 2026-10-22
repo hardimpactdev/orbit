@@ -233,7 +233,6 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
-                "Database server",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -1771,6 +1770,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Database server",
                 "Doctor",
                 "Extension",
@@ -1812,6 +1812,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Database server",
                 "Doctor",
                 "Gateway",
@@ -1819,6 +1820,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -2638,6 +2640,22 @@
                 "Route",
                 "Task",
                 "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/postgresql-migration.md",
+            "title": "Move PostgreSQL databases to a managed server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role"
             ],
             "governing_adrs": []
         },

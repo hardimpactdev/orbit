@@ -696,7 +696,7 @@ orbit instance:deployment:show 42
 Add a registered Database connection on an Instance and write prefixed keys into its stored environment configuration.
 
 ```bash
-orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json]
+orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--network=wireguard|lan] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -707,8 +707,9 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json
 | --- | --- | --- |
 | `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
 | `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
+| `--network=NETWORK` | `wireguard` | `lan` selects a managed server's LAN endpoint; both Nodes must be active with an IPv4 LAN address. Otherwise use the stored host. |
 
-For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. The Gateway writes the connection's stored host and port, also when the Instance runs on the connection's Node.
+For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. By default the Gateway writes the connection's stored host and port. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) is stored on this attachment and leaves other consumers on WireGuard.
 
 ```bash
 orbit instance:database:add app --instance=12

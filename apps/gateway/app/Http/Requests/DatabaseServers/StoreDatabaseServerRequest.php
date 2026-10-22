@@ -6,6 +6,7 @@ namespace App\Http\Requests\DatabaseServers;
 
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Http\Requests\DatabaseConnections\DatabaseConnectionFieldRules;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Closure;
@@ -30,8 +31,8 @@ final class StoreDatabaseServerRequest extends FormRequest
         return [
             'slug' => ['required', 'string', 'max:63', 'regex:'.DatabaseConnectionFieldRules::SLUG_PATTERN],
             'node_id' => ['required', 'integer', 'min:1', 'exists:nodes,id', self::strictInteger(...)],
-            'driver' => ['sometimes', 'string', Rule::enum(DatabaseDriver::class)->only([DatabaseDriver::Mysql, DatabaseDriver::Redis])],
-            'tag' => ['sometimes', 'string', 'max:128', 'regex:'.self::TAG_PATTERN],
+            'driver' => ['sometimes', 'string', Rule::enum(DatabaseDriver::class)->only([DatabaseDriver::Mysql, DatabaseDriver::Redis, DatabaseDriver::Pgsql])],
+            'tag' => ['sometimes', 'string', 'max:128', 'regex:'.($this->input('driver') === 'pgsql' ? DatabaseServerProcess::POSTGRES_TAG_PATTERN : self::TAG_PATTERN)],
             'port' => ['sometimes', 'integer', 'min:1', 'max:65535', self::strictInteger(...), 'prohibits:process_id'],
             // Adoption of an existing Valkey Process (ADR 0221): the Process supplies the port.
             'process_id' => ['required_with:connection', 'integer', 'min:1', self::strictInteger(...)],
@@ -64,7 +65,9 @@ final class StoreDatabaseServerRequest extends FormRequest
             driver: $driver,
             tag: is_string($validated['tag'] ?? null)
                 ? $validated['tag']
-                : ($driver === DatabaseDriver::Redis ? self::DEFAULT_VALKEY_TAG : self::DEFAULT_TAG),
+                : match ($driver) {
+                    DatabaseDriver::Redis => self::DEFAULT_VALKEY_TAG, DatabaseDriver::Pgsql => '18', default => self::DEFAULT_TAG
+                },
             port: match (true) {
                 $processId !== null => null,
                 is_int($validated['port'] ?? null) => $validated['port'],

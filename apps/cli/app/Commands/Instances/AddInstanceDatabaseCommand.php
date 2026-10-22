@@ -17,6 +17,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
         {slug : Database connection slug}
         {--instance= : Positive Instance ID or exact Route domain}
         {--prefix= : Environment key prefix; defaults to DB}
+        {--network= : Connection network: wireguard (default) or lan}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -54,6 +55,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
                 instance: $instance,
                 slug: $slug,
                 prefix: $prefix,
+                network: is_string($this->option('network')) ? $this->option('network') : null,
             ),
             DatabaseConnectionAttachmentResponse::class,
             ['Add Database connection', 'Adding Database connection', 'Added Database connection'],

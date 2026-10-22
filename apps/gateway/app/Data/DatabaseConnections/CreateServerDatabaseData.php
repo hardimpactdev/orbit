@@ -23,5 +23,6 @@ final class CreateServerDatabaseData extends Data
         public array $patterns = [],
         public array $allow = [],
         public ?int $database = null,
+        public ?string $locale = null,
     ) {}
 }

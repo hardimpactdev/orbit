@@ -1794,6 +1794,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 redis_fields['properties'].pop('slug', None)
                 redis_schema['properties'].update(redis_fields['properties'])
                 redis_schema['required'] = sorted(set(server_schema['required'] + redis_fields.get('required', [])))
+                pgsql_rules = 'return [' + server_rules.split('DatabaseDriver::Pgsql => [', 1)[1].split('DatabaseDriver::Redis =>', 1)[0]
+                pgsql_fields, _ = rules_to_schema(pgsql_rules, route['name'])
+                server_schema['properties']['locale'] = pgsql_fields['properties']['locale']
+                server_schema['properties']['locale']['description'] = 'PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.'
+                redis_schema['properties'].pop('locale', None)
                 body_schema = {'oneOf': [register_schema, server_schema, redis_schema]}
                 body_required = True
     elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):

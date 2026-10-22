@@ -76,7 +76,7 @@ final readonly class DropServerDatabaseAction
                 ...$databases,
                 ...$this->admin->execute(
                     $server,
-                    $this->statements->databasesNamed($connection->test_database, $connection->test_database),
+                    $this->statements->forDriver($server->driver)->databasesNamed($connection->test_database, $connection->test_database),
                 ),
             ];
         }
@@ -84,11 +84,11 @@ final readonly class DropServerDatabaseAction
         $sql = '';
 
         foreach (array_values(array_unique($databases)) as $database) {
-            $sql .= $this->statements->dropDatabase($database);
+            $sql .= $this->statements->forDriver($server->driver)->dropDatabase($database);
         }
 
         foreach ($this->unsharedUsers($connection, $server) as $username) {
-            $sql .= $this->statements->dropUser($username);
+            $sql .= $this->statements->forDriver($server->driver)->dropUser($username);
         }
 
         if ($sql !== '') {

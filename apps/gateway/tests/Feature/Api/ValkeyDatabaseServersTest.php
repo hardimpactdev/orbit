@@ -263,7 +263,7 @@ describe('database:server:create --driver=redis', function (): void {
         expect(DatabaseServer::query()->exists())->toBeFalse()
             ->and($this->programs->runs)->toBe([]);
     })->with([
-        'pgsql' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'pgsql']),
+        'pgsql' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'sqlite' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'unknown driver' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'valkey']),
         'process without connection' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => 1]),
@@ -808,4 +808,11 @@ describe('database:server:close boundary', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.99'])
             ->postJson('/api/v1/database-servers/missing/close')->assertForbidden();
     });
+});
+
+it('publishes Valkey only on explicit LAN and WireGuard addresses', function (): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, []))->assertCreated();
+    expect(DatabaseServer::query()->sole()->process->runtime_config['ports'])->toBe(['10.44.0.80:6379:6379', '10.0.0.6:6379:6379']);
 });
