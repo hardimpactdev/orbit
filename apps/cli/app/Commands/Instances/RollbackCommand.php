@@ -20,6 +20,7 @@ final class RollbackCommand extends GatewayCommand
     protected $signature = 'instance:rollback
         {instance : Numeric instance ID}
         {--release= : Retained release name to select}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
@@ -49,7 +50,8 @@ final class RollbackCommand extends GatewayCommand
         }
 
         $connector = $connectors->make($profile);
-        $operation = $this->send($connector, new RollbackInstanceRequest($instanceId, $release), OperationResponse::class);
+        $key = $this->option('idempotency-key');
+        $operation = $this->send($connector, new RollbackInstanceRequest($instanceId, $release, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Roll back Instance [{$instanceId}]", 'Rollback')

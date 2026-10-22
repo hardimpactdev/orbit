@@ -574,12 +574,16 @@ orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it fetches the Project's default branch, checks out its newest commit in the default's checkout, and runs the Project's development deploy steps there. It refuses a checkout with uncommitted changes to tracked files. A failed required step leaves the new commit checked out, and the next scheduled tick retries. A best-effort failure reports a warning and the deployment continues. See [Instance releases](/reference/deployments#development-defaults).
 
 ```bash
-orbit instance:deploy <instance> [--json]
+orbit instance:deploy <instance> [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `instance` | yes | Numeric Instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--idempotency-key=KEY` | Retry the same operation start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key) for its form and conflict rules. |
 
 The command starts an `instance.deploy` [operation](/reference/operations) and follows it until it ends. It subscribes to the operation's channel over Reverb and reads the operation again at each event. Without an active `websocket` role, or when the socket fails, it reads the operation every `poll_after_seconds` instead.
 
@@ -622,7 +626,7 @@ orbit instance:release:list <instance> [--json]
 Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
 
 ```bash
-orbit instance:rollback <instance> --release=NAME [--json]
+orbit instance:rollback <instance> --release=NAME [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -632,6 +636,7 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | Option | Meaning |
 | --- | --- |
 | `--release=NAME` | Retained release name from `instance:release:list`. |
+| `--idempotency-key=KEY` | Retry the same operation start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key) for its form and conflict rules. |
 
 The command starts an `instance.rollback` [operation](/reference/operations) and follows it until it ends, as [`instance:deploy`](#orbit-instancedeploy) does: over Reverb, or every `poll_after_seconds` without it. Human output shows a progress tree of the steps `Find retained release`, `Activate release`, `Refresh PHP cache` for an Instance that serves PHP, and `Restart Processes`. New output of the running step prints above the tree, labeled and escaped. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
 

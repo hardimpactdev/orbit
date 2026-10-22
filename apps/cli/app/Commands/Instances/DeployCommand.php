@@ -19,6 +19,7 @@ final class DeployCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:deploy
         {instance : Numeric instance ID}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
@@ -39,7 +40,8 @@ final class DeployCommand extends GatewayCommand
         }
 
         $connector = $connectors->make($profile);
-        $operation = $this->send($connector, new DeployInstanceRequest($instanceId), OperationResponse::class);
+        $key = $this->option('idempotency-key');
+        $operation = $this->send($connector, new DeployInstanceRequest($instanceId, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Deploy Instance [{$instanceId}]", 'Deployment')

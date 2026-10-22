@@ -144,7 +144,7 @@ it('publishes empty-object bodies with the runtime requiredness', function (stri
     expect($operation['requestBody']['content']['application/json']['schema'])->toBe(['type' => 'object', 'additionalProperties' => false]);
     expect($operation['requestBody']['required'])->toBe($required);
     expect($tool['input_schema']['additionalProperties'])->toBeFalse();
-    expect(array_keys($tool['input_schema']['properties']))->toBe($tool['path_inputs']);
+    expect(array_keys($tool['input_schema']['properties']))->toBe([...$tool['path_inputs'], ...($tool['header_inputs'] ?? [])]);
     expect($tool['input_schema']['required'])->toBe($tool['path_inputs']);
     expect($tool['query_inputs'])->toBe([]);
 })->with([

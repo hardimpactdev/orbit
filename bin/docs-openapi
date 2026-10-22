@@ -214,8 +214,8 @@ def load_controllers():
                 'requests': re.findall(r'(\w+Request) \$', params),
                 'data': sorted({a or b for a, b in re.findall(r'(\w+Data)::fromModel|(\w+Data)::from\w*\(', body)}),
                 'created': bool(re.search(r'\b201\b', body)),
-                # A start request answers 202 with the operation record (docs/reference/operations.md#start-an-operation).
-                'starts_operation': bool(re.search(r'\b202\b', body)) and bool(re.search(r'\bOperationData::', body)),
+                # The same endpoint marker enables shared idempotency handling at runtime.
+                'starts_operation': bool(re.search(r'#\[StartsOperation\(', s[:m.start()].rsplit('public function', 1)[-1])),
             }
     return ctrl
 
@@ -1869,6 +1869,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     starts_operation = controllers.get(action, {}).get('starts_operation', False)
     if starts_operation:
         op['x-orbit-operation'] = 'start'
+        op['parameters'].append({
+            'name': 'Idempotency-Key', 'in': 'header', 'required': False,
+            'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},
+            'description': 'A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409).',
+        })
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
@@ -2036,6 +2041,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
     if route['name'] == 'instance:rollback':
         responses['422'] = error_response('The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy.')
+    if starts_operation:
+        responses['409']['description'] += ' The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).'
+        responses.setdefault('422', error_response('Invalid input (`validation.failed`).'))['description'] += ' A malformed Idempotency-Key also returns `validation.failed`.'
     if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
         responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.')
     if route['name'] in ('node:add', 'node:remove'):

@@ -15,7 +15,10 @@ final class RollbackInstanceRequest extends StartInstanceOperationRequest
     public function __construct(
         private readonly int $instanceId,
         private readonly string $release,
-    ) {}
+        ?string $idempotencyKey = null,
+    ) {
+        parent::__construct($idempotencyKey);
+    }
 
     public function resolveEndpoint(): string
     {

@@ -190,6 +190,21 @@ describe('POST /mcp', function (): void {
             ->and($error['error']['code'])->toBeString();
     });
 
+    it('replays operation starts through the generated Idempotency-Key header argument', function (string $tool, array $input): void {
+        enable_operation_queue();
+        $fixture = Orb220DeploymentApiFixture::create();
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+        $arguments = ['instance' => $fixture->instance->id, 'Idempotency-Key' => 'mcp.stage.c1', ...$input];
+
+        $first = mcp_tool($this, '/mcp', $tool, $arguments);
+        $second = mcp_tool($this, '/mcp', $tool, $arguments);
+
+        expect($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseHas('operations', ['id' => $first['operation']['id'], 'idempotency_key' => 'mcp.stage.c1']);
+        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('jobs', 1);
+    })->with(['deploy' => ['instance-deploy', []], 'rollback' => ['instance-rollback', ['release' => 'initial']]]);
+
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();

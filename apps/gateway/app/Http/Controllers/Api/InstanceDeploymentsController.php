@@ -13,6 +13,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\DeployInstanceRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Http\JsonResponse;
@@ -48,6 +49,7 @@ final class InstanceDeploymentsController extends Controller
     }
 
     /** Starts an `instance.deploy` operation and answers 202 with it; the deploy runs on the Gateway queue. */
+    #[StartsOperation('instance.deploy')]
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         DeployInstanceRequest $request,

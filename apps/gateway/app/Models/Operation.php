@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $kind
+ * @property string|null $idempotency_key Never prune a keyed operation when ADR 0218 adds retention.
+ * @property string|null $idempotency_fingerprint
  * @property string $target_type
  * @property int $target_id
  * @property int|null $node_id
@@ -48,6 +50,8 @@ final class Operation extends Model
     #[\Override]
     protected $fillable = [
         'kind',
+        'idempotency_key',
+        'idempotency_fingerprint',
         'target_type',
         'target_id',
         'node_id',
