@@ -40,6 +40,7 @@ use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskSettling;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnFetchNotice;
@@ -2811,7 +2812,7 @@ it('asks for assistance while pr_url is outside the Project repository and clear
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $reason = TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit. Set pr_url to the pull request in that repository.';
+    $reason = TaskScheduler::ForeignPullRequestPrefix.'https://github.com/old-owner/orbit/pull/42 is not in acme/orbit. Update the Project repository_url to the repository of that pull request, or complete or cancel the task.';
     $this->assertDatabaseHas('tasks', [
         'id' => $group->id, 'status' => 'settling', 'assistance_requested' => true,
         'assistance_kind' => AssistanceKind::Failure->value, 'assistance_reason' => $reason,
@@ -2830,3 +2831,32 @@ it('asks for assistance while pr_url is outside the Project repository and clear
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
 });
+
+it('keeps other assistance and skips non-GitHub Projects when pr_url is outside the repository', function (string $origin, string $status, ?string $kind, ?string $reason, bool $flagged): void {
+    $group = tick_group();
+    $group->project->update(['repository_url' => $origin]);
+    test_update_task($group, [
+        'status' => $status, 'pr_url' => 'https://github.com/old-owner/orbit/pull/42',
+        'assistance_requested' => $kind !== null, 'assistance_kind' => $kind, 'assistance_reason' => $reason,
+    ]);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+
+    app(TaskScheduler::class)->tick();
+
+    $fresh = $group->fresh();
+    expect($fresh?->status->value)->toBe($status);
+    if ($flagged) {
+        expect(TaskSettling::isForeignPullRequestReason($fresh?->assistance_reason))->toBeTrue();
+    } else {
+        expect($fresh?->assistance_kind?->value)->toBe($kind)->and($fresh?->assistance_reason)->toBe($reason);
+    }
+    Http::assertNothingSent();
+})->with([
+    'waiting for review is flagged' => ['https://github.com/acme/orbit.git', 'waiting_for_review', null, null, true],
+    'an open direction request stays' => ['https://github.com/acme/orbit.git', 'settling', 'direction', 'A product question.', false],
+    'another failure stays' => ['https://github.com/acme/orbit.git', 'settling', 'failure', 'Workspace removal failed: disk full', false],
+    'a non-GitHub Project is not flagged' => ['git@example.test:tick.git', 'settling', null, null, false],
+]);

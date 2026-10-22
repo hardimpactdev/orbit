@@ -1217,15 +1217,19 @@ final readonly class TaskSettling
         $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         $outside = $repository instanceof GitHubRepository && is_string($group->pr_url)
             && $repository->pullRequestNumber($group->pr_url) === null;
-        $flagged = is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, TaskScheduler::ForeignPullRequestPrefix);
         if ($outside) {
             TaskAssistance::apply($group, AssistanceKind::Failure, null, TaskScheduler::ForeignPullRequestPrefix.$group->pr_url
-                .' is not in '.$repository->owner.'/'.$repository->name.'. Set pr_url to the pull request in that repository.');
-        } elseif ($flagged) {
+                .' is not in '.$repository->owner.'/'.$repository->name.'. Update the Project repository_url to the repository of that pull request, or complete or cancel the task.');
+        } elseif ($group->assistance_kind === AssistanceKind::Failure && self::isForeignPullRequestReason($group->assistance_reason)) {
             TaskAssistance::apply($group);
         }
 
         return $outside;
+    }
+
+    public static function isForeignPullRequestReason(?string $reason): bool
+    {
+        return is_string($reason) && str_starts_with($reason, TaskScheduler::ForeignPullRequestPrefix);
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool
