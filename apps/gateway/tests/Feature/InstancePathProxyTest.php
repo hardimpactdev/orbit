@@ -13,6 +13,7 @@ use App\Domain\Instances\LaravelRouteInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
@@ -27,9 +28,10 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
-use Orbit\Sdk\Requests\Instances\UnsetInstancePathProxyRequest;
+use App\Models\RouteTarget;
 use Orbit\Sdk\Requests\Instances\SetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstancePathProxyRequest;
+use Orbit\Sdk\Requests\Instances\UnsetInstancePathProxyRequest;
 
 beforeEach(function (): void {
     $this->inspector = Mockery::mock(LaravelRouteInspector::class);
@@ -282,3 +284,41 @@ it('recreates enabled intent and withdraws disabled intent through the Node conv
         ->and($withdrawn->content)->not->toContain('path /powersync', 'reverse_proxy http://10.44.0.3:8080')
         ->and($withdrawn->version)->not->toBe($published->version);
 });
+
+it('guards every Route affected by a pool move before preparation, including incomplete withdrawals', function (bool $withdrawn, bool $intoProxy): void {
+    [$node, $instance, $proxied, $process] = path_proxy_fixture();
+    $url = path_proxy_url($instance);
+    $this->putJson($url, ['process_id' => $process->id, 'port' => 8080])->assertOk();
+    if ($withdrawn) {
+        app(NodeCaddyBuilds::class)->failNext($node->name);
+        $this->deleteJson($url)->assertStatus(502);
+    }
+    $otherRoute = Route::query()->create(['project_id' => $instance->project_id, 'cluster_id' => $proxied->cluster_id,
+        'domain' => 'other.hauzer.app', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $others = [];
+    foreach ([5, 6] as $index) {
+        $otherNode = Node::query()->create(['public_ssh_host' => '192.0.2.'.$index, 'name' => 'prod-'.$index, 'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.'.$index, 'cluster_id' => $proxied->cluster_id, 'status' => 'active']);
+        orbit_test_set_app_placement_role($otherNode, true);
+        $other = $instance->replicate();
+        $other->node_id = $otherNode->id;
+        $other->name = 'production-'.$index;
+        $other->save();
+        $otherRoute->targets()->create(['instance_id' => $other->id, 'position' => count($others)]);
+        $others[] = $other;
+    }
+    $otherRoute->update(['status' => 'active']);
+    $projector = Mockery::mock(RouteDomainProjector::class);
+    $projector->shouldNotReceive('prepareWorkloadCertificate');
+    app()->instance(RouteDomainProjector::class, $projector);
+    $before = RouteTarget::query()->orderBy('id')->get()->toArray();
+    $proposal = $intoProxy
+        ? ['targets' => [$others[1]->id], 'dispositions' => [['instance_id' => $others[0]->id, 'route_id' => $proxied->id]]]
+        : ['targets' => [$others[0]->id, $others[1]->id, $instance->id]];
+    $this->putJson('/api/v1/routes/'.$otherRoute->id.'/target', $proposal)
+        ->assertConflict()->assertJsonPath('error.code', 'path_proxy.route_in_use');
+    expect(RouteTarget::query()->orderBy('id')->get()->toArray())->toBe($before)
+        ->and($otherRoute->refresh()->target_set_intent)->toBeNull()
+        ->and($otherRoute->failed_step)->toBeNull()
+        ->and(InstancePathProxy::query()->sole()->enabled)->toBe(! $withdrawn);
+})->with(['enabled' => false, 'incomplete withdrawal' => true])->with(['vacated source' => false, 'reassigned destination' => true]);

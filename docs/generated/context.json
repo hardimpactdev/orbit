@@ -1457,6 +1457,7 @@
             "components": [],
             "concepts": [
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

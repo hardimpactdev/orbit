@@ -71,7 +71,15 @@ final readonly class ConvergeRouteTargetSetAction
         }
 
         WebSocketRouteSelection::assertMutable($route);
-        PathProxy::assertRouteMutable($route);
+        $affectedRouteIds = [$route->id, ...$this->vacatedRouteIds($route, $proposal)];
+        foreach ($proposal->dispositions as $disposition) {
+            if ($disposition->routeId !== null) {
+                $affectedRouteIds[] = $disposition->routeId;
+            }
+        }
+        foreach (Route::query()->whereIn('id', $affectedRouteIds)->get() as $affectedRoute) {
+            PathProxy::assertRouteMutable($affectedRoute);
+        }
         $step = RouteTargetSetStep::tryFrom((string) $route->target_set_step) ?? RouteTargetSetStep::Reserved;
 
         if ($this->rank($step) < $this->rank(RouteTargetSetStep::DatabaseCommitted)) {
