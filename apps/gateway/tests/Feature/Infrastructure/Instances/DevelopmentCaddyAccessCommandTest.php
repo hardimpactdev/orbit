@@ -258,56 +258,94 @@ it('finishes its walk while setup removes and replaces files under the checkout 
         return;
     }
 
-    $root = development_caddy_access_fixture();
-    $churn = null;
+    // Two private checkouts let the ten real walks run in pairs, without racing each other's ACL grants.
+    $roots = [development_caddy_access_fixture(), development_caddy_access_fixture()];
+    $processes = [];
 
     try {
-        $checkout = "$root/checkout";
-        foreach (range(1, 40) as $directory) {
-            mkdir("$checkout/web/site/build/d$directory", 0o755, true);
-            mkdir("$checkout/vendor/p$directory", 0o700, true);
-            foreach (range(1, 20) as $file) {
-                file_put_contents("$checkout/web/site/build/d$directory/f$file.js", 'asset');
-                file_put_contents("$checkout/vendor/p$directory/f$file.php", 'source');
-            }
-        }
-        // Like `vp build` and Composer during the baseline setup: directories and files vanish and come back.
-        $churn = new Process(['bash', '-c', <<<'BASH'
-            while :; do
-                for directory in "$1"/web/site/build/d* "$1"/vendor/p*; do
-                    rm -rf -- "$directory"
-                    mkdir -p -- "$directory"
-                    for file in 1 2 3 4 5; do printf x > "$directory/f$file.js"; done
-                done
+        foreach ($roots as $root) {
+            mkdir("$root/bin");
+            posix_mkfifo("$root/walk-continue", 0o600);
+            // `find -exec` has enumerated real directories, but setfacl has not opened them yet. Hold that boundary
+            // until the test removes one enumerated directory and replaces another, like a build or Composer does.
+            file_put_contents("$root/bin/setfacl", <<<BASH
+            #!/bin/bash
+            phase=
+            for argument in "\$@"; do
+                case "\$argument" in
+                    d:u:caddy:---) phase=checkout ;;
+                    d:u:caddy:r-x) phase=web ;;
+                esac
             done
-            BASH, 'churn', $checkout]);
-        $churn->start();
-        usleep(200_000);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+            if [ -n "\$phase" ]; then
+                printf 'acl-walk:%s\\n' "\$phase"
+                IFS= read -r acknowledgement < "$root/walk-continue"
+                test "\$acknowledgement" = continue || exit 1
+            fi
+            exec /usr/bin/setfacl "\$@"
+            BASH);
+            chmod("$root/bin/setfacl", 0o700);
+        }
         $failures = [];
-        foreach (range(1, 10) as $run) {
-            $process = new Process($command->arguments)->setInput($command->input);
-            if ($process->run() !== 0) {
-                $failures[] = $process->getErrorOutput();
+        $completedWalks = 0;
+        foreach (range(1, 5) as $run) {
+            foreach ($roots as $root) {
+                $checkout = "$root/checkout";
+                foreach (["$checkout/vendor", "$checkout/web/site/build"] as $directory) {
+                    foreach (['vanished', 'replaced'] as $entry) {
+                        new Filesystem()->ensureDirectoryExists("$directory/$entry");
+                        file_put_contents("$directory/$entry/file", 'old');
+                    }
+                }
+                $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+                $processes[$root] = $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
+                $process->setInput($command->input)->start();
+            }
+            foreach ($processes as $root => $process) {
+                $checkout = "$root/checkout";
+                foreach (['checkout' => "$checkout/vendor", 'web' => "$checkout/web/site/build"] as $phase => $directory) {
+                    expect($process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "acl-walk:$phase\n")))
+                        ->toBeTrue($process->getErrorOutput());
+                    new Filesystem()->deleteDirectory("$directory/vanished");
+                    new Filesystem()->deleteDirectory("$directory/replaced");
+                    mkdir("$directory/replaced", 0o755);
+                    file_put_contents("$directory/replaced/file", "replacement $run");
+                    file_put_contents("$root/walk-continue", "continue\n");
+                }
+            }
+            foreach ($processes as $process) {
+                if ($process->wait() !== 0) {
+                    $failures[] = $process->getErrorOutput();
+                }
+                $completedWalks++;
             }
         }
-        $churn->stop(0);
 
         expect($failures)->toBe([]);
-        // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
-        mkdir("$checkout/web/site/build/late", 0o755, true);
-        file_put_contents("$checkout/web/site/build/late/app.js", 'late asset');
-        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/late/app.js"])->mustRun()->getOutput())->toBe('late asset')
-            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
-        foreach (['.env', 'source.txt', 'web/private.txt'] as $private) {
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
+        expect($completedWalks)->toBe(10);
+        foreach ($roots as $root) {
+            $checkout = "$root/checkout";
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/replaced/file"])->mustRun()->getOutput())->toBe('replacement 5')
+                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/vendor/replaced/file"])->run())->toBe(1);
+            // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
+            mkdir("$checkout/web/site/build/late", 0o755, true);
+            file_put_contents("$checkout/web/site/build/late/app.js", 'late asset');
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/late/app.js"])->mustRun()->getOutput())->toBe('late asset')
+                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
+            foreach (['.env', 'source.txt', 'web/private.txt'] as $private) {
+                expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
+            }
+            mkdir("$checkout/vendor/late", 0o700, true);
+            file_put_contents("$checkout/vendor/late/new.php", 'new source');
+            expect(new Process(['getfacl', '-cp', "$checkout/vendor/late/new.php"])->mustRun()->getOutput())->toContain('user:caddy:---');
         }
-        mkdir("$checkout/vendor/late", 0o700, true);
-        file_put_contents("$checkout/vendor/late/new.php", 'new source');
-        expect(new Process(['getfacl', '-cp', "$checkout/vendor/late/new.php"])->mustRun()->getOutput())->toContain('user:caddy:---');
     } finally {
-        $churn?->stop(0);
-        new Filesystem()->deleteDirectory($root);
+        foreach ($processes as $process) {
+            $process->stop(0);
+        }
+        foreach ($roots as $root) {
+            new Filesystem()->deleteDirectory($root);
+        }
     }
 });
 

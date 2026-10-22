@@ -317,7 +317,8 @@ it('resumes a partially renamed included worktree set from retained evidence', f
         orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
         $files = new Filesystem;
         $files->ensureDirectoryExists($linkedSource.'/many');
-        for ($index = 0; $index < 2_000; $index++) {
+        // The rename acknowledgement, not tree size, holds the partial-move checkpoint.
+        for ($index = 0; $index < 3; $index++) {
             file_put_contents($linkedSource.'/many/'.$index, "retained\n");
         }
 
@@ -558,7 +559,8 @@ it('resumes an actual interruption during original cleanup from the verified des
         $files = new Filesystem;
         $files->ensureDirectoryExists($fixture['source'].'/cleanup');
         file_put_contents($fixture['source'].'/cleanup/00000-trigger', "trigger\n");
-        for ($index = 1; $index <= 20_000; $index++) {
+        // The unlink acknowledgement holds cleanup before the remaining entries are removed.
+        for ($index = 1; $index <= 3; $index++) {
             file_put_contents(
                 $fixture['source'].'/cleanup/'.str_pad((string) $index, 5, '0', STR_PAD_LEFT),
                 "retained\n",
@@ -583,7 +585,8 @@ it('resumes an actual interruption during original cleanup from the verified des
         expect(is_dir($fixture['source']))
             ->toBeTrue()
             ->and($partialCount)
-            ->toBeLessThan(20_001)
+            ->toBeLessThan(4)
+            ->toBeGreaterThan(0)
             ->and(orb105_complete_manifest($fixture['source']))
             ->not
             ->toBe($manifestBefore)
@@ -1088,35 +1091,24 @@ final class Orb105InterruptPartialPrepareSshExecutor implements SshExecutor
         }
 
         $this->interrupted = true;
-        $process = new SymfonyProcess($command->arguments);
-        $process->start();
-        $deadline = microtime(true) + 30;
+        $pauseAfterRename = <<<'PYTHON'
+            import os, signal
+            original_rename = os.rename
+            def rename_and_pause(source, destination, *args, **kwargs):
+                original_rename(source, destination, *args, **kwargs)
+                if source == %s:
+                    print('relocation-checkpoint', flush=True)
+                    signal.pause()
+            os.rename = rename_and_pause
+            PYTHON;
 
-        while ($process->isRunning() && microtime(true) < $deadline) {
-            if (! file_exists($this->movedSource) && is_dir($this->unmovedSource)) {
-                $process->stop(0, SIGKILL);
-
-                return new CommandResult(
-                    exitCode: $process->getExitCode() ?? 137,
-                    stdout: $process->getOutput(),
-                    stderr: $process->getErrorOutput(),
-                    durationMs: 0,
-                    truncated: false,
-                );
-            }
-        }
-
-        if ($process->isRunning()) {
-            $process->stop(0, SIGKILL);
-        }
-
-        return new CommandResult(
-            exitCode: $process->getExitCode() ?? 1,
-            stdout: $process->getOutput(),
-            stderr: 'Partial prepare interruption was not observed.',
-            durationMs: 0,
-            truncated: false,
-        );
+        return orb105_interrupt_at_checkpoint($command, sprintf(
+            $pauseAfterRename,
+            json_encode($this->movedSource, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        ), function (): void {
+            expect(file_exists($this->movedSource))->toBeFalse()
+                ->and(is_dir($this->unmovedSource))->toBeTrue();
+        });
     }
 }
 
@@ -1139,48 +1131,63 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         // Pause after the real unlink so cleanup cannot finish before the observer sends SIGKILL.
         $pauseAfterUnlink = <<<'PYTHON'
             import os, signal
+            trigger = %s
+            original_walk = os.walk
+            def walk_with_trigger_first(*args, **kwargs):
+                for current, directories, files in original_walk(*args, **kwargs):
+                    if current == os.path.dirname(trigger):
+                        files.sort(key=lambda name: name != os.path.basename(trigger))
+                    yield current, directories, files
+            os.walk = walk_with_trigger_first
             original_unlink = os.unlink
             def unlink_and_pause(path, *args, **kwargs):
                 directory = kwargs.get('dir_fd')
                 absolute = os.path.join(os.readlink('/proc/self/fd/' + str(directory)), path) if directory is not None else path
                 original_unlink(path, *args, **kwargs)
-                if absolute == %s:
-                    os.kill(os.getpid(), signal.SIGSTOP)
+                if absolute == trigger:
+                    print('relocation-checkpoint', flush=True)
+                    signal.pause()
             os.unlink = unlink_and_pause
             PYTHON;
-        $arguments = $command->arguments;
-        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-            ."\n".$arguments[2];
-        $process = new SymfonyProcess($arguments);
-        $process->start();
-        $deadline = microtime(true) + 30;
 
-        while ($process->isRunning() && microtime(true) < $deadline) {
-            if (! file_exists($this->trigger) && is_dir($this->source)) {
-                $process->stop(0, SIGKILL);
-
-                return new CommandResult(
-                    exitCode: $process->getExitCode() ?? 137,
-                    stdout: $process->getOutput(),
-                    stderr: $process->getErrorOutput(),
-                    durationMs: 0,
-                    truncated: false,
-                );
-            }
-        }
-
-        if ($process->isRunning()) {
-            $process->stop(0, SIGKILL);
-        }
-
-        return new CommandResult(
-            exitCode: 1,
-            stdout: $process->getOutput(),
-            stderr: 'Cleanup interruption was not observed.',
-            durationMs: 0,
-            truncated: false,
-        );
+        return orb105_interrupt_at_checkpoint($command, sprintf(
+            $pauseAfterUnlink,
+            json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        ), function (): void {
+            expect(file_exists($this->trigger))->toBeFalse()
+                ->and(is_dir($this->source))->toBeTrue();
+        });
     }
+}
+
+/** Pause only after the real filesystem operation; the observer acknowledges it by killing the actual process. */
+function orb105_interrupt_at_checkpoint(RemoteCommand $command, string $hook, Closure $assertCheckpoint): CommandResult
+{
+    $arguments = $command->arguments;
+    $arguments[2] = $hook."\n".$arguments[2];
+    $process = new SymfonyProcess($arguments, timeout: 5);
+    $process->start();
+
+    try {
+        $acknowledged = $process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "relocation-checkpoint\n"));
+        expect($acknowledged)->toBeTrue($process->getErrorOutput());
+        $assertCheckpoint();
+    } finally {
+        if ($process->isRunning()) {
+            $process->signal(SIGKILL);
+            $process->wait();
+        }
+    }
+
+    expect($process->getTermSignal())->toBe(SIGKILL);
+
+    return new CommandResult(
+        exitCode: $process->getExitCode(),
+        stdout: $process->getOutput(),
+        stderr: $process->getErrorOutput(),
+        durationMs: 0,
+        truncated: false,
+    );
 }
 
 it('closes a relocated Instance environment to other local users after the last verification', function (string $relative): void {

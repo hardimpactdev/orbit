@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
+use Tests\Support\DocumentSchedulerFixture;
 use Tests\Support\WithDocumentDeletionFixture;
 
 require_once __DIR__.'/../../../../Support/DocumentDeletionFixtures.php';
@@ -12,6 +13,8 @@ require_once __DIR__.'/../../../../Support/DocumentDeletionFixtures.php';
 uses(WithDocumentDeletionFixture::class);
 
 pest()->group('subprocess');
+
+beforeAll(fn () => DocumentSchedulerFixture::prepareBootstrap());
 
 beforeEach(function (): void {
     $this->initializeDocumentDeletionFixture();
@@ -56,9 +59,9 @@ it('resumes recurring children and pauses them on restart', function (): void {
         expect(deletion_requests())->toHaveCount(3);
 
         $staleToken = file_get_contents($this->deletionHome.'/runtime/scheduler.session');
-        $consumer->signal(SIGKILL);
+        $consumer->process->signal(SIGKILL);
         try {
-            $consumer->wait();
+            $consumer->process->wait();
         } catch (ProcessSignaledException) {
             // The session file cannot stand in for the daemon's lifetime lock.
         }
@@ -66,7 +69,7 @@ it('resumes recurring children and pauses them on restart', function (): void {
         $afterDeath = ProjectDocumentCleanup::query()->create(['storage_key' => 'restart', 'next_attempt_at' => now()]);
         deletion_scheduler_clock('2030-01-01T00:30:00Z');
         $standalone = deletion_scheduler('schedule:run', $staleToken);
-        expect($standalone->run())->toBe(0, $standalone->getErrorOutput());
+        expect($standalone->process->run())->toBe(0, $standalone->process->getErrorOutput());
         expect(app(CleanupGate::class)->status()->state)->toBe('paused');
         expect($afterDeath->fresh()->pending)->toBeTrue();
         expect(deletion_requests())->toHaveCount(3);
@@ -83,7 +86,7 @@ it('resumes recurring children and pauses them on restart', function (): void {
         expect($afterDeath->fresh())->toBeNull();
         expect(array_column(deletion_requests(), 'path'))->toBe(['/fixture-bucket/restored', '/fixture-bucket/next', '/fixture-bucket/paused', '/fixture-bucket/restart']);
     } finally {
-        $consumer->stop();
-        $restart->stop();
+        $consumer->process->stop(0);
+        $restart->process->stop(0);
     }
 });
