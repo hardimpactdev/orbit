@@ -420,7 +420,10 @@ final readonly class UpdateProjectAction
         if (is_string($update->requested_repository_url)) {
             $this->assertRepositoryIdentity($project, $update->requested_repository_url);
 
-            if ($update->requested_repository_url !== $project->repository_url) {
+            if (
+                $update->requested_repository_url !== $project->repository_url
+                || GitRepositoryIdentity::derive($update->requested_repository_url) !== $project->repository_identity
+            ) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
                 $this->preflightTaskWorkspaces($project, $plan['checkouts'], $update->requested_repository_url, $update->requested_default_branch);
                 $this->sources->preflightRepository(
@@ -778,7 +781,9 @@ final readonly class UpdateProjectAction
             'default_branch' => $update->previous_default_branch,
             'root' => $update->previous_root,
         ]);
-        $project->repository_identity = GitRepositoryIdentity::derive($update->previous_repository_url);
+        if ($project->isDirty('repository_url')) {
+            $project->repository_identity = GitRepositoryIdentity::derive($update->previous_repository_url);
+        }
         $project->save();
 
         $this->assertProductionUnchanged($update);
@@ -786,7 +791,7 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * @return array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}
+     * @return array{slug: ?string, repository_url: string, repository_identity: string, default_branch: ?string, root: ?string}
      */
     private function normalized(Project $project, UpdateProjectData $data): array
     {
@@ -796,11 +801,16 @@ final readonly class UpdateProjectAction
             $root = ProjectRoot::validate($root, $type);
         }
 
+        $repository = $data->repositoryUrlProvided
+            ? GitRepositoryOrigin::validate((string) $data->repositoryUrl)
+            : $project->repository_url;
+
         return [
             'slug' => $data->slugProvided ? $data->slug : $project->slug,
-            'repository_url' => $data->repositoryUrlProvided
-                ? GitRepositoryOrigin::validate((string) $data->repositoryUrl)
-                : $project->repository_url,
+            'repository_url' => $repository,
+            'repository_identity' => $data->repositoryUrlProvided
+                ? GitRepositoryIdentity::derive($repository)
+                : $project->repository_identity,
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $project->default_branch,
@@ -809,12 +819,13 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * @param  array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}  $normalized
+     * @param  array{slug: ?string, repository_url: string, repository_identity: string, default_branch: ?string, root: ?string}  $normalized
      */
     private function changesState(Project $project, array $normalized): bool
     {
         return $normalized['slug'] !== $project->slug
             || $normalized['repository_url'] !== $project->repository_url
+            || $normalized['repository_identity'] !== $project->repository_identity
             || $normalized['default_branch'] !== $project->default_branch
             || $normalized['root'] !== $project->root;
     }

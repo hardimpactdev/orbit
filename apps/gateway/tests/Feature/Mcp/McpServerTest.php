@@ -10,10 +10,12 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Http\Events\RequestHandled;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\Orb101ProjectUpdateFixture;
 use Tests\Support\Orb220DeploymentApiFixture;
 use Tests\Support\TaskModelRouter;
 
@@ -81,6 +83,28 @@ beforeEach(function (): void {
 });
 
 describe('POST /mcp', function (): void {
+    it('repairs a stale repository identity through project-update with an unchanged URL', function (): void {
+        $fixture = Orb101ProjectUpdateFixture::bind($this);
+        $repository = 'https://github.com/hardimpactdev/orbit.git';
+        DB::table('projects')->where('id', $fixture->project->id)->update([
+            'repository_url' => $repository,
+            'repository_identity' => 'github.com/nckrtl/orbit',
+        ]);
+
+        $result = mcp_tool($this, '/mcp', 'project-update', [
+            'project' => $fixture->project->id,
+            'repository_url' => $repository,
+        ]);
+
+        expect($result['data']['repository_url'])->toBe($repository);
+        $this->assertDatabaseHas('projects', [
+            'id' => $fixture->project->id,
+            'repository_url' => $repository,
+            'repository_identity' => 'github.com/hardimpactdev/orbit',
+        ]);
+        expect($fixture->sources->originMutations)->toBeEmpty();
+    });
+
     it('answers the MCP handshake with the server identity and operating instructions', function (): void {
         $response = mcp_call($this, 'initialize', [
             'protocolVersion' => '2025-06-18',
