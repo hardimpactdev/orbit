@@ -1,0 +1,24 @@
+Starting publication...
+
+┌  Start publication
+│
+├  ● Started publication
+│
+└  Started publication.
+
+Waiting for a worker...
+Pushing commit...
+
+┌  Publish Instance [1]
+│
+├  ● Started on a worker
+│    Operation 1.
+│
+├  ● Pushed commit
+│
+└  Publication succeeded.
+
+Branch: feature/export
+Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

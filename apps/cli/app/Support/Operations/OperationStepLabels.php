@@ -17,6 +17,8 @@ final class OperationStepLabels
             'activation' => ['Activate release', 'Activating release', 'Activated release'],
             'php_refresh' => ['Refresh PHP cache', 'Refreshing PHP cache', 'Refreshed PHP cache'],
             'process_restart' => ['Restart Processes', 'Restarting Processes', 'Restarted Processes'],
+            'push' => ['Push commit', 'Pushing commit', 'Pushed commit'],
+            'pull_request' => ['Publish pull request', 'Publishing pull request', 'Published pull request'],
             'cleanup' => ['Clean up releases', 'Cleaning up releases', 'Cleaned up releases'],
             default => null,
         };

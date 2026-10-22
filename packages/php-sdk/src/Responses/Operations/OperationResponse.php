@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Operations;
 
 use InvalidArgumentException;
+use Orbit\Sdk\Responses\Instances\InstancePublishResult;
 use SensitiveParameter;
 use stdClass;
 
@@ -43,6 +44,12 @@ final readonly class OperationResponse
         public array $steps,
         public string $requestId,
     ) {}
+
+    public function publishResult(): ?InstancePublishResult
+    {
+        return $this->kind === 'instance.publish' && $this->status === 'succeeded' && $this->result !== null
+            ? InstancePublishResult::fromGatewayData($this->result) : null;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromGatewayData(#[SensitiveParameter] array $data, string $requestId): self

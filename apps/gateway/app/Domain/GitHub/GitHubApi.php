@@ -58,6 +58,7 @@ interface GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        bool $workflows = true,
     ): string;
 
     /** @throws GitHubApiException */
@@ -68,13 +69,13 @@ interface GitHubApi
     ): string;
 
     /**
-     * One page of pull requests in GitHub's default order, in any state, with this branch as head.
+     * One page of pull requests in GitHub's default order with this branch as head. Open-only lookup excludes closed history.
      *
      * @return list<GitHubBranchPullRequest>
      *
      * @throws GitHubApiException
      */
-    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array;
+    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head, bool $openOnly = false): array;
 
     /**
      * A token that only reads the check runs of this one repository, and expires after one hour.

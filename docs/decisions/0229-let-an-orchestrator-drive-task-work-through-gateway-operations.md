@@ -12,7 +12,7 @@ An external orchestrator owns the lifecycle of task work: its stages, gates, bud
 
 In progress.
 
-The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. The workspace, command, publish, and task steps remain.
+The shared operation-start idempotency key is built for deploy and rollback. [Operations](/reference/operations#retry-a-start-with-a-key) owns its contract and reasons. Development Instance publish is built; [GitHub App](/reference/github-app#publish-a-development-instance) owns its contract and reasons. The workspace, command, and task steps remain.
 
 Nick decided this on 2026-10-22.
 

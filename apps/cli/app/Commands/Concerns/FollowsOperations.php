@@ -250,6 +250,15 @@ trait FollowsOperations
             $this->writeHumanMessage('Error code: '.$operation->errorCode);
         }
 
+        if ($operation->kind === 'instance.publish' && $operation->succeeded()) {
+            foreach (['branch' => 'Branch', 'commit' => 'Commit', 'pull_request_url' => 'Pull request'] as $field => $label) {
+                $value = $operation->result[$field] ?? null;
+                if (is_string($value)) {
+                    $this->writeHumanMessage($label.': '.$value);
+                }
+            }
+        }
+
         $selected = $operation->result['selected_release'] ?? null;
 
         if (is_string($selected)) {

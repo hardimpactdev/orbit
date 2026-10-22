@@ -19,11 +19,11 @@ final readonly class RepositoryPullRequestAccess
     ) {}
 
     /** @throws GitHubApiException */
-    public function token(GitHubRepository $repository): string
+    public function token(GitHubRepository $repository, bool $workflows = true): string
     {
         [$credentials, $installation] = $this->installation($repository);
 
-        return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
+        return $this->github->repositoryPullRequestToken($credentials, $installation, $repository, $workflows);
     }
 
     /** Disposable VMs never borrow a shared GitHub CLI login or fall back anonymously. */

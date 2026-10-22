@@ -11,6 +11,7 @@ use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
+use Orbit\Sdk\Requests\Instances\PublishInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
@@ -208,3 +209,24 @@ function deployment_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
 }
+
+describe('Instance publish transport', function (): void {
+    it('sends the exact payload and shared idempotency header without inventing pull request input', function (): void {
+        $plain = new PublishInstanceRequest(17, str_repeat('a', 40), 'feature/export', idempotencyKey: 'publish.c1');
+        $pr = new PublishInstanceRequest(17, str_repeat('a', 40), 'feature/export', ['base' => 'main', 'title' => 'Export', 'body' => '']);
+        expect($plain->getMethod())->toBe(Method::POST)->and($plain->resolveEndpoint())->toBe('/api/v1/instances/17/publish')
+            ->and($plain->headers()->get('Idempotency-Key'))->toBe('publish.c1')
+            ->and($plain->body()->all())->toBe(['commit' => str_repeat('a', 40), 'branch' => 'feature/export'])
+            ->and($pr->body()->all()['pull_request'])->toBe(['base' => 'main', 'title' => 'Export', 'body' => '']);
+    });
+
+    it('parses the operation envelope and typed completed publish result', function (): void {
+        $data = ['id' => 42, 'kind' => 'instance.publish', 'target_type' => 'instance', 'target_id' => 17, 'status' => 'succeeded', 'sequence' => 9,
+            'result' => ['branch' => 'feature/export', 'commit' => str_repeat('a', 40), 'pull_request_number' => 11, 'pull_request_url' => 'https://github.com/acme/shop/pull/11']];
+        $mock = new MockClient([PublishInstanceRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']], 202)]);
+        $connector = new GatewayConnector('https://gateway.test', '/test/ca.pem');
+        $connector->withMockClient($mock);
+        $dto = $connector->send(new PublishInstanceRequest(17, str_repeat('a', 40), 'feature/export'))->dtoOrFail();
+        expect($dto)->toBeInstanceOf(OperationResponse::class)->and($dto->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844')->and($dto->publishResult()->pullRequestNumber)->toBe(11)->and($dto->publishResult()->branch)->toBe('feature/export');
+    });
+});

@@ -4010,6 +4010,76 @@
       }
     },
     {
+      "name": "instance-publish",
+      "extension": null,
+      "title": "instance:publish",
+      "description": "Publish a development Instance commit through the GitHub App.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/publish",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$(?![\\s\\S])",
+            "description": "Full commit SHA in the Instance checkout"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Target branch"
+          },
+          "pull_request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "base": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "base",
+              "title",
+              "body"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "commit",
+          "branch"
+        ]
+      }
+    },
+    {
       "name": "instance-queue",
       "extension": null,
       "title": "Read the Instance queue",
@@ -5745,7 +5815,11 @@
                   "type": "string"
                 }
               }
-            }
+            },
+            "required": [
+              "cidr",
+              "max_vms"
+            ]
           }
         },
         "additionalProperties": false,

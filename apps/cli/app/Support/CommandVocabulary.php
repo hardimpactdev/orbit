@@ -37,6 +37,7 @@ final readonly class CommandVocabulary
             'clone',
             'deploy',
             'logs',
+            'publish',
             'register',
             'rename',
             'rollback',

@@ -69,9 +69,9 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->protectionRequiresUpToDate($token, $repository, $branch);
     }
 
-    public function repositoryPullRequestToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    public function repositoryPullRequestToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository, bool $workflows = true): string
     {
-        return $this->github->repositoryPullRequestToken($credentials, $installationId, $repository);
+        return $this->github->repositoryPullRequestToken($credentials, $installationId, $repository, $workflows);
     }
 
     public function repositoryPullRequestReadToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
@@ -79,9 +79,9 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->github->repositoryPullRequestReadToken($credentials, $installationId, $repository);
     }
 
-    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array
+    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head, bool $openOnly = false): array
     {
-        return $this->github->pullRequestsByHead($token, $repository, $head);
+        return $this->github->pullRequestsByHead($token, $repository, $head, $openOnly);
     }
 
     public function repositoryChecksToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string

@@ -1145,6 +1145,11 @@ def rules_to_schema(rules_text, route_name=None):
         sch, req, required_when_sent = schema_from_tokens(tokens_for(value, route_name))
         body_required = body_required or ('.' not in key and required_when_sent)
         parts = key.split('.')
+        # A child required when its own object is present is required inside that optional object.
+        parent = '.'.join(parts[:-1])
+        if parent and any(kind == 'rule' and token in (f'required_with:{parent}', f'present_with:{parent}')
+                          for kind, token in tokens_for(value, route_name)):
+            req = True
         node = root
         for idx, part in enumerate(parts):
             last = idx == len(parts) - 1

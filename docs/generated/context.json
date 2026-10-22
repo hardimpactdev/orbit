@@ -2172,7 +2172,8 @@
             "title": "GitHub App",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Activity",

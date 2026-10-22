@@ -327,12 +327,13 @@ final readonly class TaskVmGit
      * @param  list<string>  $haves  commits of the mirror, such as those {@see fetch()} returned for the default and task branches
      * @param  Closure(RemoteCommand): CommandResult  $run
      * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
+     * @param  bool  $requireFastForward  reject a divergent branch and skip a branch already at the commit
      * @param  bool  $replace  whether the commit may replace a branch whose history moved: only over the tip that the last
      *                         {@see fetch()} of the branch saw, and never otherwise forced
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false): void
+    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $requireFastForward = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
@@ -355,6 +356,16 @@ final readonly class TaskVmGit
                 throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
             }
             $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
+            if ($requireFastForward) {
+                $tip = $this->checked('instance-publish-tip', $errorCode, $this->git($mirror, ['ls-remote', '--heads', '--', $url, 'refs/heads/'.$branch], $write, timeout: $this->timeout($deadline, 300.0, $errorCode)));
+                $head = explode("\t", trim($tip->stdout))[0];
+                if ($head === $commit) {
+                    return;
+                }
+                if ($head !== '' && ! $this->git($mirror, ['merge-base', '--is-ancestor', $head, $commit])->succeeded()) {
+                    throw new RuntimeConvergenceException('instance-publish-ancestry', 'instance_publish.not_fast_forward', 'The branch is not an ancestor of the commit.');
+                }
+            }
             $lease = $replace
                 ? ['--force-with-lease=refs/heads/'.$branch.':'.trim($this->git($mirror, ['rev-parse', '--verify', '--quiet', 'refs/heads/'.$branch])->stdout)]
                 : [];

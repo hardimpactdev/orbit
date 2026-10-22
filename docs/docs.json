@@ -432,6 +432,7 @@
               "DELETE /api/v1/instances/{instance}/log-streams/{stream}",
               "PUT /api/v1/instances/{instance}/log-streams/{stream}",
               "GET /api/v1/instances/{instance}/logs",
+              "POST /api/v1/instances/{instance}/publish",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
               "POST /api/v1/instances/{instance}/rename",

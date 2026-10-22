@@ -10,6 +10,7 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
+use Orbit\Sdk\Requests\Instances\PublishInstanceRequest;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -17,6 +18,7 @@ use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Saloon\Http\Request;
 
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
@@ -367,4 +369,50 @@ describe('operation commands', function (): void {
             ->and(Artisan::output())->toContain('Cancel requested', 'orbit operation:show 42');
         $mock->assertSent(static fn ($request): bool => $request instanceof CancelOperationRequest && (string) $request->body() === '{}');
     });
+});
+
+describe('instance publish command', function (): void {
+    it('follows publication and renders its result in human and JSON modes', function (bool $json): void {
+        $final = cli_operation(['kind' => 'instance.publish', 'status' => 'succeeded', 'poll_after_seconds' => null,
+            'result' => ['branch' => 'feature/export', 'commit' => str_repeat('a', 40), 'pull_request_number' => 11, 'pull_request_url' => 'https://github.com/acme/shop/pull/11']], [cli_step('push', 1, 'succeeded', 5), cli_step('pull_request', 2, 'succeeded', 7)]);
+        $mock = MockClient::global([
+            PublishInstanceRequest::class => cli_operation_response(cli_operation(['kind' => 'instance.publish'])),
+            ShowOperationRequest::class => cli_operation_response($final),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false], 'meta' => ['request_id' => OPERATION_REQUEST_ID]]),
+        ]);
+        expect(Artisan::call('instance:publish', ['instance' => '17', '--commit' => str_repeat('a', 40), '--branch' => 'feature/export', '--base' => 'main', '--title' => 'Export', '--body' => '', '--idempotency-key' => 'publish.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        if ($json) {
+            $decoded = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($decoded['result'])->toBe($final['result']);
+        } else {
+            expect(Artisan::output())->toContain('Publication succeeded.', 'Branch: feature/export', 'Pull request: https://github.com/acme/shop/pull/11');
+        }
+        $mock->assertSent(fn (Request $pending): bool => $pending instanceof PublishInstanceRequest
+            && $pending->headers()->get('Idempotency-Key') === 'publish.c1'
+            && $pending->body()->all()['pull_request'] === ['base' => 'main', 'title' => 'Export', 'body' => '']);
+    })->with([false, true]);
+
+    it('rejects missing required input or a partial pull request without a request', function (array $options): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('instance:publish', ['instance' => '17', '--json' => true, '--no-interaction' => true, ...$options]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('validation.failed');
+        $mock->assertNothingSent();
+    })->with([
+        [[]], [['--commit' => str_repeat('a', 40)]], [['--commit' => str_repeat('a', 40), '--branch' => 'feature/export', '--base' => 'main']],
+    ]);
+});
+
+describe('Instance publish Contract', function (): void {
+    it('renders the recorded publication in human and JSON output', function (string $scenario): void {
+        foreach ([false, true] as $json) {
+            MockClient::destroyGlobal();
+            MockClient::global([
+                ...gateway_fixture_mock($scenario),
+                PublishInstanceRequest::class => cli_operation_response(cli_operation(['kind' => 'instance.publish'])),
+                ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false], 'meta' => ['request_id' => OPERATION_REQUEST_ID]]),
+            ]);
+            expect(Artisan::call('instance:publish', ['instance' => '1', '--commit' => str_repeat('a', 40), '--branch' => 'feature/export', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+            expect_output(Artisan::output(), $scenario.($json ? '.json' : '.human.txt'));
+        }
+    })->with(['instances/instance-publish/branch', 'instances/instance-publish/with-pr']);
 });

@@ -907,3 +907,14 @@ See [Update a development Instance](/reference/instance-dependencies#update-a-de
 - [`process`](/cli/process) and [`schedule`](/cli/schedule) run services and timers on an Instance.
 - [`database`](/cli/database) registers the connections that `instance:database:add` attaches.
 - [`analytics`](/cli/analytics) pins the Plausible version that the tracking hosts send visits to.
+
+## orbit instance:publish
+
+Publish a development Instance's commit through the [GitHub App](/reference/github-app#publish-a-development-instance). The Gateway pushes from its mirror; the Instance receives no token. The command follows the operation and returns nonzero when it fails.
+
+```bash
+orbit instance:publish <instance> --commit=SHA --branch=feature/export
+orbit instance:publish <instance> --commit=SHA --branch=feature/export --base=main --title="Export orders" --body="Adds order export."
+```
+
+`instance` is a numeric Instance ID. `--commit` is a full lowercase SHA. `--branch` is the target branch. Supplying `--base`, `--title`, or `--body` requests a pull request; supply all three. An open request with that base is reused. `--idempotency-key=KEY` retries the same operation start. `--json` returns the final operation, whose result holds `branch`, `commit`, `pull_request_number`, and `pull_request_url`. Without a pull request, its number and URL are null. Human output follows the operation's named steps.

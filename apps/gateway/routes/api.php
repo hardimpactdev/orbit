@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\InstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\InstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
+use App\Http\Controllers\Api\InstancePublishController;
 use App\Http\Controllers\Api\InstanceQueueController;
 use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
@@ -402,6 +403,7 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/deploy-steps/{step}',
             [InstanceDeployStepsController::class, 'destroy'],
         )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:destroy');
+        Route::post('instances/{instance}/publish', [InstancePublishController::class, 'store'])->name('instance:publish');
         Route::post(
             'instances/{instance}/deploy',
             [InstanceDeploymentsController::class, 'store'],

@@ -157,6 +157,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:log-stream:destroy' => ServingNode::InstanceOwning,
         'instance:log-stream:renew' => ServingNode::InstanceOwning,
         'instance:logs' => ServingNode::InstanceOwning,
+        'instance:publish' => ServingNode::InstanceOwning,
         'instance:queue' => ServingNode::InstanceOwning,
         'instance:register' => ServingNode::Caller,
         'instance:release:list' => ServingNode::InstanceOwning,

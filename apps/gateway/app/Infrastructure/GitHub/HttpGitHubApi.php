@@ -220,8 +220,9 @@ final readonly class HttpGitHubApi implements GitHubApi
         GitHubAppCredentials $credentials,
         int $installationId,
         GitHubRepository $repository,
+        bool $workflows = true,
     ): string {
-        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']);
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write', ...($workflows ? ['workflows' => 'write'] : [])]);
     }
 
     public function repositoryPullRequestReadToken(
@@ -232,12 +233,12 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['pull_requests' => 'read']);
     }
 
-    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array
+    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head, bool $openOnly = false): array
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)
             ->get($this->repositoryPath($repository).'/pulls', [
                 'head' => $repository->owner.':'.$head,
-                'state' => 'all',
+                'state' => $openOnly ? 'open' : 'all',
             ]));
         $rows = $response->json();
         if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows)) {

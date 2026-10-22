@@ -1,11 +1,13 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes task pull requests, reviews and merges pull requests, and finds the newest green commit of a branch."
+description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes Instance commits and task pull requests, reviews and merges pull requests, and finds the newest green commit of a branch."
 covers:
   - apps/gateway/app/Domain/GitHub/**
   - apps/gateway/app/Infrastructure/GitHub/**
   - apps/gateway/app/Http/Controllers/Api/GitHubAppController.php
   - apps/gateway/app/Actions/GitHub/**
+  - apps/gateway/app/{Actions/Instances/StartInstancePublishAction,Domain/Instances/InstancePublishOperation,Data/Instances/InstancePublishInput,Http/Controllers/Api/InstancePublishController,Http/Requests/Instances/PublishInstanceRequest}.php
+  - packages/php-sdk/src/{Requests/Instances/PublishInstanceRequest,Responses/Instances/InstancePublishResult}.php
 ---
 
 # GitHub App
@@ -144,6 +146,31 @@ While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway als
 
 The Gateway resolves the repository's installation id, caches it, and reuses that id for later lists of the same repository. The cached id is not a column on the task. When GitHub refuses the token for that id, the Gateway drops the cached id, resolves the installation again, and retries the list once. A second failure leaves the list unreadable. [Watch the branch while subtasks are open](/reference/tasks#watch-the-branch-while-subtasks-are-open) describes which pull request is stored and what a merged or closed result does.
 
+## Publish a development Instance
+
+`POST /api/v1/instances/{instance}/publish` starts the `instance.publish` operation. [`instance:publish`](/cli/instance#orbit-instancepublish) follows it to completion. It accepts `commit`, a full lowercase Git SHA in the checkout, `branch`, and optional `pull_request: { base, title, body }`. It uses the shared [Idempotency-Key](/reference/operations#retry-a-start-with-a-key) rule.
+
+The Gateway takes the commit from the checkout as a pack, verifies it in quarantine, and pushes it from the same Project mirror that [Tasks uses](/reference/compute-drivers#publish-from-the-vm). The Instance and its agent receive no GitHub token. The App needs `Contents: write` and `Pull requests: write`. A commit that changes `.github/workflows/` also needs `Workflows: write`; other publishes do not request that permission.
+
+Start checks answer `422`, before an operation is recorded:
+
+| Code | Refusal |
+| --- | --- |
+| `instance_publish.production_forbidden` | The Instance is production; publish requires development |
+| `instance_publish.branch_forbidden` | The target is the Project default branch, a branch used by a production Instance of the Project, or a `task-*` branch |
+| `instance_publish.source_access_unsupported` | The Project uses `gh_cli` repository access |
+| `instance_publish.workflows_permission` | The commit changes a workflow file and the App cannot obtain `Workflows: write` |
+| `instance_publish.source_unavailable` | The checkout cannot be read, or the SHA does not name a readable commit |
+| `instance_publish.github_unavailable` | The App cannot obtain repository publishing access |
+
+Invalid SHAs, branch names, and pull request fields use `validation.failed`. The workflow check reads the selected commit's changes against all its parents, including added or removed files and root commits.
+
+The operation has two resumable steps: `push` and, when requested, `pull_request`. Push fetches the target branch and imports the commit into the mirror. An existing tip must be an ancestor of the commit, otherwise the step fails with `instance_publish.not_fast_forward`. A branch already at the commit succeeds without a push. The push is never forced. A rejected push fails with `instance_publish.push_failed`.
+
+The pull request step first lists requests for the branch and reads an open request's base. It reuses an open request with the requested base, keeping its title and body. Another base fails with `instance_publish.pull_request_base_mismatch`. With no open request, including after a closed or merged request, it opens a new one with the supplied title and body. A GitHub failure fails the step with `instance_publish.github_failed`.
+
+The result is `{ branch, commit, pull_request_number, pull_request_url }`. The pull request fields are null when none was requested. [Operations](/reference/operations) owns polling, cancellation, and recovery.
+
 ## How Orbit reviews and merges a pull request
 
 A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for these calls. Each call asks GitHub for its own token, as the table shows.
@@ -242,6 +269,12 @@ A Gateway restored from its backup keeps the App, because the backup holds the d
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### Publish through the shared mirror
+
+Development publish uses the same verified pack transfer and Gateway mirror as Tasks. Sending a token to the checkout would let an agent retain it. Separate push implementations would let their credential and verification rules drift. Protected branches keep development publishing out of production and Tasks ownership.
+
+Both publish steps can run again after a lost worker. A repeated push checks the current remote tip and never overwrites divergent history. A repeated pull request step looks up the open request before creation, so a response lost after creation does not create another request. It reuses existing metadata to avoid overwriting a person's edits. It does not reopen a closed request.
 
 ### One App per Gateway
 

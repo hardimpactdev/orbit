@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
+use App\Domain\Instances\InstancePublishOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
@@ -20,6 +21,8 @@ final readonly class OperationKinds
 
     public const string InstanceDeploy = 'instance.deploy';
 
+    public const string InstancePublish = 'instance.publish';
+
     public const string InstanceRollback = 'instance.rollback';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
@@ -27,6 +30,7 @@ final readonly class OperationKinds
 
     /** @var array<string, class-string<OperationKind>> */
     private const array Kinds = [
+        self::InstancePublish => InstancePublishOperation::class,
         self::InstanceDeploy => InstanceDeployOperation::class,
         self::InstanceRollback => InstanceRollbackOperation::class,
     ];
