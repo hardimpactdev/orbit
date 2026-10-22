@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest",
+    "route": "POST /api/v1/database-connections",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 4,
+            "slug": "app-parallel",
+            "driver": "pgsql",
+            "node_id": 2,
+            "host": "10.44.0.80",
+            "port": 5432,
+            "database": "app_parallel",
+            "path": null,
+            "username": "dlf_main",
+            "has_password": true,
+            "server": "beast-pg",
+            "owner_instance_id": 1,
+            "test_database": "app_parallel_test",
+            "lan_host": null,
+            "locale": null,
+            "test_processes": 4
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

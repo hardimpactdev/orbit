@@ -120,9 +120,14 @@ An owned database created or copied for development has a test database of the s
 | Driver | Test database |
 | --- | --- |
 | `mysql` | `<name>_test` on the same server. The user also gets every database whose name starts with `<name>_test`, so Laravel's parallel testing can create `<name>_test_test_1` and the rest. |
+| `pgsql` | `<name>_test` and a recorded pool of `<name>_test_test_1..N`, owned by the Instance role without `CREATEDB`. [Create the pool](/reference/database-servers#create-a-database-on-a-server) with `--test-processes=N` (default 8, range 1–32). |
 | `sqlite` | `:memory:` |
 
 For an Instance that owns its `DB` database, [synchronization](/reference/environment-variables#synchronize) also sets the `DB_*` keys in `.env.testing` to the test database, with the connection's host and port. A missing file is created from the same values as `.env`, with `APP_ENV=testing`. In an existing untracked file, other lines stay. Orbit never writes a `.env.testing` that Git tracks; it records the test database name in the activity instead. Laravel loads `.env.testing` when `APP_ENV` is `testing`, which a Laravel `phpunit.xml` sets. A `phpunit.xml` entry with `force="true"` for a `DB_*` key still overrides it, so remove such entries to use the test database.
+
+For PostgreSQL, synchronize the Instance environment, clear any cached Laravel configuration, then run `php artisan test --parallel --processes=4` with a process count no larger than the recorded pool. Plain `--parallel` uses the machine CPU count, so it is safe only when that count fits the pool. Leave `--recreate-databases` and `--drop-databases` off. Do not use `--without-databases`, which skips Laravel's worker switching.
+
+Laravel 13's `Illuminate\Testing\Concerns\TestDatabases::ensureTestDatabaseExists` connects to `<DB_DATABASE>_test_<token>` and queries for a table before attempting creation. An existing reachable worker database needs no creation. A missing or unreachable worker makes Laravel attempt creation, which the managed role cannot do. Correct the connection or provision a new pool instead of adding `CREATEDB`. Use Laravel's normal migration traits, such as `RefreshDatabase`, to prepare the schema; the empty pool does not run migrations itself.
 
 ## Add a connection on an Instance
 

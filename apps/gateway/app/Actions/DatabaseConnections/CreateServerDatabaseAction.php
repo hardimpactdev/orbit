@@ -13,6 +13,7 @@ use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
+use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
@@ -29,10 +30,10 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Creates a MySQL database and its user on a Database server and records the connection.
+ * Creates a managed SQL database and its owner on a Database server and records the connection.
  *
  * With an Instance, the user is the Instance's one user on that server. It also gets the test
- * database `<name>_test` and every database whose name starts with it, and the connection is
+ * database `<name>_test`: MySQL grants its prefix; PostgreSQL pre-creates a bounded worker pool. The connection is
  * attached to the Instance under prefix DB. Without an Instance, the database gets its own user.
  *
  * On a Valkey server it creates one ACL user named after the slug instead, and records the `redis`
@@ -51,11 +52,16 @@ final readonly class CreateServerDatabaseAction
         private AttachDatabaseConnectionAction $attach,
         private RecordEventBroadcaster $broadcaster,
         private ValkeyServerAdmin $valkey,
+        private PostgresTestDatabases $postgresTests,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
     {
         $server = $this->server($data->server);
+
+        if ($data->testProcesses !== null && ($server->driver !== DatabaseDriver::Pgsql || $data->instanceId === null)) {
+            throw new ResourceOperationException('validation.failed', 'Test processes require a PostgreSQL server and an Instance.', 422);
+        }
 
         if ($server->driver === DatabaseDriver::Redis && $data->instanceId === null) {
             return ValkeyAclLock::run($server, fn (): DatabaseConnection => $this->createAclUser($server->refresh(), $data, $createdBy));
@@ -72,6 +78,7 @@ final readonly class CreateServerDatabaseAction
             instance: $instance,
             createdBy: $createdBy,
             locale: $data->locale,
+            testProcesses: $data->testProcesses,
         );
     }
 
@@ -83,11 +90,15 @@ final readonly class CreateServerDatabaseAction
         ?Instance $instance,
         ?string $createdBy,
         ?string $locale = null,
+        ?int $testProcesses = null,
     ): DatabaseConnection {
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
         if ($server->driver === DatabaseDriver::Pgsql && $instance !== null) {
-            throw new ResourceOperationException('database.driver_unsupported', 'Instance-owned databases require MySQL.', 422);
+            $database = $this->postgresTests->database($database);
+            $testProcesses ??= PostgresTestDatabases::DEFAULT_PROCESSES;
+        } elseif ($testProcesses !== null) {
+            throw new ResourceOperationException('validation.failed', 'Test processes require a PostgreSQL server and an Instance.', 422);
         }
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
@@ -105,21 +116,27 @@ final readonly class CreateServerDatabaseAction
             ? $statements->createDatabase($database, $locale)
             : $statements->createDatabase($database);
 
-        $this->assertNamesFree($server, $database, $testDatabase, $credentials);
+        $this->assertNamesFree($server, $database, $testDatabase, $credentials, $testProcesses);
 
         $sql = $statements->ensureUser($credentials['username'], $credentials['password'])
             .$createDatabase
             .$statements->grantAll($database, $credentials['username']);
 
         if ($testDatabase !== null) {
-            $sql .= $this->statements->forDriver($server->driver)->createDatabase($testDatabase)
-                .$this->statements->grantAllWithPrefix($testDatabase, $credentials['username']);
+            if ($statements instanceof PostgresStatements && $testProcesses !== null) {
+                foreach ($this->postgresTests->names($testDatabase, $testProcesses) as $name) {
+                    $sql .= $statements->createDatabase($name, $locale).$statements->grantAll($name, $credentials['username']);
+                }
+            } else {
+                $sql .= $statements->createDatabase($testDatabase)
+                    .$this->statements->grantAllWithPrefix($testDatabase, $credentials['username']);
+            }
         }
 
         try {
             $this->admin->execute($server, $sql);
         } catch (ResourceOperationException $exception) {
-            $this->undo($server, $database, $testDatabase, $credentials);
+            $this->undo($server, $database, $testDatabase, $credentials, $testProcesses);
 
             throw $exception;
         }
@@ -134,6 +151,7 @@ final readonly class CreateServerDatabaseAction
                 $credentials,
                 $createdBy,
                 $locale,
+                $testProcesses,
             ): DatabaseConnection {
                 $connection = DatabaseConnection::query()->create([
                     'slug' => $slug,
@@ -145,6 +163,7 @@ final readonly class CreateServerDatabaseAction
                     'port' => $server->port,
                     'database' => $database,
                     'locale' => $locale,
+                    'test_processes' => $testProcesses,
                     'test_database' => $testDatabase,
                     'path' => null,
                     'username' => $credentials['username'],
@@ -161,7 +180,7 @@ final readonly class CreateServerDatabaseAction
                 return $connection;
             });
         } catch (UniqueConstraintViolationException) {
-            $this->undo($server, $database, $testDatabase, $credentials);
+            $this->undo($server, $database, $testDatabase, $credentials, $testProcesses);
 
             throw $this->slugConflict($slug);
         }
@@ -465,10 +484,21 @@ final readonly class CreateServerDatabaseAction
         ?string $testDatabase,
         #[SensitiveParameter]
         array $credentials,
+        ?int $testProcesses = null,
     ): void {
         $connections = DatabaseConnection::query()->where('database_server_id', $server->id)->get();
+        $planned = [$database, ...($testDatabase !== null && $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [])];
 
         foreach ($connections as $connection) {
+            if ($server->driver === DatabaseDriver::Pgsql) {
+                $recorded = [$connection->database, ...($connection->test_database !== null && $connection->test_processes !== null ? $this->postgresTests->names($connection->test_database, $connection->test_processes) : [])];
+                if (array_intersect($planned, $recorded) !== []) {
+                    throw $this->nameConflict($server, $database);
+                }
+
+                continue;
+            }
+
             $taken = $connection->database === $database
                 || (is_string($connection->test_database) && str_starts_with($database, $connection->test_database))
                 || ($testDatabase !== null && is_string($connection->database) && str_starts_with($connection->database, $testDatabase));
@@ -478,7 +508,11 @@ final readonly class CreateServerDatabaseAction
             }
         }
 
-        if ($this->admin->execute($server, $this->statements->forDriver($server->driver)->databasesNamed($database, $testDatabase)) !== []) {
+        $statements = $this->statements->forDriver($server->driver);
+        $query = $statements instanceof PostgresStatements
+            ? $statements->databasesIn($planned)
+            : $statements->databasesNamed($database, $testDatabase);
+        if ($this->admin->execute($server, $query) !== []) {
             throw $this->nameConflict($server, $database);
         }
 
@@ -512,11 +546,15 @@ final readonly class CreateServerDatabaseAction
         ?string $testDatabase,
         #[SensitiveParameter]
         array $credentials,
+        ?int $testProcesses = null,
     ): void {
         $sql = $this->statements->forDriver($server->driver)->dropDatabase($database);
 
         if ($testDatabase !== null) {
-            $sql .= $this->statements->forDriver($server->driver)->dropDatabase($testDatabase);
+            $tests = $testProcesses !== null ? $this->postgresTests->names($testDatabase, $testProcesses) : [$testDatabase];
+            foreach ($tests as $name) {
+                $sql .= $this->statements->forDriver($server->driver)->dropDatabase($name);
+            }
         }
 
         if ($credentials['new']) {

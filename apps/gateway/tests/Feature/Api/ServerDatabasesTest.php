@@ -9,6 +9,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
+use App\Domain\Instances\Environment\InstanceTestEnvironment;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -433,7 +434,7 @@ it('creates a managed PostgreSQL database and non-superuser owner through the SQ
         ->and($connection->test_database)->toBeNull();
 });
 
-it('refuses PostgreSQL Instance ownership before creating database objects', function (): void {
+it('keeps the MySQL-only automatic Instance creation and clone entry point guarded for PostgreSQL', function (): void {
     $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
     expect(fn () => app(CreateServerDatabaseAction::class)->activeServer($this->server->slug))
         ->toThrow(ResourceOperationException::class, 'Instance-owned databases require MySQL.');
@@ -528,4 +529,132 @@ it('refuses changing a managed PostgreSQL locale after creation', function (): v
     $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => 'C.UTF-8'])->assertCreated();
     $this->patchJson('/api/v1/database-connections/mealou', ['locale' => 'C'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     expect(DatabaseConnection::query()->sole()->locale)->toBe('C.UTF-8');
+});
+
+describe('managed PostgreSQL test databases', function (): void {
+    it('creates the default eight workers under the managed Instance owner and plans the testing environment', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18', 'port' => 5434]);
+        $response = $this->postJson('/api/v1/database-connections', ['slug' => 'app-dev', 'server' => $this->server->slug, 'instance_id' => $this->instance->id]);
+        $response->assertCreated()->assertJsonPath('data.test_database', 'app_dev_test')->assertJsonPath('data.test_processes', 8)->assertJsonMissingPath('data.password');
+        $this->assertDatabaseHas('database_connections', ['slug' => 'app-dev', 'owner_instance_id' => $this->instance->id, 'test_processes' => 8]);
+        $sql = $this->admin->sql();
+        expect(substr_count($sql, 'CREATE DATABASE "'))->toBe(10);
+        expect($sql)->toContain('NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', 'ALTER DATABASE "app_dev_test" OWNER TO "dlf_feature_x";');
+        foreach (range(1, 8) as $token) {
+            expect($sql)->toContain('CREATE DATABASE "app_dev_test_test_'.$token.'";', 'ALTER DATABASE "app_dev_test_test_'.$token.'" OWNER TO "dlf_feature_x";');
+        }
+        $plan = app(InstanceTestEnvironment::class)->plan($this->instance->id, ['APP_NAME' => 'App']);
+        expect($plan?->values)->toMatchArray(['APP_ENV' => 'testing', 'APP_NAME' => 'App', 'DB_CONNECTION' => 'pgsql', 'DB_DATABASE' => 'app_dev_test', 'DB_PORT' => '5434', 'DB_USERNAME' => 'dlf_feature_x']);
+    });
+
+    it('applies the selected locale to the primary, serial and configured worker databases', function (int $count): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'locale' => 'C.UTF-8', 'test_processes' => $count])
+            ->assertCreated()->assertJsonPath('data.test_processes', $count);
+        expect(substr_count($this->admin->sql(), "TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8'"))->toBe($count + 2);
+    })->with([1, 32]);
+
+    it('fits long database names and the largest worker suffix within PostgreSQL identifiers', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $response = $this->postJson('/api/v1/database-connections', ['slug' => str_repeat('a', 63), 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 32])->assertCreated();
+        expect($response->json('data.database'))->toHaveLength(50);
+        expect($response->json('data.test_database'))->toHaveLength(55);
+        expect($this->admin->sql())->toContain('CREATE DATABASE "'.$response->json('data.test_database').'_test_32";');
+    });
+
+    it('refuses invalid worker counts with 422 before SQL execution', function (mixed $count): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => $count])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => ['test_processes']]]);
+        expect($this->admin->sql())->toBe('');
+    })->with([0, 33, -1, '2', 2.5, null, true]);
+
+    it('requires an Instance for a worker count with 422 before SQL execution', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'test_processes' => 2])->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['instance_id']]]);
+        expect($this->admin->sql())->toBe('');
+    });
+
+    it('refuses worker counts on MySQL or Valkey with 422', function (string $driver): void {
+        $this->server->update(['driver' => $driver]);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2, ...($driver === 'redis' ? ['patterns' => ['app:*'], 'allow' => ['@list']] : [])])
+            ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['test_processes']]]);
+        expect($this->admin->sql())->toBe('');
+    })->with(['mysql', 'redis']);
+
+    it('refuses a worker count on external registration with 422', function (): void {
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'driver' => 'pgsql', 'host' => 'db.example.test', 'database' => 'app', 'username' => 'app', 'password' => 'fixture', 'test_processes' => 2])
+            ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['test_processes']]]);
+        expect($this->admin->sql())->toBe('');
+    });
+
+    it('refuses a live worker name collision with 409 before creating objects', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->admin->rows["'app_test_test_2'"] = ['app_test_test_2'];
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])
+            ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->not->toContain('CREATE DATABASE', 'CREATE ROLE', 'DROP DATABASE');
+        $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+    });
+
+    it('refuses a registered primary database that overlaps a planned worker with 409', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app-test-test-2', 'server' => $this->server->slug])->assertCreated();
+        $this->admin->statements = [];
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])
+            ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->toBe('');
+    });
+
+    it('refuses a primary name inside a recorded worker pool with 409 even when the live query returns no names', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])->assertCreated();
+        $this->admin->statements = [];
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app-test-test-2', 'server' => $this->server->slug])
+            ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->toBe('');
+    });
+
+    it('removes every planned test database when worker creation fails and records nothing', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->admin->failOn = 'CREATE DATABASE "app_test_test_2"';
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])
+            ->assertStatus(502)->assertJsonPath('error.code', 'database.server_command_failed');
+        expect(end($this->admin->statements))->toBe('DROP DATABASE IF EXISTS "app";'."\n".'DROP DATABASE IF EXISTS "app_test";'."\n".'DROP DATABASE IF EXISTS "app_test_test_1";'."\n".'DROP DATABASE IF EXISTS "app_test_test_2";'."\n".'DROP ROLE IF EXISTS "dlf_feature_x";'."\n");
+        $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        $this->assertDatabaseCount('database_users', 0);
+        $this->assertDatabaseCount('database_connection_targets', 0);
+    });
+
+    it('drops only the recorded pool and preserves a shared Instance owner until its final connection is removed', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        foreach (['app', 'other'] as $slug) {
+            $this->postJson('/api/v1/database-connections', ['slug' => $slug, 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])->assertCreated();
+        }
+        $connections = DatabaseConnection::query()->orderBy('id')->get();
+        expect($connections[0]->username)->toBe($connections[1]->username);
+        expect($connections[0]->password)->toBe($connections[1]->password);
+        $this->admin->statements = [];
+        $this->admin->rows['pg_database'] = ['app_test_test_99', 'unrelated'];
+        DatabaseConnectionTarget::query()->delete();
+        $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+        expect($this->admin->sql())->toContain('DROP DATABASE IF EXISTS "app_test_test_1";', 'DROP DATABASE IF EXISTS "app_test_test_2";')->not->toContain('app_test_test_99', 'unrelated', 'DROP ROLE', 'other');
+        $this->admin->statements = [];
+        $this->deleteJson('/api/v1/database-connections/other')->assertOk();
+        expect($this->admin->sql())->toContain('DROP ROLE IF EXISTS "dlf_feature_x";');
+        $this->assertDatabaseCount('database_connections', 0);
+    });
+
+    it('creates the configured pool through MCP and advertises its bounds', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $response = $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'database-create', 'arguments' => ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2]]])
+            ->assertOk()->assertJsonPath('result.isError', false);
+        $data = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
+        expect($data['data']['test_processes'])->toBe(2);
+        $this->assertDatabaseHas('database_connections', ['slug' => 'app', 'test_processes' => 2]);
+        $schema = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR)['paths']['/api/v1/database-connections']['post']['requestBody']['content']['application/json']['schema'];
+        expect($schema['oneOf'][1]['properties']['test_processes'])->toMatchArray(['type' => 'integer', 'minimum' => 1, 'maximum' => 32]);
+        expect($schema['oneOf'][0]['properties'])->not->toHaveKey('test_processes');
+        expect($schema['oneOf'][2]['properties'])->not->toHaveKey('test_processes');
+    });
 });

@@ -611,6 +611,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'password' => null,
                 'server' => null,
                 'locale' => null,
+                'test-processes' => null,
                 'instance' => null,
                 'pattern' => [],
                 'allow' => [],

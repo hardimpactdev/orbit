@@ -725,3 +725,21 @@ it('sends explicit replacement consent through the typed attachment request', fu
 
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['replace' => true]);
 });
+
+it('sends and renders the PostgreSQL parallel worker count through the typed SDK request', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [...database_cli_gateway_data(), 'driver' => 'pgsql', 'server' => 'pg', 'test_database' => 'app_test', 'test_processes' => 4], status: 201);
+    $this->artisan('database:create', ['slug' => 'app', '--server' => 'pg', '--instance' => '12', '--test-processes' => '4', '--json' => true])->expectsOutputToContain('"test_processes":4')->assertExitCode(0);
+    expect($mockClient->getLastRequest()?->body()->all())->toBe(['slug' => 'app', 'server' => 'pg', 'instance_id' => 12, 'test_processes' => 4]);
+});
+
+it('refuses invalid worker counts before sending a request', function (string $count): void {
+    $mockClient = MockClient::global([]);
+    $this->artisan('database:create', ['slug' => 'app', '--server' => 'pg', '--instance' => '12', '--test-processes' => $count, '--json' => true])->expectsOutputToContain('database.test_processes_invalid')->assertExitCode(1);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with(['0', '33', '-1', '1.5', '']);
+
+it('requires a server and Instance for worker counts before sending a request', function (array $options): void {
+    $mockClient = MockClient::global([]);
+    $this->artisan('database:create', ['slug' => 'app', '--test-processes' => '4', '--json' => true, ...$options])->assertExitCode(1);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with(['no server' => [[]], 'no Instance' => [['--server' => 'pg']]]);

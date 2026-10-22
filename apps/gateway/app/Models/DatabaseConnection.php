@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $port
  * @property string|null $database
  * @property string|null $locale
+ * @property int|null $test_processes
  * @property string|null $test_database
  * @property string|null $path
  * @property string|null $username
@@ -49,6 +50,7 @@ final class DatabaseConnection extends Model
         'database',
         'locale',
         'test_database',
+        'test_processes',
         'path',
         'username',
         'password',
@@ -108,6 +110,7 @@ final class DatabaseConnection extends Model
             'driver' => DatabaseDriver::class,
             'clone_step' => DatabaseCloneStep::class,
             'port' => 'integer',
+            'test_processes' => 'integer',
             'database_server_id' => 'integer',
             'owner_instance_id' => 'integer',
             'password' => 'encrypted',

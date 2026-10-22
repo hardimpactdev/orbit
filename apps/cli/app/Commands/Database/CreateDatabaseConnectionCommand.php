@@ -24,6 +24,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         {--password= : Password}
         {--server= : Database server slug. Creates a MySQL/PostgreSQL database or Valkey ACL user}
         {--locale= : Builtin PostgreSQL locale: C or C.UTF-8 (requires --server)}
+        {--test-processes= : PostgreSQL parallel worker databases: 1-32, default 8 (requires --server and --instance)}
         {--instance= : Numeric Instance ID that owns a database created with --server}
         {--pattern=* : Key pattern for a Valkey ACL user with --server}
         {--allow=* : Allowed command or category for a Valkey ACL user with --server}
@@ -31,6 +32,9 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
     #[\Override]
     protected $description = 'Register an existing database, or create one on a Database server.';
+
+    #[\Override]
+    protected $help = 'Create PostgreSQL worker databases with --server --instance --test-processes=N (default 8). Run Laravel tests with --parallel --processes=N within that pool. Leave --recreate-databases and --drop-databases off.';
 
     /** @var list<string> */
     private const array REGISTRATION_OPTIONS = ['driver', 'node', 'host', 'port', 'path', 'username', 'password'];
@@ -48,6 +52,10 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
         if ($server !== null) {
             return $this->createOnServer($repository, $connectors, $slug, $server);
+        }
+
+        if ($this->option('test-processes') !== null) {
+            return $this->renderGatewayFailure('database.server_required', 'The --test-processes option requires --server and --instance.');
         }
 
         if ($this->option('locale') !== null) {
@@ -163,6 +171,17 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
             }
         }
 
+        $testProcesses = null;
+        if ($this->option('test-processes') !== null) {
+            if ($instanceId === null) {
+                return $this->renderGatewayFailure('database.instance_required', 'The --test-processes option requires --instance.');
+            }
+            $testProcesses = filter_var($this->option('test-processes'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 32]]);
+            if (! is_int($testProcesses)) {
+                return $this->renderGatewayFailure('database.test_processes_invalid', 'Test processes must be an integer from 1 through 32.');
+            }
+        }
+
         $database = $this->stringOption('database');
         $databaseIndex = null;
         if ($database !== null) {
@@ -187,6 +206,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
                 server: $server,
                 locale: is_string($locale) ? $locale : null,
                 instanceId: $instanceId,
+                testProcesses: $testProcesses,
                 database: $databaseIndex,
                 patterns: $this->aclOptions('pattern'),
                 allow: $this->aclOptions('allow'),

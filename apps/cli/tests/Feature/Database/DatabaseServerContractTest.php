@@ -67,3 +67,8 @@ it('renders Valkey creation and closing from recorded responses', function (): v
         run_contract('database-connections/database-create/valkey', 'database:create', ['slug' => 'queue', '--server' => 'beast-valkey', '--database' => '1', '--pattern' => ['queue:*'], '--allow' => ['@list', 'eval'], '--json' => $json], 'database-connections/database-create/valkey'.$suffix, 0);
     }
 });
+
+it('renders PostgreSQL worker pool creation from the recorded response', function (): void {
+    run_contract('database-connections/database-create/postgres', 'database:create', ['slug' => 'app-parallel', '--server' => 'beast-pg', '--instance' => '1', '--test-processes' => '4'], 'database-connections/database-create/postgres.human.txt', 0);
+    run_contract('database-connections/database-create/postgres', 'database:create', ['slug' => 'app-parallel', '--server' => 'beast-pg', '--instance' => '1', '--test-processes' => '4', '--json' => true], 'database-connections/database-create/postgres.json', 0);
+});

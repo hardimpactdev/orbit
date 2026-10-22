@@ -29,6 +29,7 @@ final class DatabaseConnectionData extends Data
         public ?string $testDatabase,
         public ?string $lanHost = null,
         public ?string $locale = null,
+        public ?int $testProcesses = null,
     ) {}
 
     public static function fromModel(DatabaseConnection $connection): self
@@ -36,6 +37,7 @@ final class DatabaseConnectionData extends Data
         return new self(
             lanHost: $connection->server === null ? null : DatabaseServerProcess::lanHost($connection->server),
             locale: $connection->locale,
+            testProcesses: $connection->test_processes,
             id: $connection->id,
             slug: $connection->slug,
             driver: $connection->driver->value,

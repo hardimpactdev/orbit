@@ -24,5 +24,6 @@ final class CreateServerDatabaseData extends Data
         public array $allow = [],
         public ?int $database = null,
         public ?string $locale = null,
+        public ?int $testProcesses = null,
     ) {}
 }

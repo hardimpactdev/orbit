@@ -55,6 +55,7 @@ final class StoreDatabaseConnectionRequest extends FormRequest
             allow: isset($validated['allow']) ? ValidatedData::stringList($validated['allow']) : [],
             database: self::nullableInt($validated, 'database'),
             locale: self::nullableString($validated, 'locale'),
+            testProcesses: self::nullableInt($validated, 'test_processes'),
         );
     }
 
