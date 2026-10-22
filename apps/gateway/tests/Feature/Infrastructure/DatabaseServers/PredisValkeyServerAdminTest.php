@@ -40,7 +40,8 @@ use Symfony\Component\Process\Process as LocalProcess;
  * does: the ACL file comes from the records through the real `database-servers.write-valkey-acl` program, and the
  * container runs the image and command of the server's Process specification. The server listens on a random
  * loopback port. The tests run when ORBIT_TEST_DOCKER=1, as in CI's Gateway privileged job, and need Docker and
- * passwordless sudo.
+ * passwordless sudo. Startup and repair restarts wait for Valkey's current-boot TCP-ready log acknowledgement
+ * before exercising the real admin transport; no retry sleep is needed. Containers and volumes are private to each case.
  */
 pest()->group('privileged');
 
@@ -91,6 +92,7 @@ final readonly class ValkeyDockerTestRuntime implements ProcessRuntimeManager
     public function restart(Process $process): void
     {
         valkey_docker(['restart', $this->container]);
+        valkey_docker_ready($this->container);
     }
 
     public function remove(Process $process): void
@@ -145,18 +147,28 @@ function valkey_docker_free_port(): int
     return $port;
 }
 
-/** Whether the container stops; Valkey without its ACL file exits at once. */
+/** Waits for the current boot, not a previous boot's ready message left in Docker's log. */
+function valkey_docker_ready(string $container): void
+{
+    $startedAt = valkey_docker(['inspect', '--format', '{{.State.StartedAt}}', $container]);
+    $logs = new LocalProcess(['docker', 'logs', '--follow', '--since', $startedAt, $container]);
+    $logs->setTimeout(5)->start();
+
+    try {
+        if (! $logs->waitUntil(fn (): bool => str_contains($logs->getOutput(), 'Ready to accept connections tcp'))) {
+            throw new RuntimeException('Valkey exited before acknowledging TCP readiness: '.$logs->getOutput().$logs->getErrorOutput());
+        }
+    } finally {
+        $logs->stop(0);
+    }
+}
+
+/** Waits for the actual exit; Valkey without its ACL file cannot start. */
 function valkey_docker_stopped(string $container): bool
 {
-    for ($attempt = 0; $attempt < 50; $attempt++) {
-        if (valkey_docker(['inspect', '--format', '{{.State.Running}}', $container]) === 'false') {
-            return true;
-        }
+    valkey_docker(['wait', $container]);
 
-        usleep(100_000);
-    }
-
-    return false;
+    return valkey_docker(['inspect', '--format', '{{.State.Running}}', $container]) === 'false';
 }
 
 beforeEach(function (): void {
@@ -164,8 +176,6 @@ beforeEach(function (): void {
         $this->markTestSkipped('Set ORBIT_TEST_DOCKER=1 to run against a real Valkey in Docker.');
     }
 
-    // Valkey starts and restarts in real time, so readiness waits really sleep.
-    Sleep::fake(false);
     $name = 'orbit-test-valkey-'.bin2hex(random_bytes(6));
     $this->container = $name;
     $this->volume = DatabaseServerProcess::volume($name);
@@ -197,6 +207,8 @@ beforeEach(function (): void {
         '--workdir', (string) $specification->workingDirectory, (string) $specification->image, ...$specification->command,
     ]);
 
+    valkey_docker_ready($name);
+
     $this->admin = app(ValkeyServerAdmin::class);
     $this->password = $this->server->root_password;
     expect($this->admin->waitUntilReady($this->server, 30))->toBeTrue();
@@ -207,6 +219,8 @@ afterEach(function (): void {
         new LocalProcess(['docker', 'rm', '--force', '--volumes', $this->container])->run();
         new LocalProcess(['docker', 'volume', 'rm', '--force', $this->volume])->run();
     }
+
+    Sleep::assertNeverSlept();
 });
 
 describe('a Valkey Database server in Docker', function (): void {
