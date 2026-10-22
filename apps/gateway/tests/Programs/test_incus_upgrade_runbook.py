@@ -30,11 +30,20 @@ class IncusUpgradeRunbookTest(unittest.TestCase):
     def execute(self, action, *selection, fail=False):
         with patch.object(sys, 'argv', ['script', action, str(self.manifest), *selection]), \
              patch('subprocess.check_output', return_value=json.dumps(self.instances)), \
-             patch('subprocess.check_call') as call:
+             patch('subprocess.check_call', side_effect=self.mutate) as call:
             if fail:
                 call.side_effect = subprocess.CalledProcessError(1, 'incus')
             exec(compile(SCRIPT, 'runbook', 'exec'), {})
             return [item.args[0] for item in call.call_args_list]
+
+    def mutate(self, command):
+        project, verb, name = command[2], command[4], command[5]
+        instance = next(item for item in self.instances
+                        if item['project'] == project and item['name'] == name)
+        if verb == 'unset':
+            del instance['config']['boot.autostart']
+        else:
+            instance['config']['boot.autostart'] = command[6].split('=', 1)[1]
 
     def test_hold_disables_effective_autostart_in_every_project_without_changing_profiles(self):
         calls = self.execute('hold')
@@ -48,10 +57,26 @@ class IncusUpgradeRunbookTest(unittest.TestCase):
         self.execute('hold')
         self.assertEqual(self.execute('restore', 'orbit-ci/runner'), [
             ['incus', '--project', 'orbit-ci', 'config', 'unset', 'runner', 'boot.autostart']])
-        self.assertEqual(self.execute('restore')[1:], [
+        self.assertEqual(self.execute('restore'), [
             ['incus', '--project', 'default', 'config', 'set', 'vm', 'boot.autostart=true'],
             ['incus', '--project', 'other', 'config', 'set', 'guest', 'boot.autostart=1'],
             ['incus', '--project', 'orbit-ci', 'config', 'set', 'disabled', 'boot.autostart=false']])
+
+    def test_restore_skips_a_recorded_instance_that_no_longer_exists(self):
+        self.execute('hold')
+        self.instances = [item for item in self.instances if item['name'] != 'vm']
+
+        calls = self.execute('restore')
+
+        self.assertEqual(len(calls), 3)
+        self.assertFalse(any(command[5] == 'vm' for command in calls))
+        self.assertEqual(len(json.loads(self.manifest.read_text())), 4)
+
+    def test_restore_an_absent_inherited_key_does_not_unset_it(self):
+        self.execute('hold')
+        self.instances[0]['config'].pop('boot.autostart')
+
+        self.assertEqual(self.execute('restore', 'orbit-ci/runner'), [])
 
     def test_failed_mutation_retains_original_manifest_and_refuses_overwrite(self):
         with self.assertRaises(subprocess.CalledProcessError):
@@ -60,7 +85,7 @@ class IncusUpgradeRunbookTest(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.execute('hold')
         self.assertEqual(self.manifest.read_text(), original)
-        self.assertEqual(len(self.execute('restore')), 4)
+        self.assertEqual(len(self.execute('restore')), 3)
 
     def test_unknown_restore_selection_refuses_before_mutation(self):
         self.execute('hold')

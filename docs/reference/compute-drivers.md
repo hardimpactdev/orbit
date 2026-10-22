@@ -786,7 +786,7 @@ Before deploying the Incus 7 recipe, the operator must complete Shark's first co
 
 After Shark passes, upgrade Beast. Confirm that Beast's Docker CE → `docker.io` migration is applied. Merging its code does not prove host convergence. Rebuild and promote Beast's base and seed. Run the same topology gate.
 
-Upgrade Sabre after both task VM hosts pass. Drain every `orbit-ci` runner container. Back up its stopped `dir` pool and Incus database. Converge explicitly. Start and verify one runner before resuming CI. The ZFS backup below applies only to ZFS pools. Preserve Sabre's `dir` data with a separate offline copy.
+Upgrade Sabre after both task VM hosts pass. Drain every `orbit-ci` runner container. Run the `hold` step below to save and disable autostart in every project before stopping instances. Back up its stopped `dir` pool and Incus database. Converge explicitly. Start and verify one runner before resuming CI. The ZFS backup below applies only to ZFS pools. Preserve Sabre's `dir` data with a separate offline copy.
 
 Handle any Incus server on Services last, in a separately approved maintenance window with its service owners. Its app and database roles do not select Incus. Ordinary recipe convergence will not upgrade that server.
 
@@ -834,9 +834,17 @@ elif action == "restore":
         saved = [item for item in saved if f'{item["project"]}/{item["name"]}' in selection]
         if len(saved) != len(set(selection)):
             raise SystemExit("selection is missing from the manifest")
+    instances = json.loads(subprocess.check_output(
+        ["incus", "list", "--all-projects", "--format=json"], text=True))
+    local = {(item["project"], item["name"]): item["config"] for item in instances}
     for item in saved:
+        config = local.get((item["project"], item["name"]))
+        if config is None:
+            continue
         command = ["incus", "--project", item["project"], "config"]
         if item["value"] is None:
+            if "boot.autostart" not in config:
+                continue
             command += ["unset", item["name"], "boot.autostart"]
         else:
             command += ["set", item["name"], "boot.autostart=" + item["value"]]
@@ -844,6 +852,12 @@ elif action == "restore":
 else:
     raise SystemExit("expected hold or restore")
 ```
+
+Restore skips recorded instances absent from the current inventory. For an inherited value, it unsets only an existing local override, so a full restore can follow a single-runner restore on Incus 7.
+
+If an instance is created after `hold`, such as `pid-sandbox`, add it to the saved JSON array before changing its autostart. Read its local `config` from the YAML returned by `incus --project PROJECT config show NAME`; do not use `--expanded`. Append one object with its `project`, `name`, and original `value`: use `null` when local `config` has no `boot.autostart`, or its exact string value otherwise. For an inherited value in the default project, the object is `{"project": "default", "name": "pid-sandbox", "value": null}`. 
+
+Preserve every existing entry, save the manifest durably, and check that the new project/name pair occurs exactly once. Then run `incus --project PROJECT config set NAME boot.autostart=false` and stop the instance before any daemon restart. Do not rerun `hold`: it refuses to overwrite the original values. The later restore includes the added instance.
 
 After host verification, keep CI dispatch paused and manually start one inventoried runner with `incus --project orbit-ci start NAME`. Verify it before restoring its value with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json orbit-ci/NAME`. After the host's topology and runner gates pass, restore the remaining values with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json`, then resume CI dispatch and admission. Restoring autostart does not start stopped instances; start the remaining guests deliberately. Use the same one-runner verification and restore sequence after rollback. The stopped database backup already contains the disabled overrides, so restoring it keeps guests stopped when Incus 6 starts.
 
