@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Models\Instance;
 use App\Models\Project;
@@ -35,10 +36,25 @@ final readonly class CancelTaskCheckAction
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task, $check), wait: false);
     }
 
+    /** The caller holds the group execution lock. A fenced absent start has no check left to stop. */
+    public function recoverStart(Task $group, TaskCheck $check): ?TaskCheck
+    {
+        if ($group->groupOrchestration() === TaskOrchestration::External && $check->pid === 0) {
+            app(TaskWorkspaceLease::class)->reconcile($group);
+            $check = $check->fresh();
+            if ($check instanceof TaskCheck && $check->pid === 0) {
+                throw new ResourceOperationException('tasks.check_unreachable', 'The check start could not be recovered to confirm its stop.', 502);
+            }
+        }
+
+        return $check;
+    }
+
     private function cancelWithLock(Task $group, Task $task, ?TaskCheck $check): TaskCheck
     {
         $statuses = $check === null ? [TaskCheckStatus::Running] : [TaskCheckStatus::Running, TaskCheckStatus::Lost];
         $check = $check?->refresh() ?? $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
+        $check = $check instanceof TaskCheck ? $this->recoverStart($group, $check) : null;
         $instance = $group->taskable;
         if (! $check instanceof TaskCheck || ! $instance instanceof Instance) {
             throw new ResourceOperationException(
