@@ -16,6 +16,8 @@ use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
 use App\Domain\Instances\InstanceState;
+use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
 use App\Models\Node;
@@ -57,8 +59,30 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, 0, []);
         }
+        $issues = [];
+        $observedChecks = [DoctorResources::nodeCheckId($context->node->id) => [ProjectDoctorIssueCode::NodeUnreachable->value]];
+        foreach ($rows as $project) {
+            if (! GitRepositoryOrigin::isValid($project->repository_url)) {
+                continue;
+            }
+
+            $observedChecks[$project->id] = [ProjectDoctorIssueCode::RepositoryIdentityMismatch->value];
+            if (GitRepositoryIdentity::derive($project->repository_url) !== $project->repository_identity) {
+                $issues[] = new DoctorIssueData(
+                    ProjectDoctorIssueCode::RepositoryIdentityMismatch,
+                    DoctorIssueKind::Drift,
+                    'project',
+                    $project->id,
+                    $project->name,
+                    'Project repository identity does not match its URL. Update the Project with the current repository URL to repair it.',
+                    'matching',
+                    'mismatch',
+                );
+            }
+        }
+
         if (! $context->inspection->reachable) {
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), [new DoctorIssueData(
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), [...$issues, new DoctorIssueData(
                 ProjectDoctorIssueCode::NodeUnreachable,
                 DoctorIssueKind::Unverifiable,
                 'project',
@@ -67,9 +91,8 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
                 'Project state cannot be inspected because the node is unreachable.',
                 'reachable',
                 'unreachable',
-            )]);
+            )], observedChecks: $observedChecks);
         }
-        $issues = [];
         $observedResources = [];
         foreach ($rows as $project) {
             try {
@@ -126,7 +149,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
             }
         }
 
-        return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), $issues, $observedResources, [DoctorResources::nodeCheckId($context->node->id) => [ProjectDoctorIssueCode::NodeUnreachable->value]]);
+        return DoctorFamilyReportData::fromIssues(DoctorFamily::Project, $rows->count(), $issues, $observedResources, $observedChecks);
     }
 
     /** @return list<int> */

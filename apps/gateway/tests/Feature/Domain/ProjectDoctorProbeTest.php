@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\ProjectDoctorProbe;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ProjectInspectionData;
@@ -264,6 +265,42 @@ it('reports a checkout failure while its Instance remains active', function (): 
         ->and($report->issues[0]->resourceId)
         ->toBe($project->id);
 });
+
+it('reports stored repository identity drift independently of checkout inspection', function (bool $reachable, bool $fails): void {
+    $node = app_probe_node();
+    $project = app_probe_app();
+    app_probe_projection($project, $node);
+    DB::table('projects')->where('id', $project->id)->update(['repository_identity' => 'github.com/private-origin/old']);
+    $probe = new ProjectDoctorProbe(new readonly class($fails) implements ProjectStateInspector
+    {
+        public function __construct(private bool $fails) {}
+
+        public function inspect(Project $project, Node $node): ProjectInspectionData
+        {
+            if ($this->fails) {
+                throw new DoctorInspectionException;
+            }
+
+            return new ProjectInspectionData(1, true);
+        }
+    });
+
+    $report = $probe->inspect(app_probe_context($node, reachable: $reachable));
+
+    $issue = collect($report->issues)->firstWhere('code', 'project.repository_identity_mismatch');
+    expect($issue)->not->toBeNull()
+        ->and($issue->kind)->toBe(DoctorIssueKind::Drift)
+        ->and($issue->resourceId)->toBe($project->id)
+        ->and($issue->expected)->toBe('matching')
+        ->and($issue->observed)->toBe('mismatch');
+    expect(json_encode($report))->not->toContain('github.com', 'private-origin', $project->repository_url);
+    expect($report->observedChecks[$project->id])->toContain('project.repository_identity_mismatch');
+    $this->assertDatabaseHas('projects', ['id' => $project->id, 'repository_identity' => 'github.com/private-origin/old']);
+})->with([
+    'matching checkout' => [true, false],
+    'failed inspection' => [true, true],
+    'unreachable Node' => [false, false],
+]);
 
 it('short-circuits app inspection when the node is unreachable', function (): void {
     $node = app_probe_node();
