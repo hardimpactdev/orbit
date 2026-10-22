@@ -591,11 +591,18 @@ final class CertificateOrderNodes implements SshExecutor
 
     public ?string $failCaddy = null;
 
+    public bool $failHttp = false;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
-        if (in_array('exec 3<>/dev/tcp/$1/$2', $command->arguments, true)) {
-            $this->forwarding[] = [$host, $command->arguments[6], $command->arguments[7]];
+        if (($command->arguments[0] ?? null) === 'curl' && in_array('--noproxy', $command->arguments, true)) {
+            $upstream = parse_url(array_last($command->arguments));
+            expect($command->arguments)->toContain('--head', 'Host: sync.example.com')->not->toContain('--fail', '--location');
+            $this->forwarding[] = [$host, $upstream['host'], (string) $upstream['port']];
+            if ($this->failHttp) {
+                return new CommandResult(7, '', 'curl: Failed to connect', 1, false);
+            }
         }
         $input = is_string($command->input) ? $command->input : '';
 
@@ -762,7 +769,6 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
     // A failed verification also reconciles the Ingress during rollback.
     expect($creationFirewall->commands)->toBe($blocked ? ['converge:ingress', 'converge:ingress'] : ['converge:ingress']);
     expect($this->nodes->forwarding)->toBe([['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']]);
-    certificate_order_caddy()->build($ingress);
     expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue();
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
     $firewall->shouldReceive('converge')->once()->withArgs(fn (Node $node, RoleName $role, string $user): bool => $node->id === $ingress->id && $role === RoleName::Ingress && $user === 'orbit');
@@ -786,3 +792,20 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         ->and($this->nodes->removedWhileNamed)->toBeEmpty()
         ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
 })->with([[false, false, false], [true, false, false], [false, true, false], [true, true, true]]);
+
+it('retains a public Process activation when its HTTP listener is unreachable and retries it', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
+    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
+    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
+    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp']], 'status' => 'active']);
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
+    $body = ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'];
+    $this->nodes->failHttp = true;
+    $this->postJson('/api/v1/routes', $body)->assertServerError()->assertJsonPath('error.code', 'route.upstream_unreachable');
+    $route = Route::query()->where('domain', 'sync.example.com')->sole();
+    expect($route->failed_step)->toBe('public-edge-verified')
+        ->and($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse();
+    $this->nodes->failHttp = false;
+    $this->postJson('/api/v1/routes', $body)->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
+});

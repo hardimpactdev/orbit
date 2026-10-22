@@ -59,7 +59,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
                 throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_firewall_mismatch', 'The Process Node firewall must allow the selected Ingress source to the published listener. Add a managed firewall rule and retry.');
             }
             try {
-                $this->ssh->execute($ingress, new RemoteCommand(['timeout', '10', 'bash', '-c', 'exec 3<>/dev/tcp/$1/$2', '--', $upstream->host, (string) $upstream->port]),
+                $this->ssh->execute($ingress, new RemoteCommand(['curl', '--head', '--noproxy', '*', '--silent', '--show-error', '--connect-timeout', '10', '--max-time', '10', '--output', '/dev/null', '--header', 'Host: '.$route->domain, $upstream->url()]),
                     step: 'public-edge-verified', errorCode: 'route.upstream_unreachable', commandTimeout: 15);
             } catch (RuntimeConvergenceException $exception) {
                 throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_unreachable', 'The Ingress cannot reach the selected Process listener. Check its listener and firewall before retrying.', previous: $exception);
