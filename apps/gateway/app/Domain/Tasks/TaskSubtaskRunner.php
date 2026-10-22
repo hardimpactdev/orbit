@@ -972,6 +972,8 @@ final readonly class TaskSubtaskRunner
                     return $read();
                 })
                 : $leases->run($group, 'verdict', 'deliverable-paths:'.$task->id, $read, taskId: $task->id);
+        } catch (TaskWorkspaceWaiting $exception) {
+            throw $exception;
         } catch (ResourceOperationException $exception) {
             $scheduler->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix."could not read base {$base}: ".$exception->getMessage());
 

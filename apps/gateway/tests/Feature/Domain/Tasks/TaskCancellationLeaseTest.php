@@ -37,6 +37,42 @@ beforeEach(function (): void {
     app(TaskExtensionState::class)->enable();
 });
 
+describe('busy cancellation API', function (): void {
+    it('returns the lease-wait error while an agent thread owns the workspace', function (string $role): void {
+        $group = cancellation_lease_group();
+        $task = $group->tasks()->sole();
+        $groupStatus = $role === 'reviewer' ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running;
+        $taskStatus = $role === 'reviewer' ? TaskStatus::Reviewing : TaskStatus::Running;
+        $group->update(['status' => $groupStatus]);
+        $task->update(['status' => $taskStatus]);
+        $instance = $group->taskable;
+        $this->markAsGateway($instance->node);
+        $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+        $threadId = $role === 'reviewer' ? $group->reviewer_agent_thread_id : $task->implementer_agent_thread_id;
+        $leases = app(TaskWorkspaceLease::class);
+        $holder = $leases->acquire($group, $role, 'thread:'.$threadId, $threadId, $task->id);
+        $holder->update(['dispatch_started_at' => now()]);
+        $driver = new FakeAgentDriver('pi');
+        $driver->observation = new AgentObservation(AgentThreadState::Working, turnId: 'busy-turn');
+        $registry = new AgentDriverRegistry([$driver]);
+        app()->instance(AgentDriverRegistry::class, $registry);
+        app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
+        $removed = cancellation_lease_remover();
+
+        $this->postJson("/api/v1/task-groups/{$group->id}/cancel")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'tasks.workspace_waiting');
+
+        expect($group->fresh()->status)->toBe($groupStatus);
+        expect($group->fresh()->taskable_id)->toBe($instance->id);
+        expect($task->fresh()->status)->toBe($taskStatus);
+        expect($holder->fresh()->status)->toBe('held');
+        expect($removed->ids)->toBe([]);
+        $this->assertModelExists($instance);
+        expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->count())->toBe(0);
+    })->with(['reviewer', 'implementer']);
+});
+
 it('lets later scheduler ticks progress after repeated busy cancellation requests return', function (): void {
     [$group, $task, $receipts] = tick_review([FakeTaskTurnReceipts::contents('approved')]);
     $leases = app(TaskWorkspaceLease::class);

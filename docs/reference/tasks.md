@@ -1581,7 +1581,7 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns the lease-wait error and leaves the task status unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
