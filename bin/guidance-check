@@ -2,6 +2,10 @@
 
 # Guidance must not reuse Blade files owned by another gate user.
 set -euo pipefail
+if [ "${CI:-}" = true ]; then
+    set -- --default-time-limit=5 "$@"
+fi
+
 exec "$(dirname "${BASH_SOURCE[0]}")/pest-plain" bash -c '
     mkdir -m 700 "$TMPDIR/views"
     export VIEW_COMPILED_PATH="$TMPDIR/views"

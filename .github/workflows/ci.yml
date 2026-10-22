@@ -225,7 +225,7 @@ jobs:
       # The Gateway shards run the Gateway suite.
       - name: Run full test suite
         if: matrix.project.directory != 'apps/gateway'
-        run: ../../bin/pest-plain vendor/bin/pest --parallel --compact
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --compact
 
       - name: Identify immutable Ubuntu snapshot metadata
         id: ubuntu-snapshot
@@ -270,7 +270,7 @@ jobs:
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
-        run: ../../bin/pest-plain php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
+        run: ../../bin/pest-plain php -d pcre.jit="$PCRE_JIT" vendor/bin/pest --default-time-limit=5 tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
 
       # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
       # the cache-ref publisher. Task workspaces import them; CI exports no test graph.

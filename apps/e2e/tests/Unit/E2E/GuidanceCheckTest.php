@@ -39,7 +39,7 @@ it('renders real guidance with unusable inherited cache paths', function (string
     }
 })->with(['gateway', 'cli', 'e2e']);
 
-it('uses private runtime directories and cleans them on success or failure', function (int $exitCode): void {
+it('uses private runtime directories and cleans them on success or failure', function (int $exitCode, bool $ci): void {
     $repository = dirname(__DIR__, 5);
     $fixture = sys_get_temp_dir().'/orbit-guidance-runner-'.bin2hex(random_bytes(8));
     $files = new Filesystem;
@@ -48,7 +48,7 @@ it('uses private runtime directories and cleans them on success or failure', fun
     $files->put($fixture.'/vendor/bin/pest', <<<'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '--configuration=phpunit.guidance.xml --compact --filter=example' ]]
+[[ "$*" == "$FIXTURE_ARGUMENTS" ]]
 [[ -d "$VIEW_COMPILED_PATH" ]]
 [[ "$(stat -c %a "$VIEW_COMPILED_PATH")" == 700 ]]
 printf '%s\n' "$TMPDIR" "$VIEW_COMPILED_PATH" > "$FIXTURE_RECORD"
@@ -60,6 +60,8 @@ BASH);
     try {
         $process = new Process([$repository.'/bin/guidance-check', '--filter=example'], $fixture, [
             'TMPDIR' => $fixture.'/tmp',
+            'CI' => $ci ? 'true' : false,
+            'FIXTURE_ARGUMENTS' => '--configuration=phpunit.guidance.xml --compact '.($ci ? '--default-time-limit=5 ' : '').'--filter=example',
             'FIXTURE_EXIT_CODE' => (string) $exitCode,
             'FIXTURE_RECORD' => $fixture.'/paths',
         ]);
@@ -74,4 +76,9 @@ BASH);
     } finally {
         $files->deleteDirectory($fixture);
     }
-})->with([0, 19]);
+})->with([
+    'local success' => [0, false],
+    'local failure' => [19, false],
+    'CI success' => [0, true],
+    'CI failure' => [19, true],
+]);

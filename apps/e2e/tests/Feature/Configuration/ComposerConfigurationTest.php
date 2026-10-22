@@ -319,7 +319,7 @@ SH);
         expect($steps['Run full test suite'])
             ->toMatchArray([
                 'if' => "matrix.project.directory != 'apps/gateway'",
-                'run' => '../../bin/pest-plain vendor/bin/pest --parallel --compact',
+                'run' => '../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --compact',
             ]);
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
             ->and($workflow['permissions'])->toBe(['contents' => 'read']);
@@ -559,6 +559,24 @@ it('keeps the whole privileged group required in one disposable CI job', functio
         ->not->toContain('--shard=');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
     expect($workflow['jobs']['required']['steps'][0]['env']['NEEDS'])->toBe('${{ toJSON(needs) }}');
+});
+
+it('gives every direct CI Pest invocation the stock five-second default', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $commands = [];
+
+    foreach ($workflow['jobs'] as $job) {
+        foreach ($job['steps'] ?? [] as $step) {
+            foreach (explode("\n", $step['run'] ?? '') as $line) {
+                if (str_contains($line, 'vendor/bin/pest')) {
+                    $commands[] = $line;
+                    expect($line)->toContain('--default-time-limit=5');
+                }
+            }
+        }
+    }
+
+    expect($commands)->not->toBeEmpty();
 });
 
 it('lets stock ParaTest use every available CPU in each CI test run', function (): void {
