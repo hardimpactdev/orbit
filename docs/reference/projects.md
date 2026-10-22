@@ -210,7 +210,7 @@ Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
 
-A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change.
+A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change. Orbit finds that repository in the path recorded at registration, or, for a worktree that Orbit created from a seed checkout, in that seed checkout.
 
 Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node.
 

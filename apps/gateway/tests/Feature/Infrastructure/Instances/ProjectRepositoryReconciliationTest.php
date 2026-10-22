@@ -126,6 +126,43 @@ describe('App repository reconciliation', function (): void {
             ->toContain('/srv/orbit/apps/acme/feature');
     });
 
+    it('owns a worktree that Orbit created from a seed checkout and refuses a foreign seed', function (string $seed, bool $owned): void {
+        $worktree = Instance::query()->create([
+            'project_id' => $this->fixture->project->id,
+            'node_id' => $this->fixture->node->id,
+            'name' => 'seeded',
+            'environment' => 'development',
+            'source_layout' => InstanceSourceLayout::Worktree->value,
+            'checkout_path' => '/srv/orbit/apps/acme/seeded',
+            'seed_repository' => $seed,
+            'seed_commit' => str_repeat('a', 40),
+            'branch' => 'seeded',
+            'status' => InstanceState::Active,
+        ]);
+        $planner = new ProjectRepositoryUpdatePlanner;
+        $plan = $planner->inventory($this->fixture->project->instances()->get());
+
+        expect($planner->ownedCheckout($plan['checkouts'], $worktree)?->id)
+            ->toBe($owned ? $this->fixture->defaultInstance->id : null);
+
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+        if ($owned) {
+            $update();
+            expect($this->fixture->sources->originMutations)->toBe(['/srv/orbit/apps/acme/default']);
+        } else {
+            expect($update)->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('project.repository_unowned_common');
+            });
+            expect($this->fixture->sources->originMutations)->toBe([]);
+        }
+    })->with([
+        'seed is the default checkout' => ['/srv/orbit/apps/acme/default', true],
+        'seed is another repository' => ['/unmanaged/repo', false],
+    ]);
+
     it('refuses a worktree whose common repository no Orbit-owned checkout owns', function (): void {
         Instance::query()->create([
             'project_id' => $this->fixture->project->id,
