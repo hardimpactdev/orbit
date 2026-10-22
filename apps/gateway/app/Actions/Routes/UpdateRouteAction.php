@@ -9,6 +9,7 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\PathProxy;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteDomain;
@@ -48,6 +49,7 @@ final readonly class UpdateRouteAction
 
         if (($data->domainProvided && $data->domain !== $route->domain) || ($data->publicationProvided && $data->publication !== $route->publication) || ($data->webRootProvided && $data->webRoot !== $route->web_root)) {
             WebSocketRouteSelection::assertMutable($route);
+            PathProxy::assertRouteMutable($route);
         }
 
         $targetIds = $route

@@ -66,6 +66,8 @@ A tool's name is the operation ID in the [API reference](/api/overview), `<famil
 
 `tool-adopt` records ownership of one installed package. Its inputs are `node_id`, `manager`, `package`, and optional `version_constraint`. The call does not install, update, or remove the package.
 
+`instance-path-proxy-set`, `instance-path-proxy-show`, and `instance-path-proxy-unset` publish, read, and withdraw an [Instance path proxy](/reference/routes#publish-a-process-under-an-app-path). Set accepts the Instance ID or exact Route domain, a Node-owned Docker Process ID, an exact WireGuard TCP published port, and an optional prefix that defaults to `/powersync`. The tools use the same API validation, access checks, and Caddy rebuilds as the CLI.
+
 `websocket-app-create`, `websocket-app-list`, `websocket-app-show`, and `websocket-app-destroy` manage [Reverb apps](/reference/websocket-apps). `instance-websocket-add` and `instance-websocket-remove` write or clear an app's keys in stored Instance configuration. They accept `instance` as a positive ID or an exact Route domain, and `websocket_app` as the app name. Results omit the secret and environment values. Run `env-sync` to write the Instance's `.env`.
 
 A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns a successful MCP transport response whose tool result has `isError: true`. Its `content` carries the API error envelope with the status added; the HTTP response itself is not the API's error status:

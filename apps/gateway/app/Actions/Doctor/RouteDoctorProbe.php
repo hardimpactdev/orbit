@@ -15,6 +15,8 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\RouteDoctorIssueCode;
+use App\Domain\Instances\LaravelRouteInspector;
+use App\Domain\Instances\PathProxy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteStatus;
@@ -22,6 +24,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\WebSocket\WebSocketRouteInspector;
+use App\Models\InstancePathProxy;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -36,6 +39,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         private CustomProxyRouteInspector $inspector,
         private ReservedPrivateHostname $reservedHostnames,
         private WebSocketRouteInspector $websocketRoutes,
+        private LaravelRouteInspector $pathRoutes,
     ) {}
 
     public function family(): DoctorFamily
@@ -93,6 +97,41 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
             } catch (ResourceOperationException) {
                 $issues[] = new DoctorIssueData(RouteDoctorIssueCode::WebSocketInspectionFailed, DoctorIssueKind::Unverifiable,
                     'route', $route->id, $route->domain, 'The current Laravel release could not be checked for public Reverb route collisions.', 'verifiable', 'unverifiable');
+            }
+        }
+        $paths = InstancePathProxy::query()->with(['route.targets.instance', 'process.owner'])->whereIn('route_id', $routes->modelKeys())->where('enabled', true)->get();
+        foreach ($routes as $route) {
+            if (! $paths->contains('route_id', $route->id)) {
+                $observedChecks[$route->id] = [...$observedChecks[$route->id], RouteDoctorIssueCode::PathProxyCollision->value,
+                    RouteDoctorIssueCode::PathProxyInspectionFailed->value, RouteDoctorIssueCode::PathProxyUpstreamInvalid->value];
+            }
+        }
+        foreach ($paths as $path) {
+            $route = $path->route;
+            try {
+                PathProxy::upstream($path->process, $path->port);
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::PathProxyUpstreamInvalid->value;
+            } catch (ResourceOperationException) {
+                $issues[] = new DoctorIssueData(RouteDoctorIssueCode::PathProxyUpstreamInvalid, DoctorIssueKind::Drift,
+                    'route', $route->id, $route->domain, 'The path proxy no longer selects a valid WireGuard TCP published port.', 'valid', 'invalid');
+            }
+            try {
+                if (! $context->inspection->reachable) {
+                    throw new ResourceOperationException('path_proxy.route_inspection_failed', 'Node unreachable.', 409);
+                }
+                $collision = false;
+                foreach ($route->targets as $target) {
+                    $collision = $this->pathRoutes->hasCollisions($target->instance, [$path->prefix]) || $collision;
+                }
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::PathProxyCollision->value;
+                $observedChecks[$route->id][] = RouteDoctorIssueCode::PathProxyInspectionFailed->value;
+                if ($collision) {
+                    $issues[] = new DoctorIssueData(RouteDoctorIssueCode::PathProxyCollision, DoctorIssueKind::Drift,
+                        'route', $route->id, $route->domain, 'Laravel routes overlap the reserved path proxy prefix.', 'no collision', 'collision');
+                }
+            } catch (ResourceOperationException) {
+                $issues[] = new DoctorIssueData(RouteDoctorIssueCode::PathProxyInspectionFailed, DoctorIssueKind::Unverifiable,
+                    'route', $route->id, $route->domain, 'The current Laravel release could not be checked for path proxy collisions.', 'verifiable', 'unverifiable');
             }
         }
         $proxies = $context->select($this->proxies($context->node), key: 'route_id');

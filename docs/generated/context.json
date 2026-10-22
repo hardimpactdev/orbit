@@ -2838,7 +2838,8 @@
             "kind": "reference",
             "components": [
                 "apps/docs",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

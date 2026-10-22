@@ -215,4 +215,5 @@ return [
     '0222' => ['0222-give-task-vms-a-cloned-topology-seed'],
     '0227' => ['0227-manage-postgresql-and-private-database-endpoints'],
     '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
+    '0231' => ['0231-publish-a-process-under-an-app-route-path'],
 ];

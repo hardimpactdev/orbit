@@ -32,6 +32,8 @@ Instance Processes, Docker Processes, presets, and Project definitions reject `u
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Update, start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 
+An [Instance path proxy](/reference/routes#publish-a-process-under-an-app-path) can publish a Node Docker Process under the app domain. While attached, `process:update` and `process:destroy` return `path_proxy.process_in_use`. Finish `instance:path-proxy:unset` before either operation. Stop and restart remain available.
+
 ## Runtimes
 
 A Process uses one of two runtimes. Each runtime takes a complete specification.

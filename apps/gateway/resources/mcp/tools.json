@@ -4018,6 +4018,101 @@
       }
     },
     {
+      "name": "instance-path-proxy-set",
+      "extension": null,
+      "title": "Publish an Instance path proxy",
+      "description": "Publish a Process under a prefix on an existing public app Route.",
+      "method": "PUT",
+      "path": "/api/v1/instances/{instance}/path-proxy",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          "process_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "description": "TCP port published on the upstream Node WireGuard address"
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "^\\/[a-z][a-z0-9-]{0,62}$(?![\\s\\S])",
+            "description": "Reserved top-level path prefix"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "process_id",
+          "port"
+        ]
+      }
+    },
+    {
+      "name": "instance-path-proxy-show",
+      "extension": null,
+      "title": "Show an Instance path proxy",
+      "description": "Show the stored path proxy for an Instance.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/path-proxy",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-path-proxy-unset",
+      "extension": null,
+      "title": "Remove an Instance path proxy",
+      "description": "Remove an Instance path proxy and keep its Route and Process.",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/path-proxy",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-queue",
       "extension": null,
       "title": "Read the Instance queue",

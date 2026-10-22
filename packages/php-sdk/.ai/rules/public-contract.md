@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 232 concrete public Gateway API operations:
+The SDK models exactly 235 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -20,6 +20,7 @@ The SDK models exactly 232 concrete public Gateway API operations:
 - Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
+- Instance path proxy: set, show, and unset by Instance ID or exact Route domain. Set transports a Process ID, published port, and optional prefix. The Gateway owns Route selection, WireGuard publication, collision checks, and Caddy rebuilds.
 - Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance. Attachments accept an Instance ID or exact Route domain and an app name. They are bodyless. Responses omit the secret and environment values.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.

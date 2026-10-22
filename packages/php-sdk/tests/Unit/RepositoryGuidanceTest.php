@@ -56,8 +56,11 @@ use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UnsetInstancePathProxyRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
@@ -356,7 +359,12 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $pathProxyRequests = [
+            SetInstancePathProxyRequest::class,
+            ShowInstancePathProxyRequest::class,
+            UnsetInstancePathProxyRequest::class,
+        ];
+        $expectedOperationCount = count($pathProxyRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -462,6 +470,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$aiRouterSwitchRequests)
             ->toContain(...$fleetRequests)
             ->toContain(...$operationRequests)
+            ->toContain(...$pathProxyRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
