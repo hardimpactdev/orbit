@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
@@ -51,9 +52,6 @@ final readonly class StoreTaskCommentAction
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload, ?Node $actor = null, ?string $requestId = null): TaskComment
     {
-        if (($payload['type'] ?? null) === TaskCommentType::Resolution->value || ($payload['type'] ?? null) === TaskCommentType::Resolution) {
-            TaskGroupGuard::requireTick($task);
-        }
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
@@ -72,6 +70,12 @@ final readonly class StoreTaskCommentAction
 
             $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
             $task = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($group->groupOrchestration() === TaskOrchestration::External
+                && $type === TaskCommentType::Resolution && trim($comment->body) !== '') {
+                TaskAssistance::resolveExternalSubtask($task, $group, $comment);
+
+                return $comment;
+            }
             $endedPullRequest = TaskExecutionHold::active($group)
                 || RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
                 || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);

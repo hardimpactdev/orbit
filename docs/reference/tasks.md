@@ -84,7 +84,7 @@ An `external` group leaves lifecycle decisions to its orchestrator. Create refus
 
 For an external group, `tasks:tick` only parks an idle VM, records whether its pull request merged or closed, and saves transcripts and destroys the VM after the group ends. Parking skips a group while any operation on it is unfinished. This rule applies to every operation kind. The operation target is `task_group` with the group ID. A pull request observation does not complete or settle the group, fast-forward its workspace, or start a fixup.
 
-The tick never claims, starts, sends, advances, reviews, consults, reminds, settles, or raises assistance for an external group. Every existing Tasks entry point that sends a turn, starts a check, or changes a claim skips the group or refuses with HTTP 409 `tasks.orchestrated_externally`. This includes comment sends, direction answers, deliverable correction resumes, and operator baseline retries. A resolution is refused before it changes assistance. Stale-reservation release skips the group, so a claim waiting for a VM keeps its reservation. Group cancel and complete remain available.
+The tick never claims, starts, sends, advances, reviews, consults, reminds, settles, or raises assistance for an external group. Every existing Tasks entry point that sends a turn, starts a check, or changes a claim skips the group or refuses with HTTP 409 `tasks.orchestrated_externally`. This includes comment sends, direction answers, deliverable correction resumes, and operator baseline retries. Stale-reservation release skips the group, so a claim waiting for a VM keeps its reservation. Group cancel and complete remain available. Resolutions clear assistance without sending a turn, and subtask cancellation interrupts work without advancing the group.
 
 The remaining lifecycle and scheduler descriptions on this page describe `tick` groups unless they state otherwise.
 
@@ -141,6 +141,8 @@ Create requires `project_id`, `title` (at most 160 characters), and `brief` (at 
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. The status moves between `backlog` and `todo` in either direction, and a move to `todo` asks the scheduler to claim. A status update and a claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
+For an external group, `tasks:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but never asks the scheduler to claim. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`; provision is not available yet. Use `tasks:cancel` or `tasks:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
+
 A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
 
 ### Change subtasks
@@ -158,13 +160,17 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | `reserved` | Nothing. Subtask create still appends |
 | `completed`, `failed`, `cancelled` | Nothing |
 
+For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `completed` and `failed` are final. Only `tasks:subtask:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs. A tick group's subtask update accepts no `status`.
+
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
 A `todo` subtask appended to a `settling` task returns the task to `running` on the next tick, as [Fix a settling pull request](#fix-a-settling-pull-request) describes.
 
 ### Cancel a subtask
 
-`tasks:subtask:cancel` cancels a `todo` or a `running` subtask.
+For an external group, `tasks:subtask:cancel` cancels a `todo`, `running`, or `reviewing` subtask in an open group. It uses the existing interrupt path to stop the acting thread and any running check before marking active work `cancelled`. A failed interrupt leaves the status unchanged and returns HTTP 502 `tasks.subtask_interrupt_failed`. Cancellation starts no next subtask and does not settle or change the group's status.
+
+For a tick group, `tasks:subtask:cancel` cancels a `todo` or a `running` subtask.
 
 - A `todo` subtask becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
 - A `running` subtask stops first. Orbit interrupts its implementer, then stops its running [task check](#project-check).
@@ -186,6 +192,7 @@ The task and subtask operations return these errors.
 | Error | HTTP | When |
 | --- | --- | --- |
 | `tasks.orchestration_unsupported` | 422 | An external group uses review and merge or would declare a topology |
+| `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
 | `tasks.orchestrated_externally` | 409 | An existing Tasks path would drive work owned by an external orchestrator |
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
@@ -890,6 +897,8 @@ The task takes the kind and the question of the subtask that asks. While a task 
 Runtime decisions use only the open flag and typed kind; reason prefixes are human text. An ownership refusal counts as a removal failure. VM destruction still checks that the VM is stopped or absent before discarding a stranded workspace.
 
 #### Resolve a request
+
+For an external group, the orchestrator raises assistance with an `assistance_requested` comment. A person's non-empty `resolution` comment clears the subtask's assistance. If the group shows that request, it reflects the first subtask that still asks, or clears its request when none remain. An independent group request stays open. The comment stays visible on the board. It sends nothing to an agent, queues no retry, and changes no status. The orchestrator reads the answer and decides what comes next. The remaining resolution routes below apply to tick groups.
 
 A reason that starts with `Watched pull request ended: ` is the exception. Orbit stores the resolution comment and does not send it. It does not clear the flag, and it does not start a subtask. [Watch the branch while subtasks are open](#watch-the-branch-while-subtasks-are-open) defines that reason and the one notice Orbit sends.
 
@@ -1710,6 +1719,10 @@ These reasons explain the design. Check them before you propose a change.
 An external orchestrator owns the lifecycle and every retry. Letting the tick or an operator resolution also send a turn would give the group two senders. The immutable mode keeps that ownership fixed from creation. Existing paths refuse or skip external work, including stale claims that may be waiting for capacity. Topologies and review and merge stay on the tick until their orchestration contracts are defined.
 
 Parking, pull request observations, and ended-group cleanup are resource maintenance and recorded facts. They make no lifecycle decision for an external group. A non-terminal operation keeps its VM awake because the operation still owns work, including time spent waiting between jobs. The board, task records, assistance, and saved sessions remain useful whoever drives the work.
+
+Status updates change the visible record without running effects. Preparation, provision, active work, and ending have distinct boundaries, so a board update cannot allocate a VM or bypass cancel and complete. Final subtask statuses cannot reopen work. Repeating a status is a no-op, so an orchestrator can retry a lost response without a key.
+
+When the group shows a subtask request, resolution, completion, or cancellation replaces it with the first remaining subtask request. This keeps an answered question off the board in either order and preserves independent group requests. An assistance answer is input to the orchestrator. Clearing the request lets the board show that the person answered; sending the answer or advancing after cancellation would take the next lifecycle decision away from the orchestrator.
 
 ### An optional, generic extension
 

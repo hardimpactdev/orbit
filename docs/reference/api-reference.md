@@ -81,6 +81,10 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
+### External task status inputs
+
+Task group and subtask updates expose `status` in the API, MCP, PHP SDK, and generated web types. The schema lists the stored statuses; the Gateway enforces the [external status moves](/reference/tasks#tasks-and-subtasks) and keeps tick input unchanged. Group updates cannot provision or end work, and subtask updates cannot cancel it. A repeat of the current external status changes nothing.
+
 ### Feedback fixups keep the Tasks schema
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) add the `review:{reviewer_id}` identity to the existing `fixup_problem` string and put provenance and findings in the existing `brief`. They add no public field, input, endpoint, or merge operation. Regenerate OpenAPI, then check the recorded review-fixup response with `bin/api-fixtures --check`, regenerate MCP/task-action manifests, and regenerate web API types. Unchanged schema output is a checked result, not a reason to skip the generators.

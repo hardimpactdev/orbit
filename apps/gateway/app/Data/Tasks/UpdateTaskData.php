@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -20,5 +21,6 @@ final class UpdateTaskData extends Data
         public ?array $deliverables = null,
         /** null keeps the recorded topology */
         public ?TaskTopology $topology = null,
+        public ?TaskStatus $status = null,
     ) {}
 }

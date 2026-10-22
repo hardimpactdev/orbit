@@ -91,13 +91,13 @@ it('refuses topology when adding or changing an external subtask', function (): 
     expect(Task::query()->count())->toBe(1);
 });
 
-it('refuses a resolution before writing a comment or clearing assistance', function (): void {
+it('records an external resolution and clears assistance without driving work', function (): void {
     $group = $this->postJson('/api/v1/task-groups', $this->payload)->assertCreated()->json('data');
     $url = '/api/v1/task-groups/'.$group['id'].'/tasks/'.$group['tasks'][0]['id'].'/comments';
     $this->postJson($url, ['type' => 'assistance_requested', 'body' => 'Which direction?', 'author' => 'operator'])->assertCreated();
-    $this->postJson($url, ['type' => 'resolution', 'body' => 'Continue.', 'author' => 'operator'])->assertConflict()->assertJsonPath('error.code', 'tasks.orchestrated_externally');
-    expect(Task::topLevel()->findOrFail($group['id'])->assistance_requested)->toBeTrue()
-        ->and(Task::query()->findOrFail($group['tasks'][0]['id'])->comments()->count())->toBe(1);
+    $this->postJson($url, ['type' => 'resolution', 'body' => 'Continue.', 'author' => 'operator'])->assertCreated();
+    expect(Task::topLevel()->findOrFail($group['id'])->assistance_requested)->toBeFalse()
+        ->and(Task::query()->findOrFail($group['tasks'][0]['id'])->comments()->count())->toBe(2);
 });
 
 it('leaves external work and stale reservations untouched while recording PR state', function (string $state): void {

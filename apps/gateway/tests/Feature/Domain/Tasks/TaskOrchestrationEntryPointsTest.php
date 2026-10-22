@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Actions\TaskVms\FailTaskVmAction;
 use App\Data\Tasks\CreateTaskGroupData;
@@ -231,6 +232,9 @@ it('inventories every public Tasks group entry point and proves the effect entry
                 $updated = $service->execute($created, new UpdateTaskGroupData(null, null, TaskGroupStatus::Todo));
                 expect($updated->status)->toBe(TaskGroupStatus::Todo)
                     ->and($updated->reserved_at)->toBeNull()->and($updated->taskable_id)->toBeNull();
+            } elseif ($class === StoreTaskCommentAction::class) {
+                $service->execute($task, ['type' => 'resolution', 'body' => 'Continue.', 'author' => 'operator']);
+                expect($task->fresh()->assistance_requested)->toBeFalse();
             } elseif ($class === FailTaskVmAction::class) {
                 $vm = TaskVm::query()->create([
                     'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-failure-'.$name,

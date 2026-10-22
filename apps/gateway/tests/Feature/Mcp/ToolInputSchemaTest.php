@@ -92,16 +92,17 @@ describe('MCP tool input schemas', function (): void {
             mcp782_check_schema($schema, $name, $failures);
         }
 
-        foreach (['tasks-create', 'tasks-update'] as $name) {
+        foreach ([
+            'tasks-create' => ['backlog', 'todo'],
+            'tasks-update' => ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'waiting_for_review', 'completed', 'failed', 'cancelled'],
+            'tasks-subtask-update' => ['todo', 'reserved', 'running', 'reviewing', 'completed', 'failed', 'cancelled'],
+        ] as $name => $statuses) {
             if (! array_key_exists($name, $schemas)) {
                 $failures[] = "{$name} is not served";
             }
-        }
-
-        foreach (['tasks-create', 'tasks-update'] as $name) {
             $enum = $schemas[$name]->properties->status->enum ?? null;
 
-            if ($enum !== ['backlog', 'todo']) {
+            if ($enum !== $statuses) {
                 $failures[] = "{$name} status enum is ".json_encode($enum);
             }
         }

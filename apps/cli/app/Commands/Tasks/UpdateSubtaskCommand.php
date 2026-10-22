@@ -20,12 +20,13 @@ final class UpdateSubtaskCommand extends TaskCommand
         {--title= : New title}
         {--brief= : New brief}
         {--position= : New position, starting at 1}
+        {--status= : Board status for an external group}
         {--deliverables= : JSON file with an array of typed deliverables that replaces the list}
         {--topology= : JSON array of required workload nodes; [] removes declarations}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change a subtask\'s title, brief, position, or deliverables.';
+    protected $description = 'Change a subtask\'s title, brief, position, deliverables, or external status.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -42,6 +43,12 @@ final class UpdateSubtaskCommand extends TaskCommand
         if ($title === false || $brief === false) {
             return self::FAILURE;
         }
+
+        $status = $this->option('status');
+        if ($status !== null && ! in_array($status, ['todo', 'reserved', 'running', 'reviewing', 'completed', 'failed', 'cancelled'], true)) {
+            return $this->renderGatewayFailure('tasks.status_invalid', 'Unknown subtask status.');
+        }
+        $status = is_string($status) ? $status : null;
 
         $position = $this->option('position');
 
@@ -64,10 +71,10 @@ final class UpdateSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $changed = $title !== null || $brief !== null || $position !== null || $deliverables !== null || $topology !== null;
+        $changed = $title !== null || $brief !== null || $position !== null || $deliverables !== null || $topology !== null || $status !== null;
 
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, --position, --deliverables, or --topology.');
+            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, --position, --deliverables, --topology, or --status.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -107,7 +114,7 @@ final class UpdateSubtaskCommand extends TaskCommand
 
         $task = $this->sendWithProgress(
             $connector,
-            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position, $deliverables, $topology),
+            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position, $deliverables, $topology, $status),
             SubtaskResponse::class,
             ['Update subtask', 'Updating subtask', 'Updated subtask'],
         );

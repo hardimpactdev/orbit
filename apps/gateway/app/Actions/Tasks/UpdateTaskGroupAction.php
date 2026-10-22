@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskStatusMoves;
 use App\Models\Task;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,9 @@ final readonly class UpdateTaskGroupAction
             }
 
             if ($data->status !== null && $data->status !== $locked->status) {
-                if (! in_array($locked->status, [TaskGroupStatus::Backlog, TaskGroupStatus::Todo], true)) {
+                if ($locked->groupOrchestration() === TaskOrchestration::External) {
+                    TaskStatusMoves::group($locked, $data->status);
+                } elseif (! in_array($locked->status, [TaskGroupStatus::Backlog, TaskGroupStatus::Todo], true)) {
                     throw TaskGroupGuard::alreadyClaimed();
                 }
 
@@ -66,7 +69,9 @@ final readonly class UpdateTaskGroupAction
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;
-            $locked->save();
+            if ($locked->groupOrchestration() === TaskOrchestration::Tick || $locked->isDirty()) {
+                $locked->save();
+            }
 
             return $locked;
         }), wait: false);

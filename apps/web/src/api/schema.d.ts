@@ -3511,7 +3511,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves a tick group between `backlog` and `todo`; a claimed tick group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving a tick group to `todo` asks the scheduler to claim. An external group also moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. Other moves return 422 `tasks.status_move_refused`: only provision reserves, and only cancel or complete ends the group. Repeating its current status changes nothing; no idempotency key is needed. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -3652,7 +3652,7 @@ export interface paths {
         head?: never;
         /**
          * Update a subtask
-         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed, failed, and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). For an external group, `status` moves `todo` to `running`, between `running` and `reviewing`, or either active status to `completed` or `failed`. Completed and failed subtasks are final; only subtask cancel sets `cancelled`. Other moves return 422 `tasks.status_move_refused`. Repeating its current status changes nothing; no idempotency key is needed. Tick groups accept no subtask `status`. Ended groups allow no status move or metadata change. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-subtask-update"];
         trace?: never;
@@ -3668,7 +3668,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a todo or running subtask
-         * @description Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.
+         * @description For an external group, cancels a `todo`, `running`, or `reviewing` subtask in an open group. It interrupts the acting turn or check, marks the subtask `cancelled`, starts no other subtask, and never settles the group. For a tick group, cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask or group is not cancellable, and `tasks.subtask_interrupt_failed` (502) when a turn or check could not be stopped; the subtask then keeps its status.
          */
         post: operations["tasks-subtask-cancel"];
         delete?: never;
@@ -19342,10 +19342,10 @@ export interface operations {
                     /** @description New brief */
                     brief?: string;
                     /**
-                     * @description backlog or todo
+                     * @description Board status; active moves require external orchestration
                      * @enum {string}
                      */
-                    status?: "backlog" | "todo";
+                    status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
                 };
             };
         };
@@ -19896,6 +19896,11 @@ export interface operations {
                     brief?: string;
                     /** @description New position, starting at 1 */
                     position?: number;
+                    /**
+                     * @description Board status for an external group
+                     * @enum {string}
+                     */
+                    status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
                     /** @description JSON array of required workload nodes; [] removes declarations */
                     topology?: string[];
                     /** @description JSON file with an array of typed deliverables that replaces the list */
