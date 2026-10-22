@@ -64,7 +64,7 @@ The steps appear when a worker first starts the operation, all `pending`. A queu
 
 ## Start an operation
 
-After the idempotency check below, a start request validates the input and the caller's access, creates the record as `queued`, queues its job, and answers `202` with the record:
+After the access and idempotency checks, a start request validates the input, creates the record as `queued`, queues its job, and answers `202` with the record:
 
 ```json
 {

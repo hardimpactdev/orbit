@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\StartInstanceRollbackAction;
 use App\Data\Operations\OperationData;
+use App\Domain\Operations\OperationKinds;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -18,7 +19,7 @@ use Illuminate\Http\JsonResponse;
 final class InstanceRollbacksController extends Controller
 {
     /** Starts an `instance.rollback` operation and answers 202 with it; the rollback runs on the Gateway queue. */
-    #[StartsOperation('instance.rollback')]
+    #[StartsOperation(OperationKinds::InstanceRollback)]
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         RollbackInstanceRequest $request,
