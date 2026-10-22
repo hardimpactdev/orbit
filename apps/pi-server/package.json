@@ -11,9 +11,11 @@
         "build:linux": "bun build src/main.ts --compile --target=bun-linux-x64 --outfile dist/pi-server-linux-x64 && bun build src/main.ts --compile --target=bun-linux-arm64 --outfile dist/pi-server-linux-arm64"
     },
     "dependencies": {
-        "@earendil-works/pi-agent-core": "1.2.0",
-        "@earendil-works/pi-ai": "1.2.0",
-        "@earendil-works/pi-coding-agent": "1.2.0"
+        "@earendil-works/chord": "1.4.0",
+        "@earendil-works/pi-agent-core": "1.4.0",
+        "@earendil-works/pi-ai": "1.4.0",
+        "@earendil-works/pi-coding-agent": "1.4.0",
+        "@earendil-works/pi-durable": "1.4.0"
     },
     "devDependencies": {
         "@types/node": "^26.6.5",
@@ -22,8 +24,8 @@
         "vite-plus": "1.1.0"
     },
     "overrides": {
-        "@earendil-works/pi-agent-core": "1.2.0",
-        "@earendil-works/pi-ai": "1.2.0",
+        "@earendil-works/pi-agent-core": "1.4.0",
+        "@earendil-works/pi-ai": "1.4.0",
         "source-map-js": "1.2.2",
         "tinypool": "2.1.2",
         "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",

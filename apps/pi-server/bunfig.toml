@@ -1,3 +1,16 @@
 [install]
 # Routine releases wait three days. See the Dependencies section of docs/contributor-guide.md.
 minimumReleaseAge = 259200
+# Pi 1.4.0 was released 2026-10-21. Remove these exact exemptions after the three-day gate.
+minimumReleaseAgeExcludes = [
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-durable",
+    "@earendil-works/chord",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-telemetry",
+    "@earendil-works/pi-env",
+    "@earendil-works/pi-mcp",
+    "@earendil-works/pi-tui",
+    "@earendil-works/pi-codemode",
+]
