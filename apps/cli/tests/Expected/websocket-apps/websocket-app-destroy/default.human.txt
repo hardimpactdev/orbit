@@ -1,0 +1,25 @@
+Destroying WebSocket app...
+
+┌  Destroy WebSocket app
+│
+├  ● Saved WebSocket app removal
+│
+└  Saved WebSocket app removal.
+
+
+┌  WebSocket change saved; runtime application is pending.
+│
+├  App                hauzer
+│
+├  Operation ID       44444444-4444-4444-8444-444444444444
+│
+├  Desired revision   3
+│
+├  State              pending
+│
+├  Instance rollout   —
+│
+├  Next step          orbit websocket:sync
+│
+└  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

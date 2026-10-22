@@ -40,34 +40,35 @@ def preview():
     import difflib
     import tempfile
     expected = ROOT / 'apps/cli/tests/Expected'
-    directory = pathlib.Path(tempfile.mkdtemp(prefix='cli-contract-preview-'))
-    environment = {**os.environ, 'ORBIT_EXPECTED': 'update', 'ORBIT_EXPECTED_DIR': str(directory)}
-    result = subprocess.run(['vendor/bin/pest', '--filter=Contract'], cwd=ROOT / 'apps/cli', env=environment,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if result.returncode != 0:
-        sys.exit('The contract tests did not run cleanly; run vendor/bin/pest --filter=Contract in apps/cli.')
-    changed = {}
-    for current in sorted(directory.rglob('*')):
-        if not current.is_file():
-            continue
-        name = current.relative_to(directory).as_posix()
-        stored = expected / name
-        before = stored.read_text(encoding='utf-8') if stored.is_file() else ''
-        after = current.read_text(encoding='utf-8')
-        if before != after:
-            command = name.split('/')[1] if '/' in name else name
-            changed.setdefault(command, []).append((name, before, after, stored.is_file()))
-    if not changed:
-        print('Every command renders as tests/Expected records.')
-        return
-    for command, files in changed.items():
-        print(f'{command}: {len(files)} expected output(s) differ')
-        for name, before, after, existed in files:
-            print(f'  {name}' + ('' if existed else ' (new)'))
-            for line in difflib.unified_diff(before.splitlines(), after.splitlines(), 'expected', 'current', lineterm='', n=1):
-                print('    ' + line)
-    print('\nAccept with: cd apps/cli && ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract')
-    sys.exit(1)
+    with tempfile.TemporaryDirectory(prefix='cli-contract-preview-') as temporary:
+        directory = pathlib.Path(temporary)
+        environment = {**os.environ, 'ORBIT_EXPECTED': 'update', 'ORBIT_EXPECTED_DIR': str(directory)}
+        result = subprocess.run([str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--filter=Contract'], cwd=ROOT / 'apps/cli', env=environment,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0:
+            sys.exit('The contract tests did not run cleanly; run vendor/bin/pest --filter=Contract in apps/cli.')
+        changed = {}
+        for current in sorted(directory.rglob('*')):
+            if not current.is_file():
+                continue
+            name = current.relative_to(directory).as_posix()
+            stored = expected / name
+            before = stored.read_text(encoding='utf-8') if stored.is_file() else ''
+            after = current.read_text(encoding='utf-8')
+            if before != after:
+                command = name.split('/')[1] if '/' in name else name
+                changed.setdefault(command, []).append((name, before, after, stored.is_file()))
+        if not changed:
+            print('Every command renders as tests/Expected records.')
+            return
+        for command, files in changed.items():
+            print(f'{command}: {len(files)} expected output(s) differ')
+            for name, before, after, existed in files:
+                print(f'  {name}' + ('' if existed else ' (new)'))
+                for line in difflib.unified_diff(before.splitlines(), after.splitlines(), 'expected', 'current', lineterm='', n=1):
+                    print('    ' + line)
+        print('\nAccept with: cd apps/cli && ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract')
+        sys.exit(1)
 
 
 def coverage():
@@ -114,7 +115,7 @@ def main():
         sys.exit(1)
     for path, used in files.items():
         print(f'{path.relative_to(ROOT)} replays {", ".join(used)}')
-    sys.exit(subprocess.call(['vendor/bin/pest', *[str(path.relative_to(ROOT / "apps/cli")) for path in files]], cwd=ROOT / 'apps/cli'))
+    sys.exit(subprocess.call([str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', *[str(path.relative_to(ROOT / "apps/cli")) for path in files]], cwd=ROOT / 'apps/cli'))
 
 
 if __name__ == '__main__':

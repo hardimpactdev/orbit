@@ -59,12 +59,14 @@ Release commands prepare and operate a production Instance.
 | [`instance:deployment:list`](#orbit-instancedeploymentlist) | List recorded deployment history, newest first. |
 | [`instance:deployment:show`](#orbit-instancedeploymentshow) | Show one recorded deployment, its phases and steps, and its log. |
 
-Attachment commands write a registered Database connection into stored Instance configuration.
+Attachment commands write a registered Database connection or a [Reverb app](/cli/websocket) into stored Instance configuration. When input is invalid, they report the first error and send no request.
 
 | Command | Result |
 | --- | --- |
 | [`instance:database:add`](#orbit-instancedatabaseadd) | Add a Database connection and write prefixed stored environment keys. |
 | [`instance:database:remove`](#orbit-instancedatabaseremove) | Remove a Database connection and clear those keys. |
+| [`instance:websocket:add`](#orbit-instancewebsocketadd) | Add a Reverb app and write its stored environment keys. |
+| [`instance:websocket:remove`](#orbit-instancewebsocketremove) | Remove the Reverb app and clear those keys. |
 
 Analytics commands publish the tracking hosts that send visits to the [analytics role](/reference/analytics).
 
@@ -694,7 +696,7 @@ orbit instance:deployment:show 42
 Add a registered Database connection on an Instance and write prefixed keys into its stored environment configuration.
 
 ```bash
-orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json]
+orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--network=wireguard|lan] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -705,8 +707,9 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json
 | --- | --- | --- |
 | `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
 | `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
+| `--network=NETWORK` | `wireguard` | `lan` selects a managed server's LAN endpoint; both Nodes must be active with an IPv4 LAN address. Otherwise use the stored host. |
 
-For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. The Gateway writes the connection's stored host and port, also when the Instance runs on the connection's Node.
+For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. By default the Gateway writes the connection's stored host and port. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) is stored on this attachment and leaves other consumers on WireGuard.
 
 ```bash
 orbit instance:database:add app --instance=12
@@ -734,6 +737,54 @@ orbit instance:database:remove app --instance=12 --force
 ```
 
 An unknown attachment returns `database.attachment_missing`.
+
+## orbit instance:websocket:add
+
+Add a [Reverb app](/reference/websocket-apps) on an Instance and write its credentials into the stored environment configuration. An Instance has one app. Adding another app replaces it.
+
+```bash
+orbit instance:websocket:add <app> --instance=SELECTOR [--public] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | App name from `websocket:app:list`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
+| `--public` | omitted | Publish on the existing public app Route and project its domain. Requires a production Laravel Instance with no `/app` or `/apps` route collisions. |
+
+The Gateway writes `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. The response names the keys and never returns their values. The Gateway's own app, `gateway`, returns `websocket.app_reserved`.
+
+```bash
+orbit instance:websocket:add hauzer --instance=12
+```
+
+With `--public`, the Gateway also rebuilds Caddy on the existing app Route. Reattaching the same app without the flag preserves its public Route. See [public Reverb](/reference/websocket-apps#publish-on-the-existing-public-app-route). Add changes the stored environment; it does not write the workload `.env`. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
+
+## orbit instance:websocket:remove
+
+Remove the Reverb app from an Instance and clear its stored keys. Other stored keys stay in place.
+
+```bash
+orbit instance:websocket:remove <app> --instance=SELECTOR [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Name of the app on the Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
+| `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
+
+```bash
+orbit instance:websocket:remove hauzer --instance=12 --force
+```
+
+An app that is not on the Instance returns `websocket.attachment_missing`.
 
 ## orbit instance:analytics:enable
 

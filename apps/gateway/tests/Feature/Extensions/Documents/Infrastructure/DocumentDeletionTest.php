@@ -29,8 +29,6 @@ require_once __DIR__.'/../../../../Support/DocumentDeletionFixtures.php';
 
 uses(WithDocumentDeletionFixture::class);
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->initializeDocumentDeletionFixture();
 });

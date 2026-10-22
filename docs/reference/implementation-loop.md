@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
+  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -77,22 +77,25 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
+CI selects Node.js from the root `.node-version`, currently `24.22.1`, which includes the [October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). The machine recipe pins the same official Node artifacts for both architectures. `tools/ci-runners/setup.sh container NAME` installs the recipe's Node, Vite+, dispatcher, and pnpm with the shared Node/image installer. It removes Ubuntu's separate `nodejs` package only when the simulated removal affects that package alone. Run this command only after stopping an idle runner service. GitHub Actions' bundled Node executables belong to the runner distribution; changing the project Node pin does not patch them. Verify those executables separately when upgrading the runner.
+
 CI passes its job-scoped, read-only `GITHUB_TOKEN` to Composer through workflow-level `COMPOSER_AUTH`. GitHub API requests use `github-oauth`; `codeload.github.com` uses bearer authentication too, because Composer does not send the API OAuth header to that host. The token stays in the workflow environment and is not written to an auth file.
 
-GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. It has these jobs.
+GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. Change runs select touched projects and their consumers. Main, nightly, and manual runs select everything. It has these jobs.
 
 | Job | Checks |
 | --- | --- |
-| One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On PRs, Gateway runs quality checks and the shard-union check here; its tests run in the four shard jobs |
-| Gateway shards (1), (2), (3), (4) | Every pull request: four stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
-| Gateway privileged | Every CI event: the whole privileged group on one disposable GitHub-hosted runner |
-| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
+| Changed projects | Tests the path map, compares the change head with its merge base, and selects projects and consumers before suite jobs start |
+| One job per selected Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. When selected, Gateway runs quality checks and the shard-union check here; its tests run in the shard jobs. Docs also runs `bin/env-docs` |
+| Gateway shards (five) | When Gateway is touched: stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
+| Gateway privileged | When Gateway is touched: the whole privileged group on one disposable GitHub-hosted runner |
+| API reference | `bin/project-vocabulary`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, separate `bun run test:unit` and `bun run test:browser` steps, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
-| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
+| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. Untouched jobs are skipped before they take a runner |
 | Remote programs | Installs shellcheck, ruff 0.17.0, and the pinned pytest requirements, then runs `bin/remote-programs-check`: the lint and direct tests of the Gateway's [remote programs](/reference/remote-programs#lint-and-direct-tests) |
-| Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. A pull request that changes neither `apps/desktop` nor `ci.yml` skips these steps |
-| Required checks | Passes only when every other job passes, as described below |
+| Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. Untouched jobs are skipped before they take a runner |
+| Required checks | Requires successful detection and successful selected jobs; accepts only explicitly untouched skips, as described below |
 
 Gateway project and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
@@ -108,11 +111,13 @@ Git build watch checks and uploads its report with a read-only token. A separate
 
 GitHub's repository SHA-pinning policy and Dependabot security updates must be enabled separately by an operator. Workflow changes do not change repository settings.
 
-The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job container. After Bun setup and dependency installation, `bunx playwright install --with-deps chromium webkit` installs both engines and their system libraries before the tests. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time.
+The Web job runs directly on the GitHub-hosted Ubuntu runner, without a job container. After Bun setup and dependency installation, `bunx playwright install --with-deps --only-shell chromium webkit` installs Chromium's headless shell, WebKit, and their system libraries before the tests. All test launches are headless, so CI does not download the unused full Chromium browser. `bun run test:unit` includes Node tests and real daemon verification in Chromium and WebKit. `bun run test:browser` tests the app in Chromium. Each step reports its own time.
 
 ### One PHP build in CI
 
-Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/nckrtl/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.
+Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/hardimpactdev/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.
+
+The managed PHP build supports amd64 only. CI installs and verifies the same amd64 pins as Nodes and task VM images. `bin/php-build` refuses PHP on arm64 with `PHP is not available for arm64`; the bump and artifact mirror use only the PHP architectures declared in the recipe.
 
 On a GitHub-hosted runner the action runs these steps:
 
@@ -125,32 +130,46 @@ On a GitHub-hosted runner the action runs these steps:
 
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify --profile=ci-runner`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
-- Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build and purges PHP packages outside the recipe. No other profile purges.
-- The first run records the profile. Then nightly recipe maintenance converges Sabre, and a manual run needs only `php artisan node:converge-recipe sabre`.
-- On Beast and Shark, run `tools/ci-runners/setup.sh container NAME` for each shard container.
+- The `ci-runner` role prepares Sabre, Shark, and Beast as workload Nodes. Add it through [normal role assignment](/reference/node-provisioning#ci-runner-role).
+- On each host, run `tools/ci-runners/setup.sh container NAME` for its active runner containers. The role converges host software. The script updates each idle container.
 
 #### Merge a PHP build change
 
-A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. With the maintainer's approval, an operator runs from the pull request branch:
+A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. For a nightly artifact PR, a red runner check holds the PR until an operator runs these updates from its branch:
 
-1. On Sabre: `sudo bin/php-build install --profile=ci-runner --ci --purge-extras`.
-2. On Beast and Shark: `tools/ci-runners/setup.sh container NAME` for each shard container.
+On Sabre, Beast, and Shark, run `tools/ci-runners/setup.sh container NAME` for each idle runner container.
 
-Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
+Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge each host through its roles and update each idle runner container.
 
-[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges CI-role hosts in the overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
-`Required checks` requires the project matrix, including Docs, on every event. It also requires every Gateway shard to succeed on pull requests. The PR-only shard jobs must be skipped on main pushes, nightly runs and manual runs.
+`Required checks` applies the [project selection and skip rules](#full-suites-gate-merges) below. When Gateway is selected, every shard and the privileged job must pass.
 
-The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among four shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
+The [Feature delivery merge gate](#full-suites-gate-merges) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among the configured shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
 
-Full suites include architecture and subprocess tests. CI has no subprocess-only lanes or affected-test selector. A test that starts PHP still declares `pest()->group('subprocess')` so the coverage limitation stays explicit: runtime coverage cannot link the child process's code to its parent test. The workflow contract uses Pest's stock XML test listing once per configured suite. It checks both full-suite inclusion and subprocess-group membership from that listing, including each source file that starts PHP.
+Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
-The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
+CLI and Docs limit each test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
 
-Every main push, scheduled run and manual dispatch runs each Composer project's full suite with `pest --parallel --tia --fresh`. The fork records a fresh graph while running every test; no restored graph selects CI tests. After a passing run on main, the export requires that graph to record the tested SHA and a result for every linked test file. The job saves the graph and quality caches for [task workspaces](#ci-cache-refs). Local task checks retain TIA, as the [contributor guide](/contributor-guide#3-implement-and-verify) describes.
+The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
 
-A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with four Gateway shards and no cache saves.
+The check prepares independent branch commits and expected combined trees from current source files and recorded outputs, then gives each case a fresh private repository. Cold generators still prove both merge orders, generated-file conflicts, cache assertions, and independent freshness. Merge callbacks and freshness checks both use the original installed, locked web CLI through Bun, without a bundled or minified replacement.
+
+The merge driver and the runner for this check start Python without loading site packages. The driver imports modules only for the requested mode. This reduces repeated cold startup. The fixture uses Composer's runtime-only autoloaders, so generator subprocesses do not load Pest, PHPUnit or other development tools. Its Composer files remain private; installed packages stay read-only.
+
+Both orders must equal the same recorded generator output and complete source tree. Separate read-only cases rebuild the base and combined fixtures to check every recorded byte. The fixture contains only the source corpus these proofs need, not unrelated applications or tests; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
+
+The animation composition proof runs the real renderer at a 50 ms interval, retaining at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. The proof for printing lines still observes five frames at the real 300 ms cadence in each frame order.
+
+The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
+
+The Rector cache regression directly checks that the project's `composer rector` command includes the `--clear-cache` argument. The tooling baseline keeps this command identical in all five Composer projects and rejects a command without that argument. This checks the cache invalidation contract inside the test's two-second limit, without starting Rector or moving part of the proof into an unmeasured hook.
+
+CLI applications, configuration, containers, and command objects are freshly built for each feature test. CI adds no private bytecode cache or separate cache-coverage lane.
+
+Every main push, scheduled run and manual dispatch selects all projects: each Composer project's full suite with `pest --parallel`, and the Gateway suite in the Gateway shards. CI records no graph and saves no files for [task workspaces](#ci-cache-refs).
+
+A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with the configured Gateway shards and no cache saves.
 
 A new push to a pull request, or to a handoff branch, cancels the older run of that pull request or branch. Pushes to `main` share one concurrency group and never cancel a running run. GitHub keeps one running and one waiting run per group, and a newer push replaces the waiting one. So when several merges land close together, the newest `main` commit is tested next. The commits in between get a cancelled run instead of a result.
 
@@ -162,37 +181,37 @@ On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dis
 
 The nightly run tests the newest `main` commit again, with every project's full suite. It adds a `Required checks` run to that commit. An automatic release needs every such run to pass, so a failed nightly run keeps that commit from shipping. Every later push also runs full suites, so it ships only when the failure is fixed.
 
-The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish the [test baselines](#ci-artifacts).
+The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish their [quality caches](#ci-artifacts).
 
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 
-Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop) defines the PR test boundary.
+Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [Feature delivery merge gate](#full-suites-gate-merges) defines the PR test boundary.
 
-Each Composer project job checks out full history and follows the [Feature delivery merge gate](#full-suites-gate-merges-tia-serves-the-task-loop).
+Each Composer project job checks out full history and follows the [Feature delivery merge gate](#full-suites-gate-merges).
 
 The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --dependencies-only` to install every Composer project, because its integration tests use the other projects. It does not install a merge driver, create a Gateway key, seed development caches, or run other projects' guidance checks. Each project's own job checks its guidance. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
 
-The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` in one PHP process with PCRE JIT disabled, independently of TIA and shard selection. The test checks that PHP received the step's `PCRE_JIT` setting. Once the no-sudo step passes, this step runs even if an earlier test step fails and keeps the large-value redaction regressions in `Required checks`.
+The Gateway job also runs `tests/Feature/Logs/RedactionCasesTest.php` with stock parallel workers and PCRE JIT disabled in both the parent and workers (`--passthru-php="-d pcre.jit=0"`), independently of shard selection. The test checks that PHP received the step's `PCRE_JIT` setting. Once the no-sudo step passes, this step runs even if an earlier test step fails and keeps the large-value redaction regressions in `Required checks`.
 
 Docs quality checks, including Docs lint and the ADR lifecycle rules, and the full Docs test suite run once in the project matrix. Like the other project lanes, Docs checks out the immutable event commit, `github.sha`: the merge commit on pull requests. There is no second Docs merge-ref job.
 
-Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use the same uutils coreutils as a Node.
+Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, and use the same uutils coreutils as a Node. Every parallel CI test run omits `--processes` so stock ParaTest detects all available CPUs: 6 in each self-hosted runner container and 4 on GitHub-hosted runners. ParaTest uses Fidry CPU Core Counter, which counts the process's allowed CPUs intersected with the online CPUs on Linux. A read-only call to the installed detector in `ci-beast-1` on 2026-10-21 returned 6, matching `nproc`, rather than the host's 16 threads.
 
 ### Gateway shards
 
-Each PR runs a static matrix `[1, 2, 3, 4]` with `vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --shard=N/4`. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all four shards. No planner, plan artifact, API polling or hand-built class filter is involved.
+Every CI run runs five stock Pest shards, fewer than the [shared runners](#self-hosted-shard-runners), so an Orbit run leaves runners free for other repositories. The `gateway-shards` matrix list in `.github/workflows/ci.yml` is the only source of the count. Change capacity by editing that list. `bin/check-pest-shards` reads its length and requires consecutive shard numbers from 1 through that count. Each job runs `../../bin/pest-plain vendor/bin/pest --parallel --exclude-group=privileged --shard=N/COUNT`; the workflow takes `COUNT` from `strategy.job-total`, so the denominator follows the matrix. The required Gateway privileged job runs every privileged case. The Gateway quality job runs independently, so quality checks overlap all shards. No planner, plan artifact, API polling or hand-built class filter is involved.
 
 #### Gateway tests and privilege
 
 A Gateway test that needs root or another Unix identity belongs to `privileged`. The configured suites run these tests only in the disposable privileged job.
 
-Gateway's default `phpunit.xml` excludes that group, so full, affected, subprocess, and focused ordinary runs all leave it out. The XML exclusion keeps Pest TIA enabled and gives its saved graph the same selection and fingerprint in CI and local checks; a command-line exclusion would disable TIA. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. The ordinary shard coverage check uses the same selection as its test command.
+Gateway's default `phpunit.xml` excludes that group, so full and focused ordinary runs leave it out. PHPUnit's explicit `--group=privileged` overrides the XML exclusion in the privileged job and deliberate disposable-VM runs. The ordinary shard coverage check uses the same selection as its test command.
 
 On macOS, `LinuxHost::delegate()` keeps the selected case's privilege group when it runs that case on `ORBIT_LINUX_TEST_HOST`. Ordinary delegation keeps the default exclusion. A deliberately selected privileged case adds `--group=privileged` for the child and needs a disposable Linux host with the case's privileged prerequisites. Delegation still requires exactly one passed case.
 
 Keep one real privileged case for each behaviour where privilege is the point. When privilege is incidental, fake the process boundary and keep the behaviour assertions in the ordinary suite. Ordinary tests must pass with no sudo access and make no sudo calls, including capability probes and cleanup.
 
-Before ordinary Gateway checks or tests, after system setup, the shared `.github/actions/no-sudo` action denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all four PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
+Before ordinary Gateway checks or tests, after system setup, the shared `.github/actions/no-sudo` action denies sudo to the user on a GitHub-hosted runner and fails on any runner where `sudo -n true` still succeeds. On a self-hosted runner it checks without changing host policy. This applies to the project job on every event and all PR shards. Absolute paths, a pinned PATH, `NativeProcessRunner`, and `env -i` cannot regain sudo access.
 
 Stock PHPUnit `Before` and `After` fixture hooks also put a denying `sudo` shim first on PATH and fail the case if it was called, even when the caller ignores its exit status. The hooks surround setup and cleanup too. Child programs inherit the shim; fixtures that pin PATH use `TestToolchain::path()`.
 
@@ -200,52 +219,53 @@ The shared Python worker passes the current test's guarded PATH to each fresh ch
 
 Composer supervisor and check-runner fixtures set `COMPOSER_ALLOW_SUPERUSER=1` so Composer does not run its unrelated `sudo -K` credential cleanup. The check-runner fixture sets it in its account's login profile, which loads after the real check program filters its environment, including for authenticated setup and nested Composer scripts. The guard regression runs failing fixture cases through Pest to prove that a new sudo call fails the suite.
 
-The privileged group runs in one job on a disposable GitHub-hosted runner with passwordless sudo. It runs the whole group with four parallel processes, `--no-tia`, `--group=privileged`, and `--fail-on-empty-test-suite`. `Required checks` requires this job to pass.
+The privileged group runs in one job on a disposable GitHub-hosted runner with passwordless sudo. It runs the whole group with all detected CPUs, `--group=privileged`, and `--fail-on-empty-test-suite`. `Required checks` requires this job to pass.
 
 The privileged job installs the recipe PHP build, Composer dependencies, ACL tools, and the `caddy` Unix account. It does not install Homebrew, Caddy, OpenSSL, WireGuard tools, or Node. The Valkey tests keep `ORBIT_TEST_DOCKER=1`; Docker pulls their image when a test first starts a container.
 
-Stock Pest reads the committed `apps/gateway/tests/.pest/shards.json` for time balancing. Refresh it with a real full run on a disposable Linux machine with the privileged prerequisites. In `apps/gateway`, copy `phpunit.xml` to `phpunit.shard-refresh.xml` and remove its `<groups>` element so the recording includes both ordinary and privileged cases. Run `ORBIT_TEST_DOCKER=1 php -d auto_prepend_file=tests/bootstrap.php vendor/bin/pest --configuration=phpunit.shard-refresh.xml --parallel --processes=4 --no-tia --update-shards`, remove the temporary configuration, and commit the changed timings in a PR.
+Stock Pest reads the committed `apps/gateway/tests/.pest/shards.json` for time balancing. This file stores class timings, not a shard count or fixed assignments. Stock Pest rebalances those timings for the requested count, so changing capacity needs no new timing recording or custom plan generator. The union check runs the stock listings for every configured shard, including newly added classes. `Required checks` requires the whole shard matrix to succeed, whatever its size.
+
+Refresh the timings with a real full run on a disposable Linux machine with the privileged prerequisites. In `apps/gateway`, copy `phpunit.xml` to `phpunit.shard-refresh.xml` and remove its `<groups>` element so the recording includes both ordinary and privileged cases. Run `ORBIT_TEST_DOCKER=1 php -d auto_prepend_file=tests/bootstrap.php vendor/bin/pest --configuration=phpunit.shard-refresh.xml --parallel --update-shards`, remove the temporary configuration, and commit the changed timings in a PR.
 
 Loading the test bootstrap first gives Pest's parent and workers the same temporary directory for timing files. CI never restores this file from Actions cache or writes it back. All shards therefore read the same timings from the tested commit, including on a partial rerun. Pest distributes new classes even before timings are refreshed.
 
-The Gateway quality job runs `bin/check-pest-shards`. It uses Pest's own `--list-tests` output for the full non-privileged suite and each of the four stock shards. It requires their union to equal the full listing and rejects duplicate assignments. A class that lands in no shard fails CI. Architecture and subprocess tests are part of this listing too.
+The Gateway quality job runs `bin/check-pest-shards`. It uses Pest's own `--list-tests` output for the full non-privileged suite and each configured stock shard. It requires their union to equal the full listing and rejects duplicate assignments. A class that lands in no shard fails CI. Architecture tests are part of this listing too.
 
-Ordinary runs on main never shard; the privileged job runs on every CI event. Each main run keeps one full non-privileged Gateway recording run, because Pest writes one whole TIA graph per run. That graph and the exported cache artifact must describe the tested commit.
+Every CI run shards the Gateway suite the same way: pull requests, handoff pushes, pushes to main, nightly runs, and manual runs. The privileged job runs on every CI event too. No run needs the whole non-privileged suite in one job.
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On PRs and handoff pushes, the Gateway quality job and each of the four shards take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. Main, scheduled, and manual runs use one runner with the labels `self-hosted` and `sabre` for the full Gateway suite, because its six workers do not fit a [shard runner](#self-hosted-shard-runners) container with four CPUs and 8 GiB. The Gateway privileged job always runs on a GitHub-hosted runner.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job and the Gateway shards run on self-hosted runners. On every event, the Gateway quality job and each shard take any runner with the labels `self-hosted` and `orbit-shard`, Sabre included. No job selects a runner by the `sabre` label. The self-hosted runners are isolated [containers](#self-hosted-shard-runners) with 6 CPUs and 12 GiB each, and each runner runs one job at a time. The Gateway privileged job always runs on a GitHub-hosted runner.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use them. A pull request from a fork always uses GitHub-hosted runners, so code from outside the repository never runs on a self-hosted runner. Set the variable to anything else to move these jobs back to GitHub-hosted runners.
 
-On Sabre the job skips the Homebrew and system package steps, because Sabre already has Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP step only [verifies](#one-php-build-in-ci) that Sabre runs the recipe's PHP build. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`. On a shard runner container, the PR quality job keeps the PHP CLI default for that setting, because none of its steps needs `0`.
+On a self-hosted runner, the job skips host package installation and only [verifies](#one-php-build-in-ci) the recipe's PHP build. The runner software is installed inside each container while it is idle. Each container uses Composer 2.10 and the PHP CLI defaults. Pest detects the container's CPU count without a worker override.
 
-A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest runs 6 processes there instead of 4.
-
-The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
-
-Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege). The hand-made `/etc/sudoers.d/github-runner` grant is absent.
+Sabre runs Incus runner containers. Each container's `runner` user has no sudo access, as required by [the Gateway test rule](#gateway-tests-and-privilege).
 
 Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
-The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. The rule covers only the runner user's traffic, which is another reason the user must not have sudo. The runner accepts only code from this repository.
-
 ### Self-hosted shard runners
 
-The four Gateway PR shards use the `self-hosted` and `orbit-shard` labels. Both `sabre-1` and `sabre-2` carry `orbit-shard`, as do `ci-beast-1` and `ci-beast-2` on Beast and `ci-shark-1` on Shark. The container runners do not carry `sabre`. The workflow selects runners by label, not by name; shards are not restricted to Beast and Shark.
+The Gateway shards use the `self-hosted` and `orbit-shard` labels. The eight runner containers are `ci-beast-1`, `ci-shark-1` to `ci-shark-4`, and `ci-sabre-1` to `ci-sabre-3`. They serve the whole organization's queue, so the Gateway shard matrix has five shards: an Orbit run leaves runners free for other repositories' jobs. The workflow selects runners by label, not by name.
 
-Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](https://github.com/nckrtl/orbit/blob/main/tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
+The [CI runner role](/reference/node-provisioning#ci-runner-role) owns the host project, bridge, ACL, profile, and managed routed firewall rule. The script owns container creation and organization registration; it has no `host` step.
 
-- `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
+Each runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre, alongside the default `self-hosted,Linux,X64` labels. Role adoption preserves every container and its running state; it does not require a fixed count. The workflow selects runners by label, not by name.
+
+Each runner runs inside an unprivileged Incus container. Beast can share CI with app and database roles; Shark needs only the CI role. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) owns these idempotent container operations:
+
 - `container NAME` launches the container, sets its `raw.apparmor` line, and installs what is missing.
-- `register NAME [TOKEN]` registers the runner and starts its service.
+- `register NAME [TOKEN]` registers the runner with the labels `self-hosted`, `Linux`, `X64`, `hardimpact`, and `orbit-shard`, plus `sabre` for a `ci-sabre-*` container.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
+
+`register` uses runner group `Default` at `https://github.com/hardimpactdev` and starts the runner service. It configures only a runner that has no registration yet. So it never changes the labels of a registered runner.
 
 `container` upgrades no installed package, except the PHP build, which it brings to the recipe. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
 
-The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
+Create an organization registration token with `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
-The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The role's default profile specifies 6 CPUs and 12 GiB. Each runner runs one job at a time. The process limit is 8192, with no devices beyond the network card and root disk.
 
 Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
 
@@ -253,7 +273,13 @@ The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast,
 
 Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install --profile=ci-runner`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build`, the recipe, and the remote program tree that `bin/php-build` reads into the container, and runs that install. A later run replaces the copy and updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
 
-The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+Each container also has Ubuntu's `postgresql-18` and `postgresql-client-18` packages. Setup installs `postgresql-common` first and sets `create_main_cluster = false` in `/etc/postgresql-common/createcluster.conf` before installing the server. Every run keeps automatic cluster creation off and disables and stops the `postgresql` service. Jobs use `/usr/lib/postgresql/18/bin/initdb` and `pg_ctl` as `runner` to start a throwaway cluster on a Unix socket. Docker service containers need nesting, which is blocked, and egress rules block the Services Node's PostgreSQL.
+
+Gateway's PostgreSQL statement test starts a disposable PostgreSQL 18 cluster on a unique Unix socket, with no TCP listener, and removes it after the test. Hosted Gateway jobs install `postgresql-18`. CI fails rather than skipping if the binaries are absent. Local runs may set `ORBIT_POSTGRES18_BIN` to a PostgreSQL 18 bin directory; otherwise the test skips when `/usr/lib/postgresql/18/bin/initdb` is unavailable.
+
+The job installs Node 24 with the Node setup step, and each shard uses all detected container CPUs. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+
+Six Gateway workers fit each 12 GiB runner limit using the [measured worker allocation](#the-gate-checks-changed-files): 6 × 1664 MiB plus the 640 MiB controller reserve is 10.375 GiB, leaving 1.625 GiB for the runner service and other overhead. The observed heaviest Gateway worker was 1506.1 MiB. This is a capacity estimate from that full-suite measurement, not a new six-worker peak measurement. Each container runs one job, so no other CI job shares that memory budget.
 
 Two limits remain:
 
@@ -262,22 +288,7 @@ Two limits remain:
 
 So a job can query each dnsmasq on the host, such as the task bridge's. The answers reveal task names and addresses that the job still cannot reach, and a query changes nothing.
 
-To remove the runners from a host, stop and uninstall each runner service as root in its container, and run `config.sh remove` as `runner` with a remove token. Then delete the containers, the project, the bridge, the ACL, and the ufw rule:
-
-```bash
-token=$(gh api -X POST repos/nckrtl/orbit/actions/runners/remove-token --jq .token)
-for name in ci-beast-1 ci-beast-2; do  # ci-shark-1 on Shark
-  incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- sh -c './svc.sh stop && ./svc.sh uninstall'
-  printf '%s\n' "$token" | incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- \
-    su runner -c 'IFS= read -r token; ./config.sh remove --token "$token"'
-  incus delete --force "$name" --project orbit-ci
-done
-incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci
-incus project delete orbit-ci
-incus network delete orbitci0
-incus network acl delete orbit-ci-egress
-sudo ufw route delete allow in on orbitci0
-```
+To remove runners, stop and uninstall each runner service as root in its container, then run `config.sh remove` as `runner` with an organization removal token. Delete the containers with `incus delete NAME --project orbit-ci`. Clear cached images with `incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci`, and remove custom volumes and extra profiles. Then use `orbit node:role:remove <node> ci-runner --force`, with `--purge-data` to remove the empty project, bridge, and ACL. The role owns the routed firewall rule. It never deletes a runner or registration.
 
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
@@ -290,47 +301,47 @@ Each Composer project job also caches two sets of quality files in GitHub Action
 | PHPStan result cache, `vendor/phpstan/cache/resultCache.php` | `composer.lock`, `phpstan.neon` |
 | Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
 
-A run on main restores quality caches for its branch, then the project. A PR restores quality caches only from main and saves none. CI does not cache TIA graphs in Actions cache: every main run records a fresh full graph. Runs outside PRs save quality caches only after passing. Shard timings are committed source, not a cache. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
+A run on main restores quality caches for its branch, then the project. A PR restores quality caches only from main and saves none. Runs outside PRs save quality caches only after passing. Shard timings are committed source, not a cache.
 
-A passing project job on `main` also stages the [cache files](#ci-artifacts) for the main cache store and the [SHA-bound Git ref](#ci-cache-refs) used by workspaces.
+A passing project job on `main` also stages its Pint and PHPStan caches as a [CI artifact](#ci-artifacts) for the [SHA-bound Git ref](#ci-cache-refs) that task workspaces import.
 
 The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
 
 ## Local checks
 
-In an Orbit task, run `composer test:affected` in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. TIA gives the implementer fast test feedback. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff, and CI runs the full suites on the handoff commit. Outside a task, run both the affected tests and the full checks below. Each project keeps its own dependencies, test configuration, and test-impact graph.
+In an Orbit task, run the tests that cover the change in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Use stock Pest with a test file path or `--filter`. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff, and CI runs the full suites on the handoff commit. Outside a task, run the full suite and the checks below. Each project keeps its own dependencies and test configuration.
 
 | Command | Result |
 | --- | --- |
-| `composer test:affected` | Runs the affected tests with test-impact analysis (TIA) in parallel processes |
-| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the test suite. |
-| `composer test` | Runs the project suite with TIA in parallel processes |
+| `vendor/bin/pest --compact PATH` or `--filter=NAME` | Runs the tests that cover a change |
+| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the full Pest suite. |
+| `composer test` | Runs the project's full suite in parallel processes |
 | `composer format` | Applies Pint's Laravel preset |
 | `composer analyse` | Runs PHPStan. The applications use Larastan. |
 
-In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph separate from the graph that `test:affected` reads. In every project, `bin/guidance-check` creates private temporary directories for the graph and Blade views before Pest starts, then removes them when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
+In `apps/docs`, `composer check` also runs the documentation lint, the API fixture check, and the external generated-merge proof. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
 
-TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default. E2E scenario runs use the directory in `ORBIT_SCENARIO_TIA_DIRECTORY` instead, which must be under the primary checkout's `.e2e/scenarios/runs/`.
+Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
-Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
+Each project requires stock `pestphp/pest` from its lock file. Stock Pest includes test impact analysis, which turns on with `--tia` or `--locally`, a `PEST_TIA` environment variable, or a `tia()` configuration. Orbit uses none of them, and a contract test checks the project scripts, the PHPUnit configuration, the workflows, the CI actions, and the `bin` scripts. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
+
+Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. Every Pest case remains subject to the two-second limit. The external generated-merge proof runs sequentially in the quality step, separate from ParaTest; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
-The E2E tests for gate selection build one Git repository per file, with two commits. Each test gets an independent copy. Cases that need a different history change only their copy. Real Pest checks every project's default guidance cache path and its override. The gate-selection fixtures make Pest fail if the local gate tries to run a test suite; handoff suites run in CI.
+The E2E tests for gate selection build one Git repository per file, with two commits. Each test gets an independent copy. Cases that need a different history change only their copy. The gate-selection fixtures make Pest fail if the local gate tries to run a test suite; handoff suites run in CI.
 
 Gateway feature tests use Laravel's `LazilyRefreshDatabase`: the first query or transaction triggers the same real migrations and transaction setup. A test that inspects its ambient transaction level first issues a query to establish the test transaction. Guidance rendering does not use a database, so it pays no migration cost.
 
-The Gateway schema baseline records the squashed migration names and batches without choosing their row IDs. Earlier vendor migrations can occupy IDs first. The migration that seeds reference rows preserves existing configuration; its rollback leaves those rows in place. Documentation `covers` names the baseline file, not the whole migrations directory. New migrations belong to the pages that own their behaviour.
+The Gateway schema baseline includes database private-endpoint ownership, target networks and connection locale. It records the squashed migration names and batches without choosing their row IDs, including the October 21 and 22 database migrations. Earlier vendor migrations can occupy IDs first. The migration that seeds reference rows preserves existing configuration; its rollback leaves those rows in place. Documentation `covers` names the baseline file, not the whole migrations directory. New migrations belong to the pages that own their behaviour.
 
 The E2E checks for unusable caches and inherited databases run the Gateway's real renderer for strict guidance. They do not repeat its unrelated guidance tests. The inherited-database check also runs the real feature database test: its first query triggers migrations, and the caller's sentinel database must remain unchanged.
-
-Subprocess-group checks share one stock full-project PHPUnit XML listing across the configured suites. They prepare these listings once per file, with PCOV disabled because discovery needs no coverage. Every project except PHP SDK must list subprocess tests.
 
 Gateway smoke cases use a fake Gateway and real subprocess and HTTP deadlines. Each Python unittest case runs separately in Pest. Polling tests set a 0.25-second interval in the test process; the production poll interval and 20-second command limit stay unchanged. The run's total budget also caps each command. Timeout cases still expire real deadlines, including the total run limit. The no-tick and total-timeout tests keep their four- and three-second total limits so concurrent scheduler, agent-view, and CLI checks have time to finish under load.
 
 The slow-Orbit case runs the real smoke result aggregation and tick check with a one-second total budget and real CLI subprocesses. Unrelated read checks use immediate successful doubles, each asserted to run once; their real behavior has separate coverage. The first tick read returns a stale tick immediately, and the second stalls past the total limit. The test keeps the JSON, exit-status, read-count, and last-seen-tick assertions without requiring unrelated subprocesses to finish within that second. A shorter poll interval does not reserve time for the next read.
 
-The worker-budget test keeps a locked count of active shares, including overlap between waves. It lets the first lane acquire its share before later lanes register, so later allocations must respect shares already held. Signals report when each active lane has either acquired a share or entered the allocator's real condition wait. Workers stay on sockets until all granted workers in that wave have connected; no observation sleep determines completion. `TiaCacheTest` keeps its separate real-time cache coverage.
+The worker-budget test keeps a locked count of active shares, including overlap between waves. It lets the first lane acquire its share before later lanes register, so later allocations must respect shares already held. Signals report when each active lane has either acquired a share or entered the allocator's real condition wait. Workers stay on sockets until all granted workers in that wave have connected; no observation sleep determines completion.
 
 ### Parallel processes
 
@@ -342,14 +353,16 @@ The floor of one can overcommit memory and OOM when less than the reserve plus o
 
 | Tool | How it reads the process count |
 | --- | --- |
-| Pest | `--processes=$(../../bin/check-processes)` in the `test` and `test:affected` scripts |
+| Pest | `--processes=$(../../bin/check-processes)` in the `test` script |
 | Pint | `--parallel --max-processes=$(../../bin/check-processes)` in the `format:check` script |
 | PHPStan | `tools/phpstan/parallel.php`, which every `phpstan.neon` includes |
 | Rector | `->withParallel()` in `rector.php`, with the value from `tools/check-processes.php` |
 
 Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI keeps its explicit runner process counts, as [Gateway shards](#gateway-shards) describes.
+Gateway's `RunScheduledCommand` keeps an explicit default for its command arguments so jobs queued before that property existed can still deserialize. Its Rector configuration excludes that class from constructor promotion, which would lose the property default on those payloads. A queue regression test covers this deployment boundary.
+
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget. Stock ParaTest detects all runner CPUs, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
 
 ### The candidate gate
 
@@ -416,7 +429,7 @@ The gate checks the local candidate tree. CI runs every test suite, including th
 
 #### Web and Pi server checks
 
-A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The build also requires nonempty `dist/index.html` and `dist/version.json`, as CI does. The generated-types check writes `openapi-typescript` output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. On failure it prints a unified diff and says to run `cd apps/web && bun run types`. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, and `bun run build` there. Its tests run in CI. Rust formatting runs for changed Rust projects; the remaining Rust checks run only in CI.
+A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The build also requires nonempty `dist/index.html` and `dist/version.json`, as CI does. The generated-types check runs `openapi-typescript` from the web app’s `tools/api-types` workspace and writes its output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. On failure it prints a unified diff and says to run `cd apps/web && bun run types`. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, and `bun run build` there. Its tests run in CI. Rust formatting runs for changed Rust projects; the remaining Rust checks run only in CI.
 
 A command whose program is missing fails with `<program>: required tool not found`. The generated-types check runs in a shell, so a tool that is missing there fails with exit code 127. The gate never skips a selected check.
 
@@ -470,38 +483,27 @@ The command reuses what already exists.
 
 It refuses a path that exists but is not a registered worktree. Then it runs `bin/bootstrap` in the worktree.
 
-`bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation. `bin/bootstrap --dependencies-only` stops after dependency installation, including any requested Bun and Rust dependencies; it prepares no development state and runs no checks.
+`bin/bootstrap` installs all five Composer projects, [seeds the quality caches](#seed-a-checkout), and validates each project's guidance. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation. `bin/bootstrap --dependencies-only` stops after dependency installation, including any requested Bun and Rust dependencies; it prepares no development state and runs no checks.
 
-`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh and removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
+`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Main caches
 
-Main caches let a new checkout start with warm test-impact graphs and warm Pint and PHPStan result caches. Main CI produces them: each project job that passes on `main` uploads its graph and quality caches, and a background worker imports them. No local command and no deployment runs a test suite, Pint, or PHPStan to fill the caches. Each repository keeps one store in its Git common directory under `orbit-tia/v1`. Linked worktrees share it.
-
-| Path under `orbit-tia/v1` | Content |
-| --- | --- |
-| `published/<project>.json` | One test-impact graph per Composer project |
-| `quality/<project>/<tool>.json` | One Pint or PHPStan result cache per project |
-| `requests.json` | Pending refresh requests, the last result per project, and open correctness failures |
-| `refresh.log`, `run-*/` | The worker log and the per-run logs |
-| `runners/` | The frozen worker scripts |
-| `requests.lock`, `refresh.lock` | The queue lock and the worker lock |
-
-Each publication records the tested commit, the CI run, a checksum, and the inputs it is valid for. A new publication must descend from the one it replaces, so older results never replace newer ones.
+Main caches let a new checkout start with warm Pint and PHPStan result caches from `main`. Task VM workspaces import them from [CI cache refs](#ci-cache-refs). A local checkout copies them from the primary checkout, as [Seed a checkout](#seed-a-checkout) describes.
 
 ### CI cache refs
 
-The `publish-ci-cache` job in `ci.yml` publishes workspace test caches after `Required checks` succeeds on `main`. It runs for a main push, scheduled run, or manual dispatch on main, never for a pull request, fork, or other branch. It gathers the five Composer projects' cache exports from the same run and tested SHA. All project jobs, including Gateway privileged checks and the full suites' subprocess tests, must pass before publication. The publisher checks the `required` job's result explicitly and uses `!cancelled()` so skipped PR-only dependencies do not block publication. A failed, cancelled, or incomplete run publishes no ref.
+The `publish-ci-cache` job in `ci.yml` publishes main's Pint and PHPStan caches for task workspaces after `Required checks` succeeds on `main`. It runs for a main push, scheduled run, or manual dispatch on main, never for a pull request, fork, or other branch. It gathers the five Composer projects' [quality exports](#ci-artifacts) from the same run and tested SHA. All project jobs must pass before publication, because the job runs only after `Required checks` succeeds. A failed, cancelled, or incomplete run publishes no ref.
 
-Only this job receives `permissions: contents: write`. It pushes to the repository with its short-lived `GITHUB_TOKEN`; no personal token or Gateway credential is stored in CI. The workflow's other jobs keep their existing permissions. The Gateway later fetches the ref with its GitHub App's repository-scoped `Contents: read` token, through the same protected Git path as source reads. Neither a task VM nor an agent receives either credential.
+Only this job receives `permissions: contents: write`. It pushes to the repository with its short-lived `GITHUB_TOKEN`; no personal token or Gateway credential is stored in CI. The workflow's other jobs keep `contents: read`. The Gateway later fetches the ref with its GitHub App's repository-scoped `Contents: read` token, through the same protected Git path as source reads. Neither a task VM nor an agent receives either credential.
 
-The job runs `bin/ci-cache-ref publish` to write a parentless cache-only Git commit. Its tree contains no source files or source history, and the job and pushes it to `refs/orbit/ci-cache/<sha>`. The suffix is the full tested code SHA. It is not the cache commit's SHA. The tree groups payloads by repository-relative project path.
+The job runs `bin/ci-cache-ref publish` to write a parentless cache-only Git commit and push it to `refs/orbit/ci-cache/<sha>`. Its tree contains no source files or source history. The suffix is the full tested code SHA, not the cache commit's SHA. The tree groups payloads by repository-relative project path.
 
-Each project has a schema-2 manifest, a Pest graph, and optional Pint and PHPStan caches. The manifest records the tested code SHA, project, CI run and exporting attempt, checksums of all payload files, dependency and test inputs, each tool's configuration, and the PHP minor version. A partial re-run may keep exports from earlier successful attempts of the same run and SHA. [Rector runs without a cache](#ci-caches-stay-separate); this transport does not change that policy.
+Each project has a schema-3 manifest and optional Pint and PHPStan caches. The manifest records the tested code SHA, project, CI run and exporting attempt, the checksum of each cache, each tool's configuration checksum, and the PHP minor version. It holds no test graph. A partial re-run may keep exports from earlier successful attempts of the same run and SHA. [Rector runs without a cache](#ci-caches-stay-separate); this transport does not change that policy.
 
-Before pushing, the publisher verifies that every manifest and graph names the run's tested SHA and that the required project exports are complete. Consumers repeat the SHA and checksum checks; a ref name alone is not evidence that the payload fits. The source of trust is the successful main workflow and repository write access, not the checksums. PHPStan caches contain executable PHP.
+Before pushing, the publisher verifies that every manifest names the run's tested SHA, that each tool configuration matches that commit, and that all five project exports are complete. Consumers repeat the SHA and checksum checks; a ref name alone is not evidence that the payload fits. The source of trust is the successful main workflow and repository write access, not the checksums. PHPStan caches contain executable PHP.
 
-A ref is immutable while retained. A retry at the same code SHA keeps an existing valid publication rather than force-pushing it; a conflicting publication fails the publishing job. Publications for different code SHAs use different refs, so an older run finishing later cannot replace a newer commit's cache. Publication failure leaves the code available without a cache ref and records the failure in the publishing job log.
+A ref is immutable while retained. A retry at the same code SHA keeps an existing valid publication rather than force-pushing it; a conflicting publication fails the publishing job. Publication failure leaves the code available without a cache ref and records the failure in the publishing job log.
 
 A new task VM workspace starts at the `origin/<default branch>` tip. For a Project that declares `@orbit/ci-caches`, the Gateway independently selects the newest commit on that tip's first-parent history with a published `refs/orbit/ci-cache/<sha>` ref, records it in `refs/worktree/orbit/ci-baseline`, and imports its caches. It logs the baseline SHA and its distance from the tip, including zero for a cached tip.
 
@@ -513,96 +515,28 @@ The Gateway fetches the `refs/orbit/ci-cache/*` namespace into its mirror alongs
 
 ### Cache ref retention
 
-The publisher prunes only `refs/orbit/ci-cache/*` after a successful publication. It retains publications for 14 days from publication time and always keeps the newest successful tested main commit's ref, even if it is older than 14 days. Main commit ancestry, not job completion order, identifies that newest commit. Pruning never touches source branches, tags, or other refs. Each successful scheduled main run also performs this cleanup; if CI stops, cleanup stops rather than expiring the last useful publication.
+After each publication, the publisher prunes `refs/orbit/ci-cache/*` to one ref: the ref of the newest tested main commit. Main commit ancestry, not job completion order, identifies that commit. So origin holds only the newest publication, and a workspace never selects an older cache baseline. Pruning never touches source branches, tags, or other refs.
 
-The Gateway removes upstream-deleted refs only from its mirror's cache namespace. It does not delete an active workspace's local cache objects or private tool caches. Ref deletion removes a future fetch opportunity, not already imported caches; an old baseline whose ref has been pruned starts cold. Git garbage collection can reclaim unreferenced cache objects later. This retention is separate from Actions artifact retention, package caches, and machine images.
+The Gateway removes upstream-deleted refs only from its mirror's cache namespace. It does not delete an active workspace's local cache objects or private tool caches. A workspace whose baseline ref was pruned starts cold. Git garbage collection can reclaim unreferenced cache objects later.
 
 ### CI artifacts
 
-After a project job passes on `main`, CI uploads the artifact `sandbox-tia-<index>-<commit>` and keeps it for 14 days. Pull request runs upload none. These artifacts stage the exports for `publish-ci-cache` and remain an input to the existing background main-cache worker. They are not a workspace transport: the Gateway reads Git refs for `@orbit/ci-caches`, without downloading artifacts or putting their contents in a setup command.
+After a project job passes on `main`, CI uploads the artifact `ci-cache-<index>-<commit>` and keeps it for 14 days. Pull request runs upload none. These artifacts stage the exports for `publish-ci-cache`. They are not a workspace transport: the Gateway reads Git refs for `@orbit/ci-caches`, without downloading artifacts or putting their contents in a setup command.
 
 | File | Content |
 | --- | --- |
-| `graph.json` | The Pest graph. It records the tested commit and a result for every test file it links, from a full suite with `--tia --fresh`. |
-| `manifest.json` | Schema version 2, project path, tested commit, CI run and exporting attempt, graph checksum, checksums of `composer.lock`, `tests/Pest.php`, `phpunit.xml`, and `phpunit.xml.dist`, PHP minor version, and the checksum and configuration checksum of each quality cache |
+| `manifest.json` | Schema version 3, project path, tested commit, CI run and exporting attempt, PHP minor version, and the checksum and configuration checksum of each quality cache |
 | `quality/pint`, `quality/phpstan` | The Pint and PHPStan result caches that `composer check` wrote in the same job, when it wrote them |
 
 ### Seed a checkout
 
-Seeding copies a publication into an absent private cache and never replaces an existing one. `bin/tia-cache seed` copies test-impact graphs. `bin/worktree-cache` copies Pint and PHPStan caches. Bootstrap runs both. The candidate gate runs only `bin/worktree-cache`. A missing or incompatible publication leaves that project cold, and seeding does not fail.
+`bin/worktree-cache` copies Pint and PHPStan caches into a checkout's absent private caches and never replaces an existing one. Bootstrap and the candidate gate run it. Its only source is the primary checkout, and only while that checkout is clean on `main` and has the same `composer.lock` and tool configuration as the project. Feature worktrees are never a source. A missing or incompatible cache leaves that project cold, and seeding does not fail.
 
-| Cache | Compatible when |
-| --- | --- |
-| Test-impact graph | The project's `composer.lock`, `tests/Pest.php`, and Pest fingerprint match, the checksum matches, and the tested commit is an ancestor of `HEAD` |
-| Pint or PHPStan cache | The project's `composer.lock`, the tool's configuration, and the PHP minor version match, the checksum matches, and the tested commit is an ancestor of `HEAD` |
-
-[Importing a CI cache ref](/reference/instance-setup#import-ci-main-caches) also checks the runtime facts that each tool compares.
-
-The Pest fingerprint holds checksums of the dependency and test configuration files and the PHP minor version, so a graph that CI recorded fits a local checkout with the same inputs. When no quality publication fits, `bin/worktree-cache` copies the cache from the primary checkout when that checkout is clean on `main` and has the same lock file and configuration. Feature worktrees are never a source.
-
-When `ORBIT_MAIN_CACHE_STORE` is set, a checkout seeds only from that store, even when it has no publications, and `bin/worktree-cache` skips the primary-checkout fallback. Bootstrap uses this variable only while seeding. When the variable is unset, a checkout seeds from its own store when that store has publications, and otherwise from the store registered for its origin on the same machine.
-
-The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, and `$XDG_STATE_HOME` defaults to `~/.local/state`. The key comes from the origin URL, so the HTTPS and SSH URLs of one repository share it. Each publication registers its store unless another live store already holds the registration. `bin/tia-cache register` takes the registration for the current repository.
-
-When `ORBIT_MAIN_CACHE_STORE` is unset and the store has publications that lag the checkout's fetched `main`, seeding queues a background refresh for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one.
-
-Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at the last commit that [deployed](/reference/deployments#development-defaults) there. They share its main cache store but keep private tool caches. `bin/bootstrap` seeds those private caches from the publications, and `bin/review-check` seeds the quality caches. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
-
-### Refresh from CI
-
-`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree, and seeding queues it when the store lags. Cache freshness never holds worktree creation, a merge, or cleanup.
-
-The worker uses `git` and the GitHub CLI with the login of the user who runs it. That `gh` login needs read access to the repository and its Actions. For each batch of requests, the worker:
-
-1. fetches `main` from `origin`;
-2. reads the newest 30 finished `CI` runs on `main`: pushes, nightly runs, and manual runs;
-3. reads the conclusions of each project's jobs in those runs;
-4. finds the newest commit on which the project's jobs passed;
-5. downloads, checks, and publishes that commit's graph and quality caches.
-
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has `Gateway` and `Gateway privileged` jobs on main. E2E and the other Composer projects have one job each. Their full suites include the subprocess tests. A failure in any of a project's jobs counts as a failure of the project.
-
-Before it publishes, the worker checks that:
-
-- the manifest names the project, the run, and the commit of that run;
-- the test configuration checksums match the files at that commit;
-- the graph checksum matches, and the graph describes that commit, holds only passed results, and uses relative paths;
-- each quality cache matches its checksum.
-
-The published graph keeps the fingerprint that CI recorded, and its runner identity comes from the lock file and `tests/Pest.php` at the tested commit. A quality publication records the lock file and tool configuration at the tested commit, and the PHP minor version of the CI job. The worker deletes the downloads after each batch.
-
-The worker runs a frozen copy of `bin/tia-cache` as `origin/main` of the store's repository holds it, never the caller's copy. So a clone of an unmerged change only records requests, and it cannot change how the shared store is maintained. Without the tool on that `main`, no worker starts.
-
-Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
-
-For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register it with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The managed user that owns the store runs the worker, so its `gh` login must read `nckrtl/orbit`.
-
-| Command | Result |
-| --- | --- |
-| `bin/tia-cache seed` | Copies compatible published graphs into absent caches, and queues a refresh when the store lags |
-| `bin/tia-cache refresh --background` | Queues a refresh and starts a worker when none runs |
-| `bin/tia-cache refresh` | Queues a refresh, runs main's copy as the worker in the foreground, and exits nonzero when a requested project has a failure |
-| `bin/tia-cache status` | Prints the publications and the maintenance state |
-| `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
-| `bin/tia-cache register` | Registers this repository's store for its origin |
-| `bin/tia-cache import-ci` | Validates and imports one project's CI cache files into private caches without publishing them; workspace files come from the selected Git ref. |
-
-`import-ci` replaces an existing private graph only when CI tested a descendant of that graph's main commit. It exits 3, with the reason, when the payload does not fit the checkout: another test configuration, or a commit outside its history. The project's tests then run cold. Workspace imports also require the exact [selected-ref SHA match](/reference/instance-setup#import-ci-main-caches); an ancestor check alone cannot authorize a different ref. Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept repeatable `--project=apps/docs` options, and they cover all five projects by default.
+A task VM workspace [imports a CI cache ref](/reference/instance-setup#import-ci-main-caches) instead. That import also checks the runtime facts that each tool compares. A Project setup step can reflink each dependency tree and private tool cache from `ORBIT_SEED_PATH` first.
 
 ### Failures on main
 
-`bin/tia-cache status --json --remote` reads the remote `main` and prints the maintenance state. `current` names the projects whose graph publication is at that `main`. The output also has the worker lock state, the pending requests, each project's last result with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that main passes.
-
-The worker sorts failures into two kinds.
-
-| Kind | Cause | Effect |
-| --- | --- | --- |
-| Check failure, tool `ci` | A job of the project failed or timed out in a finished `CI` run on `main` | A correctness signal on main. It stays open until a run that finished later passes the project's jobs on the same commit or on a descendant. |
-| Maintenance failure | `git` or `gh` failed, the newest 30 runs have no finished job for the project, or the artifact is missing or refused | Checkouts keep the previous publications. It never sets or clears a check failure. |
-
-A check failure records the commit, the run ID and URL, and the failed jobs. While it is open, the newest commit on which the project passed stays published. The failure stays open until a later passing run tests the same commit or a descendant. Diagnose a check failure on the failed commit. Fix it, or revert the change that caused it, through a reviewed pull request. The next passing CI run on `main` clears it at the next refresh.
-
-Earlier versions of `bin/tia-cache` ran the checks locally and recorded failures with tool `tia`, `pint`, or `phpstan`. The first refresh that reads the project's CI history replaces them.
+A failure on main is a `Required checks` check run on a `main` commit that did not succeed. Read it for the current tip with `gh api 'repos/hardimpactdev/orbit/commits/main/check-runs?check_name=Required%20checks'`. Diagnose it on the failed commit. Fix it, or revert the change that caused it, through a reviewed pull request. The next `main` commit whose `Required checks` passes clears it.
 
 ## Why it works this way
 
@@ -640,41 +574,35 @@ The cost is a smaller fallback when the newest run fails. The release resolver e
 
 ### Main caches come only from clean main
 
-A feature graph can hold unmerged code, failed tests, or working edits, so it cannot prove the state of main. Only a job that passed on main publishes, and each checkout writes to its own private copy. One writable graph shared across worktrees is a rejected alternative, because concurrent features would overwrite each other's results. Recording every new worktree from scratch is also rejected, because unchanged projects would repeat the full run.
+A feature checkout can hold unmerged code or working edits, so its tool caches cannot stand for main. Only main CI publishes CI cache refs, and `bin/worktree-cache` copies only from a clean primary checkout on `main`. Each checkout writes to its own private copy. One writable cache shared across worktrees is a rejected alternative, because concurrent features would overwrite each other's results.
 
 ### Only main CI publishes
 
-CI already tests every `main` commit, so its graphs and quality caches cost nothing extra. A deployment never runs a test suite.
+CI already checks every `main` commit, so its quality caches cost nothing extra. A deployment never runs a test suite.
 
-Running the suites on a development machine to fill the store is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race for one store.
-
-Pest's own baselined mode fetches one artifact per repository with `gh`. Orbit has one artifact per Composer project and a store that many worktrees share, so the worker imports the artifacts into that store instead. A separate cache service is also rejected, because GitHub already keeps the artifacts and linked worktrees already share one store.
-
-### Maintenance runs in the background
-
-Waiting for every refresh before a new worktree or a merge would serialize delivery behind maintenance. A checkout starts from the newest compatible publication while the worker catches up. The cost is that a failure on main can surface after another feature merges. One worker per repository covers all five projects, so they share one list of runs and one download per run. A failed download or API call is not a source regression, so only a failed CI job counts as a correctness signal.
-
-A failure stays open until a run that finished later passes on that commit or a descendant. Clearing it after an unrelated passing run is rejected: that run may not contain the failing commit.
-
-### Clones find the store through a registration
-
-The Gateway provisions a task workspace as an independent clone, and it runs checks for every Project without knowing one repository's cache layout. So the repository's own scripts find the store through a link in the user's state directory. Setting `ORBIT_MAIN_CACHE_STORE` in the Gateway or in Project setup steps is a rejected alternative, because a fixed path breaks when the primary checkout moves. A global Git setting is also rejected, because it needs a manual step on every machine and goes stale without notice.
+Running the checks on a development machine to fill a cache is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race.
 
 ### Main runs record full suites
 
-Main always runs full suites with `--tia --fresh`. This keeps merge and release evidence independent of TIA's coverage gaps while still recording the graph that speeds up task workspaces. A main affected-test selector and separate subprocess-only lanes are rejected: they add selection rules without proving every test passed. Reusing a PR result is also rejected because main can differ from the tested PR commit.
+Main always runs full suites, sharded as on a pull request. This keeps merge and release evidence independent of test selection. A main affected-test selector and separate subprocess-only lanes are rejected: they add selection rules without proving every test passed. Reusing a PR result is also rejected because main can differ from the tested PR commit.
 
-### Full suites gate merges; TIA serves the task loop
+### Full suites gate merges
 
-Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, with TIA disabled. Orbit runs all five Composer suites on each PR, including architecture and subprocess tests.
+Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, including architecture tests and tests that start PHP subprocesses. On 2026-10-21 he confirmed that untouched projects must start no CI jobs. The `changes` job compares the PR head with its merge base and applies the path and consumer map in [`bin/ci-changes`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-changes). That file owns project paths, shared contracts, and their consumers.
 
-Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. Only the pull request's own `pull_request` run for that head counts, also when the head is the last handoff commit, so the merge with the current base is tested before it lands. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches also run full suites while recording fresh TIA graphs.
+Root Composer files, workflow and action files, `bin/`, `tools/`, shared configuration, and unknown paths select everything. Ordinary documentation pages select only Docs; API documentation also selects API reference checks, and generated API contracts, CLI guides, and the delivery-line reference select their tested consumers.
 
-The [declaration-data audit](/solutions/test-impact-declaration-data) found that enum cases, constants, property and parameter defaults, and attribute arguments can change behavior without per-test coverage edges for later readers. Its seven-case fixture produced a TIA false green while the full suite failed four cases. A general declaration selector would widen 496 of 580 entries on main’s first-parent history that changed app code (85.5%, about 86%). That selector is rejected.
+Each selected project runs its full suite. Job conditions skip untouched projects before they take a runner, and the Composer matrix contains only selected projects. `Required checks` accepts a skipped job only when `changes` succeeded and explicitly marked that job untouched. A failure, cancellation, missing selection, or unexpected skip fails the gate. Main pushes, schedules, and manual dispatches select every project, so main checks the dependency map within one merge.
 
-Nick decided on 2026-10-20 that each task handoff runs the full suites in sharded CI on the pushed handoff commit, as [Tasks: Handoff CI](/reference/tasks#handoff-ci) describes. The task VM keeps only the fast checks. So no handoff, rework, or fixup depends on a TIA selection. A false green from declaration data cannot pass a handoff. Running the full suites in the task VM is a rejected alternative: there the Gateway suite alone took 2614 seconds on one worker, and CI shards it. TIA stays the implementer's fast feedback through `composer test:affected`.
+Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. Only the pull request's own `pull_request` run for that head counts, also when the head is the last handoff commit, so the merge with the current base is tested before it lands. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches run the same full suites.
 
-Gateway uses stock Pest time-balanced shards to keep the full PR run short. Committed timings keep all four jobs on one version without a planner or cache race. Quality checks overlap the shards. Sharding on main remains rejected because Pest writes one whole graph per run.
+The [declaration-data audit](/solutions/test-impact-declaration-data) found that enum cases, constants, property and parameter defaults, and attribute arguments can change behavior without per-test coverage edges for later readers. Its seven-case fixture produced a false green from coverage-based selection while the full suite failed four cases. A general declaration selector would widen 496 of 580 entries on main’s first-parent history that changed app code (85.5%, about 86%). That selector is rejected.
+
+Nick decided on 2026-10-20 that each task handoff runs the full suites in sharded CI on the pushed handoff commit, as [Tasks: Handoff CI](/reference/tasks#handoff-ci) describes. The task VM keeps only the fast checks. So no handoff, rework, or fixup depends on a test selection. Running the full suites in the task VM is a rejected alternative: there the Gateway suite alone took 2614 seconds on one worker, and CI shards it.
+
+Nick decided on 2026-10-20 that Orbit runs no test impact analysis. Once its selection was sound, it chose a median of the whole suite, so it saved no time, and recording coverage added about 19% to test time. Implementers run the tests that cover their change with stock Pest, and CI runs the full suites. Keeping a selector for the task loop is a rejected alternative.
+
+Gateway uses stock Pest time-balanced shards to keep every full run short, on main as on a pull request. Committed timings keep all shard jobs on one version without a planner or cache race. Quality checks overlap the shards.
 
 ### Gateway test time limits
 
@@ -700,11 +628,13 @@ Process fixtures acknowledge readiness from their final executable before a case
 
 ### CI caches stay separate
 
-Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner, so it cannot read the repository store. On `main` it uploads the artifacts that the store imports. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
+Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner. On `main` it uploads the quality exports that the [CI cache refs](#ci-cache-refs) carry. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
 
 CI does not restore or save Rector's cache. Every project's `composer rector` uses `--clear-cache`, including runs through `composer check` in CI and the local review gate. Rector's unchanged-file cache does not track all class dependencies: a parent-only property change can leave an unchanged child's missing `#[Override]` undetected. Clearing the cache trades warm-run speed for a complete check of the configured Rector paths; Pint, PHPStan, and Pest keep their existing caches. The candidate gate narrows the files instead of keeping a cache, as [The gate checks changed files](#the-gate-checks-changed-files) explains.
 
-The regression in `apps/docs/tests/Unit/ToolingBaselineTest.php` warms the cache with an empty parent and a child that declares `public string $name = '';`, then adds that same property only to the parent. Before the fix, the second check exits 0 without reporting the child. With the project's check command, it exits 2 and proposes `#[\Override]` on the child's property. The dry run leaves the child unchanged.
+The regression in `apps/docs/tests/Unit/ToolingBaselineRectorCacheTest.php` reads the project's Composer script in the test body and requires an exact `--clear-cache` argument. Removing the argument makes the test fail. `bin/tooling-baseline` keeps the Rector command identical in every project, and its drift test rejects removal of the argument from another project too.
+
+Running Rector twice from cold exceeded the stock two-second per-test limit on CI. The direct command assertion checks the setting Orbit owns instead of retesting Rector's cache implementation. No Rector work or assertions run in a class-level hook.
 
 Gateway timings were measured in the task workspace on Linux x86_64, with four CPUs, PHP 8.5.11, and Rector 2.6.7. They were 126.24 seconds for an uncached run and 0.65 seconds for a warm run before the fix. After adding `--clear-cache`, `composer rector` took 154.77 seconds on the first run and 118.92 seconds on the repeat. These are wall-clock samples, not a performance guarantee: checks now pay the full analysis cost on every run.
 
@@ -720,7 +650,7 @@ All four tools run in parallel processes. The old limits of two PHPStan and Pest
 
 Memory and CPU quotas bound the process count. The gate shares the resource-derived budget between the projects it runs at once. The Gateway is the largest project, so it gets the largest share. Each lane passes its share to every tool through `ORBIT_CHECK_PROCESSES`.
 
-A complete normal-VM gate on Beast on 2026-10-19 UTC exercised the Gateway workers. The gate still ran `test:affected` then. Pi 0.87.1 stayed resident in idle RPC mode, with no model calls. The real diff against `353ef196c` selected all 847 Gateway test files from 104 changed files. Gateway `test:affected` passed 13,954 tests with 21 skips and 108,537 assertions in 2614.290 seconds. Its heaviest worker reached 1506.1 MiB `VmHWM`. The final allocation is 1664 MiB, about 10.5% above that measured peak.
+A complete normal-VM gate on Beast on 2026-10-19 UTC exercised the Gateway workers. The gate still ran each project's selected tests then. Pi 0.87.1 stayed resident in idle RPC mode, with no model calls. The real diff against `353ef196c` selected all 847 Gateway test files from 104 changed files. The Gateway tests passed 13,954 tests with 21 skips and 108,537 assertions in 2614.290 seconds. Its heaviest worker reached 1506.1 MiB `VmHWM`. The final allocation is 1664 MiB, about 10.5% above that measured peak.
 
 | VM and selection | Workers | Gate peak summed RSS | Gate kernel memory peak | Minimum VM available memory | Gate controller peak PSS | Gate seconds |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -746,3 +676,5 @@ A PHPStan ignore, a baseline, or a silencing cast keeps the wrong type in the co
 ### Shared-worker feedback
 
 The task check runs no Gateway tests, so it needs neither host sudo nor another Unix identity. The required disposable Gateway privileged CI jobs run the `privileged` group; see [Gateway tests and privilege](#gateway-tests-and-privilege) for the rule. Check report directories permit group reads so the worker can inspect failures.
+
+The shared installer inspects runner-writable JavaScript executables as `runner`, including the setup smoke check, which runs from `/` and compares the result with the recipe pin. Inspection passes `VP_HOME` after sudo in argv so sudo environment filtering cannot create another Vite+ store. All Node-consuming CI jobs, including the dependency audit, read `.node-version`. Recipe convergence owns Node.js on fleet Nodes and retires duplicate APT ownership after verifying the replacement and simulating dependency-safe removal.

@@ -768,7 +768,7 @@ final readonly class TaskConsultation
         );
     }
 
-    /** An accepted key, its message, or a later implementer turn means the send already landed. */
+    /** An accepted key or a later implementer turn means the send already landed. */
     private function relayAnswerAccepted(TaskThreadObservation $implementer, Task $task): bool
     {
         $key = $task->direction_answer_key;
@@ -778,11 +778,6 @@ final readonly class TaskConsultation
         $turnId = $implementer->turnId;
         if (is_string($turnId) && $turnId !== '' && $turnId === $key) {
             return true;
-        }
-        foreach ($implementer->recentMessages as $message) {
-            if ($message['id'] === $key) {
-                return true;
-            }
         }
         $source = $task->direction_answer_source_turn_id;
 

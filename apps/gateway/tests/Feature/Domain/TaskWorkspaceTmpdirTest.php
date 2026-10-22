@@ -30,8 +30,6 @@ use Tests\Support\StandardLibraryPython;
 
 require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
 
-pest()->group('subprocess');
-
 beforeAll(function (): void {
     tmpdir_programs();
 });

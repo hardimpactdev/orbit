@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCOPE = 'apps/gateway'
+# ADR 0213: explicitly requested stock CI host program while ADR 0225's command runtime is unbuilt.
+CI_HOST = SCOPE + '/resources/remote/ci-runners/host.py'
 DATA_LABELS = frozenset({
     'SQL', 'CADDY', 'CADDYFILE', 'FPM', 'INI', 'UNIT', 'SYSTEMD', 'CONF',
     'EXTENSIONS', 'TEXT', 'MARKDOWN', 'HTML', 'REGEX',
@@ -103,10 +105,12 @@ def base_files(base):
 
 
 def growth(before, after):
+    # The one addition is charged normally once present in the base; no reusable headroom remains.
+    allowances = {'inline': 0, 'files': int(CI_HOST not in before['files'] and CI_HOST in after['files'])}
     return [
         f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}'
         for kind in before
-        if sum(after[kind].values()) > sum(before[kind].values())
+        if sum(after[kind].values()) > sum(before[kind].values()) + allowances[kind]
     ]
 
 
@@ -118,6 +122,8 @@ def main():
     after = inventory(checkout_files())
     for kind in before:
         print(f'{kind}: {sum(before[kind].values())} -> {sum(after[kind].values())}', flush=True)
+    if CI_HOST not in before['files'] and CI_HOST in after['files']:
+        print('ADR 0213: allow the explicitly requested stock ci-runners.host program once.', flush=True)
     if growth(before, after):
         raise SystemExit('Gateway script totals may only decrease. Use a named Rust agent command.')
 

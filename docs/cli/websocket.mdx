@@ -1,0 +1,114 @@
+---
+title: "websocket"
+description: "Manage Reverb apps and track live changes without restarting Reverb."
+covers:
+  - apps/cli/app/Commands/WebSocket/**
+---
+
+The `websocket` role runs one Reverb server. It serves the Gateway's own app, `gateway`, and one app for each name you create. An app has an app ID, a key, and a secret. The Gateway keeps the secret encrypted and never returns it. [Reverb apps](/reference/websocket-apps) describes the apps and the keys that an Instance gets.
+
+Put an app on an Instance with [`instance:websocket:add`](/cli/instance#orbit-instancewebsocketadd).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`websocket:app:create`](#orbit-websocketappcreate) | Create a Reverb app. |
+| [`websocket:app:list`](#orbit-websocketapplist) | List the apps. |
+| [`websocket:app:show`](#orbit-websocketappshow) | Show one app and the Instances that use it. |
+| [`websocket:app:destroy`](#orbit-websocketappdestroy) | Remove an app that no Instance uses. |
+| [`websocket:app:rotate`](#orbit-websocketapprotate) | Rotate one app’s secret. |
+| [`websocket:operation:show`](#orbit-websocketoperationshow) | Check application of a saved change. |
+| [`websocket:sync`](#orbit-websocketsync) | Wait for all serving processes to apply the registry. |
+
+Every command accepts `--json`. Changes return an operation ID. The Gateway sends a revision notification and returns current status without waiting for process reports. A saved change can remain pending. A later mutation that replaces its result makes it superseded. Use `websocket:operation:show` to check it or `websocket:sync` to wait. Neither command restarts Reverb.
+
+## orbit websocket:app:create
+
+Create a Reverb app. The Gateway generates its app ID, key, and secret.
+
+```bash
+orbit websocket:app:create <name> [--operation-key=<key>] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Lowercase kebab name of at most 63 characters. `gateway` is the Gateway's own app. |
+
+```bash
+orbit websocket:app:create hauzer
+```
+
+The CLI refuses a name that is not a lowercase slug of at most 63 characters with `websocket.name_invalid`. The Gateway refuses a taken name or `gateway` with `validation.failed`. Reverb loads the app while existing connections stay open. Without a serving process, the change stays pending until a fresh process loads it. Reuse `--operation-key` when retrying the same request after a lost response.
+
+## orbit websocket:app:list
+
+List the apps with their name, app ID, key, and the IDs of the Instances that use them.
+
+```bash
+orbit websocket:app:list [--json]
+```
+
+## orbit websocket:app:show
+
+Show one app and the IDs of the Instances that use it.
+
+```bash
+orbit websocket:app:show <name> [--json]
+```
+
+## orbit websocket:app:destroy
+
+Remove an app and close only its sockets with code `4001`. Other apps keep their connections. The change stays pending until all required processes confirm application.
+
+```bash
+orbit websocket:app:destroy <name> [--force] [--operation-key=<key>] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--operation-key` | Reuse this key to retry the same change. |
+| `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. |
+
+Decline, Ctrl-C, and EOF cancel with `input.cancelled`. The CLI sends no destroy request after cancellation.
+
+The Gateway refuses with `websocket.app_in_use` while an Instance uses the app, and with `websocket.app_reserved` for `gateway`. Remove the app from each Instance with [`instance:websocket:remove`](/cli/instance#orbit-instancewebsocketremove) first.
+
+
+## orbit websocket:app:rotate
+
+Rotate one app's secret and close its sockets with code `4201`. Reverb accepts only the new secret after applying the change. Other apps keep their connections.
+
+```bash
+orbit websocket:app:rotate <name> [--force] [--operation-key=<key>] [--json]
+```
+
+The `name` argument identifies the app. `--force` confirms rotation without prompting. `--operation-key` retries the same saved rotation. The reserved `gateway` app cannot be rotated through this command.
+
+Rotation updates the attached Instances' stored environment in the same transaction. The response lists those Instances. Run environment synchronization and reload their applications separately. An offline Instance cannot delay revocation.
+
+## orbit websocket:operation:show
+
+Show whether every required Reverb process has applied a saved change. A stale or missing process keeps the operation pending.
+
+```bash
+orbit websocket:operation:show <id> [--json]
+```
+
+The `id` argument is the operation UUID returned by a change command.
+
+## orbit websocket:sync
+
+Notify the serving processes and wait for confirmation without restarting them.
+
+```bash
+orbit websocket:sync [--wait=60] [--operation-key=<key>] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--wait` | Maximum wait in seconds, from 0 to 3600. Default: 60. The CLI polls operation status until the wait ends. |
+| `--operation-key` | Reuse this key to retry the same sync. |
+| `--json` | Return machine-readable JSON. |
+
+The command exits unsuccessfully if the deadline passes while application is pending. It does not undo the saved change.

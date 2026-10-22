@@ -10,8 +10,6 @@ use App\Models\Node;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 it('shares the probe deadline across authentication and response reads', function (bool $fragmented): void {
     $script = <<<'PHP'
         $listener = stream_socket_server('tcp://127.0.0.1:0');

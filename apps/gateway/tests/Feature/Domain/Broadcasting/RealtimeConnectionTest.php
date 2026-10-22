@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Models\Node;
 
 it('resolves null without an active websocket role', function (): void {
@@ -37,7 +38,7 @@ it('memoizes the resolution for the life of the instance', function (): void {
         {
             public function __construct(private int &$calls) {}
 
-            public function ensure(Node $node): WebSocketCredentials
+            public function ensure(Node $node): WebSocketServerCredentials
             {
                 throw new LogicException('not used');
             }
@@ -46,10 +47,10 @@ it('memoizes the resolution for the life of the instance', function (): void {
             {
                 $this->calls++;
 
-                return new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('k'));
+                return new WebSocketCredentials('id', 'key', 'secret');
             }
 
-            public function purge(Node $node): void {}
+            public function purge(Node $node, bool $runtimeStopped = false): void {}
         },
         orbitHome: '/tmp/orbit-home',
     );

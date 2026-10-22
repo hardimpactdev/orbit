@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
+use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
+use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
@@ -28,6 +30,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
@@ -47,7 +50,10 @@ use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use App\Models\WebSocketRuntime;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -964,6 +970,73 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->toBeEmpty();
     $this->assertDatabaseMissing('processes', ['id' => $process->id]);
 });
+
+it('releases every runtime on a confirmed dead websocket Node and completes pending operations', function (bool $hasRole): void {
+    $caller = $this->markAsGateway(remove_node_record(name: 'gateway', wireguardIp: '10.44.0.2'));
+    $target = remove_node_record(name: 'dead-reverb', wireguardIp: '10.44.0.3');
+    remove_node_offline_probe($target);
+    if ($hasRole) {
+        remove_node_role_fixture($target, RoleName::WebSocket);
+        $publication = Mockery::mock(WebSocketPublicationManager::class);
+        $publication->shouldReceive('removeUnreachable')->once()->withArgs(fn (Node $node): bool => $node->is($target));
+        app()->instance(WebSocketPublicationManager::class, $publication);
+    }
+    foreach (['default', 'second'] as $slot) {
+        WebSocketRuntime::query()->create([
+            'id' => (string) Str::uuid(), 'node_id' => $target->id, 'slot' => $slot,
+            'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+        ]);
+    }
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile');
+    $metrics->shouldReceive('retire')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+    Http::fake();
+    $operation = app(ChangeWebSocketRegistryAction::class)->execute('sync', null, $caller->id, 'dead-node');
+    $survivor = remove_node_record(name: 'serving-reverb', wireguardIp: '10.44.0.4');
+    $serving = WebSocketRuntime::query()->create([
+        'id' => (string) Str::uuid(), 'node_id' => $survivor->id,
+        'registry_token' => 'survivor-registry', 'notification_token' => 'survivor-notify',
+        'epoch' => $operation->epoch, 'applied_revision' => $operation->revision,
+        'reported_at' => now(), 'state' => 'serving',
+    ]);
+    $status = app(ReadWebSocketApplyStatusAction::class);
+    expect($status->execute($operation)['state'])->toBe('pending');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson('/api/v1/nodes/'.$target->id, ['offline' => true, 'force' => true])
+        ->assertOk()->assertJsonPath('data.removed', true);
+
+    $this->assertModelMissing($target);
+    $this->assertDatabaseMissing('websocket_runtimes', ['node_id' => $target->id]);
+    expect($status->execute($operation)['state'])->toBe('applied');
+    expect($serving->refresh()->required)->toBeTrue();
+    expect($this->firewall->commands)->toBeEmpty();
+})->with(['websocket role' => true, 'orphan runtimes after role removal' => false]);
+
+it('keeps runtime membership unless offline abandonment is confirmed and the Node is unreachable', function (bool $reachable, bool $force, string $error): void {
+    $caller = $this->markAsGateway(remove_node_record(name: 'gateway', wireguardIp: '10.44.0.2'));
+    $target = remove_node_record(name: 'reverb', wireguardIp: '10.44.0.3');
+    if ($reachable) {
+        remove_node_reachable_probe();
+    } else {
+        remove_node_offline_probe($target);
+    }
+    $runtime = WebSocketRuntime::query()->create([
+        'id' => (string) Str::uuid(), 'node_id' => $target->id,
+        'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+    ]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson('/api/v1/nodes/'.$target->id, ['offline' => true, 'force' => $force])
+        ->assertStatus($reachable ? 409 : 422)->assertJsonPath('error.code', $error);
+
+    expect($runtime->refresh()->required)->toBeTrue();
+    $this->assertModelExists($target);
+})->with([
+    'missing confirmation' => [false, false, 'validation.failed'],
+    'live Node' => [true, true, 'websocket.runtime_shutdown_required'],
+]);
 
 it('refuses an unreachable node without the offline claim and names the flag', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');

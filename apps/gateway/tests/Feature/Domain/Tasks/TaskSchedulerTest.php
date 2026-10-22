@@ -1734,8 +1734,6 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         idle: false,
         pendingApprovalId: null,
         pendingUserInputId: null,
-        lastAssistantText: null,
-        lastUserText: null,
         hasNewCommitsSinceThreadStart: false,
         prUrl: null,
         ciSummary: null,
@@ -1815,7 +1813,7 @@ it('keeps the reviewed pull request, writes settle metrics, after the last sign-
     $node = scheduler_node('settle-node', '10.44.0.95');
     $group = queued_group($project, 'Settle', static fn (Task $owner): Instance => scheduler_instance($project, $node, 'settle', $owner));
     $instance = $group->taskable;
-    $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
+    $group->pr_url = 'https://github.com/hardimpactdev/orbit/pull/543';
     $group->save();
     $first = $group->tasks->first();
     $first?->update(['tokens' => 40]);
@@ -1865,7 +1863,7 @@ it('keeps the reviewed pull request, writes settle metrics, after the last sign-
     $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
     expect($settled->status)->toBe(TaskGroupStatus::WaitingForReview)
-        ->and($settled->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543')
+        ->and($settled->pr_url)->toBe('https://github.com/hardimpactdev/orbit/pull/543')
         ->and($settled->tokens)->toBe(40)
         ->and($settled->line_diff)->toBe(12)
         ->and($settled->duration_ms)->toBe(1500)
@@ -2792,7 +2790,7 @@ it('does not infer mutation provenance from an overlapping legacy check', functi
     $changedTree = str_repeat('d', 40);
     $checks = new FakeTaskCheckRunner([
         TaskCheckReading::running(),
-        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_tia_fixture/test.php'], 'check created untracked fixture'),
+        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_check_fixture/test.php'], 'check created untracked fixture'),
     ]);
     $checks->tree = $changedTree;
     app()->instance(TaskCheckRunner::class, $checks);

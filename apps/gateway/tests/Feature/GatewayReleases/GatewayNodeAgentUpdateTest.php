@@ -56,7 +56,7 @@ final class AgentUpdateHost
     {
         $process = new Process([TestToolchain::bash(), '-seu', '--',
             $this->root.'/orbit-agent', $this->root.'/orbit-agent.service', NodeAgentFootprint::Marker,
-            'https://github.com/nckrtl/orbit/releases/download/agent-v0.4.0/orbit-agent-0.4.0-linux-x86_64',
+            'https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.0/orbit-agent-0.4.0-linux-x86_64',
             $expected ?? hash('sha256', 'agent 0.4.0'), 'orbit-agent.service', '5',
         ], $this->root, ['PATH' => $this->root.'/bin:'.TestToolchain::path(), 'ORBIT_TEST_ROOT' => $this->root]);
         $process->setInput(GatewayNodeAgentUpdate::Script);

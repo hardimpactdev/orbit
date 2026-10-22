@@ -386,6 +386,7 @@ return new class extends Migration
             $table->string('prefix');
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
+            $table->string('network', 16)->default('wireguard');
             $table->foreign(['database_connection_id'])->references(['id'])->on('database_connections')->onDelete('restrict');
             $table->foreign(['instance_id'])->references(['id'])->on('instances')->onDelete('cascade');
         });
@@ -958,6 +959,7 @@ return new class extends Migration
             $table->dateTime('updated_at')->nullable();
             $table->string('driver')->default(DB::raw('\'mysql\''));
             $table->boolean('default_open')->default(DB::raw('\'0\''));
+            $table->boolean('private_endpoints_managed')->default(false);
             $table->foreign(['node_id'])->references(['id'])->on('nodes')->onDelete('restrict');
             $table->foreign(['process_id'])->references(['id'])->on('processes')->onDelete('set null');
         });
@@ -979,6 +981,7 @@ return new class extends Migration
             $table->integer('owner_instance_id')->nullable();
             $table->string('test_database')->nullable();
             $table->string('clone_step')->nullable();
+            $table->string('locale', 32)->nullable();
             $table->foreign(['node_id'])->references(['id'])->on('nodes')->onDelete('set null');
             $table->foreign(['database_server_id'])->references(['id'])->on('database_servers')->onDelete('restrict');
             $table->foreign(['owner_instance_id'])->references(['id'])->on('instances')->onDelete('set null');
@@ -3098,9 +3101,11 @@ return new class extends Migration
             INSERT INTO migrations (migration, batch) VALUES('2026_10_19_120215_reset_invalid_global_vpn_dns_server',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_20_000000_add_ssr_port_assignments',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_21_000000_record_instance_environment_owned_keys',1);
+            INSERT INTO migrations (migration, batch) VALUES('2026_10_21_200327_add_private_endpoints_to_database_servers',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_22_000000_add_ssh_jump_node_id_to_nodes',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_22_000000_add_web_root_to_routes',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_22_000000_create_task_vms_table',1);
+            INSERT INTO migrations (migration, batch) VALUES('2026_10_22_055111_add_locale_to_database_connections_table',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_23_000000_record_transfer_web_root_routes',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_24_000000_create_t3_tables',1);
             INSERT INTO migrations (migration, batch) VALUES('2026_10_25_000000_create_jobs_table',1);

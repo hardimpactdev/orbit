@@ -621,7 +621,7 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
         'summary' => 'Node beast failed self-update.',
         'release_kind' => 'rollout_halted', 'incident_resource' => 'fleet', 'incident_attempt' => '17', 'incident_fault' => 'node_failed',
         'release_shas' => [str_repeat('a', 40)],
-        'release_repository' => 'nckrtl/orbit',
+        'release_repository' => 'hardimpactdev/orbit',
         ...problem_filer_windows(1),
     ]);
 
@@ -633,7 +633,7 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
 
     expect($task->title)->toBe('Rollout halted for fleet, attempt 17')
         ->and($task->brief)->toContain("Symptom\nNode beast failed self-update.")
-        ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit, fleet, 17, node_failed");
+        ->and($task->brief)->toContain("Suspected entry point\nhardimpactdev/orbit, fleet, 17, node_failed");
 });
 
 it('does not file an ambiguous historical SHA bucket without incident evidence', function (): void {

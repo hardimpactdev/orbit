@@ -36,6 +36,7 @@ use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
+use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -58,10 +59,12 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
@@ -181,7 +184,6 @@ use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
-use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Releases\GatewayReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertWebhook;
@@ -202,6 +204,8 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketRouteInspector;
+use App\Domain\WebSocket\WebSocketRoutePublisher;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
@@ -284,7 +288,6 @@ use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\GitHub\HttpGitHubApi;
-use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
@@ -400,6 +403,8 @@ use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
+use App\Infrastructure\WebSocket\NativeWebSocketRouteInspector;
+use App\Infrastructure\WebSocket\NativeWebSocketRoutePublisher;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
@@ -534,7 +539,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
-        TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
@@ -561,12 +565,15 @@ final class ApplicationServiceProvider extends ServiceProvider
         AnalyticsStatsKeyStore::class => NativeAnalyticsStatsKeyStore::class,
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
+        WebSocketRouteInspector::class => NativeWebSocketRouteInspector::class,
+        WebSocketRoutePublisher::class => NativeWebSocketRoutePublisher::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
     ];
 
     public function register(): void
     {
-        $this->app->tag([ValkeyConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
+        $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
+        $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 
         $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
 

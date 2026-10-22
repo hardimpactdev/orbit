@@ -37,7 +37,7 @@ describe('gateway response fixtures', function (): void {
 
     it('records the desired state fixtures while the CLI release is pending', function (): void {
         desired_fleet_state_peer();
-        fake_cli_release_github(['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'Not Found'], 404)]);
+        fake_cli_release_github(['/repos/hardimpactdev/orbit/git/ref/tags/cli-v0.4681.0' => Http::response(['message' => 'Not Found'], 404)]);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7'])
             ->getJson('/api/v1/gateway/desired-fleet-state')

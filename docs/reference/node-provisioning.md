@@ -3,13 +3,13 @@ title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
-  - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
-  - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
+  - apps/gateway/app/Infrastructure/{WireGuard/NativeGatewayPeerProjectionManager.php,Gateway/NativeGatewayCaddyInstaller.php,Nodes/{Roles/CiRunnerRoleBaseline,CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
   - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/remote/lib/recipe.py}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
+  - apps/gateway/resources/remote/ci-runners/**
 ---
 
 # Node provisioning
@@ -36,6 +36,10 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+
+The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. Gateway web convergence and release handoff install its [disk retention configuration](/reference/gateway-recovery#disk-retention) beside the release units. They install a missing package only on Gateways not yet converged to the recipe. APT waits up to 300 seconds for dpkg locks. During that installation, temporary systemd masks block logrotate's package hooks and `NEEDRESTART_MODE=l` prevents automatic service restarts. Cleanup attempts to remove every temporary mask, even if one removal fails, and preserves the original installation error.
+
+Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
 Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations and keeps uncertain workspace ownership fenced. See [Workspace lease](/reference/tasks#workspace-lease) for completion receipts and recovery.
 
@@ -91,23 +95,59 @@ Each failure names the check or step that stopped the request.
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
 
+## CI runner role
+
+`orbit node:role:add <node> ci-runner` prepares a Linux Node to host GitHub Actions runners in unprivileged Incus containers. The role is not a singleton or relocatable. Add it to an enrolled Node through the normal role-add path; `node:add --role` does not accept it. It can share every role except `gateway` and `vpn`, which hold fleet trust anchors. A Node that serves CI alone needs no app role, TLD, or Cluster. Beast can keep its app and database roles. Shark needs only `ci-runner` for CI; removing its existing roles is a separate operator decision.
+
+The role installs Incus and prepares the restricted `orbit-ci` project, the `orbitci0` bridge, the `orbit-ci-egress` ACL, and the default runner profile. The profile sets 6 CPUs, 12 GiB of memory, 8192 processes, and autostart, with privilege and nesting disabled. The project permits only that bridge and forbids VMs and host disk devices. The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
+
+The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
+
+The role owns the host boundary. [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, updates, registers, and verifies containers. Run its container step only while the runner is idle. Adoption has no container-count or running-state requirement: it preserves clones and stopped containers without starting, deleting, recreating, or registering them. Each active runner carries `hardimpact,orbit-shard`, plus `sabre` on Sabre. The Gateway holds no organization registration token. A token stays with the operator and never enters role input or settings.
+
+A Node with only this role appears in the web app's workload table with CPU, memory, and disk meters. It selects the normal role-default exporter and joins fleet rollout group 2 and the overnight recipe service tier. Explicit exporter preferences still apply. Its role selects the recipe's `ci-runner` tool set; a recorded recipe profile does not grant fleet participation. Host recipe convergence refuses extra PHP packages, as other role hosts do. The container installer alone purges extra PHP packages.
+
+Remove all containers and their GitHub registrations before removing the role. Role removal refuses a project containing any container, including a stopped one after deregistration and with `--force`; it never deregisters or deletes a runner. Normal removal closes the routed allowance and retains the project, bridge, ACL, and pool. Before `--purge-data`, remove cached images, custom volumes, and extra profiles from `orbit-ci`. The option also removes the empty project, bridge, and ACL; Incus refuses resources still in use. The shared pool stays. Offline removal retains host state and reports it for operator cleanup.
+
+After merge and deployment, an operator runs these commands; this feature does not run them. Adding the first role to a roleless Node closes the normal `orbit:public-ssh-recovery` firewall rule. Confirm WireGuard access before adding it:
+
+```bash
+orbit node:role:add Sabre ci-runner
+orbit node:role:add Shark ci-runner
+orbit node:role:add Beast ci-runner
+```
+
+Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role add, repair the reported cause and retry with `orbit node:role:add <node> ci-runner --converge`. Existing runners and registrations stay in place.
+
 ## Converge a Node to a recipe
 
-On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run] [--profile=ci-runner]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
+When a profile includes Node.js, the recipe is its single runtime owner. Convergence verifies the recipe runtime before removing a duplicate `nodejs` APT package. APT simulation must remove only `nodejs`; dependencies are never removed automatically. Convergence validates NodeSource entries, backs them up outside APT source directories, then removes them. Mixed or unexpected entries stop convergence. Profiles without Node.js keep their APT ownership unchanged.
+
+Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` preferences and its keyring. Unexpected preferences or a keyring still used by another source stop convergence. It removes only dangling `/usr/bin/{yarn,yarnpkg,pnpm,pnpx}` links to Corepack, preserving working or unrelated links. Dry runs report `remove_nodejs_package`, `retire_node_source`, `retire_node_config`, and `remove_corepack_links`. APT removal suppresses needrestart; application owners restart affected processes after convergence.
+
+Vite+ caches and running processes are separate: update project pins, deploy retained releases, and restart affected services before retiring old cached runtimes.
+
+Recipe Node uses the same [immutable store layout](/reference/tools#project-environments-in-the-vite-store) as deploy prerequisites. A matching real runtime stays in place on convergence. A link into the former recipe directory or a runtime without the recipe reference is reported as needing verified installation even when its Node version is current. Convergence calls the store publisher as the enrolled account. It migrates all former recipe links to real directories with normalized modes, keeps their old targets for running processes, and records a reference that protects only the current runtime from deployment cleanup.
+
+Older migrated versions remain adopted content. A link is briefly absent between unlink and directory rename; avoid process restarts during migration. Recipe installation refuses unrelated links or differing real content without deleting them.
+
+On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
 The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
 
 Docker CE refuses both a dry run and application with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
 
-A roleless Node that runs CI jobs, such as Sabre, uses the recipe's `ci-runner` profile instead of `operator`, to get the [recipe's PHP build](/reference/compute-drivers#php-build). Name it once with `--profile=ci-runner`. The Node records the profile in `settings.machine_recipe.profile` when an applying run starts, and later runs use it without the option. A failed run keeps it. A Node with roles refuses the option with `node.recipe_profile_invalid`, and so does any other profile name. After that first run, [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) visits the Node in its overnight service tier.
+The `ci-runner` role selects its recipe tool set through the same role union as other roles. Roleless Nodes use `operator`. Recorded profiles have no effect.
 
 `--dry-run` reads installed versions and managed Tool intent, then prints JSON with the snapshot, recipe identity, selected tools, recipe versions, observed versions, satisfaction status, and planned changes. An `unsupported_newer` tool includes `refusal: origin:<tool>` and plans no downgrade. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
 
 A dry run writes no files, refreshes no apt indexes, takes no remote lock, and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
 
-Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content and refreshes the normal indexes before assessing installed versions.
+Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources, or ports on arm64. It preserves other source content.
 
-Recipe package resolution uses a temporary snapshot source. It downloads and verifies pinned release artifacts, installs missing or older Ubuntu packages at the selected pins, exact artifacts, and their dependencies with package removal disabled, and verifies installed versions. Exact Debian artifacts can downgrade after a dependency simulation; Ubuntu recipe packages and other dependencies cannot. Installation ends with `apt-get check`.
+Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com` on amd64, or `ports.ubuntu.com` on arm64.
+
+Recipe package resolution uses a temporary snapshot source. It refreshes the snapshot indexes only when an Ubuntu package or Debian artifact needs installation. Index refreshes fetch package metadata without translations, desktop metadata, or command suggestions, and retain APT's cached lists. It downloads and verifies pinned release artifacts, installs missing or older Ubuntu packages at the selected pins, exact artifacts, and their dependencies with package removal disabled, and verifies installed versions. Exact Debian artifacts can downgrade after a dependency simulation; Ubuntu recipe packages and other dependencies cannot. Installation ends with `apt-get check`.
 
 Before installation, Orbit checks the name, complete version (including any epoch), and architecture in each Debian artifact. The architecture must match the Node or be `all`. See the [recipe schema](/reference/compute-drivers#recipe-schema).
 
@@ -115,11 +155,11 @@ Every role that runs PHP, `app-dev`, `app-prod`, `websocket`, and `gateway`, nam
 
 Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart.
 
-The PHP set is the exception: [`php.install-build`](/reference/compute-drivers#install-the-php-build), the one PHP build installer, installs it. Before any change, convergence runs the installer's plan. Another PHP apt source, or a PHP package of a handled version outside the recipe, refuses the convergence with `node.recipe_php_refused` and names it. A dry run refuses the same way. The `ci-runner` profile purges such packages instead; no other profile does.
+The PHP set is the exception: [`php.install-build`](/reference/compute-drivers#install-the-php-build), the one PHP build installer, installs it. Before any change, convergence runs the installer's plan. Another PHP apt source, or a PHP package of a handled version outside the recipe, refuses the convergence with `node.recipe_php_refused` and names it. A dry run refuses the same way. The container installer uses the `ci-runner` profile to purge extras; host convergence always refuses them.
 
 After the other tools, convergence runs the installer with PHP-FPM option `all`. It restarts the shared `php<version>-fpm` service and each active dedicated production master, each after `php-fpm -t`. It checks each pool socket with a FastCGI request. A dedicated production master restarts briefly during this step, so each site of the Node does too.
 
-When a check fails, the installer reinstalls the previous build and restarts the masters again. Convergence then stops with `node.recipe_php_failed`, names the master, and records no convergence. PCOV loads in the CLI only on the `app-dev` role and the `ci-runner` profile. On the Gateway, the restart of `php8.5-fpm` reloads the workers that serve the API, so converge the Gateway last.
+When a check fails, the installer reinstalls the previous build and restarts the masters again. Convergence then stops with `node.recipe_php_failed`, names the master, and records no convergence. PCOV loads in the CLI on the `app-dev` and `ci-runner` roles. On the Gateway, the restart of `php8.5-fpm` reloads the workers that serve the API, so converge the Gateway last.
 
 Vite+ keeps its existing global store. The pinned CLI receives its initialization marker before it runs, so it cannot launch an unpinned installer. Images and Node convergence use the same installer. The recipe pins the SHA-256 of `vite-plus-package-lock.json`, which fixes the complete runtime dependency tree. The Gateway cross-checks the lock’s Vite+ integrity against the recipe artifact pin; npm verifies that integrity during installation. There is no separate Vite+ package download. The installer runs `npm ci --ignore-scripts` in a separate directory, then switches only Vite+'s runtime package. It never reuses the old runtime's dependencies or replaces the global tool store.
 
@@ -135,7 +175,7 @@ The fleet verifier checks Node and role requirements with no tolerated preexisti
 
 A failed command reports its recipe stage, exit code, and bounded, redacted output in the convergence error. A failure during package installation also reports the attempted packages. APT source validation reports the source or backup path and the reason, including malformed fields, mixed provider entries, and symlinks. These reasons use the same bounded, redacted diagnostic envelope. No automatic retry or rollback runs.
 
-After all checks pass, `settings.machine_recipe` stores the complete recipe identity, snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker.
+After all checks pass, `settings.machine_recipe` stores the recipe identity in `version`, the snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. When fleet convergence holds an Incus change, it stores `partial_version` instead of `version`; the Node has applied only the non-Incus changes. See [Incus holds](/reference/compute-drivers#incus-lts-packages-and-upgrades). `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker.
 
 A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. It keeps only a recorded profile. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
 
@@ -270,7 +310,7 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 | Binary | `/usr/local/bin/orbit-<version>`, `root:root` mode `0755` |
 | Link | `/usr/local/bin/orbit`, a link to the binary. `orbit self-update` switches it with one rename and keeps the previous release |
 | Profile | `/root/.orbit/config.json`, `root:root` mode `0600`: the active profile `gateway` with the URL `https://<Gateway WireGuard address>` and the root certificate `/etc/orbit/agent/ca.pem`, which the agent converge writes |
-| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
+| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
@@ -342,13 +382,14 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 
 | Role | Never shares a Node with |
 | --- | --- |
-| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics` |
+| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics`, `ci-runner` |
 | `ingress` | `gateway`, `app-dev`, `database` |
-| `vpn` | `database` |
+| `vpn` | `database`, `ci-runner` |
 | `app-dev` | `gateway`, `ingress`, `app-prod` |
 | `app-prod` | `gateway`, `app-dev`, `database` |
 | `database` | `gateway`, `vpn`, `ingress`, `app-prod` |
 | `analytics` | `gateway` |
+| `ci-runner` | `gateway`, `vpn` |
 
 `router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
 
@@ -359,7 +400,7 @@ Not every role can be added the same way.
 | `app-dev`, `app-prod`, `database`, `metrics`, `websocket` | Yes | Yes |
 | `gateway` | Yes, as a singleton | Yes, as a singleton |
 | `vpn` | Yes, as a singleton | No |
-| `ingress`, `analytics` | No | Yes |
+| `ingress`, `analytics`, `ci-runner` | No | Yes |
 | `router` | No | No. Use [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset). |
 
 ## Package sources
@@ -372,6 +413,8 @@ A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 | Caddy | The `.deb` of a pinned [Caddy release](https://github.com/caddyserver/caddy/releases) on GitHub | None |
 
 For PHP, the Gateway sends each pin's URL, version, and SHA-256 digest to the Node with [`php.install-build`](/reference/compute-drivers#install-the-php-build). The Node downloads only over HTTPS, from Orbit's mirror first, and refuses a file whose digest, package name, version, or architecture differs. Orbit adds no PHP apt source. The installer deletes the Sury source that earlier Orbit releases wrote and refuses any other PHP apt source, such as `ppa:ondrej/php`. When every package is at its recipe version, it downloads nothing.
+
+The installer also repairs the [managed PHP settings](/reference/compute-drivers#install-the-php-build) when the packages already match. A settings-only repair validates every active FPM master, including dedicated production masters, and gracefully reloads those that pass. Instance steps defer and log invalid masters while keeping the INI and continuing with the other masters. Recipe convergence instead fails and restores the previous settings. The log also warns when masters are left running without a restart or reload because they may still use the previous build or settings.
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 
@@ -568,3 +611,11 @@ A Mac is a managed Node for tools, not a service host. It uses the account, Wire
 An application role was rejected because tools do not need application services and the role list stays empty. Package operations through the Node agent were rejected because SSH already makes the changes and the agent stays observation-only. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
 
 Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the Node agent do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS Node agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
+
+### CI roles own hosts; operators own runner registration
+
+The CI runner role uses the existing role lifecycle, firewall, Doctor, exporter, agent, and fleet rules. Selecting software through a recorded profile hides workload Nodes and bypasses those rules. The role replaces that exception. Sharing with app and database roles permits Beast's existing workload mix; a CI-only Node such as Shark needs no app role. The project, bridge, ACL, and profile names are reserved for the role, so its first convergence adopts the existing setup-script projection in place.
+
+Container creation and org registration remain together in the operator script. Splitting creation into the role while leaving registration outside it would create unregistered containers and a second partial lifecycle. This host role does not implement Gateway-owned runner records or GitHub App registration: the deployed runners serve the organization, and the Gateway lacks the organization token. Giving the App repository Administration write would not implement that boundary and would expand its permissions. A future managed runner lifecycle needs an explicit credential and ownership decision.
+
+Gateway-owned runner records and their credential flow remain in progress in [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role). This host role needs no GitHub permission change.

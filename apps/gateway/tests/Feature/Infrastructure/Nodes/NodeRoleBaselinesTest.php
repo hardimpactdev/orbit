@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\ProvisionNodeAction;
+use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettings;
@@ -25,10 +27,14 @@ use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -37,17 +43,24 @@ use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgram;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
+use App\Infrastructure\Nodes\Roles\CiRunnerRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
@@ -61,6 +74,7 @@ use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -73,7 +87,14 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Tests\Support\FakeToolManagerMaterializer;
+
+beforeEach(function (): void {
+    $this->mock(RemoteProgramRunner::class)->shouldReceive('run')->andReturn(new ProgramResult('current', [], ''));
+});
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
     expect(class_exists(DevelopmentRoleBaseline::class))->toBeTrue();
@@ -310,6 +331,113 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         ->toThrow(NodeRoleValidationException::class);
     expect(fn () => $vpn->removeUnreachable($vpnNode, $vpnAssignment))
         ->toThrow(NodeRoleValidationException::class, 'The VPN role cannot be removed.');
+});
+
+it('installs and verifies the recipe PHP runtime before completing VPN convergence', function (string $outcome, ?RoleName $fpmRole, bool $active): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-php');
+    if ($active) {
+        $assignment->update(['status' => LifecycleStatus::Active]);
+        $assignment->claimConvergence();
+    } else {
+        $node->update(['status' => LifecycleStatus::Provisioning]);
+    }
+    if ($fpmRole !== null) {
+        $node->roles()->create(['role' => $fpmRole, 'status' => LifecycleStatus::Active]);
+        $node->unsetRelation('roles');
+    }
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node, &$events, $fpmRole): bool {
+        $events[] = 'php:verify';
+        $recipe = new RecipeLoader()->load();
+        expect($target->id)->toBe($node->id)
+            ->and($program->name)->toBe('php.install-build')
+            ->and(array_keys($input['versions']))->toBe(['8.5'])
+            ->and($input['mode'])->toBe('apply')
+            ->and($input['extras'])->toBe('keep')
+            ->and($input['fpm'])->toBe($fpmRole === null ? 'disabled' : 'all')
+            ->and($input['pcov'])->toBe($fpmRole === RoleName::AppDev)
+            ->and($input['opentelemetry'])->toBe($fpmRole === RoleName::AppDev)
+            ->and($input['versions']['8.5']['extensions'])->toContain('sockets', 'pcntl')
+            ->and(array_column($input['versions']['8.5']['packages'], 'version', 'name')['php8.5-cli'])
+            ->toBe($recipe->tools['php8.5-cli']->version);
+
+        return true;
+    })->andReturn(new ProgramResult($outcome, [], 'PHP build verified'));
+    app()->instance(RemoteProgramRunner::class, $runner);
+    $dns = Mockery::mock(PrivateDnsManager::class);
+    $dns->shouldReceive('converge')->times($active && $outcome === 'applied' ? 1 : 0)->withNoArgs()
+        ->andReturnUsing(function () use (&$events): void {
+            $events[] = 'dns:publish';
+        });
+    $baseline = new VpnRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_ssh($events), baseline_keys(), baseline_known_hosts(), baseline_firewall($events), baseline_account_resolver(), dns: $dns);
+
+    $baseline->converge($node, $assignment);
+
+    expect($events)->toBe($active && $outcome === 'applied'
+        ? ['ssh:vpn', 'php:verify', 'firewall:converge:vpn', 'dns:publish']
+        : ['ssh:vpn', 'php:verify', 'firewall:converge:vpn']);
+})->with(['applied', 'current'])->with([null, RoleName::Gateway, RoleName::AppDev, RoleName::AppProd])->with([true, false]);
+
+it('verifies VPN PHP before Gateway publication regardless of requested role order', function (bool $installFails): void {
+    $events = [];
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->andReturnUsing(function (Node $node, RemoteProgram $program, array $input) use (&$events, $installFails): ProgramResult {
+        expect($program->name)->toBe('php.install-build')
+            ->and($input['fpm'])->toBe('disabled');
+        $events[] = 'php:verify';
+
+        return $installFails
+            ? new ProgramResult('fpm_invalid', ['unit' => 'orbit-gateway-php8.5-fpm.service'], 'Invalid FPM')
+            : new ProgramResult('applied', ['changed' => ['php8.5-cli'], 'restarted' => ['orbit-gateway-php8.5-fpm.service']], 'Verified');
+    });
+    app()->instance(RemoteProgramRunner::class, $runner);
+    $vpn = new VpnRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_ssh($events), baseline_keys(), baseline_known_hosts(), baseline_firewall($events), baseline_account_resolver());
+    $gateway = gateway_role_baseline($events);
+    $baselines = Mockery::mock(RoleBaselineConverger::class);
+    $baselines->shouldReceive('converge')->andReturnUsing(function (Node $node, NodeRole $assignment) use ($vpn, $gateway): void {
+        if ($assignment->role === RoleName::Vpn) {
+            $vpn->converge($node, $assignment);
+        } else {
+            $gateway->converge($node, $assignment);
+        }
+    });
+    app()->instance(RoleBaselineConverger::class, $baselines);
+    $this->mock(NodeConverger::class)->shouldReceive('converge')->once()->andReturn(new NodeObservation('x86_64'));
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    $this->mock(MetricsFleetReconciler::class)->shouldReceive('reconcile');
+    $provision = fn (): Node => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        name: 'gateway-vpn', publicSshHost: '192.0.2.10', wireguardIp: '10.44.0.10',
+        roles: [RoleName::Gateway, RoleName::Vpn], architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned',
+    ));
+
+    if ($installFails) {
+        expect($provision)->toThrow(NodeProvisioningException::class);
+        expect($events)->toBe(['ssh:vpn', 'php:verify']);
+        expect(Node::query()->where('name', 'gateway-vpn')->sole()->roles()->where('role', RoleName::Gateway)->exists())->toBeFalse();
+    } else {
+        expect($provision()->status)->toBe(LifecycleStatus::Active);
+        expect($events)->toBe([
+            'ssh:vpn', 'php:verify', 'firewall:converge:vpn',
+            'ssh:caddy-source', 'ssh:caddy', 'firewall:converge:gateway', 'dns:none',
+        ]);
+    }
+})->with([false, true]);
+
+it('stops VPN convergence when the private DNS PHP build cannot be verified', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-php-failed');
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn(new ProgramResult('modules_mismatch', ['missing' => ['sockets']], 'Missing sockets'));
+    app()->instance(RemoteProgramRunner::class, $runner);
+    $baseline = new VpnRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_ssh($events), baseline_keys(), baseline_known_hosts(), baseline_firewall($events), baseline_account_resolver());
+
+    expect(fn () => $baseline->converge($node, $assignment))->toThrow(function (NodeRoleOperationException $error): void {
+        expect($error->step)->toBe('private-dns-php')
+            ->and($error->underlyingErrorCode)->toBe('vpn.php_install_failed')
+            ->and($error->getMessage())->toContain('sockets');
+    });
+    expect($events)->toBe(['ssh:vpn']);
 });
 
 it('uses the node user for VPN prerequisite SSH connections', function (): void {
@@ -712,7 +840,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(8);
+    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()));
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(
             $firewall,
@@ -747,8 +875,8 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
+        ciRunner: ci_role_baseline($events),
     );
-
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
 
@@ -771,6 +899,9 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-prod',
         'ssh:database',
         'ssh:websocket',
+        'ssh:ci-runner',
+        'program:ci-runners.host',
+        'firewall:converge:ci-runner',
     );
 });
 
@@ -979,8 +1110,8 @@ it('checks the remote operating system before every role convergence', function 
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
+        ciRunner: ci_role_baseline($events),
     );
-
     foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
         if ($role === RoleName::Gateway) {
@@ -1018,6 +1149,10 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:websocket',
         'ssh:orbit',
         'guard:unknown',
+        'guard:unknown',
+        'ssh:ci-runner',
+        'program:ci-runners.host',
+        'firewall:converge:ci-runner',
     ]);
 });
 
@@ -1216,7 +1351,7 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
 {
     $credentials = Mockery::mock(WebSocketCredentialManager::class);
     $credentials->shouldReceive('ensure')->andReturn(
-        new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('k')),
+        new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token'),
     );
     $credentials->shouldReceive('purge');
 
@@ -1263,7 +1398,7 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
 
         public function storeVersion(Node $node, string $version): void {}
 
-        public function purge(Node $node): void {}
+        public function purge(Node $node, bool $runtimeStopped = false): void {}
     };
 
     // The ClickHouse configuration, the Process runtime, and the publication reach a real node, which this dispatch-only
@@ -1611,4 +1746,40 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
 
     // Outside a deferral, each change reconciles again.
     $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+});
+
+function ci_role_baseline(array &$events): CiRunnerRoleBaseline
+{
+    $runner = Mockery::mock(RemoteProgramRunner::class);
+    $runner->shouldReceive('run')->andReturnUsing(function ($node, $program, $input) use (&$events): ProgramResult {
+        expect($program->name)->toBe('ci-runners.host');
+        expect($input)->toBe(['action' => 'converge']);
+        $events[] = 'program:ci-runners.host';
+
+        return new ProgramResult('converged', [], '');
+    });
+
+    return new CiRunnerRoleBaseline(new NodeRolePrerequisiteCommandFactory, baseline_account_resolver(),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_firewall($events), new CiRunnerHostProgram($runner, new RemoteProgramCatalog));
+}
+
+it('withdraws every runtime only on the unreachable websocket role Node', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::WebSocket, 'dead-websocket');
+    [$other] = role_baseline_models(RoleName::WebSocket, 'other-websocket');
+    $runtimes = [];
+    foreach ([[$node, 'default'], [$node, 'second'], [$other, 'default']] as [$host, $slot]) {
+        $runtimes[] = WebSocketRuntime::query()->create([
+            'id' => (string) Str::uuid(), 'node_id' => $host->id, 'slot' => $slot,
+            'registry_token' => 'test-registry', 'notification_token' => 'test-notification',
+        ]);
+    }
+
+    websocket_role_baseline($events)->removeUnreachable($node, $assignment);
+
+    expect($runtimes[0]->refresh()->required)->toBeFalse()
+        ->and($runtimes[1]->refresh()->required)->toBeFalse()
+        ->and($runtimes[2]->refresh()->required)->toBeTrue()
+        ->and($events)->toBe([]);
 });

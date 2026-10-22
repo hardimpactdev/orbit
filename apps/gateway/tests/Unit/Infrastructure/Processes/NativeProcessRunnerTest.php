@@ -15,8 +15,6 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 /**
  * Run `php NativeProcessRunnerTest.php negative-controls` for the bounded corruption check.
  * Run `php NativeProcessRunnerTest.php observe-native` for the strict 50-attempt native observation.

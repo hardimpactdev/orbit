@@ -12,6 +12,8 @@ Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it ne
 
 The Gateway applies each rule over SSH, verifies it in the UFW status output, and records the result. The Node firewall catalog is the single source of Orbit-managed rules, so role provisioning and firewall commands use the same projection. Doctor checks the `firewall` family and reports a rule that is missing or different from its record without changing the machine.
 
+[Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; named UFW rules do not restrict their Docker publications.
+
 ## Commands
 
 | Command | Result |
@@ -20,6 +22,8 @@ The Gateway applies each rule over SSH, verifies it in the UFW status output, an
 | [`firewall:deny`](#orbit-firewalldeny) | Create or converge one named deny rule. |
 | [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
 | [`firewall:remove`](#orbit-firewallremove) | Remove one named rule. |
+
+The `ci-runner` role owns the routed allowance on `orbitci0`, with the comment `orbit-ci-runners`. This is the same comment used by the former host setup step, so adding the role adopts that rule through the managed catalog. Role removal closes it; the Incus ACL enforces the runner egress boundary.
 
 ## Read the managed and live rules
 

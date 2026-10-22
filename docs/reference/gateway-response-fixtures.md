@@ -12,7 +12,11 @@ covers:
 
 # Gateway response fixtures
 
+The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
+
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
+
+Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs.
 
 Task group fixtures include nullable `vm_power`, separately from task status. CLI tests cover the **VM power** label for known states and omit the label and JSON field when power is null. The SDK accepts a missing power field and ignores unknown optional response fields, so a field rename does not make an older client reject the task group.
 
@@ -67,6 +71,8 @@ The `tasks/tasks-show/watched` fixture records a running task whose branch pull 
 The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
 The `tasks/tasks-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
+
+Connection fixtures include nullable `locale` and `lan_host` separately from the default WireGuard `host`. A null LAN host means LAN selection is unavailable. Record server and connection changes through `DatabaseServerResponseFixturesTest` and `GatewayResponseFixturesTest`, then replay changed fixtures with `bin/cli-contract --changed <base>`.
 
 ## Validate a fixture
 

@@ -1,9 +1,9 @@
 name: Recipe artifact mirror
 
-# Sury and the git-core PPA delete superseded builds. This workflow keeps every external pinned Debian file of the
+# Sury, the git-core PPA, and Zabbly can delete superseded builds. This workflow keeps every external pinned Debian file of the
 # machine software recipe as an asset of the php-build-mirror release, named <package>_<digest>.deb. Installers
 # try this mirror before the pin's own URL, so a rollback, a new Node, or CI still gets the exact build after
-# either source moves on. See ADR 0216, including Git artifacts and security updates.
+# an upstream source moves on. See ADR 0216, including Git artifacts and security updates.
 on:
   push:
     branches: [main]
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   mirror:
     name: Mirror the recipe Debian artifacts
-    if: github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main'
+    if: github.repository == 'hardimpactdev/orbit' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       contents: write

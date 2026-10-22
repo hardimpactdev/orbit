@@ -18,7 +18,7 @@ paths:
 
 ## Running Tests
 
-- Run Pest through `composer test` or `composer test:affected`; TIA selects the affected tests.
+- Run the tests that cover the change with stock Pest. Pass a file path or `--filter=testName` to `vendor/bin/pest --compact`.
 - Rerun a test after each change to it.
-- Do not pass a test path, filter, group, or suite. Pest disables TIA for partial runs even when `--tia` is present.
-- After the TIA tests pass, follow the root `AGENTS.md` check policy for task and non-task work. Follow the root contributor guide for CI and independent review.
+- Run the project's full suite with `composer test`.
+- After those tests pass, follow the root `AGENTS.md` check policy for task and non-task work. Follow the root contributor guide for CI and independent review.

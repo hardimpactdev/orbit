@@ -136,7 +136,7 @@ it('copies adopted releases without retaining a seed or another cases Git worktr
     }
 });
 
-it('removes frozen directories without changing file modes through private hard links', function (): void {
+it('removes frozen directories without changing file modes through private hard links', function (int $mode): void {
     $fixture = GatewayReleaseFixture::create();
     $outside = $fixture->base.'-linked-file';
     try {
@@ -144,7 +144,7 @@ it('removes frozen directories without changing file modes through private hard 
         chmod($outside, 0o444);
         mkdir($fixture->base.'/frozen', 0o700);
         link($outside, $fixture->base.'/frozen/file');
-        chmod($fixture->base.'/frozen', 0o500);
+        chmod($fixture->base.'/frozen', $mode);
 
         $fixture->cleanup();
         clearstatcache();
@@ -157,4 +157,4 @@ it('removes frozen directories without changing file modes through private hard 
             unlink($outside);
         }
     }
-});
+})->with(['read-only' => 0o500, 'traversal-only' => 0o100]);

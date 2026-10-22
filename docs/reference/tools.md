@@ -2,8 +2,8 @@
 title: "Tools"
 description: "Where Tools run, the supported Tool Managers, how Orbit discovers, adopts, installs, updates, and removes one package, and why the contract stays closed."
 covers:
-  - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
+  - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/{app/Data/Tools/**,resources/remote/tools/**,resources/remote/lib/vp-store.py}
@@ -102,13 +102,19 @@ An npm or pnpm lockfile selects the package-manager family. An exact `packageMan
 
 The machine recipe owns vp itself. Deploys never upgrade it. A recipe version older than the locked vite-plus version fails the prerequisite and needs a normal recipe update. When all exact runtimes exist, the prerequisite takes a read-only path without a lock. Installation waits for the store-owner lock with a timeout and rechecks content after acquiring it.
 
-The enrolled account is the only store writer. Orbit adopts existing exact runtimes, including recipe-installed pnpm and the manual Node 24.22.0 and npm 11.12.0, without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place. Project scripts and hooks never run as the store owner.
+The enrolled account is the only store writer and owns every runtime in it. Recipe and deploy installation use one Node layout: a real, immutable directory at `js_runtime/node/<version>`, with no symlink components. The recipe calls the store publisher as that account with its verified Node archive. The store library owns path validation, locking, adoption and publication. Existing real content that matches the archive stays in place, including content installed by a deploy. A differing directory stops recipe installation without deleting it.
+
+Convergence migrates every account-owned link into the exact former content-addressed recipe layout, preserving its old target for running processes. Migrated older versions receive no checksum receipt or recipe reference, so collection retains them as adopted content. Other links are refused. The publisher removes group and other write bits from account-owned real store directories before validation; foreign ownership and symlinks remain refusals. This rule also applies to development stores in the enrolled account's home.
+
+The recipe records its current Node version in `.orbit-recipe-node.json` under the installation lock. Collection retains that version even when no Instance references it, including when a deploy originally installed it. The existing checksum ledger stays unchanged on adoption. A real runtime without this recipe reference needs one verified adoption on convergence. The recipe, deploy installer and collector use an account-owned, regular mode-0644 lock; they normalize older account-owned lock permissions without replacing its inode and refuse symlinks.
+
+Orbit adopts existing exact runtimes without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place. Project scripts and hooks never run as the store owner.
 
 The `tools.read-vp-project` [remote program](/reference/remote-programs) reads manifests and version files as data, with production reads running as the Instance account.
 
 Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, checkout path, and prerequisite status in `vp_environment`. Preparation retains earlier checkout references, including after installation or a failed build. The selected release and every retained release keep their runtimes, so rollback can select retained code without fetching or rebuilding its prerequisites.
 
-Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references under the installation lock and removes only Orbit-installed versions with no remaining references; recipe and adopted content stays.
+Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references and the current recipe Node reference under the installation lock. It removes only deploy-installed versions with no remaining references; content without a deploy checksum receipt stays.
 
 Doctor batches checks by store. Missing recorded active content is drift. Lock timeouts, invalid requirements, and unreadable stores are unverifiable, not store drift.
 

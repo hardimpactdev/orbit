@@ -22,7 +22,7 @@ afterEach(function (): void {
 
 describe(SqliteGatewayReleaseDatabase::class, function (): void {
 
-    it('writes a private consistent snapshot of the database and keeps the newest five', function (): void {
+    it('writes a private consistent snapshot of the database and keeps the newest three', function (): void {
         $live = $this->scratch.'/live.sqlite';
         touch($live);
         config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
@@ -44,7 +44,7 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
             ->and(fileperms($snapshot) & 0o777)->toBe(0o600)
             ->and(file_exists($snapshot.'.partial'))->toBeFalse()
             ->and(file_exists($this->scratch.'/home/backups/pre-aaaaaaaaaaa1.sqlite'))->toBeFalse()
-            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toHaveCount(5);
+            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toHaveCount(3);
 
         DB::purge('release_snapshot');
     });

@@ -70,6 +70,10 @@
       "description": "The registry of mysql, pgsql, and sqlite connections."
     },
     {
+      "name": "WebSocket apps",
+      "description": "The Reverb apps that the websocket role serves for Instances."
+    },
+    {
       "name": "Processes",
       "description": "systemd services and Docker containers owned by an Instance, a Node, or a Project definition."
     },
@@ -4833,6 +4837,14 @@
                       "instance_id": {
                         "type": "integer",
                         "minimum": 1
+                      },
+                      "locale": {
+                        "type": "string",
+                        "enum": [
+                          "C",
+                          "C.UTF-8"
+                        ],
+                        "description": "PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default."
                       }
                     },
                     "required": [
@@ -6118,21 +6130,22 @@
                     "type": "string",
                     "enum": [
                       "mysql",
-                      "redis"
+                      "redis",
+                      "pgsql"
                     ],
-                    "description": "Server driver: mysql or redis. Defaults to mysql"
+                    "description": "Server driver: mysql, redis, or pgsql. Defaults to mysql"
                   },
                   "tag": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
+                    "pattern": "",
                     "maxLength": 128,
-                    "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis"
+                    "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql"
                   },
                   "port": {
                     "type": "integer",
                     "maximum": 65535,
                     "minimum": 1,
-                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis"
+                    "description": "Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql"
                   },
                   "process_id": {
                     "type": "integer",
@@ -10199,6 +10212,14 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "network": {
+                    "type": "string",
+                    "enum": [
+                      "wireguard",
+                      "lan"
+                    ],
+                    "description": "Connection network: wireguard (default) or lan"
+                  },
                   "prefix": {
                     "type": "string",
                     "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
@@ -10278,7 +10299,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"prefix\": \"DB\"}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"network\": \"wireguard\", \"prefix\": \"DB\"}'\n"
           },
           {
             "lang": "php",
@@ -12992,6 +13013,225 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/websocket-apps/{websocket_app}": {
+      "delete": {
+        "operationId": "instance-websocket-remove",
+        "summary": "Detach a WebSocket app",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          {
+            "name": "websocket_app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "WebSocket app name."
+          }
+        ],
+        "description": "Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebSocketAppAttachment"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/instances/12/websocket-apps/hauzer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\RemoveInstanceWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveInstanceWebSocketAppRequest(instance: 12, name: 'default'))->dto();\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "instance-websocket-add",
+        "summary": "Attach a WebSocket app",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          {
+            "name": "websocket_app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "WebSocket app name."
+          }
+        ],
+        "description": "Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "public": {
+                    "type": "boolean",
+                    "description": "Publish Reverb on the existing public app Route"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebSocketAppAttachment"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/instances/12/websocket-apps/hauzer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"public\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\AddInstanceWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddInstanceWebSocketAppRequest(instance: 12, name: 'default'))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/metrics": {
       "delete": {
         "operationId": "metrics-disable",
@@ -13743,7 +13983,8 @@
                         "metrics",
                         "database",
                         "websocket",
-                        "analytics"
+                        "analytics",
+                        "ci-runner"
                       ]
                     }
                   },
@@ -15717,7 +15958,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },
@@ -15901,7 +16143,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },
@@ -16062,7 +16305,8 @@
                       "metrics",
                       "database",
                       "websocket",
-                      "analytics"
+                      "analytics",
+                      "ci-runner"
                     ],
                     "description": "Role name"
                   },
@@ -30084,6 +30328,1620 @@
           }
         ]
       }
+    },
+    "/api/v1/websocket-apps": {
+      "get": {
+        "operationId": "websocket-app-list",
+        "summary": "List WebSocket apps",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "description": "List the Reverb apps on the websocket role.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebSocketApp"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/websocket-apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\ListWebSocketAppsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListWebSocketAppsRequest())->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "websocket-app-create",
+        "summary": "Create a WebSocket app",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Reuse the same key when retrying this change."
+          }
+        ],
+        "description": "Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                    "maxLength": 63,
+                    "description": "WebSocket app name"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved operation status, including superseded results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved; application is pending. Follow the operation status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created and confirmed by every required process.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/websocket-apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\CreateWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateWebSocketAppRequest(name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-apps/{websocket_app}": {
+      "delete": {
+        "operationId": "websocket-app-destroy",
+        "summary": "Remove a WebSocket app",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "websocket_app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "WebSocket app name."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Reuse the same key when retrying this change."
+          }
+        ],
+        "description": "Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved operation status, including superseded results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved; application is pending. Follow the operation status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/websocket-apps/hauzer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\DestroyWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyWebSocketAppRequest(name: 'example'))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "websocket-app-show",
+        "summary": "Show a WebSocket app",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "websocket_app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "WebSocket app name."
+          }
+        ],
+        "description": "Show one Reverb app and the Instances that use it.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebSocketApp"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/websocket-apps/hauzer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\ShowWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowWebSocketAppRequest(name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-apps/{websocket_app}/rotate": {
+      "post": {
+        "operationId": "websocket-app-rotate",
+        "summary": "websocket:app:rotate",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "websocket_app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "WebSocket app name."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Reuse the same key when retrying this change."
+          }
+        ],
+        "description": "Rotate a Reverb app secret and close only that app\u2019s sockets.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved operation status, including superseded results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved; application is pending. Follow the operation status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/websocket-apps/hauzer/rotate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\RotateWebSocketAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RotateWebSocketAppRequest(name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-operations/{operation}": {
+      "get": {
+        "operationId": "websocket-operation-show",
+        "summary": "websocket:operation:show",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "WebSocket registry operation UUID."
+          }
+        ],
+        "description": "Show which Reverb processes have applied an app change.",
+        "responses": {
+          "200": {
+            "description": "Saved operation status, including superseded results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/websocket-operations/33333333-3333-4333-8333-333333333333\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\ShowWebSocketOperationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowWebSocketOperationRequest(name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-registry": {
+      "get": {
+        "operationId": "websocket-registry-snapshot",
+        "summary": "websocket:registry:snapshot",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/websocket-registry\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-registry/processes/{runtime}": {
+      "put": {
+        "operationId": "websocket-runtime-report",
+        "summary": "websocket:runtime:report",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "boot_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "epoch": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "starting",
+                      "serving"
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "registry.unreachable",
+                      "registry.apply_failed",
+                      "registry.registration_failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "boot_id",
+                  "epoch",
+                  "revision",
+                  "sequence",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/websocket-registry/processes/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"boot_id\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"epoch\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"revision\": 1, \"sequence\": 1, \"state\": \"active\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-registry/processes/{runtime}/boots": {
+      "post": {
+        "operationId": "websocket-runtime-boot",
+        "summary": "websocket:runtime:boot",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "boot_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "boot_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/websocket-registry/processes/1/boots\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"boot_id\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/websocket-sync": {
+      "post": {
+        "operationId": "websocket-sync",
+        "summary": "websocket:sync",
+        "tags": [
+          "WebSocket apps"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Reuse the same key when retrying this change."
+          }
+        ],
+        "description": "Wait for Reverb to apply the current app registry without restarting it.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved operation status, including superseded results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Saved; application is pending. Follow the operation status URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/WebSocketApp"
+                        },
+                        {
+                          "type": "array",
+                          "maxItems": 0
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    },
+                    "operation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "epoch": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "applied",
+                            "superseded"
+                          ]
+                        },
+                        "processes": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "missing_node_ids": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "status_url": {
+                          "type": "string",
+                          "description": "Relative URL for this operation status."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "epoch",
+                        "revision",
+                        "state",
+                        "processes",
+                        "missing_node_ids",
+                        "status_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta",
+                    "operation"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/websocket-sync\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\WebSocket\\SyncWebSocketAppsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SyncWebSocketAppsRequest())->dto();\n"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -30646,6 +32504,18 @@
             ]
           },
           "test_database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lan_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locale": {
             "type": [
               "string",
               "null"
@@ -32201,6 +34071,32 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "WebSocketAppAttachment": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operation": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "key_count": {
+            "type": "integer"
           }
         }
       },
@@ -34424,6 +36320,29 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "WebSocketApp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "instance_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
           }
         }
       }

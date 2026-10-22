@@ -19,6 +19,7 @@ use App\Infrastructure\TaskVms\TaskVmCloudInit;
 use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -65,6 +66,26 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
+    it('selects the exact architecture build of the complete Incus LTS set', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (RecipeLoader::IncusPackages as $name) {
+            expect($recipe->profile('base'))->toContain($name);
+            expect($recipe->tools[$name]->forArchitecture('amd64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250211');
+            expect($recipe->tools[$name]->forArchitecture('arm64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250512');
+        }
+    });
+
+    it('refuses mismatched or untrusted Incus artifacts', function (string $field, string $value): void {
+        $document = machine_recipe_document();
+        $document['tools']['incus-client']['artifacts']['arm64'][$field] = $value;
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class);
+    })->with([
+        ['version', '1:7.0.1-ubuntu26.04-202607310543'],
+        ['url', 'https://untrusted.example/incus-client_7.0.1-ubuntu26.04-202609250512_arm64.deb'],
+    ]);
+
     it('owns one git-core Git build in every profile and architecture', function (): void {
         $recipe = new RecipeLoader()->load();
 
@@ -76,6 +97,16 @@ describe('machine recipe structure and identity', function (): void {
                 ->and($recipe->tools[$name]->version)->toBe('1:2.55.0-0ppa1~ubuntu26.04.2')
                 ->and(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64', 'arm64']);
         }
+    });
+
+    it('owns the private DNS listener PHP build in the VPN recipe identity', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $withoutRuntime = machine_recipe_document();
+        $withoutRuntime['roles']['vpn'] = array_values(array_diff($withoutRuntime['roles']['vpn'], ['php:8.5']));
+
+        expect($recipe->profile('vpn'))->toContain(...$recipe->php('8.5')->packagesFor(false))
+            ->and($recipe->php('8.5')->cliExtensions())->toContain('sockets', 'pcntl')
+            ->and(machine_recipe_decode($withoutRuntime)->identity)->not->toBe($recipe->identity);
     });
 
     it('refuses an incomplete or foreign Git build', function (Closure $change, string $error): void {
@@ -133,7 +164,7 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
             ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
-            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.3')
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.4')
             ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
             ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
             ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
@@ -148,9 +179,8 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->profile('app-dev'))->toContain('php-common', 'php8.4-igbinary', 'php8.5-igbinary');
         foreach (['php-common', 'php8.4-igbinary', 'php8.5-igbinary'] as $name) {
             expect($recipe->tools[$name]->source)->toBe('artifact');
-            foreach (['amd64', 'arm64'] as $architecture) {
-                expect($recipe->tools[$name]->artifacts[$architecture]->location)->toStartWith('https://packages.sury.org/php/');
-            }
+            expect(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64'])
+                ->and($recipe->tools[$name]->artifacts['amd64']->location)->toStartWith('https://packages.sury.org/php/');
         }
         expect($recipe->tools['php-common']->version)->toStartWith('2:');
     });
@@ -208,18 +238,19 @@ describe('machine recipe structure and identity', function (): void {
         $development = [...$production, ...$php];
         // The nested Incus packages of the topology seed (ADR 0222), pinned in the recipe document itself.
         $document = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
-        $topology = ['incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base', 'btrfs-progs', 'nftables'];
+        $topology = [...RecipeLoader::IncusPackages, 'dnsmasq-base', 'btrfs-progs', 'nftables'];
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
-            ->and($document['tools']['incus']['version'])->toBe('6.0.5-8');
+            ->and($document['tools']['incus']['version'])->toBe('7.0.1');
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,
-            'gateway' => [...$common, 'caddy', ...$php85],
+            'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
+            'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,
-            'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -227,11 +258,11 @@ describe('machine recipe structure and identity', function (): void {
             sort($expected, SORT_STRING);
             expect($recipe->profile($role))->toBe($expected);
         }
-        foreach ($imagePackages as $package) {
+        foreach (array_diff($imagePackages, RecipeLoader::IncusPackages) as $package) {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
-                if ($role !== 'base') {
+                if ($role !== 'base' && ! ($role === RoleName::CiRunner->value && $package === 'incus')) {
                     expect($recipe->profile($role))->not->toContain($package);
                 }
             }
@@ -244,14 +275,13 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
     });
 
-    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+    it('names the rollback tool, the PCOV profiles and the mirror', function (): void {
         $policy = new RecipeLoader()->load()->phpPolicy;
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
             ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
-            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
-            ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
+            ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror');
     });
 
     it('names one exact PHP build per version for every environment', function (): void {
@@ -325,9 +355,9 @@ describe('machine recipe structure and identity', function (): void {
         'an undeclared CI version' => [function (&$d): void {
             $d['php']['ci'] = '8.3';
         }, 'php.ci: [8.3] is not a declared PHP version'],
-        'purging on a site profile' => [function (&$d): void {
-            $d['php']['purge_extras'][] = 'app-prod';
-        }, 'only the ci-runner profile may purge PHP packages'],
+        'the removed purge policy' => [function (&$d): void {
+            $d['php']['purge_extras'] = ['ci-runner'];
+        }, 'expected exactly fields ci, shared, rollback, pcov, opentelemetry, versions'],
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],
@@ -450,11 +480,20 @@ describe('machine recipe structure and identity', function (): void {
         }
     });
 
-    it('rejects unknown profiles and Pi on arm64', function (): void {
+    it('rejects unknown profiles and PHP profiles on arm64 while keeping other profiles available', function (): void {
         $recipe = new RecipeLoader()->load();
         expect(fn () => $recipe->profile('typo'))->toThrow(InvalidArgumentException::class, 'Unknown role/profile')
-            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'requires tool [pi]')
-            ->and($recipe->profile('app-dev', 'arm64'))->toContain('caddy');
+            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
+            ->and(fn () => $recipe->profile('app-dev', 'arm64'))->toThrow(InvalidArgumentException::class, 'PHP is not available for arm64')
+            ->and($recipe->profile('operator', 'arm64'))->toContain('git')
+            ->and($recipe->supportedArchitectures('app-dev'))->toBe(['amd64']);
+    });
+
+    it('rejects an arm64 artifact in the PHP package set', function (): void {
+        $document = machine_recipe_document();
+        $document['tools']['php8.5-common']['artifacts']['arm64'] = $document['tools']['php8.5-common']['artifacts']['amd64'];
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, 'PHP supports amd64 only');
     });
 });
 
@@ -462,6 +501,34 @@ describe('recipe availability and artifact integrity', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
     });
+
+    it('keeps artifact retries separate and moves to the next URL immediately after connection failures', function (int $status, int $attempts): void {
+        Sleep::fake();
+        $url = 'https://origin.example/git_1.0.deb';
+        $digest = hash('sha256', 'exact bytes');
+        $mirror = 'https://mirror.example/git_'.$digest.'.deb';
+        Http::fake(function ($request, array $options) use ($url, $status) {
+            expect($options['timeout'])->toBe(600)
+                ->and($options['connect_timeout'])->toBe(15)
+                ->and($options['curl'] ?? [])->toBe([]);
+
+            if ($request->url() === $url) {
+                return Http::response('exact bytes');
+            }
+
+            return $status === 0 ? Http::failedConnection() : Http::response('', $status);
+        });
+        $pin = new ToolPin('artifact', '1.0', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], ['git' => $pin], [], '{}', artifactMirror: 'https://mirror.example');
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused');
+
+        Http::assertSentCount($attempts + 1);
+        expect(Http::recorded()->filter(fn ($pair) => $pair[0]->url() === $mirror))->toHaveCount($attempts);
+        Sleep::assertSleptTimes($attempts - 1);
+        if ($attempts > 1) {
+            Sleep::assertSequence([Sleep::for(500)->milliseconds(), Sleep::for(500)->milliseconds()]);
+        }
+    })->with([[0, 1], [501, 1], [503, 3]]);
 
     it('verifies Git from the durable mirror and falls back to the PPA when absent', function (bool $present): void {
         $url = 'https://ppa.example/git_2.55.0_amd64.deb';
@@ -658,7 +725,7 @@ describe('machine recipe command', function (): void {
 
     it('refuses unknown roles and unsupported Pi architecture', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'typo'])->expectsOutputToContain('Unknown role/profile')->assertFailed();
-        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('requires tool [pi]')->assertFailed();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('PHP is not available for arm64')->assertFailed();
     });
 
     it('validates the whole recipe even when only operator tools are displayed', function (): void {
@@ -666,4 +733,17 @@ describe('machine recipe command', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'operator', '--validate' => true])
             ->expectsOutputToContain('unavailable fixture snapshot')->assertFailed();
     });
+});
+
+it('accepts a native artifact version for any artifact package and rejects a channel', function (): void {
+    $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    foreach ($document['tools']['git']['artifacts'] as &$artifact) {
+        $artifact['version'] = $document['tools']['git']['version'];
+    }
+    unset($artifact);
+    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+
+    expect($recipe->tools['git']->forArchitecture('amd64')->version)->toBe($document['tools']['git']['version']);
+    $document['tools']['git']['artifacts']['amd64']['version'] = 'stable';
+    expect(fn () => new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)))->toThrow(InvalidArgumentException::class, 'expected an exact version');
 });

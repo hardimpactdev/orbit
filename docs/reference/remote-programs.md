@@ -97,9 +97,9 @@ A program that reads a private repository receives the [Git read environment](/r
 
 - shellcheck checks each Bash file.
 - ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
-- pytest runs the `unittest` cases in `apps/gateway/tests/Programs` with four pytest-xdist workers and `--dist=loadfile`.
+- pytest runs the `unittest` cases in `apps/gateway/tests/Programs` with pytest-xdist (`-n auto --dist=load`). The worker count follows the available CPUs.
 
-Each file stays on one worker, so its `setUpClass` fixture is built once. The tests run programs with the same assembly and bootstrap against temporary directories. In a virtual environment, install Ruff at the version above and the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt`. Use `python3 -m unittest discover -s apps/gateway/tests/Programs` for serial diagnosis.
+Tests are scheduled individually so a long file cannot leave the other workers idle. Each worker builds its own `setUpClass` fixtures in temporary directories. The tests run programs with the same assembly and bootstrap against temporary directories. In a virtual environment, install Ruff at the version above and the pinned pytest tools from `apps/gateway/tests/Programs/requirements.txt`. Use `python3 -m unittest discover -s apps/gateway/tests/Programs` for serial diagnosis.
 
 The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
 
@@ -125,7 +125,9 @@ The fixed `resources/fpm/opcache-reset.php` adapter is excluded. It runs Gateway
 
 ### CI comparison
 
-The `Remote programs` CI job runs the guard and its regression tests before program lint. Inline and file totals cannot rise or offset each other. Moving an inline script between files, or moving a resource into an extension, is neutral. Deleting a script lowers the next comparison. A pull request compares its merge ref with its first parent, `HEAD^1`; a main push compares with its previous SHA. Scheduled and manual checks use `HEAD^1`. There is no editable count ceiling or per-script budget. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) owns the migration and the remaining execution boundary.
+[ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) requires the CI host baseline as the stock `resources/remote/ci-runners/host.py` program while agent command mode is unbuilt. The guard permits only that named file when absent from the comparison base. It still counts the file, permits no other growth, and grants no allowance once the base contains it. This is a narrow exception to the freeze, not a new execution path. The CI host program joins the Incus migration area.
+
+The `Remote programs` CI job runs the guard and its regression tests before program lint. Outside this named addition, inline and file totals cannot rise or offset each other. Moving an inline script between files, or moving a resource into an extension, is neutral. Deleting a script lowers the next comparison. A pull request compares its merge ref with its first parent, `HEAD^1`; a main push compares with its previous SHA. Scheduled and manual checks use `HEAD^1`. There is no editable count ceiling or per-script budget. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) owns the migration and the remaining execution boundary.
 
 The existing production deployment program loads `lib/production-shared-paths.sh` to prepare [shared directories](/reference/deployments#shared-paths). This Bash library takes explicit arguments and runs within the existing deployment command while that command awaits migration. Shellcheck and the deployment filesystem tests check it.
 
@@ -135,7 +137,7 @@ These programs run on Nodes now. Each one replaced an inline script, except `dat
 
 | Program | Purpose |
 | --- | --- |
-| `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal). |
+| `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal), or the current production Laravel routes for [public Reverb collision checks](/reference/websocket-apps#publish-on-the-existing-public-app-route). |
 | `instances.check-publication` | Checks whether an origin branch or tag contains a commit. |
 | `instances.refresh-environment-config` | Rebuilds an existing current release config cache as the production Instance user, verifies it through the application's Artisan bootstrap, and atomically replaces it before env-sync resets FPM opcache. |
 | `instances.remove-source` | Checks and deletes an active checkout in one run. |

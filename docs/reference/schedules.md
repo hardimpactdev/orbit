@@ -29,6 +29,8 @@ While the Gateway queue is set, it also runs `orbit:operations-sweep` every minu
 
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
+The Gateway prunes failed queue jobs daily with Laravel's `queue:prune-failed`, keeping seven days by default. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes its configurable cutoff and the batch metadata prune.
+
 ## Fields
 
 The Schedule UUID is its public identity. It is also the only value that names the host artifacts.

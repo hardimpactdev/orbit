@@ -18,8 +18,6 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
     putenv('COLUMNS=200');

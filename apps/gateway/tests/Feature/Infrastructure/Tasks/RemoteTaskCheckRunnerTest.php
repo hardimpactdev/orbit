@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\Projects\LifecycleStep;
-use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
@@ -39,7 +37,6 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\StandardLibraryPython;
-use Tests\Support\TiaBaselineTestSource;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
 
@@ -1261,22 +1258,6 @@ it('runs no project command when start and run omit the command file, and still 
         ->and($startedLog)->not->toContain('composer check')
         ->and(is_file($checkout.'/composer-check-ran'))->toBeFalse()
         ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
-});
-
-it('restores the builtin TIA baseline after dependency setup before a task check', function (): void {
-    app()->instance(TiaBaselineSource::class, new TiaBaselineTestSource);
-    $checkout = check_runner_checkout('true');
-    $target = $checkout.'/.pest/tia';
-    $instance = check_runner_instance($checkout);
-    $runner = check_runner(new LocalShellSshExecutor);
-    $setup = [
-        ['name' => 'dependencies', 'command' => 'mkdir -p vendor/bin; printf %s '.escapeshellarg('<?php echo '.var_export($target."\n", true).';').' > vendor/bin/pest', 'timeout_seconds' => 10],
-        ['name' => 'baseline', 'command' => LifecycleStep::RestoreTiaBaseline, 'timeout_seconds' => 30],
-    ];
-    $process = $runner->start($instance, 'test -f .pest/tia/graph.json', $setup);
-    $reading = check_runner_wait($runner, $instance, $process);
-    expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(0);
-    expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });
 
 describe('ssr port', function (): void {

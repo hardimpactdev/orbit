@@ -233,7 +233,6 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
-                "Database server",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -340,6 +339,7 @@
                 "Activity",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node"
             ],
             "governing_adrs": []
@@ -658,6 +658,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/websocket.mdx",
+            "title": "websocket",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/concepts.md",
             "title": "Concepts",
             "kind": "product",
@@ -708,6 +723,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -950,20 +966,17 @@
                 "apps/web"
             ],
             "concepts": [
-                "Cluster",
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process",
                 "Project",
-                "Role",
-                "Roleless Node",
-                "Route",
-                "Task",
-                "Tool"
+                "Role"
             ],
             "governing_adrs": [
-                "0213"
+                "0213",
+                "0223",
+                "0225"
             ]
         },
         {
@@ -1214,6 +1227,7 @@
                 "Placement",
                 "Process",
                 "Project",
+                "Role",
                 "Task"
             ],
             "governing_adrs": [
@@ -1221,6 +1235,7 @@
                 "0210",
                 "0211",
                 "0212",
+                "0213",
                 "0218",
                 "0219",
                 "0224",
@@ -1358,6 +1373,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Pi server",
@@ -1716,7 +1732,6 @@
                 "Process",
                 "Project",
                 "Role",
-                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1726,7 +1741,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0206"
+                "0206",
+                "2026"
             ]
         },
         {
@@ -1757,6 +1773,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Database server",
                 "Doctor",
                 "Extension",
@@ -1798,6 +1815,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Database server",
                 "Doctor",
                 "Gateway",
@@ -1805,6 +1823,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": [
@@ -2149,7 +2168,9 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2165,7 +2186,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "2026"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
@@ -2350,7 +2373,6 @@
             "concepts": [
                 "Activity",
                 "Deployment",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2495,6 +2517,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2510,7 +2533,9 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0213"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -2620,6 +2645,22 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/postgresql-migration.md",
+            "title": "Move PostgreSQL databases to a managed server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
@@ -2627,6 +2668,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Doctor",
                 "Extension",
@@ -2739,11 +2781,14 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
+                "Route",
                 "Task",
                 "Tool"
             ],
             "governing_adrs": [
                 "0211",
+                "0213",
                 "0225"
             ]
         },
@@ -2814,6 +2859,7 @@
                 "Node agent",
                 "Process",
                 "Role",
+                "Roleless Node",
                 "Tool"
             ],
             "governing_adrs": []
@@ -2964,6 +3010,30 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/websocket-apps.md",
+            "title": "Reverb apps",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/wireguard-endpoints.md",
             "title": "WireGuard endpoints",
             "kind": "reference",
@@ -3076,6 +3146,7 @@
                 "Gateway",
                 "Node",
                 "Node agent",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -3122,8 +3193,7 @@
             "concepts": [
                 "Gateway",
                 "Instance",
-                "Process",
-                "Task"
+                "Process"
             ],
             "governing_adrs": []
         },

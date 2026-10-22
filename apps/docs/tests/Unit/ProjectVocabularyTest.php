@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 function vocabularyFixture(): string
 {
     $root = sys_get_temp_dir().'/project-vocabulary-'.bin2hex(random_bytes(6));
@@ -89,6 +87,23 @@ it('fails when an App-domain name or a retired Node name is present', function (
     'covers glob' => ['docs/reference/example.md', "apps/gateway/app/Actions/AppInstances/CreateAppInstanceAction.php\n", 'AppInstance'],
 ]);
 
+it('keeps exact line findings and line-specific exceptions when filtering file patterns', function (): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, 'apps/gateway/app/Example.php', "Clean line\nAppInstance\n\$credentials->appId;\napp_id\nClean line\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toBe(
+                "apps/gateway/app/Example.php:2: retired name AppInstance\n".
+                "apps/gateway/app/Example.php:4: retired name app_id\n",
+            );
+    } finally {
+        vocabularyRemove($root);
+    }
+});
+
 it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename migration', function (): void {
     $root = vocabularyFixture();
     try {
@@ -112,10 +127,27 @@ it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename 
     }
 });
 
-it('accepts this repository', function (): void {
-    $process = new Process([PHP_BINARY, dirname(__DIR__, 4).'/bin/project-vocabulary']);
-    $process->setTimeout(60);
-    $process->run();
+it('allows the Reverb app identifier outside its domain directories', function (string $relative): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, $relative, "app_id\n");
 
-    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
-});
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(0, $process->getOutput());
+
+        vocabularyWrite($root, $relative, "app_id\nApp instance\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toContain('App instance');
+    } finally {
+        vocabularyRemove($root);
+    }
+})->with([
+    'model' => 'apps/gateway/app/Models/WebSocketApp.php',
+    'migration' => 'apps/gateway/database/migrations/2026_12_07_000000_create_websocket_apps.php',
+    'generated web schema' => 'apps/web/src/api/schema.d.ts',
+    'app reference' => 'docs/reference/websocket-apps.md',
+]);

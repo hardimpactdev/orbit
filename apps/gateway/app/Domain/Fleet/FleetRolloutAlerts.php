@@ -147,6 +147,6 @@ final readonly class FleetRolloutAlerts
         $configured = Config::get('orbit.cli_releases.repository');
         $path = is_string($configured) ? trim((string) parse_url($configured, PHP_URL_PATH), '/') : '';
 
-        return preg_match('#\A[A-Za-z0-9-]+/[A-Za-z0-9._-]+\z#', $path) === 1 ? $path : 'nckrtl/orbit';
+        return preg_match('#\A[A-Za-z0-9-]+/[A-Za-z0-9._-]+\z#', $path) === 1 ? $path : 'hardimpactdev/orbit';
     }
 }

@@ -9,8 +9,6 @@ use SensitiveParameter;
 
 final readonly class LifecycleStep
 {
-    public const string RestoreTiaBaseline = '@orbit/tia-baseline';
-
     public const string ImportCiCaches = '@orbit/ci-caches';
 
     public const int DefaultTimeoutSeconds = 240;

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
-use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
+use App\Actions\Fleet\OpenRecipeArtifactsPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
-use App\Infrastructure\MachineSoftware\PhpBuildBump;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -40,9 +40,9 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     GitHubTestSupport::storeApp();
-    config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit']);
+    config(['orbit.cli_releases.repository' => 'https://github.com/hardimpactdev/orbit']);
     Http::preventStrayRequests();
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     Http::fake([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_test']),
@@ -57,7 +57,7 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
         $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-'.nightlyRecipeDate()->format('Ymd')], $branchFile === null ? 201 : 422),
         $base.'/pulls?*' => static fn (Request $request) => Http::response(isset($request['head']) ? $pulls : []),
         $base.'/pulls/99' => Http::response($pulls[0] ?? []),
-        $base.'/pulls' => Http::response(['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
+        $base.'/pulls' => Http::response(['html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
     ]);
 }
 
@@ -70,7 +70,7 @@ it('reads exactly main and opens a snapshot PR through the existing App publishe
 
     $url = app(OpenNightlyRecipePullRequestAction::class)->execute();
 
-    expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect($url)->toBe('https://github.com/hardimpactdev/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
         && $request['branch'] === $branch
         && $request['sha'] === $file['sha']
@@ -81,7 +81,7 @@ it('reads exactly main and opens a snapshot PR through the existing App publishe
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
         && $request['head'] === $branch && $request['base'] === 'main');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/pulls?')
-        && ($request['head'] ?? null) === 'nckrtl:'.$branch);
+        && ($request['head'] ?? null) === 'hardimpactdev:'.$branch);
 });
 
 it('does nothing when main already pins today or a newer snapshot', function (int $days): void {
@@ -96,9 +96,9 @@ it('does nothing when main already pins today or a newer snapshot', function (in
 
 it('reuses an existing date PR including a closed operator decision', function (string $state): void {
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
-    nightlyRecipeGitHub(nightlyRecipeFile(), pulls: [['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'state' => $state, 'merged_at' => null]]);
+    nightlyRecipeGitHub(nightlyRecipeFile(), pulls: [['html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'number' => 99, 'state' => $state, 'merged_at' => null]]);
 
-    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/hardimpactdev/orbit/pull/99');
 
     Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'PUT' || str_ends_with($request->url(), '/git/refs'));
 })->with(['open', 'closed']);
@@ -107,7 +107,7 @@ it('recovers after a crash between the date commit and opening its PR without an
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     nightlyRecipeGitHub(nightlyRecipeFile(), nightlyRecipeFile(nightlyRecipeDate()->format('Ymd\THis\Z')));
 
-    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect(app(OpenNightlyRecipePullRequestAction::class)->execute())->toBe('https://github.com/hardimpactdev/orbit/pull/99');
 
     Http::assertNotSent(static fn (Request $request): bool => $request->method() === 'PUT');
 });
@@ -151,7 +151,7 @@ it('notifies through release alerts when the nightly job fails without including
         ->and($alerts->alerts[0]->incident->fault)->toBe('job_failed');
 });
 
-it('opens one reviewed PR that moves every Sury PHP pin together and reuses it on later nights', function (): void {
+it('opens one artifact PR that moves the complete authenticated sets and reuses it on later nights', function (): void {
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
     $content = base64_decode($file['content']);
@@ -176,8 +176,8 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
     foreach ($recipe->php as $version => $build) {
         $releases[] = 'PHP '.($version === $recipe->ciPhp ? $next : $build->phpVersion);
     }
-    $title = 'Bump the PHP build to '.implode(', ', $releases);
-    app()->instance(PhpBuildBump::class, new class($bumped) extends PhpBuildBump
+    $title = 'Bump the recipe artifacts (Sury PHP and Incus LTS)';
+    app()->instance(RecipeArtifactsBump::class, new class($bumped) extends RecipeArtifactsBump
     {
         public function __construct(private readonly string $bumped) {}
 
@@ -188,14 +188,14 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
     });
     nightlyRecipeGitHub($file);
 
-    $url = app(OpenPhpBuildPullRequestAction::class)->execute();
+    $url = app(OpenRecipeArtifactsPullRequestAction::class)->execute();
 
-    expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
+    expect($url)->toBe('https://github.com/hardimpactdev/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
-        && str_starts_with($request['branch'], OpenPhpBuildPullRequestAction::BranchPrefix)
+        && str_starts_with($request['branch'], OpenRecipeArtifactsPullRequestAction::BranchPrefix)
         && base64_decode($request['content']) === $bumped);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
-        && str_starts_with($request['head'], 'nightly/php-build-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
+        && str_starts_with($request['head'], 'nightly/artifacts-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
         && $request['title'] === $title);
 });
 
@@ -214,7 +214,7 @@ it('opens no PHP build PR when main pins the newest Sury build, and refuses a pa
     unset($artifact, $pin);
     $partial = json_encode($document, JSON_THROW_ON_ERROR);
     foreach ([$content => null, $partial => InvalidArgumentException::class] as $result => $error) {
-        app()->instance(PhpBuildBump::class, new class($result) extends PhpBuildBump
+        app()->instance(RecipeArtifactsBump::class, new class($result) extends RecipeArtifactsBump
         {
             public function __construct(private readonly string $result) {}
 
@@ -224,7 +224,7 @@ it('opens no PHP build PR when main pins the newest Sury build, and refuses a pa
             }
         });
         nightlyRecipeGitHub($file);
-        $open = fn () => app(OpenPhpBuildPullRequestAction::class)->execute();
+        $open = fn () => app(OpenRecipeArtifactsPullRequestAction::class)->execute();
         $error === null ? expect($open())->toBeNull() : expect($open)->toThrow($error);
     }
 
@@ -237,7 +237,7 @@ it('waits without alerting for main recipe definitions and catches up on the sam
     FleetFixtures::adopt(FleetFixtures::Commit);
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
-    $bump = new class extends PhpBuildBump
+    $bump = new class extends RecipeArtifactsBump
     {
         public int $calls = 0;
 
@@ -250,7 +250,7 @@ it('waits without alerting for main recipe definitions and catches up on the sam
             return $recipe;
         }
     };
-    app()->instance(PhpBuildBump::class, $bump);
+    app()->instance(RecipeArtifactsBump::class, $bump);
     $ahead = nightlyRecipeFile();
     $document = json_decode(base64_decode($ahead['content']), true, flags: JSON_THROW_ON_ERROR);
     $document['tools']['not-yet-deployed'] = ['source' => 'ubuntu', 'package' => 'future', 'version' => '1'];

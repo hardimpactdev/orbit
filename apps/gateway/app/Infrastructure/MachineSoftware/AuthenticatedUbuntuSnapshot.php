@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
+use Closure;
+use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -13,6 +15,7 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
     public function __construct(
         private RecipeDownload $downloads = new RecipeDownload,
         private UbuntuReleaseSignature $signatures = new UbuntuReleaseSignature,
+        private ?string $cacheDirectory = null,
     ) {}
 
     public function verify(MachineRecipe $recipe): void
@@ -40,12 +43,7 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
             foreach (['resolute', 'resolute-updates', 'resolute-security'] as $pocket) {
                 $url = $root.$pocket.'/InRelease';
                 try {
-                    $file = $this->downloads->file($url);
-                    try {
-                        $release = $this->signatures->verify($file);
-                    } finally {
-                        unlink($file);
-                    }
+                    $release = $this->metadata($url, $snapshot, $architecture, fn (string $file): string => $this->signatures->verify($file));
                     // A valid signature from a different release is not enough.
                     if (! preg_match('/^Codename: resolute$/m', $release)
                         || ! preg_match('/^Suite: '.preg_quote($pocket, '/').'$/m', $release)
@@ -59,15 +57,12 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
                             throw new RuntimeException("Signed SHA256 index entry missing for {$path}.");
                         }
                         $indexUrl = $root.$pocket.'/'.$path;
-                        $index = $this->downloads->file($indexUrl);
-                        try {
+                        $this->metadata($indexUrl, $snapshot, $architecture, function (string $index) use ($entry, $indexUrl, &$found): void {
                             if (hash_file('sha256', $index) !== $entry[1] || filesize($index) !== (int) $entry[2]) {
                                 throw new RuntimeException("Index digest/size mismatch at {$indexUrl}.");
                             }
                             $this->resolvePackages($index, $found);
-                        } finally {
-                            unlink($index);
-                        }
+                        });
                     }
                 } catch (Throwable $exception) {
                     throw new RuntimeException("Snapshot [{$snapshot}] release [26.04] architecture [{$architecture}] metadata [{$url}]: {$exception->getMessage()}", previous: $exception);
@@ -85,6 +80,36 @@ final readonly class AuthenticatedUbuntuSnapshot implements SnapshotAvailability
         }
 
         return $versions ?? throw new RuntimeException('Snapshot resolution needs at least one architecture.');
+    }
+
+    /**
+     * Cached bytes remain untrusted: every read must pass the same verifier as a download.
+     *
+     * @template T
+     *
+     * @param  Closure(string): T  $verify
+     * @return T
+     */
+    private function metadata(string $url, string $snapshot, string $architecture, Closure $verify): mixed
+    {
+        $directory = $this->cacheDirectory ?? config('orbit.recipe_snapshot_cache');
+        $cached = is_string($directory) && $directory !== ''
+            ? $directory.'/'.$snapshot.'/'.$architecture.'/'.hash('sha256', $url) : null;
+        if ($cached !== null && is_file($cached)) {
+            return $verify($cached);
+        }
+        $file = $this->downloads->file($url, metadata: true);
+        try {
+            $result = $verify($file);
+            if ($cached !== null) {
+                File::ensureDirectoryExists(dirname($cached));
+                File::copy($file, $cached);
+            }
+
+            return $result;
+        } finally {
+            unlink($file);
+        }
     }
 
     /** @param array<string, string|null> $found */

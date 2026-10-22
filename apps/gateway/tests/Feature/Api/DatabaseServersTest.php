@@ -6,7 +6,9 @@ use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -317,4 +319,108 @@ describe('database:server list, show, and destroy', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'node.has_database_servers');
     });
+});
+
+it('provisions PostgreSQL 18 with the versioned data layout and removes its initialization secret', function (): void {
+    $response = $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'slug' => 'managed-postgres', 'port' => 5434]));
+    $response->assertCreated()->assertJsonPath('data.tag', '18')->assertJsonPath('data.port', 5434);
+    $server = DatabaseServer::query()->sole();
+    $process = $server->process;
+    expect($process->runtime_config['image'])->toBe('postgres:18')
+        ->and($process->runtime_config['volumes'][0]['target'])->toBe('/var/lib/postgresql')
+        ->and($process->runtime_config['environment'])->toBe([])
+        ->and($process->runtime_config['ports'])->toBe(['10.44.0.80:5434:5432'])
+        ->and(DB::table('database_servers')->sole()->root_password)->not->toBe($server->root_password)
+        ->and($response->getContent())->not->toContain($server->root_password);
+});
+
+it('rejects PostgreSQL images outside major 18 before reserving a server', function (string $tag): void {
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'tag' => $tag]))
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseServer::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+})->with(['16', '17-alpine', '19', 'latest', '180']);
+
+it('publishes SQL servers only on explicit private addresses even with a public interface', function (string $driver, int $port): void {
+    $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
+    $this->gateway->update(['lan_ip' => '10.0.0.5']);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver]))
+        ->assertCreated();
+    $server = DatabaseServer::query()->sole();
+    expect($server->process->runtime_config['ports'])->toBe(["10.44.0.80:{$port}:{$port}", "10.0.0.6:{$port}:{$port}"]);
+    $rendered = app(DockerProcessRenderer::class)->createArguments($server->process, app(ProcessTargetResolver::class)->forNodeAdmission($this->dbNode));
+    expect(implode(' ', $rendered))->not->toContain('0.0.0.0')
+        ->not->toContain('85.9.217.155')
+        ->not->toContain('[::]');
+})->with([['mysql', 3306], ['pgsql', 5432]]);
+
+it('reconciles active SQL publications without restoring its password variable', function (): void {
+    $request = database_server_request($this->dbNode);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    $config = DatabaseServer::query()->sole()->process->runtime_config;
+    expect($config['ports'])->toBe(['10.44.0.80:3306:3306', '10.0.0.6:3306:3306'])->and($config['environment'])->toBe([]);
+});
+
+it('resumes PostgreSQL initialization with the original password and Process after readiness failure', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->admin->readiness = [false];
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    $server = DatabaseServer::query()->sole();
+    $processId = $server->process_id;
+    $password = $server->root_password;
+    expect($server->failed_step)->toBe('readiness')->and($server->process->runtime_config['environment']['POSTGRES_PASSWORD'])->toBe($password);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    expect($server->refresh()->process_id)->toBe($processId)->and($server->root_password)->toBe($password)->and($server->process->runtime_config['environment'])->toBe([]);
+});
+
+it('enables private endpoint management only for the selected server', function (): void {
+    DatabaseServer::query()->create(['slug' => 'existing-redis', 'node_id' => $this->dbNode->id, 'driver' => 'redis', 'tag' => '8.1', 'port' => 6379, 'root_password' => 'fixture', 'status' => 'active']);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => 'pgsql', 'slug' => 'managed-pg']))->assertCreated();
+    expect(DatabaseServer::query()->where('slug', 'existing-redis')->sole()->private_endpoints_managed)->toBeFalse()
+        ->and(DatabaseServer::query()->where('slug', 'managed-pg')->sole()->private_endpoints_managed)->toBeTrue();
+});
+
+it('refuses wildcard and public publication addresses before creating a server', function (string $field, string $address, string $driver): void {
+    $this->dbNode->update([$field => $address]);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver]))
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseServer::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0);
+})->with([
+    ['wireguard_ip', '0.0.0.0'], ['lan_ip', '0.0.0.0'],
+    ['wireguard_ip', '85.9.217.155'], ['lan_ip', '85.9.217.155'],
+    ['lan_ip', '::'],
+])->with(['mysql', 'pgsql', 'redis']);
+
+it('shows a LAN host only after the current LAN publication is managed', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->postJson('/api/v1/database-connections', ['slug' => 'lan-host-fixture', 'server' => 'beast-mysql'])->assertCreated()->assertJsonPath('data.lan_host', null);
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->getJson('/api/v1/database-connections/lan-host-fixture')->assertOk()->assertJsonPath('data.lan_host', null);
+    $this->postJson('/api/v1/database-servers', $request)->assertOk();
+    $this->getJson('/api/v1/database-connections/lan-host-fixture')->assertOk()->assertJsonPath('data.lan_host', '10.0.0.6');
+});
+
+it('keeps an active server active after a publication repair fails and finishes on retry', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
+    $this->runtime->failConverge = true;
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+        ->and(DatabaseServer::query()->sole()->failed_step)->toBe('publication');
+    $this->runtime->failConverge = false;
+    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.failed_step', null);
+});
+
+it('keeps active SQL servers active when a readiness check fails during repair', function (): void {
+    $request = database_server_request($this->dbNode, ['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
+    $this->admin->readiness = [false];
+    $this->postJson('/api/v1/database-servers', $request)->assertStatus(502);
+    expect(DatabaseServer::query()->sole()->status)->toBe(LifecycleStatus::Active)
+        ->and(DatabaseServer::query()->sole()->failed_step)->toBe('readiness');
+    $this->admin->readiness = [true];
+    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.failed_step', null);
 });

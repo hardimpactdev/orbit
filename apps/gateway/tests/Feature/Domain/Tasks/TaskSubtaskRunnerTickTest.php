@@ -74,7 +74,7 @@ it('waits while the check process runs and starts the reviewer only after it pas
 });
 
 it('requires implementer correction instead of accepting check leftovers as a new baseline', function (): void {
-    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], "ok\n");
+    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_check_fixture/test.php'], "ok\n");
     [$group, $task, $checks] = tick_checking([$changed, FakeTaskCheckRunner::passed()]);
 
     $signer = Mockery::mock(TaskWorkspaceSigner::class);
@@ -88,14 +88,14 @@ it('requires implementer correction instead of accepting check leftovers as a ne
 
     expect($checks->starts)->toBe(1);
     expect(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Changed);
-    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran. Changed paths: orbit_tia_fixture/test.php.');
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran. Changed paths: orbit_check_fixture/test.php.');
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect($task->fresh()->review_workspace_head)->toBeNull();
 });
 
 it('holds a tree-changing baseline for assistance without restarting on its leftovers', function (): void {
     $group = tick_baseline_group('changed-baseline', 'composer check', [], '10.51.0.19');
-    $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_tia_fixture/test.php'], 'check changed tree')]);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['orbit_check_fixture/test.php'], 'check changed tree')]);
     app()->instance(TaskCheckRunner::class, $checks);
     app(TaskExtensionState::class)->enable();
 

@@ -5,19 +5,16 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 it('renders real guidance with unusable inherited cache paths', function (string $app): void {
     $repository = dirname(__DIR__, 5);
     $fixture = sys_get_temp_dir().'/orbit-guidance-test-'.bin2hex(random_bytes(8));
     $files = new Filesystem;
     $files->makeDirectory($fixture, 0700);
-    // A file cannot be used as a compile or graph directory, regardless of the runner's UID.
+    // A file cannot be used as a compile directory, regardless of the runner's UID.
     $files->put($fixture.'/unusable', 'not a directory');
     $environment = [
         'APP_ENV' => false,
         'VIEW_COMPILED_PATH' => $fixture.'/unusable',
-        'ORBIT_TIA_DIRECTORY' => $fixture.'/unusable',
         'TMPDIR' => $fixture,
     ];
     foreach (array_keys($_SERVER + $_ENV) as $name) {
@@ -36,7 +33,7 @@ it('renders real guidance with unusable inherited cache paths', function (string
         expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
         expect($process->getOutput())->toContain('passed')->not->toContain('No tests found');
         expect($files->get($fixture.'/unusable'))->toBe('not a directory');
-        expect(glob($fixture.'/orbit-guidance.*'))->toBe([]);
+        expect(glob($fixture.'/run-*'))->toBe([]);
     } finally {
         $files->deleteDirectory($fixture);
     }
@@ -51,13 +48,11 @@ it('uses private runtime directories and cleans them on success or failure', fun
     $files->put($fixture.'/vendor/bin/pest', <<<'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '--configuration=phpunit.guidance.xml --tia --fresh --compact --filter=example' ]]
-[[ "$VIEW_COMPILED_PATH" != "$ORBIT_TIA_DIRECTORY" ]]
-[[ -d "$VIEW_COMPILED_PATH" && -d "$ORBIT_TIA_DIRECTORY" ]]
+[[ "$*" == '--configuration=phpunit.guidance.xml --compact --filter=example' ]]
+[[ -d "$VIEW_COMPILED_PATH" ]]
 [[ "$(stat -c %a "$VIEW_COMPILED_PATH")" == 700 ]]
-[[ "$(stat -c %a "$ORBIT_TIA_DIRECTORY")" == 700 ]]
+printf '%s\n' "$TMPDIR" "$VIEW_COMPILED_PATH" > "$FIXTURE_RECORD"
 printf 'compiled' > "$VIEW_COMPILED_PATH/view.php"
-printf 'graph' > "$ORBIT_TIA_DIRECTORY/graph.json"
 exit "$FIXTURE_EXIT_CODE"
 BASH);
     chmod($fixture.'/vendor/bin/pest', 0700);
@@ -66,11 +61,16 @@ BASH);
         $process = new Process([$repository.'/bin/guidance-check', '--filter=example'], $fixture, [
             'TMPDIR' => $fixture.'/tmp',
             'FIXTURE_EXIT_CODE' => (string) $exitCode,
+            'FIXTURE_RECORD' => $fixture.'/paths',
         ]);
         $process->run();
 
         expect($process->getExitCode())->toBe($exitCode, $process->getOutput().$process->getErrorOutput());
-        expect(glob($fixture.'/tmp/*'))->toBe([]);
+        [$runtime, $views] = file($fixture.'/paths', FILE_IGNORE_NEW_LINES);
+        expect($runtime)->toStartWith($fixture.'/tmp/run-')
+            ->and($views)->toBe($runtime.'/views')
+            ->and(is_dir($runtime))->toBeFalse()
+            ->and(glob($fixture.'/tmp/*'))->toBe([]);
     } finally {
         $files->deleteDirectory($fixture);
     }

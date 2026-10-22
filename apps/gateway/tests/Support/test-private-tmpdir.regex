@@ -1,0 +1,1 @@
+/(?:orbit/tmp/(?:agent|check)-[0-9]+|orbit-check-[0-9]+-[^/]+)$

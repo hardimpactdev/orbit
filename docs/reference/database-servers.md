@@ -1,12 +1,11 @@
 ---
 title: "Database servers"
-description: "How Orbit runs a MySQL or Valkey server as a Docker Node Process, keeps its admin password only in the Gateway, and creates databases and ACL users on it."
+description: "How Orbit runs a MySQL, PostgreSQL or Valkey server as a Docker Node Process, keeps its admin password only in the Gateway, and creates databases and ACL users on it."
 covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
-  - apps/gateway/app/Http/Controllers/Api/DatabaseServersController.php
-  - apps/gateway/app/Http/Requests/DatabaseServers/**
+  - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
@@ -14,9 +13,9 @@ covers:
 
 # Database servers
 
-A Database server is a MySQL or Valkey server that Orbit runs and administers. It runs as a Docker [Node Process](/reference/processes-and-schedules#owners), and the Gateway keeps its admin password. Orbit uses that password to create a database or an ACL user, and to [clone](/domains/applications#database-clone) the default Instance's MySQL database. [`database:server`](/cli/database#orbit-databaseservercreate) lists the commands.
+A Database server is a MySQL, PostgreSQL or Valkey server that Orbit runs and administers. It runs as a Docker [Node Process](/reference/processes-and-schedules#owners), and the Gateway keeps its admin password. Orbit uses that password to create a database or an ACL user, and to [clone](/domains/applications#database-clone) the default Instance's MySQL database. [`database:server`](/cli/database#orbit-databaseservercreate) lists the commands.
 
-A server's `driver` names its kind. A `mysql` server runs MySQL, and a `redis` server runs Valkey. A Valkey server's clients use the [`redis` driver](/reference/database-connections#drivers-and-fields), so the server uses the same name.
+A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` server runs PostgreSQL 18, and a `redis` server runs Valkey. A Valkey server's clients use the [`redis` driver](/reference/database-connections#drivers-and-fields), so the server uses the same name.
 
 ## Create a server
 
@@ -30,9 +29,9 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=NODE` | required | Numeric Node ID or Node name. The Node must be an active Linux Node with Docker. |
-| `--driver=DRIVER` | `mysql` | `mysql` or `redis`. |
-| `--tag=TAG` | `8.4` for mysql, `8.1` for redis | Image tag. The image is `mysql:<tag>` or `valkey/valkey:<tag>`. |
-| `--port=PORT` | `3306` for mysql, `6379` for redis | Port that the server publishes on the Node's WireGuard address. |
+| `--driver=DRIVER` | `mysql` | `mysql`, `pgsql` or `redis`. |
+| `--tag=TAG` | `8.4` for mysql, `18` for pgsql, `8.1` for redis | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. |
+| `--port=PORT` | `3306` for mysql, `5432` for pgsql, `6379` for redis | Port published on the Node's WireGuard address and its LAN address when present. |
 
 ### A MySQL server
 
@@ -44,6 +43,34 @@ The Gateway creates a MySQL server in this order:
 4. It removes the variable from the Process and recreates the container. The data volume keeps the password.
 
 After step 4, the root password exists only encrypted in the Gateway. It is not in the Process record, the container environment, `docker inspect`, or a file on the Node. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
+
+### A PostgreSQL server
+
+Create PostgreSQL 18 on an explicit free port:
+
+```bash
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434
+```
+
+PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, container port 5432, and first-start variable `POSTGRES_PASSWORD`. The default tag is `18`; accepted tags are `18`, `18.N`, and these versions with an image variant suffix. Other majors and `latest` return `validation.failed`. The named volume mounts at `/var/lib/postgresql`, because PostgreSQL 18 stores data in `/var/lib/postgresql/18/docker`. The pre-18 mount `/var/lib/postgresql/data` is wrong for this image. Readiness runs an authenticated TCP SQL query; the image's temporary initialization server is socket-only. A retry reuses the encrypted password, Process and volume, and finishes password removal before returning active.
+
+A PostgreSQL database belongs to its LOGIN owner role. The role has no superuser or CREATEDB rights. Orbit revokes PUBLIC database privileges and PUBLIC schema CREATE. Additional users have CONNECT and public-schema USAGE. A read-only user gets SELECT on current tables and owner default privileges for future tables; a write user also gets data-write and sequence privileges. Repeating user creation revokes rights on current tables and sequences and owner defaults before granting again. PostgreSQL passwords must be printable ASCII; the Gateway sends SCRAM verifiers to avoid plaintext SQL log entries.
+
+Create application objects as the managed owner. Custom schemas need explicit operator grants. Instance-owned PostgreSQL databases are refused with `database.driver_unsupported`. Laravel parallel testing needs dynamic database creation, which this feature does not grant.
+
+[Move PostgreSQL databases](/reference/postgresql-migration) gives the dump, restore, verification and rollback procedure. Creating a server does not adopt or upgrade any existing Process.
+
+### Private publication
+
+Managed Database servers serve clients inside the Orbit network only. All three drivers publish one explicit IPv4 Docker binding on the Node's WireGuard IP and a second on its LAN IP when present. Publication requires RFC 1918 private IPv4 addresses. Orbit never binds `0.0.0.0`, an IPv6 wildcard, or the Node's public address. Services also has the public interface 85.9.217.155; that address must never appear in a Database server's bindings.
+
+The private networks are the trust boundary. Clients that can reach those private addresses have network access to the ports. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. PostgreSQL keeps the image's stock `pg_hba.conf` defaults and SCRAM password authentication. Operators must keep these private addresses unreachable from the public internet.
+
+The stored connection host stays WireGuard. Explicit LAN selection requires only that the server and consumer Nodes are active and each has an IPv4 LAN address. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the private network. A shared Cluster is not required.
+
+Existing servers keep their publications until an explicit create retry. That retry enables private publication and SQL Doctor checks for the selected server. Existing Valkey ACL checks still run. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
+
+Doctor reports `database_server.publication_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database_server` family. Repeat creation repairs publication drift. A failed SQL repair keeps an active server active and records its failed step.
 
 ### A Valkey server
 
@@ -107,21 +134,23 @@ After saving the password, the Gateway revokes every other `default` session, in
 
 ## Create a database on a server
 
-`database:create` with `--server` creates a database and a user on a MySQL server, then records the [connection](/reference/database-connections).
+`database:create` with `--server` creates a database and an owner user on a MySQL or PostgreSQL server, then records the [connection](/reference/database-connections).
 
 ```bash
 orbit database:create dlf-leden --server=beast-mysql --instance=60
 ```
 
-The database name comes from the slug, with hyphens replaced by underscores. A database name longer than 64 characters, or a user name longer than 32, ends in an underscore and an 8-character hash. Orbit generates the user's password.
+The database name comes from the slug, with hyphens replaced by underscores. On MySQL, a database name longer than 64 characters, or a user name longer than 32, ends in an underscore and an 8-character hash. PostgreSQL names are limited to 63 ASCII characters and use the same hash suffix when shortened. Orbit generates the owner password.
 
-Each Instance has one user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets driver `mysql`, the server's Node address and port, and a link to the server.
+On MySQL, each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
 
 Orbit refuses a name with `database.name_conflict` when the server already has that database or user, or when the name starts with the test database name of another database on the server. So one Instance's user never reaches another database through its test database grant. A create that fails drops what it made and records nothing.
 
-With `--instance`, Orbit also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
+On MySQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
 `database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
+
+PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 
 ## Create an ACL user on a Valkey server
 
@@ -156,7 +185,7 @@ The Gateway refuses these inputs with `validation.failed`:
 - A key pattern that starts with `*`, `?`, `[`, or `\`. Each pattern needs a literal key prefix.
 - The rule `@all` or `@scripting`. A user gets only the categories and commands its clients need.
 
-The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-valkey-server-with-doctor) can compare them. `database:user:list` shows those rules.
+The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-server-with-doctor) can compare them. `database:user:list` shows those rules.
 
 The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know returns `database.acl_rules_invalid` with Valkey's message. A create that fails removes the user and records nothing. Concurrent ACL changes return `database.server_in_use`; retry after the other command finishes.
 
@@ -196,9 +225,9 @@ A new Valkey server with the slug of a removed one finds the old volume. It writ
 
 A Node that runs a server cannot be removed. [Node removal](/reference/node-provisioning#remove-a-node) refuses it with `node.has_database_servers`, also offline.
 
-## Check a Valkey server with Doctor
+## Check a server with Doctor
 
-The [Doctor](/cli/doctor) family `database_server` checks each Valkey server whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
+The [Doctor](/cli/doctor) family `database_server` checks each Valkey server and each SQL server that opted in whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
 
 | Code | Meaning | Remedy |
 | --- | --- | --- |
@@ -211,7 +240,7 @@ The recorded users are `default` with the admin password and all rights, and one
 
 Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
 
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. MySQL servers have no checks in this family yet.
+An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication).
 
 ## Repair a Valkey server
 
@@ -230,7 +259,7 @@ The Gateway takes these steps:
 
 Rebuilding the file repairs a server that cannot start because the file is lost. The Gateway waits for the admin login before it retries ACL commands. It uses the same program as creation. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The restart uses [`process:restart`](/cli/process).
 
-A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server changes nothing.
+A server that already matches gets only `ACL SAVE`, so the repair is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. A repair takes the lock of the other ACL changes, so a concurrent change returns `database.server_in_use`. A repeat on a MySQL server repairs private publication.
 
 ## Errors
 
@@ -242,15 +271,19 @@ The server commands return these codes.
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
 | `database.server_in_use` | 409 | A connection still points to the server, an ACL change is running, or closing would lock out a client. |
-| `database.server_connection_managed` | 409 | A change would replace a managed Valkey connection's identity or credentials. |
+| `database.server_connection_managed` | 409 | A change would replace a managed PostgreSQL or Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
-| `database.driver_unsupported` | 422 | The command does not work on a `redis` server. |
+| `database.driver_unsupported` | 422 | The driver does not support this operation, including Instance-owned PostgreSQL databases. |
+| `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
+| `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
 | `database.name_conflict` | 409 | The name is taken on the server. |
 | `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
+
+PostgreSQL refuses database removal while clients remain connected; stop those clients and retry. Orbit does not force-disconnect them.
 
 ## Why it works this way
 
@@ -295,3 +328,17 @@ The Gateway holds the admin password and each user's password and rules, so the 
 ### Adoption without a data move
 
 The Valkey on `services` holds the Gateway queue and the collector's state, and the Gateway already holds its password. Adoption keeps the volume and the port and restarts Valkey once. A new server and a move of the data would need a queue outage or a copy tool, a release, and a new collector setup. Adoption is refused for MySQL, whose root password may be unknown.
+
+### PostgreSQL shares the SQL server lifecycle
+
+PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisioning steps, connection and user actions. A separate manager would duplicate ownership and retry rules. PostgreSQL has its own statement renderer because its identifier and literal escaping differ from MySQL. SCRAM verifiers keep application passwords out of server SQL logs. Restricting the image to PostgreSQL 18 preserves the documented volume layout when the first-start container is recreated.
+
+### Private networks are the boundary
+
+This is the trust model for decision 0227, recorded for PR #1441. Managed servers are consumed only inside Orbit's private networks. Explicit WireGuard and LAN bindings keep Docker from listening on a public interface. Wildcard bindings were rejected because Docker bypasses UFW and Services has a public interface. A port firewall and custom `pg_hba.conf` source filtering were rejected: the private networks are trusted. No script-gate exception is needed.
+
+A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. The operator selects LAN for clients on the same data-centre network. WireGuard stays the default; automatic selection would change existing consumers.
+
+### Migration preserves connection identities
+
+A new canonical connection owns each restored database. Existing external connection IDs and their attachments stay intact, with their endpoints and application credentials updated. Replacing those IDs would break attachment and Vault identities. Importing source roles wholesale could carry superuser rights and stale grants. Plausible's PostgreSQL 18 target needs a disposable rehearsal because upstream does not certify that major; Services is not a compatibility test target.

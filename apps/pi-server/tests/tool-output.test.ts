@@ -630,14 +630,17 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-save",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
         const abortSettled = aborted.catch((error: unknown) => error);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
         const abortError = await abortSettled;
         expect(() => {
             throw abortError;
@@ -667,15 +670,18 @@ describe("read and bash tools", () => {
         const controller = new AbortController();
         const aborted = bash.execute(
             "abort-1",
-            { command: "cat large.txt; sleep 30" },
+            { command: "cat large.txt; touch ready; sleep 30" },
             controller.signal,
             undefined,
             undefined as never,
         );
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        controller.abort();
-
-        await expect(aborted).rejects.toThrow(/Command aborted$/);
+        const abortSettled = expect(aborted).rejects.toThrow(/Command aborted$/);
+        try {
+            await expect.poll(() => exists(join(cwd, "ready")), { interval: 5 }).toBe(true);
+        } finally {
+            controller.abort();
+        }
+        await abortSettled;
         const timeout = await run(
             bash,
             { command: "cat large.txt; sleep 30", timeout: 1 },
@@ -813,13 +819,21 @@ function tools(cwd: string) {
 }
 
 async function run(
-    tool: { execute: (...args: any[]) => Promise<{ content: { type: string; text?: string }[] }> },
+    tool: {
+        execute: (...args: any[]) => Promise<{
+            content: { type: string; text?: string }[];
+            isError?: boolean;
+        }>;
+    },
     params: Record<string, unknown>,
     id = "call:1",
 ): Promise<{ text: string; isError: boolean }> {
     try {
         const result = await tool.execute(id, params, undefined, undefined, undefined);
-        return { text: result.content.map((block) => block.text ?? "").join(""), isError: false };
+        return {
+            text: result.content.map((block) => block.text ?? "").join(""),
+            isError: result.isError ?? false,
+        };
     } catch (error) {
         return { text: error instanceof Error ? error.message : String(error), isError: true };
     }

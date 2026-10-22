@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 214 public Gateway operations. It preserves typed
+The SDK exposes exactly 231 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -77,6 +77,10 @@ Doctor accepts the current Gateway family set, including Schedule and Database c
 
 The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an Instance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Query sends SQL and an optional write flag against a registered slug. Tables, schema, and describe are bodyless reads. Item, collection, attachment, and inspection responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, stored-environment writes, and inspection execution.
 
+## Reverb apps
+
+The SDK exposes typed create, list, show, and destroy requests in `Orbit\Sdk\Requests\WebSocket`. Add and remove requests accept an Instance ID or exact Route domain and an app name. Both requests are bodyless. App responses carry the app ID, key, and attached Instance IDs. Attachment responses carry the changed key names and stored key count. Neither response carries the secret or environment values. Run the environment synchronization request to write stored configuration to the Instance's `.env`.
+
 ## ai-router
 
 The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector. Setup sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, teardown, provider list, provider show, model list, and account enable and disable are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
@@ -100,10 +104,10 @@ The SDK exposes typed one-shot log reads for Instances and Processes, and create
 
 ## Quality
 
-Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only `composer test:affected` in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
+Follow the [root check policy](../../AGENTS.md#checks-and-resources). In an Orbit task, run only the tests that cover the change in each changed project; the Gateway runs the full Project check at handoff. Outside a task, use these commands:
 
 ```bash
-composer test       # Pest suite with TIA (parallel)
+composer test       # full Pest suite in parallel
 composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```

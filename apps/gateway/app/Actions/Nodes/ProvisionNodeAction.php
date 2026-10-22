@@ -553,7 +553,12 @@ final readonly class ProvisionNodeAction
     private function convergeRoles(Node $node, ProvisionNodeData $data): void
     {
         $converge = function () use ($node, $data): void {
-            foreach ($data->roles as $role) {
+            // VPN owns the private DNS listener runtime used by the publishing roles.
+            $roles = $data->roles;
+            if (in_array(RoleName::Vpn, $roles, true)) {
+                $roles = [RoleName::Vpn, ...array_filter($roles, static fn (RoleName $role): bool => $role !== RoleName::Vpn)];
+            }
+            foreach ($roles as $role) {
                 $this->roles->executeDuringProvisioning($node, $role);
             }
         };

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\NightlyRecipeContents;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -29,10 +30,10 @@ function nightlyMergeEvidence(): array
     $after = str_replace($snapshot, $next, $before);
     $bot = ['id' => 4243, 'login' => 'orbit-acme[bot]', 'type' => 'Bot'];
     $sha = str_repeat('b', 40);
-    $pr = ['number' => 99, 'html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'title' => 'Nightly snapshot',
+    $pr = ['number' => 99, 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'title' => 'Nightly snapshot',
         'state' => 'open', 'draft' => false, 'user' => $bot, 'commits' => 1, 'changed_files' => 1, 'additions' => 1, 'deletions' => 1,
-        'head' => ['ref' => 'nightly/recipe-'.$date->format('Ymd'), 'sha' => $sha, 'repo' => ['full_name' => 'nckrtl/orbit']],
-        'base' => ['ref' => 'main', 'repo' => ['full_name' => 'nckrtl/orbit']]];
+        'head' => ['ref' => 'nightly/recipe-'.$date->format('Ymd'), 'sha' => $sha, 'repo' => ['full_name' => 'hardimpactdev/orbit']],
+        'base' => ['ref' => 'main', 'repo' => ['full_name' => 'hardimpactdev/orbit']]];
 
     return ['pr' => $pr, 'final' => $pr, 'commits' => [['sha' => $sha, 'author' => $bot, 'committer' => ['login' => 'web-flow', 'type' => 'User'], 'commit' => ['committer' => ['name' => 'GitHub', 'email' => 'noreply@github.com'], 'verification' => ['verified' => true, 'reason' => 'valid']], 'parents' => [['sha' => str_repeat('a', 40)]]]],
         'files' => [['filename' => 'apps/gateway/resources/machine-software/recipe.json', 'status' => 'modified', 'additions' => 1, 'deletions' => 1, 'changes' => 2,
@@ -43,22 +44,22 @@ function nightlyMergeEvidence(): array
     ];
 }
 
-function nightlyMergeHttp(array $evidence, array $overrides = []): RecordingReleaseAlertNotifier
+function nightlyMergeHttp(array $evidence, array $overrides = [], bool $repeat = false): RecordingReleaseAlertNotifier
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     GitHubTestSupport::storeApp();
-    config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit', 'orbit.gateway_releases.check' => 'Required checks']);
+    config(['orbit.cli_releases.repository' => 'https://github.com/hardimpactdev/orbit', 'orbit.gateway_releases.check' => 'Required checks']);
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
     Http::preventStrayRequests();
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     Http::fake(array_replace([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_merge']),
         $base.'/pulls?*' => Http::response([$evidence['pr']]),
-        $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
+        $base.'/pulls/99' => $repeat ? Http::response($evidence['pr']) : Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
         $base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
@@ -164,7 +165,7 @@ it('alerts for a refused merge separately from an earlier temporary error on the
     $this->freezeTime();
     $evidence = nightlyMergeEvidence();
     $alerts = nightlyMergeHttp($evidence, [
-        'https://api.github.com/repos/nckrtl/orbit/pulls/99/merge' => Http::sequence()->pushStatus(503)
+        'https://api.github.com/repos/hardimpactdev/orbit/pulls/99/merge' => Http::sequence()->pushStatus(503)
             ->push(['merged' => false, 'message' => 'Base branch was modified'], $status)
             ->whenEmpty(Http::response(['merged' => false, 'message' => 'Base branch was modified'], $status)),
     ]);
@@ -320,7 +321,7 @@ it('does not recheck a blocked head even after the alert expires and checks a ch
 it('retries temporary failures on the same green head after backoff', function (string $failure): void {
     $this->freezeTime();
     $evidence = nightlyMergeEvidence();
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     $overrides = match ($failure) {
         'PR list' => [$base.'/pulls?*' => Http::sequence()->pushStatus(503)->push([$evidence['pr']])],
         'PR read' => [$base.'/pulls/99' => Http::sequence()->pushStatus(503)->push($evidence['pr'])->push($evidence['final'])],
@@ -380,13 +381,13 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
     app(MergeNightlyRecipePullRequestsAction::class)->execute();
     $replacement = $evidence['pr'];
     $replacement['number'] = 100;
-    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/100';
     $date = new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day');
     $replacement['head']['ref'] = 'nightly/recipe-'.$date->format('Ymd');
     $replacement['head']['sha'] = str_repeat('d', 40);
     $later = $replacement;
     $later['number'] = 101;
-    $later['html_url'] = 'https://github.com/nckrtl/orbit/pull/101';
+    $later['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/101';
     $later['head']['ref'] = 'nightly/recipe-'.$date->modify('+1 day')->format('Ymd');
     $later['head']['sha'] = str_repeat('e', 40);
     $current = $evidence['pr'];
@@ -399,7 +400,7 @@ it('closes a blocked App PR with its reason only after a newer App date PR opens
         default => null,
     };
     Http::swap(new Factory);
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     nightlyMergeHttp($evidence, [
         $base.'/pulls?*' => Http::response(match ($case) {
             'no replacement' => [$evidence['pr']],
@@ -435,11 +436,11 @@ it('retries a failed close after the replacement merges without repeating its co
     $replacement['after'] = str_replace(substr($evidence['pr']['head']['ref'], -8).'T000000Z', $snapshot->format('Ymd\THis\Z'), $replacement['after']);
     $replacement['files'][0]['patch'] = str_replace(substr($evidence['pr']['head']['ref'], -8).'T000000Z', $snapshot->format('Ymd\THis\Z'), $replacement['files'][0]['patch']);
     $replacement['pr']['number'] = 100;
-    $replacement['pr']['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['pr']['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/100';
     $replacement['pr']['head']['ref'] = 'nightly/recipe-'.$snapshot->format('Ymd');
     $replacement['pr']['head']['sha'] = str_repeat('d', 40);
     $replacement['commits'][0]['sha'] = $replacement['runs'][0]['head_sha'] = str_repeat('d', 40);
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     $closed = $merged = false;
     $fail = true;
     $alerts = nightlyMergeHttp($evidence, [
@@ -498,10 +499,10 @@ it('ends refused green merges for three days of ticks before re-resolving supers
     $evidence['merge_status'] = $status;
     $replacement = $evidence['pr'];
     $replacement['number'] = 100;
-    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/100';
     $replacement['head']['ref'] = 'nightly/recipe-'.new DateTimeImmutable(substr($evidence['pr']['head']['ref'], -8))->modify('+1 day')->format('Ymd');
     $replacement['head']['sha'] = str_repeat('d', 40);
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     $closed = $reached = false;
     nightlyMergeHttp($evidence, [
         $base.'/pulls?*' => function () use ($evidence, $replacement, $superseded, &$closed) {
@@ -548,7 +549,7 @@ it('alerts separately for a retry then evidence rejection then retirement failur
     $evidence = nightlyMergeEvidence();
     $evidence['after'] .= ' ';
     $reached = false;
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     $alerts = nightlyMergeHttp($evidence, [
         $base.'/pulls/99' => function (Request $request) use ($evidence) {
             if ($request->method() === 'PATCH') {
@@ -577,3 +578,145 @@ it('alerts separately for a retry then evidence rejection then retirement failur
     expect($alerts->alerts[1]->summary)->toContain('Recipe contents differ');
     expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
 });
+
+function nightlyArtifactEvidence(string $provider = 'incus'): array
+{
+    $evidence = nightlyMergeEvidence();
+    $document = json_decode($evidence['before'], true, flags: JSON_THROW_ON_ERROR);
+    if (in_array($provider, ['incus', 'both'], true)) {
+        foreach (RecipeLoader::IncusPackages as $name) {
+            $pin = &$document['tools'][$name];
+            $next = preg_replace_callback('/[0-9]+$/', static fn (array $match): string => (string) ((int) $match[0] + 1), $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace($pin['version'], $next, $artifact['url']);
+                $artifact['version'] = str_replace($pin['version'], $next, $artifact['version']);
+                $artifact['sha256'] = str_repeat('d', 64);
+            }
+            unset($artifact);
+            $pin['version'] = $next;
+            unset($pin);
+        }
+    }
+    if (in_array($provider, ['sury', 'both'], true)) {
+        $current = new RecipeLoader()->load()->php('8.5')->phpVersion;
+        $next = preg_replace_callback('/[0-9]+$/', static fn (array $match): string => (string) ((int) $match[0] + 1), $current);
+        foreach ($document['tools'] as &$pin) {
+            if ($pin['source'] !== 'artifact' || ! str_starts_with($pin['version'], $current.'-')) {
+                continue;
+            }
+            $pin['version'] = str_replace($current.'-', $next.'-', $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace($current.'-', $next.'-', $artifact['url']);
+                $artifact['sha256'] = str_repeat('d', 64);
+            }
+            unset($artifact);
+        }
+        unset($pin);
+    }
+    $evidence['after'] = json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+    $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.new RecipeArtifactsBump()->fingerprint($evidence['after']);
+    $evidence['pr']['additions'] = $evidence['pr']['deletions'] = 20;
+    $evidence['final'] = $evidence['pr'];
+    $evidence['files'][0]['additions'] = $evidence['files'][0]['deletions'] = 20;
+    $evidence['files'][0]['changes'] = 40;
+
+    return $evidence;
+}
+
+function authenticatedArtifactBump(string $updated): void
+{
+    app()->instance(RecipeArtifactsBump::class, new class($updated) extends RecipeArtifactsBump
+    {
+        public function __construct(private readonly string $updated) {}
+
+        public function indexes(string $recipe): string
+        {
+            return $this->updated;
+        }
+    });
+}
+
+it('merges signed Sury and Incus updates under one authenticated artifact policy', function (string $provider): void {
+    $evidence = nightlyArtifactEvidence($provider);
+    $alerts = nightlyMergeHttp($evidence);
+    authenticatedArtifactBump($evidence['after']);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === str_repeat('b', 40));
+    expect($alerts->alerts)->toBe([]);
+})->with(['incus', 'sury', 'both']);
+
+it('blocks artifact PRs with edits outside signed pins or mismatching authenticated results', function (string $case): void {
+    $evidence = nightlyArtifactEvidence();
+    $authenticated = $evidence['after'];
+    $document = json_decode($evidence['after'], true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'snapshot' => $document['ubuntu']['snapshot'] = '20261020T000000Z',
+        'role' => $document['roles']['operator'][] = 'rust',
+        'git' => $document['tools']['git']['artifacts']['amd64']['sha256'] = str_repeat('e', 64),
+        'wrong branch' => $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.str_repeat('0', 12),
+        'unsigned commit' => $evidence['commits'][0]['commit']['verification']['verified'] = false,
+        'human author' => $evidence['pr']['user']['login'] = 'nick',
+        'extra commit' => $evidence['commits'][] = $evidence['commits'][0],
+        'extra file' => $evidence['files'][] = $evidence['files'][0],
+        'changed head' => $evidence['final']['head']['sha'] = str_repeat('c', 40),
+    };
+    if (in_array($case, ['snapshot', 'role', 'git'], true)) {
+        $evidence['after'] = json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+        $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.new RecipeArtifactsBump()->fingerprint($evidence['after']);
+        $evidence['final'] = $evidence['pr'];
+    }
+    $alerts = nightlyMergeHttp($evidence);
+    authenticatedArtifactBump($authenticated);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($alerts->alerts)->toHaveCount(1);
+})->with(['snapshot', 'role', 'git', 'wrong branch', 'unsigned commit', 'human author', 'extra commit', 'extra file', 'changed head']);
+
+it('closes a superseded authenticated artifact PR even when runner checks are red', function (): void {
+    $evidence = nightlyArtifactEvidence();
+    $evidence['runs'][0]['conclusion'] = 'failure';
+    $alerts = nightlyMergeHttp($evidence, repeat: true);
+    authenticatedArtifactBump($evidence['before']);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && $request['state'] === 'closed');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($alerts->alerts)->toBe([]);
+});
+
+it('reuses index proof and cools down failed proofs for one hour', function (bool $fail): void {
+    $evidence = nightlyArtifactEvidence();
+    $evidence['runs'][0]['conclusion'] = 'failure';
+    nightlyMergeHttp($evidence, repeat: true);
+    $updater = new class($evidence['after'], $fail) extends RecipeArtifactsBump
+    {
+        public int $calls = 0;
+
+        public function __construct(private readonly string $updated, private readonly bool $fail) {}
+
+        public function indexes(string $recipe): string
+        {
+            $this->calls++;
+            if ($this->fail) {
+                throw new RuntimeException('Upstream is between builds.');
+            }
+
+            return $this->updated;
+        }
+    };
+    app()->instance(RecipeArtifactsBump::class, $updater);
+    $action = app(MergeNightlyRecipePullRequestsAction::class);
+
+    $action->execute();
+    $action->execute();
+    expect($updater->calls)->toBe(1);
+    $this->travel(61)->minutes();
+    $action->execute();
+    expect($updater->calls)->toBe(2);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') || $request->method() === 'PATCH');
+})->with([false, true]);

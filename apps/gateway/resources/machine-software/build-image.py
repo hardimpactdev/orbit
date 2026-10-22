@@ -73,11 +73,12 @@ def image_install_packages(payload):
     publish(POLICY, b'#!/bin/sh\nexit 101\n', 0o755)
     try:
         installed = packages()
-        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu' or name in git_packages(payload)}
+        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu' or name in git_packages(payload) or name in incus_packages(payload)}
         check_git_siblings(payload)
         assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, git_names=git_packages(payload))
         supported(assessment)
         configure_git(payload, apply=True)
+        configure_incus(payload, apply=True)
         if payload['profile'] == 'base':
             run(['apt-get', 'full-upgrade', '--yes'], env=environment)
         # full-upgrade may have installed a newer same-release version; inspect again under the same configuration.
@@ -110,8 +111,10 @@ def image_install_packages(payload):
                 install_exact_debs(debs, payload['tools'], packages(), [], environment)
         run(['apt-get', 'check'], env=environment)
         audit_packages(environment)
-        record_git(payload, packages())
+        record_artifact_receipt(git_packages(payload), packages(), 'git')
+        record_artifact_receipt(incus_packages(payload), packages(), 'incus')
         pin_git(payload)
+        pin_incus(payload)
     finally:
         POLICY.unlink()
     if payload.get('php') and php_install(payload) not in ('applied', 'current'):

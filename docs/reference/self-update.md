@@ -36,12 +36,12 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
     "version": "0.4681.0",
     "tag": "cli-v0.4681.0",
     "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
-    "checksums_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
+    "checksums_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
     "assets": [
       {
         "platform": "linux-x86_64",
         "name": "orbit-0.4681.0-linux-x86_64",
-        "url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64",
+        "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64",
         "sha256": "79d7424eeafdc38c773b8f0a7d1b67b21e38e6abb6b458f3e42b89e2cde7a0ce"
       }
     ]
@@ -52,7 +52,7 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
       {
         "platform": "linux-x86_64",
         "name": "orbit-agent-0.3.0-linux-x86_64",
-        "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64",
+        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64",
         "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
       }
     ]
@@ -78,7 +78,7 @@ The Gateway builds the state from its own commit, its Git history, GitHub, and i
 4. Each CLI asset's `sha256` is its line in that `SHA256SUMS`. Each binary must have one line.
 5. The agent part comes from the pin in the Gateway code.
 
-The Gateway asks GitHub with a read-only token of its [GitHub App](/reference/github-app) when the App is installed on the repository, and anonymously otherwise. `ORBIT_CLI_RELEASE_REPOSITORY` in the Gateway `.env` names another repository; the default is `https://github.com/nckrtl/orbit`.
+The Gateway asks GitHub with a read-only token of its [GitHub App](/reference/github-app) when the App is installed on the repository, and anonymously otherwise. `ORBIT_CLI_RELEASE_REPOSITORY` in the Gateway `.env` names another repository; the default is `https://github.com/hardimpactdev/orbit`.
 
 ### CLI release status
 
@@ -128,7 +128,7 @@ The expected footprint digest per Node joins this state when the footprint re-ap
 
 ### Where it downloads from
 
-The Gateway names which release to install. It never names where to download it. The CLI builds every URL from its own release location, `https://github.com/nckrtl/orbit/releases/download`:
+The Gateway names which release to install. It never names where to download it. The CLI builds every URL from its own release location, `https://github.com/hardimpactdev/orbit/releases/download`:
 
 | Asset | URL |
 | --- | --- |
@@ -264,6 +264,8 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 - The fleet rollout re-applies the Gateway-rendered footprint, such as the Caddyfile or the `tmpfiles` rule, over SSH.
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.
+
+A Node with an active `ci-runner` role participates in [fleet rollout group 2](/reference/gateway-recovery#rollout-set-and-order). A recorded recipe profile does not add a roleless Node to the rollout.
 
 [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) pins the Ubuntu snapshot and role tools separately. It holds the same Node update lock as `self-update`, so the two operations cannot replace software at the same time. Recipe convergence verifies the Node with the fleet verifier before recording its recipe identity.
 

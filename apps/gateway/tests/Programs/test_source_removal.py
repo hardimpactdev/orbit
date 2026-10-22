@@ -82,6 +82,45 @@ class Sandbox(unittest.TestCase):
         self.assertEqual(completed.returncode, 74, completed.stderr.decode())
 
 
+class ProductionRouteInspectionTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix='orbit-production-route-inspection-')
+        self.addCleanup(self.directory.cleanup)
+        self.home = os.path.realpath(self.directory.name)
+        self.release = f'{self.home}/releases/one'
+        os.makedirs(self.release)
+        os.symlink(self.release, f'{self.home}/current')
+        with open(f'{self.release}/artisan', 'w') as handle:
+            handle.write('<?php file_put_contents("booted", "yes"); echo "[]";')
+        self.payload = {'inspection': 'laravel_routes', 'home': self.home,
+                        'application': f'{self.home}/current', 'php': shutil.which('php')}
+
+    def test_refuses_a_current_link_outside_releases_without_booting_the_application(self):
+        os.unlink(f'{self.home}/current')
+        os.symlink(self.home, f'{self.home}/current')
+
+        outcome, data = result('instances.inspect-source', self.payload)
+
+        self.assertEqual((outcome, data), ('path_mismatch', {}))
+        self.assertFalse(os.path.exists(f'{self.release}/booted'))
+
+    def test_refuses_an_application_outside_the_selected_release_without_booting_it(self):
+        outcome, data = result('instances.inspect-source', {**self.payload, 'application': self.home})
+
+        self.assertEqual((outcome, data), ('path_mismatch', {}))
+        self.assertFalse(os.path.exists(f'{self.release}/booted'))
+
+    def test_suppresses_failed_artisan_output(self):
+        with open(f'{self.release}/artisan', 'w') as handle:
+            handle.write('<?php fwrite(STDOUT, "sensitive output"); fwrite(STDERR, "sensitive error"); exit(1);')
+
+        completed = execute('instances.inspect-source', self.payload)
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, b'{"outcome":"failed","data":{}}\n')
+        self.assertNotIn(b'sensitive', completed.stderr)
+
+
 class InspectSourceTest(Sandbox):
     def inspect(self, checkout, **overrides):
         payload = {
@@ -152,7 +191,7 @@ class RemoveSourceTest(Sandbox):
         payload = {
             'checkout': checkout, 'root': self.root, 'grouping_directory': self.project, 'user': USER, 'group': GROUP,
             'branch': 'dev', 'commit': git('rev-parse', 'HEAD', cwd=checkout), 'source_identity': self.identity(checkout),
-            'repository_identity': IDENTITY, 'force': False, 'stop_processes': False, 'own_units': [],
+            'repository_identity': IDENTITY, 'force': False, 'own_units': [],
         }
         return self.run_program('instances.remove-source', {**payload, **overrides})
 
@@ -263,7 +302,7 @@ class FinalizeSourceRemovalTest(Sandbox):
             'force': False, 'origin': ORIGIN, 'commit': git('rev-parse', 'HEAD', cwd=checkout),
             'worktrees': base64.b64encode(subprocess.run(['git', '-C', checkout, 'worktree', 'list', '--porcelain', '-z'], capture_output=True, check=True).stdout).decode(),
             'grouping_directory': self.project, 'unresolved': False, 'independent_worktree': False,
-            'stop_processes': False, 'own_units': [],
+            'own_units': [],
         }
 
     def test_prepares_the_journal_once_and_refuses_another_digest(self):
@@ -348,7 +387,7 @@ class FinalizeSourceRemovalTest(Sandbox):
         payload = {
             **member, 'branch': 'feature', 'receipt': self.receipt, 'force': True, 'origin': ORIGIN,
             'commit': git('rev-parse', 'feature', cwd=repository), 'worktrees': '', 'grouping_directory': self.project,
-            'unresolved': False, 'independent_worktree': True, 'stop_processes': False, 'own_units': [],
+            'unresolved': False, 'independent_worktree': True, 'own_units': [],
         }
         self.assertEqual(self.run_program('instances.finalize-source-removal', payload)[0], 'finalized')
         self.assertFalse(os.path.lexists(worktree))

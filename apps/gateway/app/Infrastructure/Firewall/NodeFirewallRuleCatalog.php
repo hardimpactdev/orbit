@@ -84,6 +84,10 @@ final readonly class NodeFirewallRuleCatalog
             RoleName::Gateway => [
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
+            RoleName::CiRunner => [new UfwManagedRule(
+                new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
+                ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
+            )],
             RoleName::Vpn => [],
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),

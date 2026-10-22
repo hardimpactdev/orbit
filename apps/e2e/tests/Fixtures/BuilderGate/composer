@@ -6,7 +6,7 @@ declare(strict_types=1);
 $command = $argv[1] ?? '';
 
 // CI runs the test suites, so a gate that runs one fails.
-if (in_array($command, ['test', 'test:affected'], true)) {
+if ($command === 'test') {
     fwrite(STDOUT, "The candidate gate runs no tests.\n");
 
     exit(1);

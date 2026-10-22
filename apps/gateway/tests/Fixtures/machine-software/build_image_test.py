@@ -25,6 +25,8 @@ class ImageRecipeTest(unittest.TestCase):
         self.work = tempfile.TemporaryDirectory()
         self.addCleanup(self.work.cleanup)
         self.policy = Path(self.work.name) / 'policy'
+        self.apt = Path(self.work.name) / 'apt'
+        (self.apt / 'preferences.d').mkdir(parents=True)
         self.commands = []
         self.files = {}
         self.payload = {'snapshot': '20261014T000000Z', 'architecture': 'amd64', 'profile': 'base',
@@ -39,10 +41,11 @@ class ImageRecipeTest(unittest.TestCase):
         self.files[str(path)] = content
         Path(path).write_bytes(content)
 
-    def packages(self, command=None):
+    def packages(self, command=None, inventory=None):
         with patch.object(recipe, 'POLICY', self.policy), \
-             patch.object(recipe, 'IMAGE_APT', Path(self.work.name) / 'apt'), \
-             patch.object(recipe, 'packages', return_value={'curl': '1.0'}), \
+             patch.object(recipe, 'IMAGE_APT', self.apt), \
+             patch.object(recipe, 'APT_ETC', self.apt), \
+             patch.object(recipe, 'packages', return_value={'curl': '1.0'} if inventory is None else inventory), \
              patch.object(recipe, 'publish', side_effect=self.publish), \
              patch.object(recipe, 'run', side_effect=command or self.run_command):
             recipe.image_apt_source(self.payload)
@@ -370,20 +373,40 @@ print(json.dumps({'outcome': 'current'}))
         self.assertNotIn(['usermod', '--append', '--groups', 'incus-admin', 'orbit'], self.commands)
 
         self.commands = []
-        self.payload['tools']['incus'] = {'source': 'ubuntu', 'version': '6.0.5-8', 'package': 'incus'}
-        self.packages()
-        install = next(i for i, c in enumerate(self.commands) if c[:2] == ['apt-get', 'install'])
-        self.assertIn('incus=6.0.5-8', self.commands[install])
+        document = json.loads((Path(image).parent / 'recipe.json').read_text())
+        for name in recipe.INCUS_PACKAGES:
+            pin = document['tools'][name]
+            self.payload['tools'][name] = {**pin, 'version': pin['artifacts']['amd64']['version']}
+        inventory = {'curl': '1.0'}
+        def command(argv, **kwargs):
+            if argv[:2] == ['dpkg-deb', '-f']:
+                self.commands.append(argv)
+                name = Path(argv[2]).stem
+                return subprocess.CompletedProcess(argv, 0, '\n'.join([name, self.payload['tools'][name]['version'], 'amd64']), '')
+            if argv[:2] == ['apt-get', 'install'] and '--simulate' not in argv and any(arg.endswith('.deb') for arg in argv):
+                inventory.update({name: self.payload['tools'][name]['version'] for name in recipe.INCUS_PACKAGES})
+            if argv[:2] == ['usermod', '--append']:
+                for name in recipe.INCUS_PACKAGES:
+                    self.assertEqual(inventory.get(name), self.payload['tools'][name]['version'])
+            return self.run_command(argv, **kwargs)
+        with patch.object(recipe, 'download_deb', side_effect=lambda name, pin, payload, path: path):
+            self.packages(command, inventory=inventory)
+        install = next(i for i, c in enumerate(self.commands) if c[:2] == ['apt-get', 'install'] and '--simulate' not in c and any(arg.endswith('.deb') for arg in c))
+        for name in recipe.INCUS_PACKAGES:
+            self.assertTrue(any(arg.endswith(f'/{name}.deb') for arg in self.commands[install]))
         self.assertGreater(self.commands.index(['usermod', '--append', '--groups', 'incus-admin', 'orbit']), install)
 
     def verify_incus_admin(self, groups):
-        self.payload.update({'identity': 'sha256:current', 'tools': {'incus': {'source': 'ubuntu', 'version': '6.0.5-8', 'package': 'incus'}}})
+        document = json.loads((Path(image).parent / 'recipe.json').read_text())
+        pin = document['tools']['incus']
+        version = pin['artifacts']['amd64']['version']
+        self.payload.update({'identity': 'sha256:current', 'tools': {'incus': {**pin, 'version': version}}})
 
         def command(argv, **kwargs):
             self.commands.append(argv)
             return subprocess.CompletedProcess(argv, 0, groups + '\n' if argv == ['id', '-nG', 'orbit'] else '', '')
         with self.verification(), \
-             patch.object(recipe, 'inspect', return_value={'incus': '6.0.5-8'}), \
+             patch.object(recipe, 'inspect', return_value={'incus': version}), \
              patch.object(recipe, 'assess', return_value={'incus': {'status': 'current'}}), \
              patch.object(recipe.Path, 'exists', return_value=False), \
              patch.object(recipe, 'run', side_effect=command):

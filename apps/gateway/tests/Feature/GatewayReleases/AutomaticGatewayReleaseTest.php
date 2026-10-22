@@ -9,8 +9,6 @@ use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Tests\Support\GatewayReleasePipeline;
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     $this->pipeline = new GatewayReleasePipeline;
 });
@@ -100,7 +98,7 @@ describe('gateway:release:auto', function (): void {
                 'failed' => [$failed],
                 'branch' => 'main',
                 'check' => 'Required checks',
-                'repository' => 'nckrtl/orbit',
+                'repository' => 'hardimpactdev/orbit',
             ]])
             ->and(GatewayRelease::query()->count())->toBe(3);
     });
@@ -154,7 +152,7 @@ describe('gateway:release:auto', function (): void {
             ->and($this->pipeline->alerts[0]->kind)->toBe(ReleaseAlertKind::ReleaseFailed)
             ->and($this->pipeline->alerts[0]->subject->toArray())->toBe([
                 'target' => 'gateway',
-                'repository' => 'nckrtl/orbit',
+                'repository' => 'hardimpactdev/orbit',
                 'sha' => $sha,
                 'release_id' => (string) $final->id,
             ])

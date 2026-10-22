@@ -15,9 +15,8 @@ declare(strict_types=1);
  * PHPStan level 9. TOOLING_BASELINE_PROJECTS declares each project's paths and every allowed difference, with a
  * one-line reason. Every folder that Rector or PHPStan checks must also be formatted by Pint.
  *
- * Some differences stay on purpose. The PHPUnit file is phpunit.xml or phpunit.xml.dist, and CI and bin/tia-cache
- * hash both names, so renaming one only resets that project's test graph. Dependency ranges and E2E's manual
- * test:fresh script are not checked here.
+ * Some differences stay on purpose. The PHPUnit file is phpunit.xml or phpunit.xml.dist. Dependency ranges are not
+ * checked here.
  *
  * To change the tooling on purpose, change the projects and this baseline in the same commit.
  */
@@ -30,8 +29,7 @@ const TOOLING_BASELINE_SCRIPTS = [
     'guidance:check' => '../../bin/guidance-check',
     'lint' => '@format:check',
     'rector' => '../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache',
-    'test' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never',
-    'test:affected' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never',
+    'test' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never',
 ];
 
 /** The steps of composer check. The guidance check runs first. PHPStan runs before Rector, because the candidate gate
@@ -83,10 +81,16 @@ const TOOLING_BASELINE_PROJECTS = [
         'rector' => ['app', 'bootstrap/app.php', 'bootstrap/providers.php', 'config', 'tests'],
         'phpstan' => ['app', 'config', '../../tools/phpstan'],
         'pint' => ['app', 'bootstrap', 'config', 'tests'],
-        'scripts' => [],
+        'scripts' => [
+            'merge:check' => [
+                'python3 -S tests/generated_merge_test.py',
+                'The Docs project runs the real generated-merge tools outside Pest.',
+            ],
+        ],
         'check' => [
             '@docs:lint' => 'The Docs project owns the documentation lint.',
             '@fixtures:check' => 'The Docs project owns the API fixtures.',
+            '@merge:check' => 'The Docs project owns the generated-merge end-to-end proof.',
         ],
     ],
     'apps/e2e' => [

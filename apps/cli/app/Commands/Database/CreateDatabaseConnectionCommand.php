@@ -22,7 +22,8 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         {--path= : Unix absolute sqlite path}
         {--username= : Username}
         {--password= : Password}
-        {--server= : Database server slug. Creates a MySQL database or Valkey ACL user on that server}
+        {--server= : Database server slug. Creates a MySQL/PostgreSQL database or Valkey ACL user}
+        {--locale= : Builtin PostgreSQL locale: C or C.UTF-8 (requires --server)}
         {--instance= : Numeric Instance ID that owns a database created with --server}
         {--pattern=* : Key pattern for a Valkey ACL user with --server}
         {--allow=* : Allowed command or category for a Valkey ACL user with --server}
@@ -47,6 +48,10 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
         if ($server !== null) {
             return $this->createOnServer($repository, $connectors, $slug, $server);
+        }
+
+        if ($this->option('locale') !== null) {
+            return $this->renderGatewayFailure('database.server_required', 'The --locale option requires --server.');
         }
 
         if ($this->option('pattern') !== [] || $this->option('allow') !== []) {
@@ -173,11 +178,14 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
+        $locale = $this->option('locale');
+
         $connection = $this->sendWithProgress(
             $connector,
             new CreateDatabaseConnectionRequest(
                 slug: $slug,
                 server: $server,
+                locale: is_string($locale) ? $locale : null,
                 instanceId: $instanceId,
                 database: $databaseIndex,
                 patterns: $this->aclOptions('pattern'),

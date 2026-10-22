@@ -14,7 +14,7 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app. To install, run, and check the app, see [Bun and Rust projects](/reference/bun-and-rust-projects#web-app).
 
-The generated Database server schema includes the `mysql` or `redis` driver, Valkey adoption inputs, and the close operation. Database creation accepts key patterns and allowed commands for a Valkey server. [Database servers](/reference/database-servers) defines these operator commands.
+The generated Database server schema includes the `mysql`, `pgsql` and `redis` drivers, explicit LAN peers, Valkey adoption inputs, and the close operation. Database connections expose a managed `lan_host` when available, and attachments accept an explicit `network` choice. Database creation accepts key patterns and allowed commands for a Valkey server. [Database servers](/reference/database-servers) defines these operator commands.
 
 The generated environment-operation schema includes the optional `runtime_refresh` result and `restarted_process_ids` for production env-sync. They report config-cache and FPM opcache refresh outcomes and the opted-in Processes restarted by the Gateway. These types do not add an environment editor. See [Instance environment variables](/reference/environment-variables#synchronize).
 
@@ -50,6 +50,8 @@ The Route create request type distinguishes an app Route with `instance_id` from
 
 The generated API types model Gateway rollback as a code switch without a `force` input. Database restoration is a separate operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back).
 
+The generated API types include [Reverb app](/reference/websocket-apps) create, list, show, and destroy operations, plus Instance attachments. App responses carry the app ID, public key, and attached Instance IDs. Attachment responses carry key names and stored key counts. Both omit the secret and environment values. These types add no web controls.
+
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.
@@ -69,11 +71,11 @@ A path without a file returns the release's `index.html`, and the app's router s
 
 `/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
-The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
+The app connects to Reverb at the URL that `GET /api/v1/realtime` returns. Its pusher-js client reconnects after a Reverb restart and authorizes and subscribes to each channel again, including Node presence channels. Each presence subscription rebuilds its member list; the next agent event restores the Node's online state.
 
 ## Node and Instance lists
 
-The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. On the dashboard, these are the Nodes with roles pane and the roleless Nodes pane. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
+The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. A Node with only `ci-runner` has CPU, memory, and disk meters through the same exporter and workload table. On the dashboard, these are the Nodes with roles pane and the roleless Nodes pane. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
 
 ## Node detail pages
 
@@ -189,7 +191,7 @@ A pane polls the one-shot read every 10 seconds instead when the Gateway refuses
 
 ## Installed app on iPhone and iPad
 
-Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
+Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/hardimpactdev/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
 
 The app shell is a `position: fixed` box with an opaque page background that fills the web view. iOS 26 blurs the top edge of an installed web app with its glass edge effect unless a fixed, opaque box covers that edge. The shell keeps the header sharp.
 
@@ -319,7 +321,9 @@ Then open `http://127.0.0.1:5173` on the Mac. Keep both the web command and SSH 
 
 Browser tests assert on the page, the URL, and the requests that the demo Gateway received. They never write tracked files, so a passing `bun run test` in `apps/web` leaves the working tree unchanged.
 
-Polling tests that need no DOM run in Node in `src/realtime/polling.test.ts`. They use real Query observers with Vitest fake timers and enable client scheduling through TanStack's environment manager. They check both fallback intervals and that polling stops when the page loses focus or the live connection takes over. Cleanup restores the clock, focus, liveness, and server mode. These checks need no browser launch; page and control behavior stays in the browser suite. [Web verification](/reference/web-verification#automated-tests) describes the separate tests that launch the screenshot tool's real Chromium and WebKit sessions.
+Polling tests that need no DOM run in Node in `src/realtime/polling.test.ts`. They use real Query observers with Vitest fake timers and enable client scheduling through TanStack's environment manager. They check both fallback intervals and that polling stops when the page loses focus or the live connection takes over. Cleanup restores the clock, focus, liveness, and server mode. These checks need no browser launch; page and control behavior stays in the browser suite.
+
+[Web verification](/reference/web-verification#automated-tests) describes the separate tests that launch the screenshot tool's real Chromium and WebKit sessions. These run headless; CI installs Chromium's headless shell without the unused full browser and keeps WebKit for engine-specific verification.
 
 ## Annotation overlay
 

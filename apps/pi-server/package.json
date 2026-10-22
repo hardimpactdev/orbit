@@ -11,30 +11,23 @@
         "build:linux": "bun build src/main.ts --compile --target=bun-linux-x64 --outfile dist/pi-server-linux-x64 && bun build src/main.ts --compile --target=bun-linux-arm64 --outfile dist/pi-server-linux-arm64"
     },
     "dependencies": {
-        "@earendil-works/pi-agent-core": "0.87.1",
-        "@earendil-works/pi-ai": "0.87.1",
-        "@earendil-works/pi-coding-agent": "0.87.1"
+        "@earendil-works/pi-agent-core": "1.2.0",
+        "@earendil-works/pi-ai": "1.2.0",
+        "@earendil-works/pi-coding-agent": "1.2.0"
     },
     "devDependencies": {
-        "@types/node": "^26.6.2",
-        "typescript": "~6.0.2",
-        "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-        "vite-plus": "0.2.6"
+        "@types/node": "^26.6.5",
+        "typescript": "~7.0.2",
+        "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+        "vite-plus": "1.1.0"
     },
     "overrides": {
-        "@vitest/browser": "4.1.11",
-        "@vitest/browser-preview": "4.1.11",
-        "@vitest/expect": "4.1.11",
-        "@vitest/mocker": "4.1.11",
-        "@vitest/pretty-format": "4.1.11",
-        "@vitest/runner": "4.1.11",
-        "@vitest/snapshot": "4.1.11",
-        "@vitest/spy": "4.1.11",
-        "@vitest/utils": "4.1.11",
+        "@earendil-works/pi-agent-core": "1.2.0",
+        "@earendil-works/pi-ai": "1.2.0",
         "source-map-js": "1.2.2",
         "tinypool": "2.1.2",
-        "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-        "vitest": "4.1.11"
+        "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+        "vitest": "5.0.3"
     },
     "devEngines": {
         "packageManager": {

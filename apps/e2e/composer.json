@@ -19,8 +19,8 @@
         "laravel/pint": "^1.32",
         "laravel/vet": "^0.2.1",
         "mockery/mockery": "^1.6",
-        "nckrtl/pestphp-monorepo": "dev-main",
         "nunomaduro/collision": "^8.6",
+        "pestphp/pest": "^5.3",
         "pestphp/pest-plugin-laravel": "^5.0",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
@@ -43,7 +43,6 @@
         ]
     },
     "scripts": {
-        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never",
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
@@ -66,8 +65,7 @@
         ],
         "lint": "@format:check",
         "rector": "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
-        "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never",
-        "test:fresh": "vendor/bin/pest --parallel --tia --fresh --compact",
+        "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

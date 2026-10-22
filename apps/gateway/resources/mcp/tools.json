@@ -1761,6 +1761,14 @@
             "type": "integer",
             "minimum": 1
           },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "C",
+              "C.UTF-8"
+            ],
+            "description": "PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default."
+          },
           "patterns": {
             "type": "array",
             "maxItems": 32,
@@ -1878,6 +1886,14 @@
               "instance_id": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "locale": {
+                "type": "string",
+                "enum": [
+                  "C",
+                  "C.UTF-8"
+                ],
+                "description": "PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default."
               }
             },
             "required": [
@@ -2133,21 +2149,22 @@
             "type": "string",
             "enum": [
               "mysql",
-              "redis"
+              "redis",
+              "pgsql"
             ],
-            "description": "Server driver: mysql or redis. Defaults to mysql"
+            "description": "Server driver: mysql, redis, or pgsql. Defaults to mysql"
           },
           "tag": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
+            "pattern": "",
             "maxLength": 128,
-            "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis"
+            "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql"
           },
           "port": {
             "type": "integer",
             "maximum": 65535,
             "minimum": 1,
-            "description": "Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis"
+            "description": "Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql"
           },
           "process_id": {
             "type": "integer",
@@ -3501,6 +3518,14 @@
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Database connection slug."
           },
+          "network": {
+            "type": "string",
+            "enum": [
+              "wireguard",
+              "lan"
+            ],
+            "description": "Connection network: wireguard (default) or lan"
+          },
           "prefix": {
             "type": "string",
             "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
@@ -4761,6 +4786,76 @@
       }
     },
     {
+      "name": "instance-websocket-add",
+      "extension": null,
+      "title": "Attach a WebSocket app",
+      "description": "Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).",
+      "method": "PUT",
+      "path": "/api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "instance",
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Publish Reverb on the existing public app Route"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "instance-websocket-remove",
+      "extension": null,
+      "title": "Detach a WebSocket app",
+      "description": "Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "instance",
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
+          },
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "websocket_app"
+        ]
+      }
+    },
+    {
       "name": "metrics-credentials",
       "extension": null,
       "title": "Show Metrics credentials",
@@ -5054,7 +5149,8 @@
                 "metrics",
                 "database",
                 "websocket",
-                "analytics"
+                "analytics",
+                "ci-runner"
               ]
             }
           },
@@ -5378,7 +5474,8 @@
               "metrics",
               "database",
               "websocket",
-              "analytics"
+              "analytics",
+              "ci-runner"
             ],
             "description": "Role name"
           },
@@ -5463,7 +5560,8 @@
               "metrics",
               "database",
               "websocket",
-              "analytics"
+              "analytics",
+              "ci-runner"
             ],
             "description": "Role name"
           },
@@ -5517,7 +5615,8 @@
               "metrics",
               "database",
               "websocket",
-              "analytics"
+              "analytics",
+              "ci-runner"
             ],
             "description": "Role name"
           },
@@ -10062,6 +10161,201 @@
           "keep_items": {
             "type": "boolean",
             "description": "Leave the published items in Vaultwarden"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "websocket-app-create",
+      "extension": null,
+      "title": "Create a WebSocket app",
+      "description": "Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.",
+      "method": "POST",
+      "path": "/api/v1/websocket-apps",
+      "path_inputs": [],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+            "maxLength": 63,
+            "description": "WebSocket app name"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "websocket-app-destroy",
+      "extension": null,
+      "title": "Remove a WebSocket app",
+      "description": "Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).",
+      "method": "DELETE",
+      "path": "/api/v1/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "websocket-app-list",
+      "extension": null,
+      "title": "List WebSocket apps",
+      "description": "List the Reverb apps on the websocket role.",
+      "method": "GET",
+      "path": "/api/v1/websocket-apps",
+      "path_inputs": [],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "websocket-app-rotate",
+      "extension": null,
+      "title": "websocket:app:rotate",
+      "description": "Rotate a Reverb app secret and close only that app’s sockets.",
+      "method": "POST",
+      "path": "/api/v1/websocket-apps/{websocket_app}/rotate",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "websocket-app-show",
+      "extension": null,
+      "title": "Show a WebSocket app",
+      "description": "Show one Reverb app and the Instances that use it.",
+      "method": "GET",
+      "path": "/api/v1/websocket-apps/{websocket_app}",
+      "path_inputs": [
+        "websocket_app"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "websocket_app": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "WebSocket app name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "websocket_app"
+        ]
+      }
+    },
+    {
+      "name": "websocket-operation-show",
+      "extension": null,
+      "title": "websocket:operation:show",
+      "description": "Show which Reverb processes have applied an app change.",
+      "method": "GET",
+      "path": "/api/v1/websocket-operations/{operation}",
+      "path_inputs": [
+        "operation"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "format": "uuid",
+            "description": "WebSocket registry operation UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "operation"
+        ]
+      }
+    },
+    {
+      "name": "websocket-sync",
+      "extension": null,
+      "title": "websocket:sync",
+      "description": "Wait for Reverb to apply the current app registry without restarting it.",
+      "method": "POST",
+      "path": "/api/v1/websocket-sync",
+      "path_inputs": [],
+      "query_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "Idempotency-Key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Reuse the same key when retrying this change."
           }
         },
         "additionalProperties": false

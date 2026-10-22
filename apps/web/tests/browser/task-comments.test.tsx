@@ -25,7 +25,7 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     vi.stubGlobal("EventSource", SilentSource);
     const app = await openApp("/tasks/12/subtasks/31");
     const comments = pane("Comments");
-    await expect.element(comments).toHaveTextContent("Changes requested");
+    await expect.element(comments).toMatchTextContent("Changes requested");
     await expect.element(pane("Agents")).toBeVisible();
     expect(cards()).toEqual([
         "Latest check",
@@ -40,19 +40,19 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     );
 
     const check = comments.getByRole("article", { name: "Latest check" });
-    await expect.element(check).toHaveTextContent("handoff");
-    await expect.element(check).toHaveTextContent("Failed");
-    await expect.element(check).toHaveTextContent("1m 12s · Exit 1 · Failed step: composer test");
-    await expect.element(check.getByText("Expected 90 but got 100.")).not.toBeVisible();
+    await expect.element(check).toMatchTextContent("handoff");
+    await expect.element(check).toMatchTextContent("Failed");
+    await expect.element(check).toMatchTextContent("1m 12s · Exit 1 · Failed step: composer test");
+    await expect.element(check.getByText(/Expected 90 but got 100\./)).not.toBeVisible();
     await check.getByText("Output").click();
-    await expect.element(check.getByText("Expected 90 but got 100.")).toBeVisible();
+    await expect.element(check.getByText(/Expected 90 but got 100\./)).toBeVisible();
 
     const latest = comments.getByRole("article").nth(1);
-    await expect.element(latest).toHaveTextContent("Expired codes now fail validation.");
+    await expect.element(latest).toMatchTextContent("Expired codes now fail validation.");
     await expect
         .element(latest.getByRole("time"))
         .toHaveAttribute("datetime", "2026-09-23T09:43:05+00:00");
-    await expect.element(latest.getByRole("time")).toHaveTextContent(/just now|ago$/);
+    await expect.element(latest.getByRole("time")).toMatchTextContent(/just now|ago$/);
 
     // The agents keep their own states: the implementer handed off and the reviewer works.
     await expect
@@ -92,14 +92,14 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         ["task-groups", "12", "tasks", "31", "comments"],
         (previous) => [approved, ...(previous ?? [])],
     );
-    await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("Approved");
-    await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("just now");
+    await expect.element(comments.getByRole("article").nth(1)).toMatchTextContent("Approved");
+    await expect.element(comments.getByRole("article").nth(1)).toMatchTextContent("just now");
     await expect
         .element(comments.getByRole("region", { name: "Proposed pull request" }))
-        .toHaveTextContent("Count the boundary day in quota windows.");
+        .toMatchTextContent("Count the boundary day in quota windows.");
     await expect
         .element(comments.getByRole("region", { name: "Proposed pull request" }))
-        .toHaveTextContent("No breaking changes");
+        .toMatchTextContent("No breaking changes");
     expect(
         app.gateway.requests.some(
             (request) => request.path === "/api/v1/task-groups/12/tasks/31/comments",
@@ -116,10 +116,10 @@ it("shows the role before the comment type and collapses a long comment to three
     vi.stubGlobal("EventSource", SilentSource);
     await openApp("/tasks/12/subtasks/31");
     const comments = pane("Comments");
-    await expect.element(comments).toHaveTextContent("Changes requested");
+    await expect.element(comments).toMatchTextContent("Changes requested");
 
     const latest = comments.getByRole("article").nth(1);
-    await expect.element(latest).toHaveTextContent(/^Implementer · Ready for review/);
+    await expect.element(latest).toMatchTextContent(/^Implementer · Ready for review/);
     // A comment that fits in three lines has nothing to expand.
     await expect.element(latest.getByRole("button", { name: "Show more" })).not.toBeInTheDocument();
 
@@ -155,13 +155,13 @@ it("shows the role before the comment type and collapses a long comment to three
         .element(card.getByRole("button", { name: "Show less" }))
         .toHaveAttribute("aria-expanded", "true");
     expect(paragraph().scrollHeight).toBeLessThanOrEqual(paragraph().clientHeight + 1);
-    await card.getByText("Finding 12 of the review.").click();
+    await card.getByText(/Finding 12 of the review\./).click();
     await expect.element(card.getByRole("button", { name: "Show more" })).toBeVisible();
 });
 
 it("says so when a subtask has no comments or check yet", async () => {
     vi.stubGlobal("EventSource", SilentSource);
     await openApp("/tasks/12/subtasks/32");
-    await expect.element(pane("Comments")).toHaveTextContent("No comments on this task yet.");
+    await expect.element(pane("Comments")).toMatchTextContent("No comments on this task yet.");
     expect(cards()).toEqual([]);
 });

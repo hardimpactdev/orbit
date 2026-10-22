@@ -17,6 +17,7 @@ if (is_string($configuredHome) && $configuredHome !== '') {
 }
 
 return [
+    'recipe_snapshot_cache' => env('ORBIT_RECIPE_SNAPSHOT_CACHE'),
     'home' => rtrim(string: $orbitHome, characters: '/'),
     'gateway_checkout' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
@@ -32,7 +33,7 @@ return [
         'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
         // The most releases deploy keeps, the current and the previous one included; at least 2, so the way back stays.
         'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 3),
-        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
+        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 3),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
         // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.
         'tick_confirmation_seconds' => max(60, (int) env('ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS', 180)),
@@ -52,7 +53,7 @@ return [
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
     // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
     'cli_releases' => [
-        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit'),
         'git_directory' => base_path(),
     ],
     // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
@@ -67,8 +68,9 @@ return [
     // seconds belongs to a request that was killed.
     'activity_interrupted_after' => 900,
     'websocket' => [
-        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
-        'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),
+        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit-reverb.git'),
+        // Role convergence installs this Gateway release's server, never a moving branch.
+        'ref' => 'f15545c04a30ef26cf3a11dd675668ced217f394',
         'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
         'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
     ],

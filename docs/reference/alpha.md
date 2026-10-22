@@ -29,7 +29,7 @@ Follow the guides in this order. Record the source commit on each machine.
 
 A documentation build or an automated test does not prove the Gateway installation, the first application, or the recovery on fresh machines. Only a run from fresh machines with no Orbit state proves them. The Node step is proven in use, as [What is proven](#what-is-proven) explains.
 
-Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead. Bootstrap seeds its test and quality caches from the [main caches](/reference/implementation-loop#main-caches) when they exist. It never publishes caches; only main CI does. Bootstrap writes the development Gateway key to `ORBIT_HOME/gateway.app-key` with `bin/gateway-app-key`, and keeps a key that exists. A nonempty `APP_KEY` in the environment [takes precedence](/reference/gateway-recovery#preserve-a-complete-state-set). `--with-bun` and `--with-rust` also install the locked dependencies of the [Bun and Rust projects](/reference/bun-and-rust-projects).
+Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead. Bootstrap seeds its quality caches from a [clean primary checkout on `main`](/reference/implementation-loop#seed-a-checkout) when one fits. It never publishes caches; only main CI does. Bootstrap writes the development Gateway key to `ORBIT_HOME/gateway.app-key` with `bin/gateway-app-key`, and keeps a key that exists. A nonempty `APP_KEY` in the environment [takes precedence](/reference/gateway-recovery#preserve-a-complete-state-set). `--with-bun` and `--with-rust` also install the locked dependencies of the [Bun and Rust projects](/reference/bun-and-rust-projects).
 
 Bootstrap also installs the [merge driver for generated files](/contributor-guide#merging-generated-files). Contributors who merge branches need the Docs and Gateway Composer dependencies and the web dependencies (`--with-bun`); a source alpha trial does not need to merge branches.
 
@@ -67,6 +67,6 @@ These criteria are a checklist, not a release approval. A version string in a de
 
 ## Feedback
 
-Use [GitHub issues](https://github.com/nckrtl/orbit/issues) for bugs and questions. Include the source commit from `git rev-parse HEAD`, the CLI output of `orbit --version`, the Gateway version from `orbit gateway:status`, and the operating systems. Describe the command, the expected result, the observed result, and the steps to reproduce it.
+Use [GitHub issues](https://github.com/hardimpactdev/orbit/issues) for bugs and questions. Include the source commit from `git rev-parse HEAD`, the CLI output of `orbit --version`, the Gateway version from `orbit gateway:status`, and the operating systems. Describe the command, the expected result, the observed result, and the steps to reproduce it.
 
 Include stable error codes and request IDs when you have them. Check the output before you share it. Remove tokens, private keys, passwords, environment values, repository URLs that carry credentials, and personal data. Never attach the Gateway database or a state backup. The [contributor guide](/contributor-guide) explains the local checks.

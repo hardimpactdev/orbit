@@ -17,6 +17,8 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process#orbit-processcreate) lists the accepted combinations.
 
+`database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
+
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 
 `gateway:release:rollback` switches Gateway code to a retained release. It leaves the database in place; [Gateway recovery](/reference/gateway-recovery#roll-back) describes database restoration.
@@ -46,11 +48,12 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record, and with `--server` the database itself |
 | `database:server` | `create` and `destroy` | A [Database server](/reference/database-servers) and its Docker Node Process |
-| `database:user` | `create` | A MySQL user on a database that lives on a [Database server](/reference/database-servers#add-a-user) |
+| `database:user` | `create` | A MySQL or PostgreSQL user on a database that lives on a [Database server](/reference/database-servers#add-a-user) |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
 | `github:app` | `install` and `destroy` | The Gateway's [GitHub App](/reference/github-app) |
 | `instance` | `create` and `destroy` | An Instance |
 | `instance:database` | `add` and `remove` | A Database connection on an Instance |
+| `instance:websocket` | `add` and `remove` | A [Reverb app](/reference/websocket-apps) on an Instance |
 | `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
 | `instance:setup-step` | `create` and `destroy` | A named [setup step](/reference/instance-setup) on a Project |
 | `instance:teardown-step` | `create` and `destroy` | A named [teardown step](/reference/instance-setup) on a Project |
@@ -67,6 +70,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `tasks:comment` | `create` | A typed comment on a subtask |
 | `tasks:subtask` | `create` and `destroy` | A subtask of a task |
 | `tool` | `install` and `remove`; `adopt` establishes ownership of an existing package | A Tool on a Node |
+| `websocket:app` | `create` and `destroy` | A [Reverb app](/reference/websocket-apps) on the `websocket` role |
 
 `route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
 
@@ -103,6 +107,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `tasks` | `cancel`, `close`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, closes a stale question with `tasks:question:close`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 | `vault` | `setup`, `status`, `sync`, `teardown` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
+| `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |
 
 `doctor`, `profile`, and `self-update` are one-segment commands. Each family name is the command. Project display names, source defaults, and task settings use `project:update`; create and destroy remain the lifecycle commands.
 

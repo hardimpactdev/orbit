@@ -20,9 +20,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\PrivateDnsPublishHarness;
-
-pest()->group('subprocess');
 
 it('publishes records and the requester catalog idempotently', function (): void {
     $harness = new PrivateDnsPublishHarness;
@@ -68,6 +67,31 @@ it('leaves the working records and catalog in place when validation fails', func
             ->toBe($previousRecords)
             ->and(file_get_contents($harness->catalogPath()))
             ->toBe($previousCatalog);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('logs missing listener PHP before any service change', function (): void {
+    $harness = new PrivateDnsPublishHarness;
+    orb258_published_peer();
+    Log::spy();
+
+    try {
+        expect(fn () => $harness->listenerManager('/nonexistent-orbit-php8.5')->converge())
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->result?->exitCode)->toBe(127)
+                    ->and($exception->result?->stderr)->toContain('/nonexistent-orbit-php8.5');
+            });
+
+        Log::shouldHaveReceived('warning')->once()->with('Private DNS publication failed.', Mockery::on(
+            static fn (array $context): bool => $context['exit_code'] === 127
+                && str_contains($context['stderr'], '/nonexistent-orbit-php8.5')
+                && array_key_exists('stdout', $context)
+                && $context['duration_ms'] >= 0
+                && $context['output_truncated'] === false,
+        ));
+        expect($harness->serviceCalls())->toBe([]);
     } finally {
         $harness->cleanup();
     }

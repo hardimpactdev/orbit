@@ -13,8 +13,6 @@ use Tests\Support\StandardLibraryPython;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
-pest()->group('subprocess');
-
 it('reads public registry packages from npm, Bun JSONC and pnpm without treating workspace links as artifacts', function (string $filename, string $contents): void {
     $artifacts = (new NpmPackageCache)->read($filename, $contents);
 

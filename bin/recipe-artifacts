@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Authenticate and bump the recipe's complete Sury and Incus LTS artifact sets.
+
+  bin/recipe-artifacts bump [--dry-run] [--recipe PATH]
+"""
+import argparse
+import gzip
+import hashlib
+import json
+import lzma
+from pathlib import Path
+import re
+import runpy
+import subprocess
+import sys
+import tempfile
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+php = runpy.run_path(str(ROOT / 'bin/php-build'))
+BuildError, load, upstream, build, download = (php[name] for name in ('BuildError', 'load', 'upstream', 'build', 'download'))
+RECIPE = php['RECIPE']
+SURY = 'https://packages.sury.org/php/'
+# The Sury signing key, pinned as in apps/gateway/app/Infrastructure/Nodes and docs/reference/node-provisioning.md.
+SURY_KEY_SHA256 = 'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c'
+ZABBLY = 'https://pkgs.zabbly.com/incus/lts-7.0/'
+ZABBLY_KEY_SHA256 = 'f1adb44fdf82083f983a392b5b406d34e473dce3d66a51de3118cdc1f51d3f87'
+INCUS_PACKAGES = ('incus', 'incus-base', 'incus-client')
+CODENAMES = php['CODENAMES']
+
+
+def fetch(url):
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return response.read()
+
+
+def signed_release(codename, work):
+    key = work / 'sury.gpg'
+    key.write_bytes(fetch(SURY + 'apt.gpg'))
+    if hashlib.sha256(key.read_bytes()).hexdigest() != SURY_KEY_SHA256:
+        raise BuildError('The Sury signing key does not match its pinned digest.')
+    release = work / 'InRelease'
+    release.write_bytes(fetch(f'{SURY}dists/{codename}/InRelease'))
+    result = subprocess.run(['gpgv', '--keyring', str(key), '--output', '-', str(release)], capture_output=True)
+    if result.returncode:
+        raise BuildError('The Sury InRelease signature does not verify: ' + result.stderr.decode(errors='replace'))
+    return result.stdout.decode()
+
+
+def release_hashes(text):
+    hashes, section = {}, False
+    for line in text.splitlines():
+        if not line.startswith(' '):
+            section = line.strip() == 'SHA256:'
+            continue
+        if section:
+            digest, _size, name = line.split()
+            hashes[name] = digest
+    return hashes
+
+
+def stanzas(text):
+    for block in text.split('\n\n'):
+        fields = {}
+        for line in block.splitlines():
+            if line and not line.startswith(' ') and ':' in line:
+                key, value = line.split(':', 1)
+                fields[key] = value.strip()
+        if fields.get('Package'):
+            yield fields
+
+
+def _order(character):
+    if character == '~':
+        return -1
+    if character.isalpha():
+        return ord(character)
+    return ord(character) + 256 if character else 0
+
+
+def _compare_part(left, right):
+    """Debian's comparison of an upstream version or revision: alternating non-digit and digit runs."""
+    while left or right:
+        left_text = re.match(r'[^0-9]*', left).group()
+        right_text = re.match(r'[^0-9]*', right).group()
+        for index in range(max(len(left_text), len(right_text))):
+            a = _order(left_text[index] if index < len(left_text) else '')
+            b = _order(right_text[index] if index < len(right_text) else '')
+            if a != b:
+                return -1 if a < b else 1
+        left, right = left[len(left_text):], right[len(right_text):]
+        left_number = re.match(r'[0-9]*', left).group()
+        right_number = re.match(r'[0-9]*', right).group()
+        if int(left_number or 0) != int(right_number or 0):
+            return -1 if int(left_number or 0) < int(right_number or 0) else 1
+        left, right = left[len(left_number):], right[len(right_number):]
+    return 0
+
+
+def compare_versions(left, right):
+    """dpkg --compare-versions, so the bump picks the same newest build as apt."""
+    def split(version):
+        epoch, _, rest = version.rpartition(':') if ':' in version else ('0', '', version)
+        upstream_part, _, revision = rest.rpartition('-') if '-' in rest else (rest, '', '0')
+        return int(epoch or 0), upstream_part, revision
+    left_epoch, left_upstream, left_revision = split(left)
+    right_epoch, right_upstream, right_revision = split(right)
+    if left_epoch != right_epoch:
+        return -1 if left_epoch < right_epoch else 1
+    return _compare_part(left_upstream, right_upstream) or _compare_part(left_revision, right_revision)
+
+
+def newer(left, right):
+    return compare_versions(left, right) > 0
+
+
+def index(codename, arch, hashes, work):
+    for suffix, decompress in (('.xz', lzma.decompress), ('.gz', gzip.decompress), ('', lambda data: data)):
+        name = f'main/binary-{arch}/Packages{suffix}'
+        if name in hashes:
+            data = fetch(f'{SURY}dists/{codename}/{name}')
+            if hashlib.sha256(data).hexdigest() != hashes[name]:
+                raise BuildError(f'{name} does not match the signed InRelease.')
+            return decompress(data).decode()
+    raise BuildError(f'Sury publishes no package index for {codename} {arch}.')
+
+
+def bump_recipe(recipe, indexes):
+    """Move every pin of every PHP set to the newest build in `indexes` (architecture to Packages text)."""
+    php = recipe['php']
+    names = sorted(set(php['shared']).union(*(set(v['packages']) for v in php['versions'].values())))
+    changes = []
+    for arch, text in indexes.items():
+        newest = {}
+        for fields in stanzas(text):
+            name = fields['Package']
+            if name in names and fields.get('Architecture') in (arch, 'all'):
+                if name not in newest or newer(fields['Version'], newest[name]['Version']):
+                    newest[name] = fields
+        for name in names:
+            if arch not in recipe['tools'][name]['artifacts']:
+                continue
+            if name not in newest:
+                raise BuildError(f'Sury has no {arch} package {name}.')
+            fields, tool = newest[name], recipe['tools'][name]
+            artifact = {'url': SURY + fields['Filename'], 'sha256': fields['SHA256']}
+            if tool['version'] != fields['Version'] or tool['artifacts'][arch] != artifact:
+                changes.append(f'{name} {arch}: {tool["version"]} -> {fields["Version"]}')
+                tool['version'] = fields['Version']
+                tool['artifacts'][arch] = artifact
+    for version, selected in php['versions'].items():
+        common = recipe['tools'][f'php{version}-common']['version']
+        for name in selected['packages']:
+            pinned = recipe['tools'][name]['version']
+            if pinned.startswith(version + '.') and pinned != common:
+                raise BuildError(f'Sury publishes {name} {pinned} beside php{version}-common {common}. '
+                                 'It is between builds; run the bump again later.')
+    return changes
+
+
+def bump(path):
+    recipe = load(path)
+    codename = CODENAMES[recipe['ubuntu']['release']]
+    with tempfile.TemporaryDirectory(prefix='orbit-artifact-bump-') as directory:
+        hashes = release_hashes(signed_release(codename, Path(directory)))
+        indexes = {arch: index(codename, arch, hashes, Path(directory)) for arch in sorted({arch for name in recipe['php']['shared'] for arch in recipe['tools'][name]['artifacts']})}
+    changes = bump_recipe(recipe, indexes)
+    for change in changes:
+        print(change)
+    if not changes:
+        print('The recipe pins Sury\'s newest PHP build.')
+    else:
+        Path(path).write_text(json.dumps(recipe, indent=4) + '\n')
+
+
+def bump_incus_recipe(recipe, indexes):
+    """Select one complete LTS build across both architectures before changing any pin."""
+    selected = {}
+    for arch, text in indexes.items():
+        for fields in stanzas(text):
+            name, version = fields['Package'], fields['Version']
+            if name not in INCUS_PACKAGES or fields.get('Architecture') != arch:
+                continue
+            if not re.fullmatch(r'1:7\.0\.[0-9]+-ubuntu' + re.escape(recipe['ubuntu']['release']) + r'-[0-9]+', version):
+                continue
+            key = (arch, name)
+            if key not in selected or newer(version, selected[key]['Version']):
+                selected[key] = fields
+    required = [(arch, name) for arch in recipe['architectures'] for name in INCUS_PACKAGES]
+    if any(key not in selected for key in required) or len({selected[key]['Version'].rsplit('-', 1)[0] for key in required}) != 1 or any(len({selected[arch, name]['Version'] for name in INCUS_PACKAGES}) != 1 for arch in recipe['architectures']):
+        raise BuildError('Zabbly does not publish one complete Incus 7.0 LTS build for every architecture.')
+    changes = []
+    pins = {}
+    for arch, name in required:
+        fields = selected[arch, name]
+        version = fields['Version']
+        filename = f'pool/main/i/incus/{name}_{version.split(":", 1)[-1]}_{arch}.deb'
+        if fields['Filename'] != filename or not re.fullmatch('[a-f0-9]{64}', fields['SHA256']):
+            raise BuildError('Unexpected Incus package path or SHA-256 digest.')
+        pin = pins.setdefault(name, {'source': 'artifact', 'version': upstream(version), 'artifacts': {}})
+        pin['artifacts'][arch] = {'url': ZABBLY + filename, 'sha256': fields['SHA256'], 'version': version}
+    for name, pin in pins.items():
+        if recipe['tools'].get(name) != pin:
+            changes.append(f'{name}: {recipe["tools"].get(name, {}).get("version", "missing")} -> {pin["version"]}')
+    recipe['tools'].update(pins)
+    return changes
+
+
+def bump_incus(path, *, indexes_only=False):
+    recipe = load(path)
+    codename = CODENAMES[recipe['ubuntu']['release']]
+    with tempfile.TemporaryDirectory(prefix='orbit-incus-bump-') as directory:
+        work = Path(directory)
+        key = fetch('https://pkgs.zabbly.com/key.asc')
+        if hashlib.sha256(key).hexdigest() != ZABBLY_KEY_SHA256:
+            raise BuildError('The Zabbly signing key does not match its pinned digest.')
+        result = subprocess.run(['gpg', '--batch', '--dearmor'], input=key, capture_output=True)
+        if result.returncode:
+            raise BuildError('Cannot decode the Zabbly signing key.')
+        (work / 'zabbly.gpg').write_bytes(result.stdout)
+        release = work / 'InRelease'
+        release.write_bytes(fetch(f'{ZABBLY}dists/{codename}/InRelease'))
+        result = subprocess.run(['gpgv', '--keyring', str(work / 'zabbly.gpg'), '--output', '-', str(release)], capture_output=True)
+        if result.returncode:
+            raise BuildError('The Zabbly InRelease signature does not verify.')
+        hashes = release_hashes(result.stdout.decode())
+        indexes = {}
+        for arch in recipe['architectures']:
+            name = f'main/binary-{arch}/Packages'
+            data = fetch(f'{ZABBLY}dists/{codename}/{name}')
+            if name not in hashes or hashlib.sha256(data).hexdigest() != hashes[name]:
+                raise BuildError(f'{name} does not match the signed Zabbly InRelease.')
+            indexes[arch] = data.decode()
+        previous = json.loads(json.dumps(recipe['tools']))
+        changes = bump_incus_recipe(recipe, indexes)
+        for name in INCUS_PACKAGES:
+            for arch, artifact in recipe['tools'][name]['artifacts'].items():
+                if not indexes_only and previous.get(name, {}).get('artifacts', {}).get(arch) != artifact:
+                    download(artifact['url'], work / f'{name}_{arch}.deb', artifact['sha256'])
+    print('\n'.join(changes) if changes else 'The recipe pins Zabbly\'s newest Incus 7.0 LTS build.')
+    if changes:
+        Path(path).write_text(json.dumps(recipe, indent=4) + '\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('command', choices=['bump'])
+    parser.add_argument('--recipe', type=Path, default=RECIPE)
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--indexes-only', action='store_true', help='Authenticate candidate pins without downloading Debian files.')
+    arguments = parser.parse_args()
+    try:
+        original = arguments.recipe.read_text()
+        with tempfile.TemporaryDirectory(prefix='orbit-artifact-bump-') as directory:
+            candidate = Path(directory) / 'recipe.json'
+            candidate.write_text(original)
+            bump(candidate)
+            bump_incus(candidate, indexes_only=arguments.indexes_only)
+            updated = candidate.read_text()
+        if not arguments.dry_run and updated != original:
+            arguments.recipe.write_text(updated)
+        return 0
+    except (BuildError, OSError, KeyError, ValueError) as error:
+        print(f'recipe-artifacts: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

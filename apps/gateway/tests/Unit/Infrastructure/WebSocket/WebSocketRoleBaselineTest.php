@@ -10,10 +10,14 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
+use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\WebSocketRuntime;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -33,7 +37,7 @@ it('generates credentials, then converges runtime before publication', function 
     ]);
 });
 
-it('rolls the runtime back when publication fails', function (): void {
+it('rolls a newly assigned runtime back when publication fails', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
     $events = [];
     $baseline = websocketBaseline($events, failure: 'publication:converge');
@@ -47,8 +51,71 @@ it('rolls the runtime back when publication fails', function (): void {
             'runtime:converge',
             'publication:converge',
             'runtime:remove',
+            'publication:retire',
+            'credentials:purge',
         ]);
 });
+
+it('withdraws a confirmed endpoint only after a new assignment rollback stops Reverb', function (bool $stopFails): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $manager = app(WebSocketCredentialManager::class);
+    $target = new WebSocketDnsTarget;
+    $runtime = Mockery::mock(WebSocketRuntimeLifecycle::class);
+    $runtime->shouldReceive('converge')->once();
+    $stop = $runtime->shouldReceive('remove')->once()->with($node, $assignment, false);
+    if ($stopFails) {
+        $stop->andThrow(new RuntimeException('Reverb stop failed'));
+    }
+    $publication = Mockery::mock(WebSocketPublicationManager::class);
+    $publication->shouldReceive('checkListenAddresses')->once();
+    $publication->shouldReceive('converge')->once()->andReturnUsing(function (Node $node) use ($manager, $target): never {
+        confirm_websocket_runtime($node);
+        $target->markServing($node->id);
+        expect($manager->current())->not->toBeNull();
+
+        throw new RuntimeException('Private DNS publication failed');
+    });
+    if ($stopFails) {
+        $publication->shouldNotReceive('retire');
+    } else {
+        $publication->shouldReceive('retire')->once()->andReturnUsing(fn (Node $node) => $target->forget($node->id));
+    }
+    $baseline = new WebSocketRoleBaseline($runtime, $publication, $manager);
+
+    expect(fn () => $baseline->converge($node, $assignment))->toThrow(
+        $stopFails ? ResourceOperationException::class : RuntimeException::class,
+        $stopFails ? 'WebSocket convergence rollback failed.' : 'Private DNS publication failed',
+    );
+
+    expect($manager->current() !== null)->toBe($stopFails)
+        ->and($target->isServing($node->id))->toBe($stopFails)
+        ->and(WebSocketRuntime::query()->where('node_id', $node->id)->sole()->required)->toBe($stopFails);
+})->with([false, true]);
+
+it('keeps an existing runtime when publication fails after convergence is claimed', function (LifecycleStatus $status): void {
+    [$node, $assignment] = websocketBaselineTopology();
+    $assignment->update([
+        'status' => $status,
+        'failed_step' => $status === LifecycleStatus::Failed ? 'converge:baseline' : null,
+    ]);
+    $assignment = $assignment->fresh();
+    $assignment->claimConvergence();
+    $events = [];
+    $baseline = websocketBaseline($events, failure: 'publication:converge');
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'publication:converge failed');
+
+    expect($events)->toBe([
+        'publication:check',
+        'credentials:ensure',
+        'runtime:converge',
+        'publication:converge',
+    ]);
+})->with([
+    'active role' => LifecycleStatus::Active,
+    'retry after failed converge' => LifecycleStatus::Failed,
+]);
 
 it('refuses a missing listen address before it touches a running Reverb', function (): void {
     [$node, $assignment] = websocketBaselineTopology();
@@ -138,7 +205,16 @@ it('touches only the Gateway-side publication and credentials when the node is u
     $events = [];
     $baseline = websocketBaseline($events);
 
+    $runtimes = collect(['default', 'second'])->map(fn (string $slot): WebSocketRuntime => WebSocketRuntime::query()->create([
+        'id' => (string) Str::uuid(), 'node_id' => $node->id, 'slot' => $slot,
+        'registry_token' => 'registry-test', 'notification_token' => 'notification-test',
+    ]));
+
     $baseline->removeUnreachable($node, $assignment);
+
+    foreach ($runtimes as $runtime) {
+        expect($runtime->refresh()->required)->toBeFalse();
+    }
 
     expect($events)->toBe([
         'publication:removeUnreachable',
@@ -187,7 +263,7 @@ final class WebSocketBaselineRuntime implements WebSocketRuntimeLifecycle
         private bool $lockLost = false,
     ) {}
 
-    public function converge(Node $node, NodeRole $assignment, WebSocketCredentials $credentials): void
+    public function converge(Node $node, NodeRole $assignment, WebSocketServerCredentials $credentials): void
     {
         $this->record('runtime:converge');
     }
@@ -265,11 +341,11 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         private bool $lockLost = false,
     ) {}
 
-    public function ensure(Node $node): WebSocketCredentials
+    public function ensure(Node $node): WebSocketServerCredentials
     {
         $this->record('credentials:ensure');
 
-        return new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('key'));
+        return new WebSocketServerCredentials('base64:'.base64_encode('key'), 'test-process', 'test-registry-token', 'test-notification-token');
     }
 
     public function current(): ?WebSocketCredentials
@@ -277,7 +353,7 @@ final class WebSocketBaselineCredentials implements WebSocketCredentialManager
         return null;
     }
 
-    public function purge(Node $node): void
+    public function purge(Node $node, bool $runtimeStopped = false): void
     {
         $this->record('credentials:purge');
     }

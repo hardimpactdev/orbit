@@ -104,6 +104,15 @@ use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
 use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
+use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\CreateWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\DestroyWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ListWebSocketAppsRequest;
+use Orbit\Sdk\Requests\WebSocket\RemoveInstanceWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\RotateWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketAppRequest;
+use Orbit\Sdk\Requests\WebSocket\ShowWebSocketOperationRequest;
+use Orbit\Sdk\Requests\WebSocket\SyncWebSocketAppsRequest;
 
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
@@ -165,7 +174,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('do not silently skip it');
     });
 
-    it('runs the TIA guidance gate first without Laravel or Boost', function (): void {
+    it('runs the guidance gate first without Laravel or Boost', function (): void {
         /** @var array{require: array<string, string>, require-dev: array<string, string>, scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -181,7 +190,7 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
-    it('keeps every repository test command on TIA', function (): void {
+    it('runs the full suite on stock Pest from every repository test command', function (): void {
         /** @var array{scripts: array<string, string|list<string>>} $composer */
         $composer = json_decode(
             repository_guidance_contents('composer.json'),
@@ -192,14 +201,15 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'])->not->toContain('@test');
 
         expect($composer['scripts']['test'] ?? null)
-            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never')
             ->and($composer['scripts'])
-            ->not->toHaveKey('test:full');
+            ->not->toHaveKey('test:full')
+            ->not->toHaveKey('test:affected');
 
         expect(repository_guidance_contents('README.md'))
-            ->toContain('composer test       # Pest suite with TIA (parallel)')
+            ->toContain('composer test       # full Pest suite in parallel')
             ->not->toContain('composer test:full')
-            ->not->toContain('local TIA');
+            ->not->toContain('TIA');
 
     });
 
@@ -236,6 +246,17 @@ describe('repository guidance bootstrap', function (): void {
             ShowDatabaseServerRequest::class,
             CreateDatabaseServerRequest::class,
             DestroyDatabaseServerRequest::class,
+        ];
+        $webSocketRequests = [
+            ListWebSocketAppsRequest::class,
+            ShowWebSocketAppRequest::class,
+            CreateWebSocketAppRequest::class,
+            RotateWebSocketAppRequest::class,
+            SyncWebSocketAppsRequest::class,
+            ShowWebSocketOperationRequest::class,
+            DestroyWebSocketAppRequest::class,
+            AddInstanceWebSocketAppRequest::class,
+            RemoveInstanceWebSocketAppRequest::class,
         ];
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
@@ -333,7 +354,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -490,6 +511,13 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(array_values(array_filter(
             $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\WebSocket\\'),
+        )))
+            ->toHaveCount(count($webSocketRequests))
+            ->toEqualCanonicalizing($webSocketRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
             static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\GitHub\\'),
         )))
             ->toHaveCount(count($gitHubRequests))
@@ -515,14 +543,23 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($taskRequests))
             ->toEqualCanonicalizing($taskRequests);
+
+        foreach ([
+            '.ai/rules/public-contract.md' => '/The SDK models exactly (\d+) concrete public Gateway API operations:/',
+            'README.md' => '/The SDK exposes exactly (\d+) public Gateway operations\./',
+        ] as $path => $pattern) {
+            preg_match($pattern, repository_guidance_contents($path), $matches);
+
+            expect((int) ($matches[1] ?? 0))->toBe($expectedOperationCount);
+        }
     });
 
-    it('documents the 210-operation SDK surface including Project Documents', function (): void {
+    it('documents the SDK surface including Project Documents and Reverb apps', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 214 concrete public Gateway API operations:')
+            ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -597,7 +634,6 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 214 public Gateway operations.',
                 'The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

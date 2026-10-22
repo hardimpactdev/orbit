@@ -618,6 +618,7 @@ TAGS = [
     ('env', 'Environment', 'Stored Instance environment configuration and its .env projection.'),
     ('route', 'Routes', 'Domains that reach an Instance.'),
     ('database', 'Database connections', 'The registry of mysql, pgsql, and sqlite connections.'),
+    ('websocket', 'WebSocket apps', 'The Reverb apps that the websocket role serves for Instances.'),
     ('process', 'Processes', 'systemd services and Docker containers owned by an Instance, a Node, or a Project definition.'),
     ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
     ('tasks', 'Tasks', 'Task groups and ordered subtasks.'),
@@ -674,6 +675,8 @@ SUMMARIES = {
     'instance:clone': 'Clone an Instance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
     'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
+    'instance:websocket:add': 'Attach a WebSocket app', 'instance:websocket:remove': 'Detach a WebSocket app',
+    'websocket:app:list': 'List WebSocket apps', 'websocket:app:show': 'Show a WebSocket app', 'websocket:app:create': 'Create a WebSocket app', 'websocket:app:destroy': 'Remove a WebSocket app',
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
     'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Add a database user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
@@ -761,6 +764,10 @@ DESCRIPTIONS = {
     'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
     'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
     'database:server:show': 'Shows one Database server with the connections of the databases on it.',
+    'websocket:app:create': 'Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.',
+    'websocket:app:destroy': 'Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).',
+    'instance:websocket:add': 'Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).',
+    'instance:websocket:remove': 'Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).',
     'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off. workspace_leases lists each Instance with its current holder and FIFO waiters, including actor kinds, owner keys, timestamps, optional thread and check IDs, and remote_uncertain when a remote mutation has no confirmed result. Reading status never changes workspace ownership.',
     'tasks:create': 'Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Returns `extension.disabled` while the extension is off.',
     'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
@@ -861,13 +868,14 @@ PARAM_SCHEMAS = {
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
     'database_connection': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database connection slug.'),
     'database_server': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database server slug.'),
+    'websocket_app': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'WebSocket app name.'),
     'table': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]*$', 'maxLength': 64}, 'Table name.'),
     'process_definition': ({'type': 'string'}, 'Process definition name, unique within the Project.'),
     'schedule_definition': ({'type': 'string'}, 'Schedule definition name, unique within the Project.'),
     'firewall_rule': ({'type': 'string'}, 'Firewall rule name, unique on the Node.'),
 }
 ENV_INSTANCE = ({'type': 'string'}, 'Positive Instance ID or the exact Route domain of the Instance.')
-EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'database_server': 'beast-mysql', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
+EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'database_server': 'beast-mysql', 'websocket_app': 'hauzer', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
 
 
 def openapi_path(route):
@@ -1515,6 +1523,8 @@ def conn_settings_body(name):
 
 def example_path(route, name):
     """Example value for one path parameter."""
+    if name == 'operation' and route['name'] == 'websocket:operation:show':
+        return '33333333-3333-4333-8333-333333333333'
     return EXAMPLE_PATH.get(name, 1)
 
 
@@ -1535,6 +1545,20 @@ def bash_sample(route, path, body_schema, query, tag):
 # ---------------------------------------------------------------- responses
 def envelope(data_schema, description):
     return {'description': description, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'data': data_schema, 'meta': {'$ref': '#/components/schemas/Meta'}}, 'required': ['data', 'meta']}}}}
+
+
+def websocket_envelope(data_schema, description):
+    response = envelope({'oneOf': [ref('WebSocketAppData'), {'type': 'array', 'maxItems': 0}]}, description)
+    schema = response['content']['application/json']['schema']
+    apply = sdk_schema('WebSocketApplyResponse')
+    apply['properties']['id'] = {'type': 'string', 'format': 'uuid'}
+    apply['properties']['epoch'] = {'type': 'string', 'format': 'uuid'}
+    apply['properties']['state'] = {'type': 'string', 'enum': ['pending', 'applied', 'superseded']}
+    apply['properties']['status_url'] = {'type': 'string', 'description': 'Relative URL for this operation status.'}
+    apply['required'] = ['id', 'epoch', 'revision', 'state', 'processes', 'missing_node_ids', 'status_url']
+    schema['properties']['operation'] = apply
+    schema['required'].append('operation')
+    return response
 
 
 def error_response(desc):
@@ -1618,6 +1642,7 @@ CTRL_DATA_OVERRIDES = {
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
+    'WebSocketAppAttachmentsController@store': ('WebSocketAppAttachmentData', False), 'WebSocketAppAttachmentsController@destroy': ('WebSocketAppAttachmentData', False),
     'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False), 'ProcessesController@update': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'AiRouterController@models': ('AiRouterModelData', True),
@@ -1710,11 +1735,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     description = description_for(route)
     if description:
         op['description'] = description
-    env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
+    env_route = '/environment/' in path or ('/instances/' in path and ('/database-connections/' in path or '/websocket-apps/' in path))
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
         if p == 'entry' and route['name'].startswith('project:document:'):
             sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Project Document entry ID.'
+        if p == 'operation' and route['name'] == 'websocket:operation:show':
+            sch, desc = {'type': 'string', 'format': 'uuid'}, 'WebSocket registry operation UUID.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
@@ -1767,6 +1794,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 redis_fields['properties'].pop('slug', None)
                 redis_schema['properties'].update(redis_fields['properties'])
                 redis_schema['required'] = sorted(set(server_schema['required'] + redis_fields.get('required', [])))
+                pgsql_rules = 'return [' + server_rules.split('DatabaseDriver::Pgsql => [', 1)[1].split('DatabaseDriver::Redis =>', 1)[0]
+                pgsql_fields, _ = rules_to_schema(pgsql_rules, route['name'])
+                server_schema['properties']['locale'] = pgsql_fields['properties']['locale']
+                server_schema['properties']['locale']['description'] = 'PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.'
+                redis_schema['properties'].pop('locale', None)
                 body_schema = {'oneOf': [register_schema, server_schema, redis_schema]}
                 body_required = True
     elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):
@@ -1918,7 +1950,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             }, 'required': ['warnings']}]}
         if is_list:
             data = {'type': 'array', 'items': data}
-        if starts_operation:
+        if route['name'] in ('websocket:app:create', 'websocket:app:destroy', 'websocket:app:rotate', 'websocket:sync', 'websocket:operation:show'):
+            responses['200'] = websocket_envelope(data, 'Saved operation status, including superseded results.')
+            if route['name'] != 'websocket:operation:show':
+                responses['202'] = websocket_envelope(data, 'Saved; application is pending. Follow the operation status URL.')
+                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': False, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
+            if route['name'] == 'websocket:app:create':
+                responses['201'] = websocket_envelope(data, 'Created and confirmed by every required process.')
+        elif starts_operation:
             responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):

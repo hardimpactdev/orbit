@@ -65,6 +65,10 @@ use App\Models\TaskWorkspaceOperation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\UpCloudTaskVmImageBuild;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
+use App\Models\WebSocketRegistryOperation;
+use App\Models\WebSocketRuntime;
 use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -111,6 +115,10 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AiRouterProcessSource::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,
+        WebSocketApp::class,
+        WebSocketAppTarget::class,
+        WebSocketRuntime::class,
+        WebSocketRegistryOperation::class,
     ];
     $excluded = [
         TaskVm::class,

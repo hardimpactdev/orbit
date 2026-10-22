@@ -6,8 +6,6 @@ use App\Domain\Gateway\GatewayCacheStore;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
-pest()->group('subprocess');
-
 uses(TestCase::class);
 
 describe('Gateway storage defaults', function (): void {

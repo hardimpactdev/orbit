@@ -6,8 +6,6 @@ use Symfony\Component\Process\Process;
 use Tests\Support\TestOrbitHome;
 use Tests\Support\TestTemporaryDirectory;
 
-pest()->group('subprocess');
-
 function test_temporary_directory_probe(string $tmpdir): Process
 {
     $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'
@@ -39,7 +37,7 @@ it('gives a test process its own directory, removes it at exit, and removes thos
 })->skip(! function_exists('posix_kill'), 'Abandoned directory cleanup needs ext-posix.');
 
 it('lets a child test process reuse the directory it inherits and leaves its removal to the owner', function (): void {
-    $inherited = sys_get_temp_dir();
+    $inherited = TestTemporaryDirectory::create(sys_get_temp_dir());
 
     expect(basename($inherited))->toStartWith(TestTemporaryDirectory::Prefix)
         ->and(trim(test_temporary_directory_probe($inherited)->mustRun()->getOutput()))->toBe($inherited)
@@ -47,3 +45,50 @@ it('lets a child test process reuse the directory it inherits and leaves its rem
 
     rmdir($inherited.'/fixture');
 });
+
+it('reuses the launcher temporary directory without registering worker cleanup', function (): void {
+    $directory = TestOrbitHome::scratch('launcher-temp');
+    mkdir($directory, 0o755, true);
+    $probe = test_temporary_directory_probe($directory);
+    $probe->setEnv(['TMPDIR' => $directory, 'ORBIT_TEST_TMPDIR' => $directory]);
+    $probe->mustRun();
+
+    expect(trim($probe->getOutput()))->toBe($directory)
+        ->and(is_dir($directory.'/fixture'))->toBeTrue();
+});
+
+it('bootstraps a copied Gateway support directory without the rest of the monorepo', function (): void {
+    $copy = TestOrbitHome::scratch('copied-support');
+    mkdir($copy, 0o700, true);
+    foreach (['TestTemporaryDirectory.php', 'test-private-tmpdir.regex'] as $file) {
+        copy(base_path('tests/Support/'.$file), $copy.'/'.$file);
+    }
+    $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .' require '.var_export($copy.'/TestTemporaryDirectory.php', true).';'
+        .' Tests\\Support\\TestTemporaryDirectory::bootstrap();'
+        .' fwrite(STDOUT, sys_get_temp_dir().PHP_EOL);';
+    $probe = new Process([PHP_BINARY, '-r', $script], $copy, ['TMPDIR' => $copy, 'ORBIT_TEST_TMPDIR' => false]);
+    $directory = trim($probe->mustRun()->getOutput());
+
+    expect($directory)->toStartWith($copy.'/'.TestTemporaryDirectory::Prefix)
+        ->and(is_dir($directory))->toBeFalse();
+});
+
+it('lets cross-user fixtures traverse the launcher directory from a private role TMPDIR', function (string $role): void {
+    $private = TestOrbitHome::scratch('private-role');
+    $configured = $private.'/'.$role;
+    mkdir($configured, 0o700, true);
+    $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'
+        .' Tests\\Support\\TestTemporaryDirectory::bootstrap();'
+        .' mkdir(sys_get_temp_dir()."/fixture", 0755);'
+        .' (new Symfony\\Component\\Process\\Process(["sudo", "-n", "-u", "nobody", "--", "test", "-x", sys_get_temp_dir()."/fixture"]))->mustRun();'
+        .' fwrite(STDOUT, sys_get_temp_dir().PHP_EOL);';
+    $probe = new Process([base_path('../../bin/pest-plain'), PHP_BINARY, '-r', $script], base_path(), ['TMPDIR' => $configured], timeout: 30);
+    $directory = trim($probe->mustRun()->getOutput());
+
+    expect($directory)->toStartWith('/tmp/run-')
+        ->and(is_dir($directory))->toBeFalse()
+        ->and(fileperms($configured) & 0o777)->toBe(0o700);
+})->with(['orbit/tmp/agent-1000', 'orbit/tmp/check-1000', 'orbit-check-1000-example'])
+    ->group('privileged')
+    ->skip(PHP_OS_FAMILY !== 'Linux', 'Cross-user fixtures use Linux sudo.');

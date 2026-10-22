@@ -743,6 +743,8 @@ describe('the agent view subscriber during a websocket move', function (): void 
     beforeEach(function (): void {
         $this->source = subscriber_managed_node('websocket-source', '10.44.0.89');
         new CaddySiteCertificates()->record($this->source->id, WebSocketCaddySiteSource::CertificateSlug);
+        confirm_websocket_runtime($this->source);
+        new WebSocketDnsTarget()->markServing($this->source->id);
         [$this->target] = activate_websocket_role();
         new CaddySiteCertificates()->record($this->target->id, WebSocketCaddySiteSource::CertificateSlug);
         new WebSocketDnsTarget()->markServing($this->target->id);

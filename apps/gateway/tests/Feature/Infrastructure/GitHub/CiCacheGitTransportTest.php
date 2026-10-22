@@ -16,8 +16,6 @@ use Tests\Support\GitRemoteRedirect;
 use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
-pest()->group('subprocess');
-
 /** @param list<string> $arguments */
 function ci_ref_git(string $directory, array $arguments): string
 {

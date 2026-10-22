@@ -24,7 +24,7 @@ The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway s
 
 ## Read CI artifacts
 
-The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
+The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
 [Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites and the pull request's own `pull_request` suites for the [merge gate](/reference/tasks#merge-on-green).
 
@@ -166,7 +166,7 @@ An App merge is a push by the App to the default branch, so GitHub starts the `p
 
 ## Find the newest green commit
 
-The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks once a minute while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 15 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `nckrtl/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
+The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks once a minute while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 15 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
 
 A commit qualifies when all of these hold.
 
@@ -177,7 +177,7 @@ A commit qualifies when all of these hold.
 - The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
 - The commit has not failed a release.
 
-The check name, SHA, completion, and App rules also apply to [`bin/pr-head-check`](https://github.com/nckrtl/orbit/blob/main/bin/pr-head-check) and the [task merge gate](/reference/tasks#merge-on-green). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
+The check name, SHA, completion, and App rules also apply to [`bin/pr-head-check`](https://github.com/hardimpactdev/orbit/blob/main/bin/pr-head-check) and the [task merge gate](/reference/tasks#merge-on-green). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
 
 A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
 

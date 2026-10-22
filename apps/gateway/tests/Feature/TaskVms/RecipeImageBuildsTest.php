@@ -164,6 +164,9 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
     expect($payload['vp_lock'])->toBe(file_get_contents(resource_path('machine-software/vite-plus-package-lock.json')))
         ->and($payload['php']['input']['mode'])->toBe('apply');
+    foreach (['incus', 'incus-base', 'incus-client'] as $name) {
+        expect($payload['tools'][$name]['version'])->toBe('1:7.0.1-ubuntu26.04-202609250211');
+    }
 });
 
 it('installs OpenTelemetry only in app-dev image profiles', function (string $profile, bool $enabled): void {
@@ -271,7 +274,7 @@ it('never restarts an installer lost during a builder reboot', function (): void
 /** The UpCloud waiting path uses the same guest protocol without an Incus queue step. */
 function recipePhaseShell(RecipeImageUnitGuest $guest): TaskVmGuestShell
 {
-    return new class($guest) implements TaskVmGuestShell
+    return new readonly class($guest) implements TaskVmGuestShell
     {
         public function __construct(private RecipeImageUnitGuest $guest) {}
 
@@ -549,7 +552,7 @@ it('bounds both staging transfers inside one delivery budget covered by the job'
     $transfers = [];
     $incus->afterExecute = static function ($command) use ($incus, &$elapsed, &$transfers): void {
         $call = IncusGuestCall::decode($command);
-        $connection = $incus->connections[array_key_last($incus->connections)];
+        $connection = array_last($incus->connections);
         if ($command->protectedInput !== null || ($call->argv[0] === 'install' && ($call->argv[3] ?? null) === '/dev/stdin')) {
             $transfers[] = $connection->commandTimeout;
             $elapsed += $connection->commandTimeout;
@@ -575,7 +578,7 @@ it('publishes only complete uploads and removes partial disk staging files', fun
     $directory = sys_get_temp_dir().'/image-upload-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);
     $guest = new RecipeImageUnitGuest(static fn (): CommandResult => new CommandResult(0, '', '', 1, false));
-    $shell = new class($guest, $directory, $truncated) implements TaskVmGuestShell
+    $shell = new readonly class($guest, $directory, $truncated) implements TaskVmGuestShell
     {
         public function __construct(private RecipeImageUnitGuest $guest, private string $directory, private bool $truncated) {}
 
@@ -922,7 +925,7 @@ it('fails the phase with the program log and no guest log, and builds the seed a
     expect($build->state)->toBe(TaskVmImageBuildState::Succeeded)
         ->and($incus->volumes)->toBe([$seed])
         ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke')
-        ->and(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch' && $command->arguments[array_key_last($command->arguments)] === 'tvm-image-1-smoke'))->toHaveCount(2);
+        ->and(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch' && array_last($command->arguments) === 'tvm-image-1-smoke'))->toHaveCount(2);
 
     $seeds = count($incus->seeds);
     app(RecipeImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Recipe, 'base:topology-seed');

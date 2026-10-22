@@ -144,6 +144,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:teardown-step:update',
         'instance:transfer',
         'instance:update',
+        'instance:websocket:add',
+        'instance:websocket:remove',
         'metrics:credentials',
         'metrics:disable',
         'metrics:enable',
@@ -220,6 +222,13 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:scan',
         'tool:show',
         'tool:update',
+        'websocket:app:create',
+        'websocket:app:destroy',
+        'websocket:app:list',
+        'websocket:app:rotate',
+        'websocket:app:show',
+        'websocket:operation:show',
+        'websocket:sync',
     ]);
 });
 
@@ -598,6 +607,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'username' => null,
                 'password' => null,
                 'server' => null,
+                'locale' => null,
                 'instance' => null,
                 'pattern' => [],
                 'allow' => [],
@@ -699,7 +709,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:database:add' => [
             ['slug'],
-            ['instance' => null, 'prefix' => null, 'json' => false],
+            ['instance' => null, 'prefix' => null, 'network' => null, 'json' => false],
         ],
         'instance:database:remove' => [
             ['slug'],
@@ -813,6 +823,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name' => null, 'sqlite-source-path' => null, 'force' => false, 'json' => false],
         ],
         'instance:update' => [['instance'], ['branch' => null, 'shared-paths' => null, 'auto-deploy' => null, 'json' => false]],
+        'instance:websocket:add' => [['app'], ['instance' => null, 'public' => false, 'json' => false]],
+        'instance:websocket:remove' => [['app'], ['instance' => null, 'force' => false, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
         'metrics:enable' => [['node'], ['json' => false]],
@@ -988,6 +1000,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
+        'websocket:app:create' => [['name'], ['operation-key' => null, 'json' => false]],
+        'websocket:app:destroy' => [['name'], ['force' => false, 'operation-key' => null, 'json' => false]],
+        'websocket:app:list' => [[], ['json' => false]],
+        'websocket:app:rotate' => [['name'], ['force' => false, 'operation-key' => null, 'json' => false]],
+        'websocket:app:show' => [['name'], ['json' => false]],
+        'websocket:operation:show' => [['id'], ['json' => false]],
+        'websocket:sync' => [[], ['wait' => '60', 'operation-key' => null, 'json' => false]],
         'vault:setup' => [[], [
             'url' => null,
             'client-id' => null,
@@ -1258,6 +1277,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             ...$profileMissing,
         ],
         'instance:update' => [['instance' => '1', '--branch' => 'main'], ...$profileMissing],
+        'instance:websocket:add' => [['--instance' => '12', 'app' => 'hauzer'], ...$profileMissing],
+        'instance:websocket:remove' => [['--instance' => '12', 'app' => 'hauzer', '--force' => true], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
         'metrics:disable' => [['--force' => true], ...$profileMissing],
         'metrics:enable' => [['node' => '1'], ...$profileMissing],
@@ -1361,6 +1382,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:scan' => [['--node' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
+        'websocket:app:create' => [['name' => 'hauzer'], ...$profileMissing],
+        'websocket:app:destroy' => [['name' => 'hauzer', '--force' => true], ...$profileMissing],
+        'websocket:app:list' => [[], ...$profileMissing],
+        'websocket:app:rotate' => [['name' => 'hauzer', '--force' => true], ...$profileMissing],
+        'websocket:app:show' => [['name' => 'hauzer'], ...$profileMissing],
+        'websocket:operation:show' => [['id' => '33333333-3333-4333-8333-333333333333'], ...$profileMissing],
+        'websocket:sync' => [[], ...$profileMissing],
     ];
     $visibleCommandNames = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

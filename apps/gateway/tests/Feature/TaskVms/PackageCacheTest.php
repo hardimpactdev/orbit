@@ -37,8 +37,6 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
-pest()->group('subprocess');
-
 /** @param list<string> $arguments */
 function package_cache_git(string $root, array $arguments): string
 {

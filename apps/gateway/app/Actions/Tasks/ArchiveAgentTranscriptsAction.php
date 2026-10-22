@@ -18,6 +18,8 @@ final readonly class ArchiveAgentTranscriptsAction
 {
     public const string Directory = 'task-transcripts';
 
+    private const float READ_TIMEOUT = 15.0;
+
     public function __construct(private AgentDriverRegistry $drivers) {}
 
     public function execute(int $groupId, int $nodeId): void
@@ -30,7 +32,7 @@ final readonly class ArchiveAgentTranscriptsAction
             ->get();
         foreach ($threads as $thread) {
             try {
-                $observation = $this->drivers->get($thread->driver)->observe($thread)->toArray();
+                $observation = $this->drivers->get($thread->driver)->read($thread, null, self::READ_TIMEOUT)->toArray();
                 Storage::disk('local')->put(self::path($thread), json_encode($observation, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
             } catch (Throwable $exception) {
                 report($exception);

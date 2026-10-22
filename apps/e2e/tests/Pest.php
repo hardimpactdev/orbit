@@ -40,15 +40,6 @@ foreach ([
 
 uses(TestCase::class)->in('Feature');
 
-pest()
-    ->tia()
-    ->locally()
-    ->filtered();
-
-$tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
-
-pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');
-
 /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string} */
 function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'): array
 {

@@ -30,6 +30,7 @@ final class AddInstanceDatabaseRequest extends GatewayRequest implements HasBody
         private readonly int|string $instance,
         private readonly string $slug,
         private readonly ?string $prefix = null,
+        private readonly ?string $network = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,6 +50,6 @@ final class AddInstanceDatabaseRequest extends GatewayRequest implements HasBody
     /** @return array<string, string> */
     protected function defaultBody(): array
     {
-        return $this->prefix === null ? [] : ['prefix' => $this->prefix];
+        return array_filter(['prefix' => $this->prefix, 'network' => $this->network], static fn (?string $value): bool => $value !== null);
     }
 }

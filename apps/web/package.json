@@ -2,6 +2,9 @@
     "name": "@orbit/web",
     "version": "0.0.0",
     "private": true,
+    "workspaces": [
+        "tools/api-types"
+    ],
     "type": "module",
     "scripts": {
         "dev": "vp dev",
@@ -9,53 +12,43 @@
         "build": "tsc && vp build",
         "preview": "vp preview",
         "check": "vp check",
-        "test": "vp test run",
+        "test": "bun run test:unit && bun run test:browser",
         "test:unit": "vp test run --project unit --project verification",
         "test:browser": "vp test run --project browser",
-        "types": "openapi-typescript ../../docs/openapi.json -o src/api/schema.d.ts"
+        "types": "bun run --cwd tools/api-types generate"
     },
     "dependencies": {
         "@fontsource-variable/jetbrains-mono": "^5.3.0",
         "@heroicons/react": "2",
         "@nckrtl/annotator": "^0.2.0",
-        "@tanstack/react-query": "^5.103.1",
-        "@tanstack/react-router": "^1.170.38",
-        "@tanstack/react-table": "^9.2.4",
-        "@tanstack/react-virtual": "^3.14.13",
+        "@tanstack/react-query": "^5.104.2",
+        "@tanstack/react-router": "^1.170.44",
+        "@tanstack/react-table": "^9.3.1",
+        "@tanstack/react-virtual": "^3.14.17",
         "pusher-js": "^8.6.0",
         "react": "^19.3.0",
         "react-dom": "^19.3.0"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.3.3",
-        "@types/node": "^26.6.2",
+        "@types/node": "^26.6.5",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
-        "@vitejs/plugin-react": "^6.1.1",
-        "@vitest/browser-playwright": "4.1.11",
-        "openapi-typescript": "^7.13.0",
-        "playwright": "1.62.1",
+        "@vitejs/plugin-react": "^6.1.2",
+        "@vitest/browser-playwright": "5.0.3",
+        "playwright": "1.64.0",
         "tailwindcss": "^4.3.3",
-        "typescript": "~6.0.2",
+        "typescript": "~7.0.2",
         "undici": "^8.10.2",
-        "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-        "vite-plus": "0.2.6",
+        "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+        "vite-plus": "1.1.0",
         "vitest-browser-react": "^2.3.0"
     },
     "overrides": {
-        "@vitest/browser": "4.1.11",
-        "@vitest/browser-preview": "4.1.11",
-        "@vitest/expect": "4.1.11",
-        "@vitest/mocker": "4.1.11",
-        "@vitest/pretty-format": "4.1.11",
-        "@vitest/runner": "4.1.11",
-        "@vitest/snapshot": "4.1.11",
-        "@vitest/spy": "4.1.11",
-        "@vitest/utils": "4.1.11",
         "source-map-js": "1.2.2",
         "tinypool": "2.1.2",
-        "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-        "vitest": "4.1.11"
+        "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+        "vitest": "5.0.3"
     },
     "devEngines": {
         "packageManager": {

@@ -18,8 +18,6 @@ use App\Models\Node;
 use Psr\Log\NullLogger;
 use Tests\Support\ScriptedWebSocketServer;
 
-pest()->group('subprocess');
-
 describe(StreamWebSocketClient::class, function (): void {
     it('completes the TLS and WebSocket handshake against the pinned certificate', function (): void {
         $server = ScriptedWebSocketServer::start('frames');

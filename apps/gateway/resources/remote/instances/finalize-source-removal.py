@@ -7,7 +7,7 @@
 #   "digest": accepted source digest, "receipt": completion receipt, "force": bool, "user", "group",
 #   "source_identity": "<device>:<inode>" or "absent", "origin": the recorded origin, "worktrees": base64 of the
 #   accepted `git worktree list --porcelain -z`, "commit": accepted commit, "grouping_directory": the checkout's
-#   parent, "unresolved": bool, "independent_worktree": bool, "stop_processes": bool, "own_units": systemd units
+#   parent, "unresolved": bool, "independent_worktree": bool, "own_units": systemd units
 #   whose processes stay, "git_read": Git read environment variables}
 # Result: finalized: {"receipt": the completion receipt}. cross_device: the checkout is on another filesystem than
 #   the removal state, so it stays at its path. refused: a check failed before more was deleted; its log line names it.
@@ -102,8 +102,7 @@ def main(payload):
             'Orbit does not move a checkout across a mount.'
         )
         return 'cross_device', {}
-    if payload['stop_processes']:
-        require(stop_tree_processes(physical, payload['own_units']), 'refused', 'stop the processes inside the source')
+    require(stop_tree_processes(physical, payload['own_units']), 'refused', 'stop the processes inside the source')
     if physical == checkout:
         if layout == 'worktree':
             moved = git(f'--git-dir={common_repository}/.git', 'worktree', 'move', checkout, quarantine).returncode == 0

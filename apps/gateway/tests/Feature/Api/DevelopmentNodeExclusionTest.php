@@ -32,7 +32,7 @@ beforeEach(function (): void {
         'name' => 'Orbit',
         'slug' => 'orbit',
         'type' => ProjectType::Monorepo,
-        'repository_url' => 'https://github.com/nckrtl/orbit.git',
+        'repository_url' => 'https://github.com/hardimpactdev/orbit.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);

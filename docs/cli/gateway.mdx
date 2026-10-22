@@ -11,6 +11,8 @@ covers:
 
 Every command that manages remote resources sends its request to the active Gateway. The `gateway` family manages the local profiles that name a Gateway. It also pins the Gateway root certificate authority (CA), installs it in the operating-system trust store, and shows whether the Gateway answers. [Gateway trust](/reference/gateway-trust) describes where profiles live, the trust sequence, and the profile guard.
 
+[Instance attachment commands](/cli/instance#orbit-instancedatabaseadd) and [environment commands](/cli/env) check required inputs before they load the active Gateway profile. A missing Instance selector therefore reports the command family's input error even when no Gateway profile exists.
+
 ## Commands
 
 | Command | Result |

@@ -19,6 +19,8 @@ exec(compile((Path(spec.origin).parent / 'artifacts.py').read_text(), 'lib/artif
 source = Path(spec.origin).read_text().replace('# ORBIT_TASK_UNIT_STATE',
     (Path(spec.origin).parents[2] / 'tasks/unit-state.py').read_text())
 exec(compile(source, spec.origin, 'exec'), recipe.__dict__)
+recipe.VP_STORE_PROGRAM = '\n'.join((Path(spec.origin).parent.parent / name).read_text() for name in (
+    'lib/program.py', 'lib/vp-store.py', 'tools/install-vp-environment.py'))
 
 
 class ConvergenceTest(unittest.TestCase):
@@ -89,6 +91,43 @@ class ConvergenceTest(unittest.TestCase):
         self.assertIn('Dir::Etc::sourceparts=-', install)
         self.assertNotIn('/etc/apt/apt.conf.d/99orbit-recipe', self.published)
         self.assertEqual(set(self.published), {source_path, str(self.policy)})
+
+    def test_refreshes_only_ubuntu_sources_and_never_contacts_a_failing_third_party_source(self):
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                if 'Dir::Etc::sourceparts=-' not in argv:
+                    return subprocess.CompletedProcess(argv, 100, '', 'deadsnakes PPA: 503 Service Unavailable')
+                self.assertIn('APT::Update::Error-Mode=any', argv)
+                self.assertIn('Acquire::Languages=none', argv)
+            return self.command(argv, **kwargs)
+
+        self.assertTrue(self.apply(command)['healthy'])
+
+    def test_current_packages_do_not_refresh_snapshot_indexes(self):
+        sources = []
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                source = next(c.split('=', 1)[1] for c in argv if c.startswith('Dir::Etc::sourcelist='))
+                sources.append(Path(source).read_text())
+            return self.command(argv, **kwargs)
+
+        result = self.apply(command, versions=[{'curl': '2.0'}, {'curl': '2.0'}])
+
+        self.assertTrue(result['healthy'])
+        updates = [c for c in self.commands if c[:2] == ['apt-get', 'update']]
+        self.assertEqual(len(updates), 1)
+        self.assertIn('archive.ubuntu.com', sources[0])
+        self.assertNotIn('snapshot.ubuntu.com', sources[0])
+
+    def test_ubuntu_refresh_failure_stops_before_installation(self):
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                return subprocess.CompletedProcess(argv, 100, '', 'Ubuntu signature verification failed')
+            return self.command(argv, **kwargs)
+
+        with self.assertRaises(recipe.RecipeFailure):
+            self.apply(command)
+        self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
 
     def test_restarts_active_instances_of_a_changed_package_service_template(self):
         output = subprocess.CompletedProcess([], 0, '/usr/lib/systemd/system/wg-quick@.service\n', '')
@@ -488,11 +527,14 @@ class ConvergenceTest(unittest.TestCase):
         (scope / 'bin/vp').write_text('uninitialized standalone binary')
         (scope / 'config.json').write_text('{"defaultNodeVersion":"lts"}')
         tools = {name: {'source': 'artifact'} for name in ['node', 'vp', 'vp-cli', 'pnpm']}
+        real_run = recipe.run
         with patch.object(recipe, 'packages', return_value={}), \
              patch.object(recipe, 'vite_scope', return_value=scope), \
-             patch.object(recipe, 'run') as command:
+             patch.object(recipe, 'run', side_effect=real_run) as command:
             self.assertEqual(recipe.inspect(tools), {'node': None, 'vp': None, 'vp-cli': None, 'pnpm': None})
-        command.assert_not_called()
+        command.assert_called_once()
+        self.assertIn('-c', command.call_args.args[0])
+        self.assertEqual(json.loads(command.call_args.kwargs['input'])['mode'], 'inspect')
 
     def test_artifact_hash_failure_stops_before_installation(self):
         artifact = Path(self.directory.name) / 'artifact'
@@ -523,6 +565,7 @@ class ConvergenceTest(unittest.TestCase):
         account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name='test-user')
         real_safe_directory = recipe.safe_directory
         real_publish = recipe.publish
+        real_run = recipe.run
         def safe_directory(path, uid=0, gid=0):
             if str(path) == '/opt/orbit':
                 return home
@@ -534,7 +577,8 @@ class ConvergenceTest(unittest.TestCase):
             real_publish(path, content, *args, **kwargs)
         with patch.object(recipe, 'safe_directory', side_effect=safe_directory), \
              patch.object(recipe, 'publish', side_effect=publish), \
-             patch.object(recipe, 'run', side_effect=self.command):
+             patch.object(recipe, 'run', side_effect=lambda argv, **kwargs: real_run(
+                 argv[4:] if argv[0] == 'sudo' else argv, **kwargs) if '-c' in argv else self.command(argv, **kwargs)):
             recipe.install_javascript({'node': {'version': '24.22.0'}}, {'node': archive}, work, account)
         cached = scope / 'js_runtime/node/24.22.0/bin/node'
         self.assertEqual(subprocess.check_output([str(cached)], text=True).strip(), 'v24.22.0')

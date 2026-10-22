@@ -24,7 +24,7 @@ function remote_diff_instance(string $checkout = '/srv/orbit/apps/orbit/task-12'
     $project = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
-        'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
         'default_branch' => 'main',
     ]);
     $node = Node::query()->create([

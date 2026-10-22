@@ -17,7 +17,9 @@
             "has_password": true,
             "server": "beast-mysql",
             "owner_instance_id": 1,
-            "test_database": "dlf_leden_test"
+            "test_database": "dlf_leden_test",
+            "lan_host": null,
+            "locale": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

@@ -35,8 +35,6 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\EnvironmentConcurrencySchemaFixture;
 
-pest()->group('subprocess');
-
 beforeAll(fn () => EnvironmentConcurrencySchemaFixture::prepare(orb207_concurrency_worker_script()));
 afterAll(fn () => EnvironmentConcurrencySchemaFixture::forget());
 

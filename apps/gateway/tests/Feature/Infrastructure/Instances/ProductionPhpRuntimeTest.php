@@ -42,8 +42,6 @@ use Tests\Support\CachedLaravelApplicationFixture;
 use Tests\Support\HostBinary;
 use Tests\Support\StandardLibraryPython;
 
-pest()->group('subprocess');
-
 beforeAll(function (): void {
     CachedLaravelApplicationFixture::prepare();
 });

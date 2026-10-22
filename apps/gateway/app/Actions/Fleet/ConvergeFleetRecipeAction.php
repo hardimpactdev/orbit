@@ -13,7 +13,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -77,7 +76,7 @@ final readonly class ConvergeFleetRecipeAction
                 return;
             }
             $nodes = Node::query()->with('roles')->where('status', LifecycleStatus::Active)->where('platform', 'linux')->orderBy('id')->get()
-                ->filter(fn (Node $node): bool => $this->eligibility->allows($node) && ($node->roles->isNotEmpty() || self::ciRunner($node)) && TaskVm::forNode($node) === null)
+                ->filter(fn (Node $node): bool => $this->eligibility->allows($node) && $node->roles->isNotEmpty() && TaskVm::forNode($node) === null)
                 ->sortBy(fn (Node $node): array => [$this->tier($node), $node->id]);
             foreach ($nodes as $node) {
                 $visited = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
@@ -86,7 +85,7 @@ final readonly class ConvergeFleetRecipeAction
                     continue;
                 }
                 $verified = $node->settings['machine_recipe'] ?? null;
-                if (is_array($verified) && ($verified['version'] ?? null) === $recipe->identity) {
+                if (is_array($verified) && (($verified['version'] ?? null) === $recipe->identity || ($verified['partial_version'] ?? null) === $recipe->identity)) {
                     continue;
                 }
                 if ($this->builds->currentRecipe()->identity !== $recipe->identity) {
@@ -102,7 +101,7 @@ final readonly class ConvergeFleetRecipeAction
                 $progress['node_id'] = $node->id;
                 $record->forceFill(['fleet_convergence' => $progress])->save();
                 try {
-                    $result = $this->converge->execute($node, $recipe);
+                    $result = $this->converge->execute($node, $recipe, automatic: true);
                     $completed = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
                     $completed[$node->id] = ['name' => $node->name, 'changes' => $result['changes'], 'finished_at' => now()->toIso8601String()];
                     $progress['nodes'] = $completed;
@@ -131,8 +130,7 @@ final readonly class ConvergeFleetRecipeAction
         if ($this->gateway->is($node)) {
             return 5;
         }
-        // A roleless CI runner, such as Sabre, joins the service tier: overnight, after every app-dev-only Node.
-        $tier = self::ciRunner($node) ? 2 : 1;
+        $tier = 1;
         foreach ($node->roles as $role) {
             $tier = max($tier, match ($role->role->value) {
                 'gateway' => 5, 'vpn' => 4, 'app-prod' => 3, 'app-dev' => 1, default => 2,
@@ -140,12 +138,6 @@ final readonly class ConvergeFleetRecipeAction
         }
 
         return $tier;
-    }
-
-    /** A roleless Node that an operator converged once with the ci-runner profile (ADR 0216). */
-    private static function ciRunner(Node $node): bool
-    {
-        return $node->roles->isEmpty() && NodeRecipeProgram::recordedProfile($node) === NodeRecipeProgram::CiRunnerProfile;
     }
 
     /** @param array<string, mixed> $progress */

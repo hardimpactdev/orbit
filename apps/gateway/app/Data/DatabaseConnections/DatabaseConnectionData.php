@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\DatabaseConnections;
 
+use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Models\DatabaseConnection;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -26,11 +27,15 @@ final class DatabaseConnectionData extends Data
         public ?string $server,
         public ?int $ownerInstanceId,
         public ?string $testDatabase,
+        public ?string $lanHost = null,
+        public ?string $locale = null,
     ) {}
 
     public static function fromModel(DatabaseConnection $connection): self
     {
         return new self(
+            lanHost: $connection->server === null ? null : DatabaseServerProcess::lanHost($connection->server),
+            locale: $connection->locale,
             id: $connection->id,
             slug: $connection->slug,
             driver: $connection->driver->value,

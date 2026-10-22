@@ -1,0 +1,21 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests\WebSocket;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+final class RuntimeReportRequest extends FormRequest
+{
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return [
+            'boot_id' => ['required', 'uuid'], 'epoch' => ['required', 'uuid'],
+            'revision' => ['required', 'integer', 'min:1'], 'sequence' => ['required', 'integer', 'min:1'],
+            'state' => ['required', 'in:starting,serving'],
+            'error' => ['nullable', 'in:registry.unreachable,registry.apply_failed,registry.registration_failed'],
+        ];
+    }
+}

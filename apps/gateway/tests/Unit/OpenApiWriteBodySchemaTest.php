@@ -166,19 +166,22 @@ it('keeps bodyless operations without a request body', function (): void {
     expect($operations->get('instance-dependencies-show'))->not->toHaveKey('requestBody');
 });
 
-it('publishes Valkey ACL creation inputs and the restricted server driver', function (): void {
+it('publishes Valkey ACL creation inputs and all managed server drivers', function (): void {
     $root = dirname(__DIR__, 4);
     $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
     $server = $openapi['paths']['/api/v1/database-servers']['post']['requestBody']['content']['application/json']['schema'];
-    expect($server['properties']['driver']['enum'])->toBe(['mysql', 'redis']);
+    expect($server['properties']['driver']['enum'])->toBe(['mysql', 'redis', 'pgsql']);
+    expect($server['properties'])->not->toHaveKey('lan_node_ids');
     $variants = $openapi['paths']['/api/v1/database-connections']['post']['requestBody']['content']['application/json']['schema']['oneOf'];
+    expect($variants[1]['properties']['locale']['enum'])->toBe(['C', 'C.UTF-8'])
+        ->and($variants[0]['properties'])->not->toHaveKey('locale');
     $acl = collect($variants)->first(fn (array $variant): bool => isset($variant['properties']['patterns']));
     expect($acl['required'])->toEqualCanonicalizing(['slug', 'server', 'patterns', 'allow'])
         ->and($acl['properties']['patterns']['items']['type'])->toBe('string')
         ->and($acl['properties']['allow']['items']['type'])->toBe('string')
         ->and($acl['properties']['database']['type'])->toBe('integer')
         ->and($acl['properties']['slug']['maxLength'])->toBe(63)
-        ->and($acl['properties'])->not->toHaveKey('instance_id');
+        ->and($acl['properties'])->not->toHaveKeys(['instance_id', 'locale']);
 });
 
 it('keeps every database input variant in the MCP shared field schema', function (): void {

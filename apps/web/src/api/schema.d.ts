@@ -1879,6 +1879,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/websocket-apps/{websocket_app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Attach a WebSocket app
+         * @description Writes the app credentials into the stored environment of the Instance: `BROADCAST_CONNECTION`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST`, `REVERB_PORT`, and `REVERB_SCHEME`. It replaces the app that the Instance had. Optional `public: true` publishes Pusher paths on the existing public app Route and projects its domain; `false` selects the private endpoint. Omission preserves a same-app public selection. Public attachment checks Laravel route collisions and rebuilds Caddy. Rotation preserves the selected host. The response names the keys and never returns their values. `env:sync` writes the workload file. The Gateway app `gateway` returns `websocket.app_reserved` (409).
+         */
+        put: operations["instance-websocket-add"];
+        post?: never;
+        /**
+         * Detach a WebSocket app
+         * @description Clears the app keys from the stored environment of the Instance and keeps its other keys. `env:sync` writes the workload file. An app that is not on the Instance returns `websocket.attachment_missing` (404).
+         */
+        delete: operations["instance-websocket-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/metrics": {
         parameters: {
             query?: never;
@@ -3930,6 +3954,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/websocket-apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List WebSocket apps
+         * @description List the Reverb apps on the websocket role.
+         */
+        get: operations["websocket-app-list"];
+        put?: never;
+        /**
+         * Create a WebSocket app
+         * @description Saves a Reverb app and requests live application without restarting Reverb. Returns 202 with an operation while confirmation is pending. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.
+         */
+        post: operations["websocket-app-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-apps/{websocket_app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a WebSocket app
+         * @description Show one Reverb app and the Instances that use it.
+         */
+        get: operations["websocket-app-show"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a WebSocket app
+         * @description Removes an app and closes only its sockets with code 4001. Returns 202 until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).
+         */
+        delete: operations["websocket-app-destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-apps/{websocket_app}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * websocket:app:rotate
+         * @description Rotate a Reverb app secret and close only that app’s sockets.
+         */
+        post: operations["websocket-app-rotate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-operations/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * websocket:operation:show
+         * @description Show which Reverb processes have applied an app change.
+         */
+        get: operations["websocket-operation-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** websocket:registry:snapshot */
+        get: operations["websocket-registry-snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-registry/processes/{runtime}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** websocket:runtime:report */
+        put: operations["websocket-runtime-report"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-registry/processes/{runtime}/boots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** websocket:runtime:boot */
+        post: operations["websocket-runtime-boot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/websocket-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * websocket:sync
+         * @description Wait for Reverb to apply the current app registry without restarting it.
+         */
+        post: operations["websocket-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4091,6 +4274,8 @@ export interface components {
             server?: string | null;
             owner_instance_id?: number | null;
             test_database?: string | null;
+            lan_host?: string | null;
+            locale?: string | null;
         };
         DatabaseUser: {
             id?: number;
@@ -4472,6 +4657,14 @@ export interface components {
         DeploymentReleaseState: {
             releases?: string[];
             selected_release?: string | null;
+        };
+        WebSocketAppAttachment: {
+            instance_id?: number;
+            name?: string;
+            keys?: string[];
+            operation?: string;
+            changed?: boolean;
+            key_count?: number;
         };
         MetricsMutation: {
             node_id?: number;
@@ -5004,6 +5197,13 @@ export interface components {
             failed_operation?: string | null;
             error_code?: string | null;
             outcome?: string | null;
+        };
+        WebSocketApp: {
+            id?: number;
+            name?: string;
+            app_id?: string;
+            key?: string;
+            instance_ids?: number[];
         };
     };
     responses: never;
@@ -7414,6 +7614,11 @@ export interface operations {
                     slug: string;
                     server: string;
                     instance_id?: number;
+                    /**
+                     * @description PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.
+                     * @enum {string}
+                     */
+                    locale?: "C" | "C.UTF-8";
                 } | {
                     slug: string;
                     server: string;
@@ -8071,13 +8276,13 @@ export interface operations {
                     slug: string;
                     node_id: number;
                     /**
-                     * @description Server driver: mysql or redis. Defaults to mysql
+                     * @description Server driver: mysql, redis, or pgsql. Defaults to mysql
                      * @enum {string}
                      */
-                    driver?: "mysql" | "redis";
-                    /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis */
+                    driver?: "mysql" | "redis" | "pgsql";
+                    /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql */
                     tag?: string;
-                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis */
+                    /** @description Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql */
                     port?: number;
                     process_id?: number;
                     /** @description Existing redis connection for adoption */
@@ -10215,6 +10420,11 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /**
+                     * @description Connection network: wireguard (default) or lan
+                     * @enum {string}
+                     */
+                    network?: "wireguard" | "lan";
                     /** @description Environment key prefix; defaults to DB */
                     prefix?: string;
                 };
@@ -11823,6 +12033,132 @@ export interface operations {
             };
         };
     };
+    "instance-websocket-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
+                instance: string;
+                /** @description WebSocket app name. */
+                websocket_app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Publish Reverb on the existing public app Route */
+                    public?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketAppAttachment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-websocket-remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
+                instance: string;
+                /** @description WebSocket app name. */
+                websocket_app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketAppAttachment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "metrics-enable": {
         parameters: {
             query?: never;
@@ -12261,7 +12597,7 @@ export interface operations {
                     user?: string;
                     /** @description Managed user; Linux defaults to orbit, and macOS requires the same existing account as user */
                     orbit_user?: string;
-                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics")[];
+                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner")[];
                     cluster_id?: number | null;
                     /** @description Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it */
                     wireguard_ip?: string | null;
@@ -13329,7 +13665,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     converge_existing?: boolean;
                     /** @description Conditionally required. */
                     postgres_process_id?: number;
@@ -13428,7 +13764,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     /** @description Confirm destructive role removal and dependent cleanup */
                     force?: boolean;
                     /** @description Request supported role-owned data cleanup */
@@ -13516,7 +13852,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics" | "ci-runner";
                     /** @description Confirm the role transfer */
                     force?: boolean;
                     /** @description Optional source Node ID or name */
@@ -20806,6 +21142,747 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-app-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-app-create": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Reuse the same key when retrying this change. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description WebSocket app name */
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved operation status, including superseded results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description Created and confirmed by every required process. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved; application is pending. Follow the operation status URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-app-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description WebSocket app name. */
+                websocket_app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-app-destroy": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Reuse the same key when retrying this change. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description WebSocket app name. */
+                websocket_app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Saved operation status, including superseded results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved; application is pending. Follow the operation status URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-app-rotate": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Reuse the same key when retrying this change. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description WebSocket app name. */
+                websocket_app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Saved operation status, including superseded results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved; application is pending. Follow the operation status URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-operation-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description WebSocket registry operation UUID. */
+                operation: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved operation status, including superseded results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-registry-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-runtime-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtime: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    boot_id: string;
+                    /** Format: uuid */
+                    epoch: string;
+                    revision: number;
+                    sequence: number;
+                    /** @enum {string} */
+                    state: "starting" | "serving";
+                    /** @enum {string|null} */
+                    error?: "registry.unreachable" | "registry.apply_failed" | "registry.registration_failed" | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-runtime-boot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtime: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    boot_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "websocket-sync": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Reuse the same key when retrying this change. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Saved operation status, including superseded results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description Saved; application is pending. Follow the operation status URL. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebSocketApp"] | unknown[];
+                        meta: components["schemas"]["Meta"];
+                        operation: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            epoch: string;
+                            revision: number;
+                            /** @enum {string} */
+                            state: "pending" | "applied" | "superseded";
+                            processes: unknown[];
+                            missing_node_ids: unknown[];
+                            /** @description Relative URL for this operation status. */
+                            status_url: string;
+                        };
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

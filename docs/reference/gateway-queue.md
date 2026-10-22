@@ -3,7 +3,7 @@ title: "Gateway queue"
 description: "The Gateway's Redis connection and ACL user, six queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
-  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
+  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
   - apps/gateway/config/{horizon,horizon-new-dawn,queue}.php
 ---
 
@@ -39,7 +39,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
-A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. Operations have a separate [recovery path](/reference/operations#recover-a-lost-worker). An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. A waiting Incus chain step therefore runs before an optional UpCloud build. Running jobs are not preempted. Two build workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
@@ -87,7 +87,7 @@ Laravel batches keep all Node observations available to related-node checks. Obs
 
 The separate scheduler callback inspects only the Gateway's Horizon Process through Doctor's process checks. It records the same Doctor fingerprint without scanning the fleet or depending on a queue worker. Filing also stays independent of Horizon. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
 
-Laravel batch metadata is pruned daily after 24 hours with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout.
+Laravel batch metadata is pruned daily after `ORBIT_JOB_BATCH_HOURS` (24 hours by default) with `queue:prune-batches`. The pruning job runs on `problems` with the collection worker timeout while Tasks is enabled. Failed jobs are pruned daily with `queue:prune-failed` after `ORBIT_FAILED_JOBS_HOURS` (168 hours by default), also while Tasks is disabled. These settings live in `config/retention.php`.
 
 ### Without a queue
 
@@ -101,9 +101,15 @@ Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules)
 
 The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and no Process of the Gateway Node runs `artisan horizon`. So the first release after you set the key starts Horizon. When the handoff cannot create or start the Process, it fails with `gateway.release_units_failed`. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
 
+### Reservation metadata failures
+
+Laravel reserves a Redis job before Horizon records its reservation in a separate Redis connection. A failed metadata write must not discard the job that Laravel already reserved. The Gateway binds Horizon's reservation listener to `GatewayHorizonReservation`: it tries the metadata write once, logs a failure, and returns the job to the worker for normal processing. It does not release the job, add an attempt, or retry the Redis command. Horizon still starts its job timer.
+
+The error `Horizon could not record a job reservation.` records the job UUID, queue connection, queue, host, worker PID, reservation attempt count, exception class, and exception message (`exception_message`). The message preserves the cause, such as a Redis EOF or ACL error. It never records the job payload. Use these fields with the Horizon Process journal to distinguish a metadata failure from a worker that exited. A live worker PID alone does not prove that it still owns an attempt: Laravel can discard a popped job after a listener throws, while the worker continues polling.
+
 ## Dashboard
 
-Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGuard peer with Gateway access, the same access that the Orbit CLI needs for Gateway commands. The dashboard is [Horizon New Dawn](https://github.com/nckrtl/horizon-new-dawn), a React interface for Horizon. Any other address gets 403.
+Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGuard peer with Gateway access, the same access that the Orbit CLI needs for Gateway commands. The dashboard is [Horizon New Dawn](https://github.com/hardimpactdev/horizon-new-dawn), a React interface for Horizon. Any other address gets 403.
 
 The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. The Gateway keeps no browser session, so the dashboard has no CSRF token. Laravel's request forgery check runs in origin-only mode instead: a request that changes something passes only when the browser sends `Sec-Fetch-Site: same-origin`. Any other such request gets 403. Bulk actions run as jobs on the `tasks` queue.
 
@@ -165,7 +171,7 @@ A job that Redis lost runs again only when its owner queues it again. For exampl
 
 ## ACL users
 
-After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-valkey-server-with-doctor) checks the users.
+After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-server-with-doctor) checks the users.
 
 | User | Keys | Commands | Used by |
 | --- | --- | --- | --- |

@@ -21,6 +21,8 @@ The clone response schema extends the Instance schema with required `data.warnin
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 
+The [Reverb app](/reference/websocket-apps) operations use the same attachment schema mapping as Database connections. Their Instance selector accepts a positive ID or an exact Route domain. App and attachment responses omit the secret. The app ID and public key stay in app responses.
+
 ## Same checkout, same file
 
 The contract is that `bin/docs-openapi` produces the same `docs/openapi.json` on every machine with the same checkout. The bytes match. The clock, the hostname, the locale, the absolute checkout path, directory order, `$ORBIT_HOME`, and which extensions a Gateway reports as enabled are not inputs to that contract.
@@ -56,6 +58,8 @@ The `tasks:agent:show` description names the cursor and the saved transcript, as
 A form-request rule `present` marks that property required, as `required` does.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
+
+Database creation publishes three body variants: registration, SQL server creation, and Valkey ACL creation. The SQL server variant includes optional `locale` with the builtin PostgreSQL values from `DatabaseConnectionFieldRules::onServer()`. Registration and Valkey omit it. The runtime also checks the named server's driver.
 
 The Instance update schema keeps `shared_paths` nullable, so `null` can restore its default; [shared paths](/reference/deployments#shared-paths) defines the directory rules.
 

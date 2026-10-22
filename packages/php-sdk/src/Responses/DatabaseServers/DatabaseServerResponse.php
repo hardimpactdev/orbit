@@ -46,7 +46,7 @@ final readonly class DatabaseServerResponse
             throw new InvalidArgumentException('Invalid Database server response field [tag].');
         }
 
-        if (! in_array($driver, ['mysql', 'redis'], true)) {
+        if (! in_array($driver, ['mysql', 'redis', 'pgsql'], true)) {
             throw new InvalidArgumentException('Invalid Database server response field [driver].');
         }
 

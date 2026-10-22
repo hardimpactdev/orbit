@@ -35,9 +35,7 @@ A parallel run gives each process a separate database. Tests must meet these con
 
 ## How to Run Fewer Tests
 
-Run `vendor/bin/pest --parallel --tia` to run only the tests that the recent changes affect. Pest replays the cached result of each other test.
-
-Pest replays cached results rather than skipping unaffected tests. The cache includes each produced value and the covered lines and branches. Pest finds affected Laravel, Symfony, Livewire, and Inertia tests without configuration.
+Run `vendor/bin/pest --compact` with the test files that cover a change, or with `--filter=NAME`, to run only those tests. Run the full suite before a merge.
 
 ## How to Split Tests Across CI
 

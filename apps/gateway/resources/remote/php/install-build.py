@@ -4,12 +4,12 @@
 # Timeout: 900
 # Input: {"mode": "plan" or "apply", "versions": {"8.5": {"packages": [{"name", "version", "architecture", "url",
 #   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "opentelemetry": bool, "extras": "refuse", "keep", or "purge",
-#   "fpm": "none", "shared", or "all", "repack": {"package", "version"}, "release": {"id", "codenames"} or
+#   "fpm": "none", "shared", "all", or "disabled", "repack": {"package", "version"}, "release": {"id", "codenames"} or
 #   null, "root": "/" (tests only)}
 # Result: planned: {"pending": [...], "repair": [...], "extras": [...], "unowned": [...]}. current or applied:
 #   {"changed": [...], "repaired": [...],
 #   "purged": [...], "disabled": [...],
-#   "restarted": [...], "deferred": [...], "stale_masters": [...]}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
+#   "restarted": [...], "deferred": [...], "stale_masters": [...], "fpm_disabled": bool}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
 #   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
 #   swap adds "restored": true once the previous build is back and checked; otherwise it ends with rollback_failed.
 # The one installer of the recipe's PHP build (ADR 0216). Recipe convergence, the PHP step of an Instance, the task VM
@@ -128,7 +128,7 @@ def selected(payload, architecture):
         names = {pin['name'] for pin in build['packages']}
         if names - set(pins):
             raise Outcome('download_failed', {'package': sorted(names - set(pins))[0],
-                                              'reason': f'the recipe has no {architecture} package'})
+                                              'reason': f'PHP is not available for {architecture}'})
         versions[version] = {'pins': pins, 'extensions': build['extensions']}
     return versions
 
@@ -157,38 +157,73 @@ def deb_fields(host, path):
 
 
 def keep(host, file, name):
-    """Copy a .deb into the cache as <name>_<sha256>.deb. Cached files are never deleted: they are the rollback."""
-    target = host.path(CACHE) / f'{name}_{sha256(file)}.deb'
-    if not target.is_file():
-        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(file), str(target)], privileged=True)
+    """Publish a complete, verified .deb atomically, replacing a corrupt cache entry."""
+    digest = sha256(file)
+    target = host.path(CACHE) / f'{name}_{digest}.deb'
+    if target.is_file() and sha256(target) == digest:
+        return target
+    candidate = host.run(['mktemp', str(target.parent / '.orbit-php-XXXXXXXX')], privileged=True).stdout.strip()
+    try:
+        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', str(file), candidate], privileged=True)
+        if sha256(candidate) != digest:
+            raise Outcome('download_failed', {'package': name, 'reason': 'cache copy digest mismatch'})
+        host.run(['mv', '-fT', '--', candidate, str(target)], privileged=True)
+    finally:
+        host.run(['rm', '-f', '--', candidate], privileged=True)
     return target
 
 
-def download(host, pin, mirror, work, architecture):
-    """The pinned file from the cache, the Orbit mirror, or the pin's URL, checked before use."""
-    cached = host.path(CACHE) / f'{pin["name"]}_{pin["sha256"]}.deb'
-    if cached.is_file() and sha256(cached) == pin['sha256']:
-        return cached
-    candidate = work / 'candidate.deb'
-    sources = artifact_candidates(pin['name'], pin, mirror)
-    for url in sources:
-        candidate.unlink(missing_ok=True)
-        if not url.startswith('https://'):
-            continue
-        if not host.ok(['curl', '--fail', '--silent', '--show-error', '--location', '--proto', '=https',
-                        '--proto-redir', '=https', '--tlsv1.2', '--output', str(candidate), '--', url]):
-            continue
-        if sha256(candidate) != pin['sha256']:
-            log(f'{url} does not match its recipe SHA-256 digest')
-            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact digest mismatch'})
-        fields = deb_fields(host, candidate)
-        if fields.get('Package') != pin['name'] or fields.get('Version') != pin['version'] \
-                or fields.get('Architecture') not in (architecture, 'all'):
-            log(f'{url} does not carry the name, version, and architecture of its pin')
-            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact metadata mismatch'})
-        return keep(host, candidate, pin['name'])
-    raise Outcome('download_failed', {'package': pin['name'],
-                                      'reason': 'no source served the pinned file; Sury may have a newer build'})
+def download_files(host, pins, mirror, work, architecture):
+    """One interruptible curl process per source pass; only transport failures try the next source."""
+    files = {}
+    remaining = {}
+    for pin in pins:
+        name = pin['name']
+        cached = host.path(CACHE) / f'{name}_{pin["sha256"]}.deb'
+        if cached.is_file() and sha256(cached) == pin['sha256']:
+            files[name] = cached
+        else:
+            remaining[name] = [url for url in artifact_candidates(name, pin, mirror) if url.startswith('https://')]
+    by_name = {pin['name']: pin for pin in pins}
+    while remaining:
+        argv = ['curl', '--parallel', '--parallel-immediate', '--parallel-max', '4']
+        # Each of at most two source passes gets 300 seconds, including queued batches of four.
+        transfer_limit = str(300 / ((len(remaining) + 3) // 4))
+        candidates = {}
+        for name, sources in remaining.items():
+            if not sources:
+                raise Outcome('download_failed', {'package': name,
+                                                  'reason': 'no source served the pinned file; Sury may have a newer build'})
+            candidate = work / (name + '.deb')
+            candidate.unlink(missing_ok=True)
+            if candidates:
+                argv.append('--next')
+            candidates[name] = candidate
+            argv += ['--fail', '--silent', '--show-error', '--location', '--proto', '=https',
+                     '--proto-redir', '=https', '--tlsv1.2', '--connect-timeout', '15', '--max-time', transfer_limit,
+                     '--write-out', '%{json}\n',
+                     '--output', str(candidate), '--url', sources.pop(0)]
+        completed = host.run(argv, check=False)
+        # Parallel transfers finish out of order. curl reports each file's own transport result.
+        reports = [json.loads(line) for line in completed.stdout.splitlines()]
+        results = {report['filename_effective']: report['exitcode'] for report in reports}
+        if len(reports) != len(candidates) or set(results) != {str(path) for path in candidates.values()}:
+            raise Outcome('download_failed', {'reason': 'curl did not report every transfer'})
+        for name, candidate in candidates.items():
+            if results[str(candidate)] != 0:
+                continue
+            pin = by_name[name]
+            if sha256(candidate) != pin['sha256']:
+                log(f'{name} does not match its recipe SHA-256 digest')
+                raise Outcome('download_failed', {'package': name, 'reason': 'artifact digest mismatch'})
+            fields = deb_fields(host, candidate)
+            if fields.get('Package') != name or fields.get('Version') != pin['version'] \
+                    or fields.get('Architecture') not in (architecture, 'all'):
+                log(f'{name} does not carry the name, version, and architecture of its pin')
+                raise Outcome('download_failed', {'package': name, 'reason': 'artifact metadata mismatch'})
+            files[name] = keep(host, candidate, name)
+            del remaining[name]
+    return [files[pin['name']] for pin in pins]
 
 
 def previous_files(host, names, packages, repack, work, architecture):
@@ -443,6 +478,25 @@ def place_opentelemetry(host, version, enabled):
     host.run(['phpenmod' if enabled else 'phpdismod', '-v', version, '-s', 'fpm', 'opentelemetry'], privileged=True)
 
 
+def write_ini(host, path, content):
+    with tempfile.NamedTemporaryFile() as candidate:
+        candidate.write(content)
+        candidate.flush()
+        host.run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', str(path.parent)], privileged=True)
+        host.run(['install', '-o', 'root', '-g', 'root', '-m', '0644', candidate.name, str(path)], privileged=True)
+
+
+def place_upload_progress(host, version, previous):
+    """Own the operator's emergency drop-in until the CVE-2026-109618/109619 fixes are deployed everywhere."""
+    content = b'session.upload_progress.enabled = 0\n'
+    for sapi in ('cli', 'fpm'):
+        path = host.path(f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini')
+        before = path.read_bytes() if path.is_file() else None
+        if before != content:
+            previous[path] = before
+            write_ini(host, path, content)
+
+
 def modules(host, binary):
     output = host.run([binary, '-m'], check=False).stdout
     return sorted({line.strip().lower() for line in output.splitlines() if line.strip() and not line.startswith('[')})
@@ -496,13 +550,13 @@ def fpm_units(host, version, scope):
     return units, []
 
 
-def restart(host, version, unit, configuration, opentelemetry=False):
-    """Validate, restart, and check one master. Returns the reason it failed, or None."""
+def restart(host, version, unit, configuration, opentelemetry=False, action='restart'):
+    """Validate, restart or reload, and check one master. Returns the reason it failed, or None."""
     binary = str(host.path(f'usr/sbin/php-fpm{version}'))
     test = [binary, '-t'] + (['--fpm-config', configuration] if not unit.startswith('php') else [])
     if not host.ok(test, privileged=True):
         return 'fpm_invalid'
-    if not host.ok(['systemctl', 'restart', unit], privileged=True) \
+    if not host.ok(['systemctl', action, unit], privileged=True) \
             or not host.ok(['systemctl', 'is-active', '--quiet', unit]):
         return 'the service did not start'
     loaded = modules(host, binary)
@@ -528,6 +582,23 @@ def os_release(host):
                 value = value[1:-1]
             values[key] = value if re.fullmatch(r'[A-Za-z0-9._-]+', value) else ''
     return values.get('ID', ''), values.get('VERSION_CODENAME', '')
+
+
+def disable_fpm(host, versions):
+    """Keep the unused shared master inactive at boot without removing an operator's mask."""
+    changed = False
+    for version in versions:
+        unit = f'php{version}-fpm.service'
+        enabled = host.run(['systemctl', 'is-enabled', unit], check=False).stdout.strip()
+        active = host.ok(['systemctl', 'is-active', '--quiet', unit])
+        stopped = host.ok(['systemctl', 'stop', unit], privileged=True) if enabled == 'masked' and active else True
+        disabled = enabled == 'masked' or host.ok(['systemctl', 'disable', '--now', unit], privileged=True)
+        if not stopped or not disabled \
+                or host.run(['systemctl', 'is-enabled', unit], check=False).stdout.strip() not in ('disabled', 'masked') \
+                or host.ok(['systemctl', 'is-active', '--quiet', unit]):
+            raise Outcome('fpm_invalid', {'unit': unit, 'reason': 'unused PHP-FPM must be disabled and inactive'})
+        changed = changed or active or enabled not in ('disabled', 'masked')
+    return changed
 
 
 def main(payload):
@@ -571,8 +642,7 @@ def main(payload):
     before = {version: links(host, version) for version in versions}
     pools = disabled_pools(host, versions, packages)
     with workspace(host) as work:
-        files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
-                 for name in pending + repair]
+        files = download_files(host, [pins[name] for name in pending + repair], payload.get('mirror', ''), work, architecture)
         replaced = [name for name in pending + repair if name in packages] + purge
         previous = previous_files(host, replaced, packages, payload['repack'], work, architecture)
 
@@ -580,8 +650,9 @@ def main(payload):
     # build depend on its exact php<version>-common.
     added = sorted(name for name in pending if name not in packages)
     moved = []
+    previous_ini = {}
 
-    def roll_back(reason, restarted):
+    def roll_back(reason, restarted, reloaded):
         """Put the previous build back and check it. Returns True only when every package is at its old version."""
         log(f'Rolling back the PHP build: {reason}')
         ok = True
@@ -605,14 +676,20 @@ def main(payload):
             ok = host.ok(['mv', '--', str(kept), str(original)], privileged=True) and ok
         for version, recorded in before.items():
             restore_links(host, version, recorded)
-        for unit in restarted:
-            ok = host.ok(['systemctl', 'restart', unit], privileged=True) and ok
-            ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
+        for path, content in previous_ini.items():
+            if content is None:
+                ok = host.ok(['rm', '-f', '--', str(path)], privileged=True) and ok
+            else:
+                write_ini(host, path, content)
+        for action, units in (('restart', restarted), ('reload', reloaded)):
+            for unit in units:
+                ok = host.ok(['systemctl', action, unit], privileged=True) and ok
+                ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
         return ok
 
-    def fail(outcome, data, reason, restarted):
+    def fail(outcome, data, reason, restarted, reloaded=()):
         """Roll back and end with `outcome` and restored: true, or with rollback_failed when the rollback failed."""
-        if not roll_back(reason, restarted):
+        if not roll_back(reason, restarted, reloaded):
             raise Outcome('rollback_failed', {**data, 'reason': f'{reason}; the rollback failed too'})
         raise Outcome(outcome, {**data, 'reason': data.get('reason', reason), 'restored': True})
 
@@ -638,29 +715,41 @@ def main(payload):
         for version, build in versions.items():
             place_pcov(host, version, payload['pcov'])
             place_opentelemetry(host, version, payload.get('opentelemetry', False))
+            place_upload_progress(host, version, previous_ini)
             check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
-    restarted, stale, deferred = [], [], []
+    restarted, reloaded, stale, deferred = [], [], [], []
     changed = bool(pending or repair or purge or moved) or any(links(host, version) != before[version] for version in versions)
-    if changed and payload['fpm'] != 'none':
+    action = 'restart' if changed else 'reload'
+    changed = changed or bool(previous_ini)
+    fpm_disabled = False
+    if payload['fpm'] == 'disabled':
+        try:
+            fpm_disabled = disable_fpm(host, versions)
+        except Outcome as refused:
+            fail(refused.outcome, refused.data, refused.outcome, [])
+    scope = 'all' if action == 'reload' else payload['fpm']
+    if changed and payload['fpm'] != 'disabled' and scope != 'none':
         for version in versions:
-            units, skipped = fpm_units(host, version, payload['fpm'])
+            units, skipped = fpm_units(host, version, scope)
             stale += skipped
             for unit, configuration in units:
-                reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False))
-                if reason == 'fpm_invalid' and payload['fpm'] == 'shared':
-                    # An Instance step leaves a running service alone when its pools fail validation, as before a
-                    # change: the pool publication that follows removes a stale pool and reloads the service.
+                reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False), action)
+                if reason == 'fpm_invalid' and (payload['fpm'] == 'shared' or action == 'reload' and payload['fpm'] == 'none'):
+                    # Instance pool publication can repair invalid configuration. Keep the settings so this master
+                    # loads them on its next successful reload or restart, and continue with the other masters.
                     deferred.append(unit)
                     continue
                 if reason != 'fpm_invalid':
-                    restarted.append(unit)
+                    (restarted if action == 'restart' else reloaded).append(unit)
                 if reason is None:
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
-                     f'{unit}: {reason}', restarted)
-    result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'deferred': deferred,
+                     f'{unit}: {reason}', restarted, reloaded)
+    changed = changed or fpm_disabled
+    result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'reloaded': reloaded, 'deferred': deferred,
+              'fpm_disabled': fpm_disabled,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
 

@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseServer;
 use App\Models\Project;
 
 describe(AnalyticsStorageProcessGuard::class, function (): void {
@@ -192,4 +193,15 @@ describe(AnalyticsStorageProcessGuard::class, function (): void {
         'another ClickHouse image' => ['clickhouse/clickhouse-keeper:24.12'],
         'a look-alike repository' => ['clickhouse/clickhouse-server-extra:24.12'],
     ]);
+});
+
+it('permits PostgreSQL 18 and exact LAN publication only for a managed server', function (): void {
+    $storage = analytics_storage_processes();
+    $node = $storage['node'];
+    $node->update(['lan_ip' => '10.0.0.6']);
+    $process = $storage['postgres'];
+    $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'postgres:18', 'ports' => ["{$node->wireguard_ip}:5434:5432", '10.0.0.6:5434:5432']]]);
+    expect(fn () => new AnalyticsStorageProcessGuard()->assert($process->id, $storage['clickhouse']->id))->toThrow(ResourceOperationException::class);
+    DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => 'active']);
+    expect(new AnalyticsStorageProcessGuard()->assert($process->id, $storage['clickhouse']->id))->toHaveKeys(['postgres', 'clickhouse']);
 });

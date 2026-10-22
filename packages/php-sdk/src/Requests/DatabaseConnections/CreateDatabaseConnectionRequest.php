@@ -39,6 +39,7 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
         private readonly ?int $instanceId = null,
         private readonly ?array $patterns = null,
         private readonly ?array $allow = null,
+        private readonly ?string $locale = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -63,7 +64,7 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
                 $body['instance_id'] = $this->instanceId;
             }
 
-            foreach (['patterns' => $this->patterns, 'allow' => $this->allow, 'database' => $this->database] as $key => $value) {
+            foreach (['patterns' => $this->patterns, 'allow' => $this->allow, 'database' => $this->database, 'locale' => $this->locale] as $key => $value) {
                 if ($value !== null) {
                     $body[$key] = $value;
                 }

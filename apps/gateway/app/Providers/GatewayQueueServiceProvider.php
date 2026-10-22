@@ -8,6 +8,7 @@ use App\Console\Commands\SweepOperationsCommand;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Infrastructure\Gateway\GatewayHorizonReservation;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
+use Laravel\Horizon\Listeners\MarkJobAsReserved;
 use Throwable;
 
 /** The Gateway queue and Laravel Horizon (docs/reference/gateway-queue.md). */
@@ -23,6 +25,8 @@ final class GatewayQueueServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(MarkJobAsReserved::class, GatewayHorizonReservation::class);
+
         // The lease of each operation attempt on the `operations` queue (docs/reference/operations.md).
         $this->app->singleton(
             OperationAttemptLease::class,

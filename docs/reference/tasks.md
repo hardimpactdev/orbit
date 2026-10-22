@@ -20,7 +20,7 @@ While a subtask is open, Orbit also watches a pull request on `task-{id}`. It st
 
 A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything for review, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
 
-The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
+The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
@@ -199,8 +199,8 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 ```json
 [
   {"id": "reference-page", "type": "file", "description": "Document the export", "path": "docs/reference/export.md", "change": "modified"},
-  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
-  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
+  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "../../bin/pest-plain vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
+  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "../../bin/pest-plain vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
   {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
   {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
 ]
@@ -262,7 +262,7 @@ The base run stops after 600 seconds, and a timed-out run counts as failing on t
 
 Task create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` is the JSON boolean `true` or `false`, and `paths` is a list of strings. Any other value is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
-The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
+The Orbit Project's [task policy skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug task's first code subtask carries that command. When a bug cannot be reproduced by a command, the brief says so and that subtask adds a `review` deliverable for the manual check. [`bin/bug-repro`](/reference/delivery-line#binbug-repro) runs that command against current main without filing a task. [`bin/task-group-check`](/reference/delivery-line#bintask-group-check) validates the create payload, including `fails_on_base`, without adding a proof field.
 
 ### Confirm deliverables
 
@@ -389,7 +389,7 @@ Filing a task clears that occurrence history after the brief is built. Hits whil
 
 ### Suppression
 
-The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
+The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
 
 | Key | Match |
 | --- | --- |
@@ -462,7 +462,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 `problems:collect` runs every 10 minutes and dispatches short jobs on `problems`, below `tasks` in the same Horizon supervisor. A batch observes each Node, a second checks resource groups selected by each Doctor family, and a final job collects the other signals. Each group has one 12-second command deadline and a 13-second worker timeout. Laravel's `failed()` hook records an unverifiable observation when a job fails. Collection does not file problems; only hourly `problems:file` does that under its lock. [Gateway queue](/reference/gateway-queue#scheduled-work) gives the measured timings and group sizes.
 
-The cached Node observations last at most one hour and are removed after collection; they are not a second problem ledger. The scheduler observes the Gateway Horizon Process separately, without a cache or overlap lock, so it can record a stopped Horizon without queue workers. `problems:file` also runs hourly in the scheduler, with its 30-minute overlap and command locks. All run only while the Tasks extension is enabled. See [Scheduled work](/reference/gateway-queue#scheduled-work).
+The cached Node observations last at most one hour and are removed after collection; they are not a second problem ledger. The scheduler observes the Gateway Horizon Process separately, without a cache or overlap lock, so it can record a stopped Horizon without queue workers. `problems:file` also runs hourly in the scheduler, with its 30-minute overlap and command locks. All run only while the Tasks extension is enabled. Daily batch metadata pruning keeps `ORBIT_JOB_BATCH_HOURS` (24 hours by default). See [Scheduled work](/reference/gateway-queue#scheduled-work).
 
 | Source | Bound per run |
 | --- | --- |
@@ -979,7 +979,7 @@ After a handoff check passes and its deliverables verify, Orbit:
 3. Pushes the commit once to Orbit's handoff branch `task-{id}-handoff`. The task VM records the push, so a later tick does not push it again.
 4. Reads the check runs and check suites of exactly that commit. It judges the merge check by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 
-The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, four Gateway shards, and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
+The push starts CI, so the Project's workflow must run its merge check on pushes to `task-*-handoff` branches. The Orbit repository's `ci.yml` treats such a push as it treats a pull request: the same jobs, [capacity-sized Gateway shards](/reference/implementation-loop#gateway-shards), and `Required checks`. A newer push to the same handoff branch cancels the older run. It never cancels a run on `main` or on a pull request.
 
 The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed handoff commit never reaches the task's pull request, nor an outside author's branch. A conflict with the base is not a handoff concern: the task's pull request, opened after the last approval, merges against the latest base through the [merge gate](#merge-on-green).
 
@@ -1050,7 +1050,7 @@ Each setup step owns one process group. The check stops that group when the shel
 
 Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
 
-The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
+The Orbit repository's own check seeds its quality caches, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
 A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
 
@@ -1468,7 +1468,7 @@ Cancel and the cancelled-task sweep push the latest approved commit only when a 
 
 ### Incoming pull requests
 
-`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=nckrtl/orbit:1234567`. Unset or empty reviews no incoming pull request.
+`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=hardimpactdev/orbit:1234567`. Unset or empty reviews no incoming pull request.
 
 At most once a minute, each `tasks:tick` lists the open pull requests of every review-and-merge Project, at most three pages of 100. A pull request is eligible when all of these hold:
 
@@ -1542,12 +1542,12 @@ A snapshot replaces the browser transcript. Entries merge by id and kind, so an 
 
 `GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
 
-A first read returns a snapshot of the whole transcript. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
+A first read returns a transcript snapshot. If it exceeds the Gateway budget, the snapshot keeps the newest entries that fit and starts with an explicit truncation marker. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
 
 | Field | Meaning |
 | --- | --- |
 | `thread_id` | The agent thread ID |
-| `kind` | `snapshot` when `entries` is the whole transcript. `delta` when `entries` holds only the entries after `after_sequence` |
+| `kind` | `snapshot` when `entries` replaces the transcript, with a truncation marker when older entries were omitted. `delta` when `entries` holds only the entries after `after_sequence` |
 | `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown or before the thread starts |
 | `entries` | Normalized transcript entries, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
 | `input_requests` | Open input requests. A Pi thread has none |
@@ -1563,9 +1563,11 @@ A thread that has not started yet returns an empty snapshot: no entries, a null 
 
 When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. It does the same when the thread's Pi server fails and Orbit saved a transcript, as after the task VM is deleted. A saved transcript does not change, so a reader can stop polling it.
 
-The read waits at most 5 seconds for the Pi server. The Gateway accepts at most 16 MiB of session data from the Pi server for one read; real transcripts reach about 9 MiB. The same limit applies when the [tick](#session-routing) observes the thread and when Orbit [saves its transcript](#archive-finished-threads), so a larger thread counts as unobservable.
+The read waits at most 5 seconds for the Pi server. The Gateway gives the Pi server a 16 MiB response budget. A larger snapshot keeps only the newest complete entries that fit, with a system message marking the omitted history. An oversized delta becomes a bounded snapshot, so the cursor still names the current state. Orbit uses the same bounded snapshot when it [saves a transcript](#archive-finished-threads), with a 15-second request budget.
 
-The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or sends more than 16 MiB, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
+The [tick](#session-routing) reads only state, turn identity, errors, and token metrics; it never fetches the transcript. A long transcript does not make a healthy agent unobservable on an updated Pi server. The [Pi rollout requirements](/reference/pi-server#read-after-a-cursor) describe older binaries.
+
+The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or violates the response budget, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
 ## Cancel a stuck task
 
@@ -1782,9 +1784,9 @@ The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the works
 
 ### The full suite runs in CI at each handoff
 
-On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes, and test-impact analysis selected a median of the whole suite once its selection was correct. PR CI runs the Gateway suite as four shards, and its `Required checks` finish in about five minutes.
+On 2026-10-20 the maintainer decided that a handoff's full test suite runs in sharded GitHub Actions CI on the pushed commit, not in the task VM. On 2 to 4 vCPU task VMs a handoff check took 13 to 30 minutes. CI runs the Gateway suite in [five stock Pest shards](/reference/implementation-loop#gateway-shards) on every event.
 
-The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Test-impact analysis does not decide the handoff, because its declaration-data false greens are the reason the merge gate runs full suites; implementers keep `composer test:affected` for fast feedback.
+The check stays blocking: the reviewer starts only after CI passed. A pipeline that reviews while CI runs was rejected for now, because a failed run would then invalidate a review. Implementers run the tests that cover their change for fast feedback; Orbit runs [no test impact analysis](/reference/implementation-loop#full-suites-gate-merges).
 
 CI runs on the push of the handoff commit to `task-{id}-handoff`, not on a pull request. Orbit sends one push. GitHub can report more than one run of a workflow on the same commit, so only the newest run for each workflow, event, and branch counts. A draft pull request per handoff was rejected. It needs draft conversions, conflict reads, a new push when its head moves, and timing rules for its suites. The merge gate checks the task's pull request against the latest base anyway.
 

@@ -37,8 +37,6 @@ use Tests\Support\WithCommittedSqliteDatabase;
 
 uses(WithCommittedSqliteDatabase::class);
 
-pest()->group('subprocess');
-
 beforeEach(function (): void {
     // These lifecycle tests need real commits, not RefreshDatabase's enclosing transaction.
     $home = sys_get_temp_dir().'/orbit-document-domain-'.Str::uuid();

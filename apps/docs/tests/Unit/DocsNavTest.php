@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-pest()->group('subprocess');
-
 function docsNavFixture(): string
 {
     $root = sys_get_temp_dir().'/docs-nav-'.bin2hex(random_bytes(6));

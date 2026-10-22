@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\NodeInspectionData;
@@ -133,17 +134,22 @@ it('reports connection failures as unverifiable', function (): void {
 });
 
 it('skips MySQL servers and processes that should not run', function (string $skip): void {
+    if ($skip === 'mysql with LAN') {
+        $this->server->node->update(['lan_ip' => '10.0.0.6']);
+    }
     match ($skip) {
-        'mysql' => $this->server->update(['driver' => 'mysql']),
+        'mysql', 'mysql with LAN' => $this->server->update(['driver' => 'mysql']),
         'stopped' => $this->server->process->update(['desired_state' => 'stopped']),
         'missing process' => $this->server->update(['process_id' => null]),
     };
 
+    $this->mock(DatabaseServerAdmin::class)->shouldNotReceive('waitUntilReady');
     $this->postJson('/api/v1/doctor', $this->request)->assertOk()
-        ->assertJsonPath('data.nodes.0.families.0.checked', 0);
+        ->assertJsonPath('data.nodes.0.families.0.checked', 0)
+        ->assertJsonPath('data.nodes.0.families.0.issues', []);
 
     expect($this->admin->calls)->toBe([]);
-})->with(['mysql', 'stopped', 'missing process']);
+})->with(['mysql', 'mysql with LAN', 'stopped', 'missing process']);
 
 it('keeps an open finding when admin login fails and hides raw failures', function (): void {
     $this->mock(ValkeyServerAdmin::class, function ($mock): void {

@@ -41,11 +41,13 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `SESSION_PATH`, `SESSION_DOMAIN` | Laravel sessions. The API is stateless, so the example uses the `array` driver. |
 | `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE` | Laravel storage, queue, and cache drivers. |
 | `ORBIT_GATEWAY_QUEUE_CONNECTION`, `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | The Redis Database connection and database index of the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Empty, the scheduler runs its commands itself. Tests set `ORBIT_GATEWAY_QUEUE_DRIVER=database` to keep the queue in SQLite. |
-| `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role. See [Realtime events with Reverb](/solutions/realtime-reverb). |
+| `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role, with repository `https://github.com/hardimpactdev/orbit-reverb.git`. See [Realtime events with Reverb](/solutions/realtime-reverb). Each Gateway release pins a server commit for the [live registry](/reference/websocket-apps#the-reverb-server). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | GitHub logins requested as reviewers on a task pull request. See [Tasks](/reference/tasks). |
 
 Other `ORBIT_` keys belong to one feature, and the page for that feature documents them.
+
+[Gateway disk retention](/reference/gateway-recovery#disk-retention) documents `ORBIT_JOURNAL_MAX_MB`, `ORBIT_JOURNAL_KEEP_FREE_MB`, `ORBIT_JOURNAL_RUNTIME_MAX_MB`, `ORBIT_JOURNAL_DAYS`, `ORBIT_LOG_ROTATE_MB`, and `ORBIT_LOG_ROTATE_KEEP`. Queue record retention uses `ORBIT_FAILED_JOBS_HOURS` and `ORBIT_JOB_BATCH_HOURS`. Their defaults are in `config/retention.php`.
 
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 

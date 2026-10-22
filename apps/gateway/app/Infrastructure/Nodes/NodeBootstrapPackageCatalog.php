@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\Node;
 
 final class NodeBootstrapPackageCatalog
@@ -25,7 +26,7 @@ final class NodeBootstrapPackageCatalog
     public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
-            RoleName::Gateway => ['ca-certificates', 'caddy'],
+            RoleName::Gateway => ['ca-certificates', 'caddy', 'logrotate'],
             RoleName::Vpn => ['dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
             RoleName::Ingress => ['caddy'],
@@ -42,6 +43,7 @@ final class NodeBootstrapPackageCatalog
             ],
             RoleName::Metrics => ['docker.io', 'openssl'],
             RoleName::Database => ['docker.io'],
+            RoleName::CiRunner => RecipeLoader::IncusPackages,
             RoleName::WebSocket => [
                 'caddy',
                 'composer',

@@ -6,7 +6,7 @@ use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
-use App\Infrastructure\MachineSoftware\PhpBuildBump;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -31,10 +31,10 @@ function nightlyRefreshEvidence(): array
     $after = str_replace($snapshot, $date.'T000000Z', $before);
     $bot = ['id' => 123, 'login' => 'orbit-acme[bot]', 'type' => 'Bot'];
     $sha = str_repeat('b', 40);
-    $pr = ['number' => 99, 'title' => 'Bump machine recipe snapshot', 'html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'state' => 'open', 'draft' => false,
+    $pr = ['number' => 99, 'title' => 'Bump machine recipe snapshot', 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/99', 'state' => 'open', 'draft' => false,
         'user' => $bot, 'commits' => 1, 'changed_files' => 1, 'additions' => 1, 'deletions' => 1,
-        'head' => ['ref' => 'nightly/recipe-'.$date, 'sha' => $sha, 'repo' => ['full_name' => 'nckrtl/orbit']],
-        'base' => ['ref' => 'main', 'repo' => ['full_name' => 'nckrtl/orbit']]];
+        'head' => ['ref' => 'nightly/recipe-'.$date, 'sha' => $sha, 'repo' => ['full_name' => 'hardimpactdev/orbit']],
+        'base' => ['ref' => 'main', 'repo' => ['full_name' => 'hardimpactdev/orbit']]];
 
     return ['pr' => $pr, 'final' => $pr, 'before' => $before, 'after' => $after,
         'main' => str_repeat('c', 40), 'main_content' => $before, 'comparison' => 'ahead',
@@ -52,23 +52,23 @@ function nightlyRefreshHttp(array $evidence, array $overrides = []): void
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     GitHubTestSupport::storeApp();
-    config(['orbit.cli_releases.repository' => 'https://github.com/nckrtl/orbit', 'orbit.gateway_releases.check' => 'Required checks']);
+    config(['orbit.cli_releases.repository' => 'https://github.com/hardimpactdev/orbit', 'orbit.gateway_releases.check' => 'Required checks']);
     Http::preventStrayRequests();
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     Http::fake(array_replace([
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_refresh']),
         $base.'/git/ref/heads/main' => Http::response(['object' => ['sha' => $evidence['main']]]),
         $base.'/pulls?*' => static function (Request $request) use ($evidence) {
             if (isset($request['head'])) {
-                return Http::response($request['head'] === 'nckrtl:'.$evidence['pr']['head']['ref'] ? [$evidence['pr']] : []);
+                return Http::response($request['head'] === 'hardimpactdev:'.$evidence['pr']['head']['ref'] ? [$evidence['pr']] : []);
             }
 
             return Http::response([$evidence['pr']], $evidence['list_status'] ?? 200);
         },
         $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final'])->push(['state' => 'closed']),
         $base.'/git/refs' => Http::response([], 201),
-        $base.'/pulls' => Http::response(['number' => 100, 'html_url' => 'https://github.com/nckrtl/orbit/pull/100', 'user' => ['login' => 'orbit-acme[bot]']], 201),
+        $base.'/pulls' => Http::response(['number' => 100, 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/100', 'user' => ['login' => 'orbit-acme[bot]']], 201),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
         $base.'/issues/99/timeline?*' => Http::response($evidence['timeline']),
@@ -120,7 +120,7 @@ it('refreshes after a maintainer references the failed nightly PR from the merge
         'created_at' => '2026-10-16T05:36:00Z',
         'updated_at' => '2026-10-16T05:36:00Z',
         'source' => ['type' => 'issue', 'issue' => [
-            'number' => 1298, 'html_url' => 'https://github.com/nckrtl/orbit/pull/1298', 'state' => 'closed',
+            'number' => 1298, 'html_url' => 'https://github.com/hardimpactdev/orbit/pull/1298', 'state' => 'closed',
             'pull_request' => ['merged_at' => '2026-10-16T05:43:18Z'],
         ]],
         'event' => 'cross-referenced',
@@ -239,7 +239,7 @@ it('opens tonight’s replacement without prematurely closing an older unsuperse
     $evidence = nightlyRefreshEvidence();
     $this->travelTo(nightlyRefreshDate()->modify('+1 day')->setTimezone(new DateTimeZone('Europe/Amsterdam'))->setTime(3, 0));
     nightlyRefreshHttp($evidence);
-    app()->instance(PhpBuildBump::class, new class extends PhpBuildBump
+    app()->instance(RecipeArtifactsBump::class, new class extends RecipeArtifactsBump
     {
         public bool $called = false;
 
@@ -260,7 +260,7 @@ it('opens tonight’s replacement without prematurely closing an older unsuperse
     Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls') && $request['head'] === $branch);
     expect(collect(Http::recorded())->filter(fn (array $pair): bool => $pair[0]->method() === 'POST' && str_ends_with($pair[0]->url(), '/pulls')))->toHaveCount(1);
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/graphql') && str_starts_with($request['query'], 'mutation'));
-    expect(app(PhpBuildBump::class)->called)->toBeTrue();
+    expect(app(RecipeArtifactsBump::class)->called)->toBeTrue();
 });
 
 it('keeps the PHP build pass running after recovery errors or failed comments', function (string $case): void {
@@ -276,7 +276,7 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
     nightlyRefreshHttp($evidence);
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
-    app()->instance(PhpBuildBump::class, new class extends PhpBuildBump
+    app()->instance(RecipeArtifactsBump::class, new class extends RecipeArtifactsBump
     {
         public bool $called = false;
 
@@ -292,7 +292,7 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
 
     app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
 
-    expect(app(PhpBuildBump::class)->called)->toBeTrue();
+    expect(app(RecipeArtifactsBump::class)->called)->toBeTrue();
     expect($alerts->alerts)->toHaveCount($case === 'comment' ? 0 : 1);
 })->with(['list', 'update', 'comment']);
 
@@ -305,10 +305,10 @@ it('uses the shared retirement rule before checking failed or green PR evidence 
     }
     $replacement = $evidence['pr'];
     $replacement['number'] = 100;
-    $replacement['html_url'] = 'https://github.com/nckrtl/orbit/pull/100';
+    $replacement['html_url'] = 'https://github.com/hardimpactdev/orbit/pull/100';
     $replacement['head']['ref'] = 'nightly/recipe-'.nightlyRefreshDate()->modify('+1 day')->format('Ymd');
     $replacement['head']['sha'] = str_repeat('d', 40);
-    $base = 'https://api.github.com/repos/nckrtl/orbit';
+    $base = 'https://api.github.com/repos/hardimpactdev/orbit';
     $closed = false;
     nightlyRefreshHttp($evidence, [
         $base.'/pulls?*' => Http::response($trigger === 'main snapshot' ? [$evidence['pr']] : [$evidence['pr'], $replacement]),

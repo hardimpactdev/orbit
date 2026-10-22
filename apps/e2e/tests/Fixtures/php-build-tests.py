@@ -16,6 +16,9 @@ loader = importlib.machinery.SourceFileLoader('php_build', sys.argv.pop(1))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 build = importlib.util.module_from_spec(spec)
 loader.exec_module(build)
+artifact_loader = importlib.machinery.SourceFileLoader('recipe_artifacts', str(Path(build.__file__).with_name('recipe-artifacts')))
+artifacts = importlib.util.module_from_spec(importlib.util.spec_from_loader(artifact_loader.name, artifact_loader))
+artifact_loader.exec_module(artifacts)
 
 CORE = '8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504'
 
@@ -42,7 +45,7 @@ def recipe():
             'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
         'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev', 'base', 'ci-runner'], 'opentelemetry': ['app-dev'],
-                'purge_extras': ['ci-runner'], 'versions': {
+                'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
     }
@@ -63,7 +66,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(selected['pins']['php8.5-cli']['version'], CORE)
         with self.assertRaisesRegex(build.BuildError, 'no PHP 8.4 build'):
             build.build(recipe(), '8.4', profile='ci-runner')
-        with self.assertRaisesRegex(build.BuildError, 'no arm64 package for libgd3'):
+        with self.assertRaisesRegex(build.BuildError, 'PHP is not available for arm64'):
             build.build(recipe(), architecture='arm64', profile='ci-runner')
 
     def test_modules_match_the_recipe_list_format(self):
@@ -101,7 +104,10 @@ class BuildTest(unittest.TestCase):
             with self.assertRaises(build.BuildError) as raised:
                 build.verify(recipe(), None, 'ci-runner')
         self.assertIn('Extra extensions: apcu.', str(raised.exception))
-        self.assertIn('node:converge-recipe sabre --profile=ci-runner', str(raised.exception))
+        self.assertIn('for a Node with the ci-runner role', str(raised.exception))
+        self.assertIn('`php artisan node:converge-recipe NODE` on the Gateway', str(raised.exception))
+        self.assertIn('`tools/ci-runners/setup.sh container NAME` on its host', str(raised.exception))
+        self.assertNotIn('--profile=ci-runner', str(raised.exception))
 
     def test_main_exits_nonzero_with_the_message_on_stderr(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -201,18 +207,18 @@ class BuildTest(unittest.TestCase):
         self.assertNotEqual(build.pins_digest(changed, 'amd64', ['8.5']), first)
 
     def test_version_comparison_matches_dpkg(self):
-        self.assertGreater(build.compare_versions('8.5.12-1+0~20261020.1+ubuntu26.04~1.gbp1', CORE), 0)
-        self.assertLess(build.compare_versions('1.0~rc1', '1.0'), 0)
-        self.assertGreater(build.compare_versions('2:101~+0~2026', '2:100'), 0)
-        self.assertGreater(build.compare_versions('1:1.0', '2.0'), 0)
-        self.assertEqual(build.compare_versions('1.0-1', '1.0-1'), 0)
+        self.assertGreater(artifacts.compare_versions('8.5.12-1+0~20261020.1+ubuntu26.04~1.gbp1', CORE), 0)
+        self.assertLess(artifacts.compare_versions('1.0~rc1', '1.0'), 0)
+        self.assertGreater(artifacts.compare_versions('2:101~+0~2026', '2:100'), 0)
+        self.assertGreater(artifacts.compare_versions('1:1.0', '2.0'), 0)
+        self.assertEqual(artifacts.compare_versions('1.0-1', '1.0-1'), 0)
 
 
 class BumpTest(unittest.TestCase):
     def test_release_hashes_and_stanzas_parse_the_signed_index(self):
         release = 'Origin: deb.sury.org\nMD5Sum:\n 0 1 main/binary-amd64/Packages\nSHA256:\n abc 12 main/binary-amd64/Packages.xz\n def 9 main/binary-arm64/Packages\n'
-        self.assertEqual(build.release_hashes(release), {'main/binary-amd64/Packages.xz': 'abc', 'main/binary-arm64/Packages': 'def'})
-        parsed = list(build.stanzas(stanza('php8.5-cli', CORE) + '\n' + stanza('php8.5-pcov', '1.0')))
+        self.assertEqual(artifacts.release_hashes(release), {'main/binary-amd64/Packages.xz': 'abc', 'main/binary-arm64/Packages': 'def'})
+        parsed = list(artifacts.stanzas(stanza('php8.5-cli', CORE) + '\n' + stanza('php8.5-pcov', '1.0')))
         self.assertEqual([fields['Package'] for fields in parsed], ['php8.5-cli', 'php8.5-pcov'])
 
     def test_bump_moves_every_pin_of_a_version_together_to_the_newest_build(self):
@@ -225,25 +231,25 @@ class BumpTest(unittest.TestCase):
             stanza('libgd3', '2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32'),
             stanza('php8.5-soap', newer),
         ])
-        changes = build.bump_recipe(current, {'amd64': index})
+        changes = artifacts.bump_recipe(current, {'amd64': index})
         self.assertEqual(changes, [f'libgd3 amd64: 2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32 -> 2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32',
                                    f'php-common amd64: 2:101~+0~20260503.72+ubuntu26.04~1.gbp7da167 -> 2:101~+0~20260503.72+ubuntu26.04~1.gbp7da167',
                                    f'php8.5-cli amd64: {CORE} -> {newer}', f'php8.5-common amd64: {CORE} -> {newer}',
                                    'php8.5-pcov amd64: 1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479 -> 1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479'])
         cli = current['tools']['php8.5-cli']
         self.assertEqual(cli['version'], newer)
-        self.assertEqual(cli['artifacts']['amd64']['url'], f'{build.SURY}pool/main/p/php8.5/php8.5-cli_{newer}_amd64.deb')
+        self.assertEqual(cli['artifacts']['amd64']['url'], f'{artifacts.SURY}pool/main/p/php8.5/php8.5-cli_{newer}_amd64.deb')
         self.assertEqual(cli['artifacts']['amd64']['sha256'], hashlib.sha256(f'pool/main/p/php8.5/php8.5-cli_{newer}_amd64.deb'.encode()).hexdigest())
         self.assertNotIn('php8.5-soap', current['tools'])
-        self.assertEqual(build.bump_recipe(current, {'amd64': index})[2:4], [])
+        self.assertEqual(artifacts.bump_recipe(current, {'amd64': index})[2:4], [])
 
     def test_bump_refuses_sury_between_builds_and_a_missing_package(self):
         newer = '8.5.12-1+0~20261020.1+ubuntu26.04~1.gbp1'
         rest = [stanza('php8.5-pcov', '1.0'), stanza('php-common', '2:101', 'all'), stanza('libgd3', '2.3.3')]
-        with self.assertRaisesRegex(build.BuildError, 'between builds'):
-            build.bump_recipe(recipe(), {'amd64': '\n'.join([stanza('php8.5-cli', newer), stanza('php8.5-common', CORE), *rest])})
-        with self.assertRaisesRegex(build.BuildError, 'Sury has no amd64 package php8.5-cli'):
-            build.bump_recipe(recipe(), {'amd64': '\n'.join([stanza('php8.5-common', CORE), *rest])})
+        with self.assertRaisesRegex(artifacts.BuildError, 'between builds'):
+            artifacts.bump_recipe(recipe(), {'amd64': '\n'.join([stanza('php8.5-cli', newer), stanza('php8.5-common', CORE), *rest])})
+        with self.assertRaisesRegex(artifacts.BuildError, 'Sury has no amd64 package php8.5-cli'):
+            artifacts.bump_recipe(recipe(), {'amd64': '\n'.join([stanza('php8.5-common', CORE), *rest])})
 
     def test_bump_writes_the_recipe_in_its_own_format_only_when_pins_change(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -253,21 +259,49 @@ class BumpTest(unittest.TestCase):
             index = '\n'.join([stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
                                for name, pin in recipe()['tools'].items() if pin['source'] == 'artifact'])
             same = copy.deepcopy(recipe())
+            same['architectures'].append('arm64')
             for name, tool in same['tools'].items():
                 if tool['source'] != 'artifact':
                     continue
                 filename = f'pool/main/p/php8.5/{name}_{tool["version"]}_{"all" if name == "php-common" else "amd64"}.deb'
-                tool['artifacts']['amd64'] = {'url': build.SURY + filename, 'sha256': hashlib.sha256(filename.encode()).hexdigest()}
+                tool['artifacts']['amd64'] = {'url': artifacts.SURY + filename, 'sha256': hashlib.sha256(filename.encode()).hexdigest()}
             path.write_text(json.dumps(same, indent=4) + '\n')
-            with patch.object(build, 'signed_release', return_value=''), \
-                 patch.object(build, 'index', return_value=index), \
+            with patch.object(artifacts, 'signed_release', return_value=''), \
+                 patch.object(artifacts, 'index', return_value=index) as fetch_index, \
                  redirect_stdout(io.StringIO()) as out:
-                build.bump(str(path), dry_run=False)
+                artifacts.bump(str(path))
             self.assertEqual(path.read_text(), json.dumps(same, indent=4) + '\n')
             self.assertIn("pins Sury's newest PHP build", out.getvalue())
+            self.assertEqual([call.args[1] for call in fetch_index.call_args_list], ['amd64'])
+
+    def test_bump_does_not_add_an_unsupported_architecture_or_take_its_older_versions(self):
+        current = recipe()
+        index = '\n'.join(stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
+                          for name, pin in current['tools'].items() if pin['source'] == 'artifact')
+
+        artifacts.bump_recipe(current, {'amd64': index, 'arm64': ''})
+
+        self.assertEqual(current['tools']['php8.5-common']['version'], CORE)
+        for pin in current['tools'].values():
+            if pin['source'] == 'artifact':
+                self.assertEqual(list(pin['artifacts']), ['amd64'])
 
 
 class RepositoryRecipeTest(unittest.TestCase):
+    def test_mirror_downloads_only_declared_amd64_php_artifacts(self):
+        document = build.load(build.RECIPE)
+        names = set(document['php']['shared']).union(*(set(v['packages']) for v in document['php']['versions'].values()))
+        document['tools'] = {name: document['tools'][name] for name in names}
+        document['artifact_mirror'] = ''
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(build, 'download') as download, redirect_stdout(io.StringIO()):
+            build.mirror(document, Path(directory))
+
+        self.assertEqual(download.call_count, len(names))
+        for call in download.call_args_list:
+            self.assertNotIn('_arm64.deb', call.args[0])
+            self.assertTrue(call.args[0].endswith(('_amd64.deb', '_all.deb')))
+
     def test_ci_build_and_installer_exclude_app_dev_opentelemetry(self):
         document = build.load(build.RECIPE)
         for version in document['php']['versions']:
@@ -299,7 +333,7 @@ class RepositoryRecipeTest(unittest.TestCase):
         self.assertEqual(selected['version'], document['php']['ci'])
         self.assertEqual(len({pin['version'] for name, pin in selected['pins'].items()
                               if pin['version'].startswith(selected['version'] + '.')}), 1)
-        self.assertTrue(all(pin['url'].startswith(build.SURY) for pin in selected['pins'].values()))
+        self.assertTrue(all(pin['url'].startswith(artifacts.SURY) for pin in selected['pins'].values()))
 
 
 unittest.main()

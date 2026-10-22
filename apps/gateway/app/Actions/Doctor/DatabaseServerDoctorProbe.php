@@ -7,6 +7,7 @@ namespace App\Actions\Doctor;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -24,7 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 {
-    public function __construct(private ValkeyServerAdmin $admin) {}
+    public function __construct(private ValkeyServerAdmin $admin, private DatabaseServerAdmin $sql) {}
 
     public function family(): DoctorFamily
     {
@@ -42,7 +43,7 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
     {
         return DatabaseServer::query()
             ->where('node_id', $node->id)
-            ->where('driver', DatabaseDriver::Redis)
+            ->where(static fn ($query) => $query->where('driver', DatabaseDriver::Redis)->orWhere('private_endpoints_managed', true))
             ->whereHas('process', static fn ($query) => $query->where('desired_state', DesiredProcessState::Running))
             ->with(['node', 'databaseConnections.users'])
             ->orderBy('id')
@@ -57,6 +58,25 @@ final readonly class DatabaseServerDoctorProbe implements DoctorFamilyProbe
 
         foreach ($servers as $server) {
             try {
+                if ($server->private_endpoints_managed) {
+                    $port = $server->driver->defaultPort() ?? 3306;
+                    if (($server->process?->runtime_config['ports'] ?? []) !== DatabaseServerProcess::publishedPorts($server->node, $server->port, $port)) {
+                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::PublicationMismatch,
+                            'The Process publications differ from the managed private endpoints.', 'private endpoints', 'different');
+                    }
+                }
+                if ($server->driver !== DatabaseDriver::Redis) {
+                    if (! $this->sql->waitUntilReady($server, 5)) {
+                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::LoginFailed,
+                            'The SQL server did not accept its managed admin login.', 'authenticated', 'unavailable');
+                    }
+                    if ($server->process !== null && DatabaseServerProcess::holdsRootPassword($server->process)) {
+                        $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::InitializationSecretPresent,
+                            'The Process still carries its first-start password.', 'removed', 'present');
+                    }
+
+                    continue;
+                }
                 if ($this->admin->acceptsAnonymous($server)) {
                     $issues[] = $this->issue($server, DatabaseServerDoctorIssueCode::Open,
                         'A client without a password can run a command.', 'authentication required', 'open');

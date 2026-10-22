@@ -51,7 +51,7 @@ Change one coherent feature boundary at a time. Move distinct cases into the ret
 
 For a repair or a material consolidation, show that a credible defect makes the retained assertion fail for the intended reason. Use a historical failing revision or a small deliberate mutation in an isolated checkout when practical. Restore the mutation before checks; do not mutate a checkout while tests run. A passing test alone does not prove its assertion is effective.
 
-Run the project's required tests and checks. Confirm actual execution, not just cached TIA results. Before handing off a cleanup, run fresh full suites in affected projects and check cross-project consumers and CI routing. Keep live Incus verification separate and follow [using-incus-topologies](../../using-incus-topologies/SKILL.md) when needed. Do not create or remove fleet resources as a side effect of a read-only audit.
+Run the project's required tests and checks. Confirm actual execution, not just cached results. Before handing off a cleanup, run fresh full suites in affected projects and check cross-project consumers and CI routing. Keep live Incus verification separate and follow [using-incus-topologies](../../using-incus-topologies/SKILL.md) when needed. Do not create or remove fleet resources as a side effect of a read-only audit.
 
 Report findings, retained false positives, baseline and final results, unresolved risks, production versus test/support LOC, measured runtime, and follow-ups. State the audited scope and unexamined scope explicitly. Follow the user's authorization and Orbit's existing review and merge workflow; this procedure does not authorize publication or merging.
 

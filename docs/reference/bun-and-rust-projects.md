@@ -41,7 +41,7 @@ bun install
 bun run demo
 ```
 
-`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/nckrtl/orbit/blob/main/apps/web/README.md) describes both modes, the layout of the source, and how to run the app against a disposable topology.
+`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md) describes both modes, the layout of the source, and how to run the app against a disposable topology.
 
 Run the checks before you submit a change:
 
@@ -51,11 +51,15 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps. Vitest uses its default parallel scheduling for all three projects. The verification files own separate temporary sessions, so they can run alongside each other and the browser tests. Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs both engines and their system libraries directly on the hosted runner.
+`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps, and `bun run test` runs those same two stages in order to avoid competing browser workloads on smaller development machines.
+
+Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage.
+
+Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs Chromium's headless shell, WebKit, and their system libraries directly on the hosted runner. It uses Playwright's `--only-shell` option to avoid downloading full Chromium for headless tests.
 
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
-After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
+After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. The `tools/api-types` Bun workspace owns the generator and its TypeScript 5 compiler API dependency. The web app uses TypeScript 7 for type checking. `bun install --frozen-lockfile` installs both workspaces from one lockfile. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
 
 ## Pi server
 
@@ -70,6 +74,8 @@ bun run build
 ```
 
 `bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` and `aarch64` Linux binaries that Nodes run.
+
+Vitest runs test files in parallel with `maxWorkers: "100%"`.
 
 Run the tests on Linux. [Test worker file access](/reference/pi-server#test-worker-file-access) lists the tools they need.
 
@@ -95,7 +101,7 @@ cargo build --release --locked
 
 [Node agent](/reference/node-agent#checks) explains the dev-profile optimization for redaction tests. [Live logs](/reference/live-logs#stream-tests) describes paused-clock coverage and real-process fixture waits.
 
-Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
+`cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
 
 To watch what an installed agent reports, join its Node's presence channel with the viewer script:
 

@@ -14,6 +14,8 @@ covers:
 
 Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) moves `websocket` and `metrics` with the same command.
 
+A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in the Gateway database. It copies only the server's Laravel `APP_KEY` when the target lacks one. The target converge renders all apps, so each Project keeps its app credentials after the move.
+
 ## Cause
 
 `vpn` never moves. `gateway` is a singleton. Removing it and adding it again would drop the only active Gateway assignment, so the next request would lose its Gateway authority and `gateway.orbit` would leave private DNS. Relocate keeps one active assignment for the whole move.

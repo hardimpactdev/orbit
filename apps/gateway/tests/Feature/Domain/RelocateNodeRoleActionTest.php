@@ -265,12 +265,10 @@ describe(RelocateNodeRoleAction::class, function (): void {
 
         $moved = app(WebSocketCredentialManager::class)->ensure($target);
 
-        expect($moved->appId)
-            ->toBe($credentials->appId)
-            ->and($moved->appKey)
-            ->toBe($credentials->appKey)
-            ->and($moved->appSecret)
-            ->toBe($credentials->appSecret)
+        expect($moved->processId)
+            ->not->toBe($credentials->processId)
+            ->and($moved->registryToken)
+            ->not->toBe($credentials->registryToken)
             ->and($moved->laravelAppKey)
             ->toBe($credentials->laravelAppKey)
             ->and(Setting::query()->where('scope_type', 'node')->where('scope_id', $source->id)->count())
@@ -538,24 +536,6 @@ describe(RelocateNodeRoleAction::class, function (): void {
         $settings = app(SettingRepository::class);
         $settings->put(
             relocate_role_scope($leftover),
-            WebSocketFootprint::SettingKeyAppId,
-            'leftover-app-id',
-            SettingValueProtection::Plain,
-        );
-        $settings->put(
-            relocate_role_scope($leftover),
-            WebSocketFootprint::SettingKeyAppKey,
-            'leftover-app-key',
-            SettingValueProtection::Plain,
-        );
-        $settings->put(
-            relocate_role_scope($leftover),
-            WebSocketFootprint::SettingKeyAppSecret,
-            'leftover-app-secret',
-            SettingValueProtection::Secret,
-        );
-        $settings->put(
-            relocate_role_scope($leftover),
             WebSocketFootprint::SettingKeyAppKeyLaravel,
             'base64:leftover',
             SettingValueProtection::Secret,
@@ -578,13 +558,13 @@ describe(RelocateNodeRoleAction::class, function (): void {
             ->toBe(["websocket:{$target->name}"])
             ->and($this->baselines->removed)
             ->toBe([['role' => 'websocket', 'node' => $leftover->name, 'purge_data' => false]])
-            ->and($settings->get(relocate_role_scope($target), WebSocketFootprint::SettingKeyAppId))
-            ->toBe('leftover-app-id')
-            ->and($settings->get(relocate_role_scope($leftover), WebSocketFootprint::SettingKeyAppId))
+            ->and($settings->get(relocate_role_scope($target), WebSocketFootprint::SettingKeyAppKeyLaravel))
+            ->toBe('base64:leftover')
+            ->and($settings->get(relocate_role_scope($leftover), WebSocketFootprint::SettingKeyAppKeyLaravel))
             ->toBeNull();
     });
 
-    it('does not overwrite destination websocket credentials when leftover source has different values', function (): void {
+    it('does not overwrite the destination Reverb APP_KEY when the leftover source has another', function (): void {
         $leftover = relocate_role_node('beast', '10.44.0.1');
         $target = relocate_role_node('services', '10.44.0.11');
         $target->roles()->create([
@@ -603,10 +583,8 @@ describe(RelocateNodeRoleAction::class, function (): void {
 
         $current = app(WebSocketCredentialManager::class)->ensure($target);
 
-        expect($current->appId)
-            ->toBe($kept->appId)
-            ->and($current->appSecret)
-            ->toBe($kept->appSecret)
+        expect($current->laravelAppKey)
+            ->toBe($kept->laravelAppKey)
             ->and(Setting::query()->where('scope_type', 'node')->where('scope_id', $leftover->id)->count())
             ->toBe(0);
     });

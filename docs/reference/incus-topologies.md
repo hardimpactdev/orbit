@@ -13,7 +13,7 @@ covers:
 
 # Incus topologies
 
-This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares, nested in a task VM. Each Node is a copy of the stopped VM `node-template` from the VM's topology seed, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, and `bin/e2e-topology-host-setup` prepares the task VM. The [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
 [Compute drivers](/reference/compute-drivers#clone-and-set-up-every-workspace) describes task workspace creation and its package and CI caches.
 
@@ -241,7 +241,7 @@ The public wrapper execs PHP with its own PID, so TERM or HUP sent to that PID r
 
 The session pins the Gateway URL and trusted CA to the selected topology. Inherited endpoint overrides must not redirect Gateway, realtime, or metrics traffic to the live fleet. If the topology, operator, URL, CA, Gateway grant, or WireGuard configuration is absent, startup fails clearly instead of falling back to the caller's live profile or another user's credentials.
 
-Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the topology, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
+Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the topology, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
 
 ### Guest commands
 
@@ -312,7 +312,7 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 
 ### After a merge
 
-`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, queues a TIA cache refresh, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
+`bin/worktree-remove ISSUE` cleans up after a merge. It refuses a dirty worktree and a branch that `origin/main` does not contain, removes the worktree, deletes the merged branch, and prunes the worktree list. It releases no topology: a topology runs only in a task VM and goes with it.
 
 ## Why it works this way
 
@@ -344,7 +344,7 @@ A group's topology runs inside the group's own task VM, so the VM edge stays the
 
 The inner Incus uses a btrfs pool on the clone: a `dir` pool copies every disk in full, and ZFS on a ZFS volume caches twice. Every clone carries the seed's btrfs UUID, which is safe, because each VM sees one clone and the host never mounts a seed.
 
-The isolation rules live in their own nftables table at a priority before the filter table, because the harness inserts its own forward rules at the top of the iptables `FORWARD` chain for each topology network.
+The isolation rules live in their own nftables table at a priority before the filter table, because Incus uses nftables (including 6.0.5) and the harness also adds forwarding rules through Ubuntu’s iptables-nft backend. The earlier hook applies before both filter chains.
 
 ### An isolated operator for web work
 
@@ -378,7 +378,7 @@ The harness records an `exec` only when you give it a label. Most commands are e
 
 ### A bridge for task workspace clones
 
-The harness expects every topology on a shared host to belong to a linked worktree of the primary checkout, which holds the host locks. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount. Finding the primary through the main cache store is rejected, because topologies would then depend on published test caches.
+The harness expects every topology on a shared host to belong to a linked worktree of the primary checkout, which holds the host locks. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount.
 
 ### Cleanup stays with the Project
 

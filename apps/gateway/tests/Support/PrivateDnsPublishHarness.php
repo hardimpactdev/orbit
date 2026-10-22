@@ -27,6 +27,9 @@ final readonly class PrivateDnsPublishHarness
         $this->files->makeDirectory($this->root.'/run/lock', 0755, true);
         $this->files->makeDirectory($this->root.'/var/lib/orbit/private-dns', 0755, true);
         $this->files->makeDirectory($this->root.'/etc/systemd/system', 0755, true);
+        $this->files->makeDirectory($this->root.'/proc/4242', 0755, true);
+        symlink(PHP_BINARY, $this->root.'/proc/4242/exe');
+        file_put_contents($this->root.'/listener-php', PHP_BINARY);
         $this->files->put($this->root.'/etc/dnsmasq.conf', "conf-dir={$this->root}/etc/dnsmasq.d\n");
         $this->files->put($this->root.'/state-listener-confirms', '1');
         $failTest = $this->root.'/state-fail-test';
@@ -55,6 +58,7 @@ final readonly class PrivateDnsPublishHarness
         $this->writeShim('systemctl', <<<BASH
             private_dns_confirm() {
                 rm -f '{$stale}'
+                ln -sfn -- "\$(cat '{$this->root}/listener-php')" '{$this->root}/proc/4242/exe'
                 if [ -f '{$listenerConfirms}' ] && [ -f '{$catalog}' ]; then
                     sha256sum -- '{$catalog}' | cut -d ' ' -f 1 > '{$catalog}.loaded'
                 fi
@@ -71,6 +75,7 @@ final readonly class PrivateDnsPublishHarness
                             systemctl "\$verb" "\$each" > /dev/null
                         done
                         return 0
+
                     fi
                 fi
                 case "\$1" in
@@ -84,6 +89,10 @@ final readonly class PrivateDnsPublishHarness
                         return 3
                         ;;
                     show)
+                        if [ "\${3:-}" = WorkingDirectory ]; then
+                            sed -n 's/^WorkingDirectory=//p' '{$this->root}/etc/systemd/system/orbit-private-dns.service'
+                            return 0
+                        fi
                         if [ -f '{$listenerActive}' ]; then
                             printf '%s\n' '4242'
                         else
@@ -200,8 +209,10 @@ final readonly class PrivateDnsPublishHarness
         );
     }
 
-    public function listenerManager(): DnsmasqPrivateDnsManager
+    public function listenerManager(?string $phpBinary = null): DnsmasqPrivateDnsManager
     {
+        file_put_contents($this->root.'/listener-php', $phpBinary ?? PHP_BINARY);
+
         return new DnsmasqPrivateDnsManager(
             processes: new FixtureProcessRunner,
             projection: $this->projectionLock(),
@@ -215,9 +226,33 @@ final readonly class PrivateDnsPublishHarness
             executablePath: $this->root.'/bin',
             activateListener: true,
             listenAddress: '10.44.0.1',
-            phpBinary: PHP_BINARY,
+            phpBinary: $phpBinary ?? PHP_BINARY,
             unitDirectory: $this->root.'/etc/systemd/system',
+            procDirectory: $this->root.'/proc',
         );
+    }
+
+    public function deletedListenerExecutable(): void
+    {
+        unlink($this->root.'/proc/4242/exe');
+        symlink('/usr/bin/php8.5 (deleted)', $this->root.'/proc/4242/exe');
+    }
+
+    public function listenerPhp(): string
+    {
+        $binary = escapeshellarg(PHP_BINARY);
+        $this->writeShim('listener-php', "#!/bin/bash\nexec {$binary} \"\$@\"\n");
+
+        return $this->root.'/bin/listener-php';
+    }
+
+    public function breakListenerPhp(bool $missing): void
+    {
+        if ($missing) {
+            unlink($this->root.'/bin/listener-php');
+        } else {
+            $this->writeShim('listener-php', "#!/bin/bash\necho 'PHP lacks sockets or pcntl' >&2\nexit 78\n");
+        }
     }
 
     /**

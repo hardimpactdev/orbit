@@ -33,6 +33,7 @@ final readonly class PiEventLines
             }
             $buffer .= $chunk;
             while (($newline = strpos($buffer, "\n")) !== false) {
+                PiClient::assertSessionSize($newline);
                 $line = substr($buffer, 0, $newline);
                 $buffer = substr($buffer, $newline + 1);
                 $event = json_decode($line, true);
@@ -40,6 +41,7 @@ final readonly class PiEventLines
                     yield $event;
                 }
             }
+            PiClient::assertSessionSize(strlen($buffer));
         }
     }
 }

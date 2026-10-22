@@ -1,7 +1,11 @@
 """php.install-build against a fake Node: dpkg, apt, systemctl, and PHP are shell fakes over a temporary root."""
 import hashlib
+import importlib.machinery
+import importlib.util
+import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -10,7 +14,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from harness import execute, result
+from harness import REMOTE, assemble, execute, result
 
 FAKES = {
     'sudo': '[ "$1" = -n ] && shift; exec "$@"',
@@ -41,9 +45,27 @@ FAKES = {
                 'v=$(sed -n "s/^Version: //p" "$tree/DEBIAN/control"); printf "%s %s amd64\\n" "$n" "$v" > "$out"; '
                 'cp "$tree/DEBIAN/conffiles" "$STATE/built-conffiles-$n" 2>/dev/null; exit 0;; esac; '
                 'read -r n v a < "$2"; printf "Package: %s\\nVersion: %s\\nArchitecture: %s\\n" "$n" "$v" "$a"',
-    'curl': 'out=""; for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done; url="${@: -1}"; '
-            'echo "curl $url" >> "$STATE/calls"; src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"; '
-            '[ -f "$src" ] || exit 22; cp "$src" "$out"',
+    'curl': '''transfer() {
+    local out="" prev="" url="${@: -1}" src status=0
+    for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done
+    echo "curl $url" >> "$STATE/calls"
+    src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"
+    if [ -f "$src" ]; then cp "$src" "$out"; else status=22; fi
+    printf '{"filename_effective":"%s","exitcode":%s}\n' "$out" "$status"
+    return "$status"
+}
+parallel=0; arguments=()
+for a in "$@"; do
+    case "$a" in
+        --parallel) parallel=1;;
+        --next)
+            if [ "$parallel" = 1 ]; then transfer "${arguments[@]}" & else transfer "${arguments[@]}"; fi
+            arguments=();;
+        *) arguments+=("$a");;
+    esac
+done
+if [ "$parallel" = 1 ]; then transfer "${arguments[@]}" & wait; else transfer "${arguments[@]}"; fi
+''',
     'apt-get': 'echo "apt-get $*" >> "$STATE/calls"; [ -f "$STATE/fail-every-install" ] && exit 100; '
                '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
                'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
@@ -71,19 +93,35 @@ FAKES = {
     'phpdismod': 'echo "phpdismod $*" >> "$STATE/calls"; rm -f "$ROOT/etc/php/$2/$4/conf.d/20-$5.ini"',
     'systemctl': 'echo "systemctl $*" >> "$STATE/calls"; case "$1" in '
                  'is-active) [ -f "$STATE/active-$3" ];; '
-                 'restart) [ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
+                 'is-enabled) if [ -f "$STATE/masked-$2" ]; then echo masked; exit 1; '
+                 'elif [ -f "$STATE/disabled-$2" ]; then echo disabled; exit 1; else echo enabled; fi;; '
+                 'disable) [ -f "$STATE/fail-disable" ] && exit 1; touch "$STATE/disabled-${@: -1}"; '
+                 'rm -f "$STATE/active-${@: -1}";; '
+                 'stop) rm -f "$STATE/active-$2";; '
+                 'restart|reload) '
+                 '[ -f "$STATE/broken" ] && { rm -f "$STATE/active-$2"; exit 1; }; touch "$STATE/active-$2";; '
                  'list-units) for f in "$STATE"/active-orbit-*; do [ -f "$f" ] && echo "${f##*/active-} loaded active running"; done;; '
-                 'show) echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/$3/php-fpm.conf }";; '
+                 'show) '
+                 'echo "{ path=/usr/sbin/php-fpm8.5 ; argv[]=php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/${@: -1}/php-fpm.conf }";; '
                  'esac',
 }
 # The CLI prints the modules of the links in its conf.d plus core; PHP-FPM does the same for its own conf.d.
-PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { [ -f "$STATE/fpm-invalid" ] && exit 78; exit 0; }\n'
-       'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/*.ini; do [ -e "$f" ] || [ -L "$f" ] '
+PHP = ('#!/usr/bin/env bash\n[ "$1" = -t ] && { configuration="${3%/*}"; master="${configuration##*/}"; '
+       '[ -f "$STATE/fpm-invalid" ] || [ -f "$STATE/fpm-invalid-$master" ] && exit 78; exit 0; }\n'
+       'echo "[PHP Modules]"; echo Core; for f in "$ROOT/etc/php/8.5/{sapi}/conf.d"/20-*.ini; do [ -e "$f" ] || [ -L "$f" ] '
        '|| continue; n="${f##*/20-}"; echo "${n%.ini}"; done; cat "$STATE/extra-modules" 2>/dev/null; true\n')
 
 
 def deb(name, version):
     return f'{name} {version} amd64\n'.encode()
+
+
+def package_pin(state, name, version):
+    content = deb(name, version)
+    digest = hashlib.sha256(content).hexdigest()
+    url = f'https://packages.sury.org/php/pool/{name}_{version}_amd64.deb'
+    (state / 'served' / url.removeprefix('https://').replace('/', '_')).write_bytes(content)
+    return {'name': name, 'version': version, 'architecture': 'amd64', 'url': url, 'sha256': digest}
 
 
 class InstallBuildTest(unittest.TestCase):
@@ -112,6 +150,11 @@ class InstallBuildTest(unittest.TestCase):
         for module in ('gd', 'intl'):
             for sapi in ('cli', 'fpm'):
                 (root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(f'/mods/{module}.ini')
+        cls.fixture_pins = {name: package_pin(state, name, '8.5.12-1')
+                            for name in ('php8.5-cli', 'php8.5-pcov', 'php-common')}
+        for sapi in ('cli', 'fpm'):
+            (root / f'etc/php/8.5/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini').write_text(
+                'session.upload_progress.enabled = 0\n')
 
     def setUp(self):
         # The prefixed FastCGI socket path must fit Unix socket limits, even with a long TMPDIR.
@@ -122,16 +165,10 @@ class InstallBuildTest(unittest.TestCase):
         self.state = Path(self.directory.name) / 'state'
         self.environment = {'PATH': f'{self.directory.name}/bin:{os.environ["PATH"]}', 'STATE': str(self.state),
                             'ROOT': str(self.root)}
-        self.pins = {}
-        for name in ('php8.5-cli', 'php8.5-pcov', 'php-common'):
-            self.pin(name, '8.5.12-1')
+        self.pins = {name: dict(pin) for name, pin in self.fixture_pins.items()}
 
     def pin(self, name, version):
-        content = deb(name, version)
-        digest = hashlib.sha256(content).hexdigest()
-        url = f'https://packages.sury.org/php/pool/{name}_{version}_amd64.deb'
-        (self.state / 'served' / url.removeprefix('https://').replace('/', '_')).write_bytes(content)
-        self.pins[name] = {'name': name, 'version': version, 'architecture': 'amd64', 'url': url, 'sha256': digest}
+        self.pins[name] = package_pin(self.state, name, version)
 
     def install(self, name, version):
         (self.state / 'installed' / name).write_text(version + '\n')
@@ -153,6 +190,61 @@ class InstallBuildTest(unittest.TestCase):
     def cached(self):
         return sorted(path.name for path in (self.root / 'var/cache/orbit/php-packages').glob('*.deb'))
 
+    def test_disables_and_stops_unused_fpm_on_first_install_and_current_build(self):
+        for current in (False, True):
+            with self.subTest(current=current):
+                if current:
+                    self.assertEqual(self.run_program(fpm='disabled')[0], 'current')
+                (self.state / 'active-php8.5-fpm.service').touch()
+                (self.state / 'disabled-php8.5-fpm.service').unlink(missing_ok=True)
+                (self.state / 'calls').unlink(missing_ok=True)
+
+                outcome, data = self.run_program(fpm='disabled')
+
+                self.assertIn(outcome, ('current', 'applied'), data)
+                self.assertTrue(data['fpm_disabled'])
+                self.assertIn('systemctl disable --now php8.5-fpm.service', self.calls())
+                self.assertFalse((self.state / 'active-php8.5-fpm.service').exists())
+                self.assertTrue((self.state / 'disabled-php8.5-fpm.service').exists())
+                self.assertFalse([c for c in self.calls() if c.startswith(('systemctl restart', 'systemctl reload'))])
+                unchanged, data = self.run_program(fpm='disabled')
+                self.assertEqual(unchanged, 'current', data)
+                self.assertFalse(data['fpm_disabled'])
+
+    def test_vpn_cli_install_selects_the_inactive_fpm_policy(self):
+        repository = Path(__file__).resolve().parents[4]
+        loader = importlib.machinery.SourceFileLoader('vpn_php_build', str(repository / 'bin/php-build'))
+        cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(cli)
+        recipe = json.loads((repository / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+
+        payload = cli.installer_input(recipe, ['8.5'], profile='vpn')
+
+        self.assertEqual(payload['fpm'], 'disabled')
+        self.assertFalse(payload['pcov'])
+        self.assertFalse(payload['opentelemetry'])
+        self.assertTrue({'sockets', 'pcntl'}.issubset(payload['versions']['8.5']['extensions']))
+
+    def test_preserves_an_existing_fpm_mask(self):
+        (self.state / 'masked-php8.5-fpm.service').touch()
+        (self.state / 'fail-disable').touch()
+        (self.state / 'active-php8.5-fpm.service').touch()
+
+        outcome, data = self.run_program(fpm='disabled')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertTrue((self.state / 'masked-php8.5-fpm.service').exists())
+        self.assertFalse((self.state / 'active-php8.5-fpm.service').exists())
+        self.assertFalse([c for c in self.calls() if c.startswith(('systemctl unmask', 'systemctl enable'))])
+
+    def test_fails_when_unused_fpm_cannot_be_disabled(self):
+        (self.state / 'fail-disable').touch()
+
+        outcome, data = self.run_program(fpm='disabled')
+
+        self.assertEqual(outcome, 'fpm_invalid', data)
+        self.assertIn('disabled and inactive', data['reason'])
+
     def test_installs_the_pinned_files_without_removal_and_keeps_every_file(self):
         outcome, data = self.run_program()
 
@@ -166,6 +258,195 @@ class InstallBuildTest(unittest.TestCase):
         # The mirror is tried before the pin's URL.
         curls = [call for call in self.calls() if call.startswith('curl')]
         self.assertTrue(curls[0].startswith('curl https://mirror.example/php/'))
+
+    def test_fetches_independent_files_together_before_installing_verified_packages(self):
+        curl = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        gate = '''touch "$STATE/download-${src##*/}"
+for ((attempt=0; attempt<100; attempt++)); do
+    downloads=("$STATE"/download-*)
+    [ "${#downloads[@]}" -eq 3 ] && break
+    sleep 0.01
+done
+[ "${#downloads[@]}" -eq 3 ] || exit 28
+'''
+        curl.write_text('#!/usr/bin/env bash\n' + FAKES['curl'].replace('cp "$src" "$out"', gate + 'cp "$src" "$out"') + '\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual(outcome, 'applied')
+        self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
+        self.assertEqual(len(self.cached()), 3)
+        self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
+
+    def test_interrupt_stops_every_running_download_before_the_installer_exits(self):
+        curl = shutil.which('curl', path='/usr/bin:/bin')
+        if curl is None:
+            self.skipTest('requires curl')
+        source = assemble('php.install-build').encode()
+        wrapper = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        for interruption in (signal.SIGHUP.value, signal.SIGINT.value, signal.SIGTERM.value):
+            with self.subTest(interruption=interruption):
+                with socket.create_server(('127.0.0.1', 0)) as listener:
+                    listener.settimeout(5)
+                    port = listener.getsockname()[1]
+                    # Real curl reaches a local peer that accepts TLS handshakes but never answers them.
+                    # Add the routing options to each transfer because --next resets local curl options.
+                    wrapper.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                                       f'options = ["--noproxy", "*", "--connect-to", "::127.0.0.1:{port}"]\n'
+                                       'arguments = list(options)\n'
+                                       'for argument in sys.argv[1:]:\n'
+                                       '    arguments.append(argument)\n'
+                                       '    if argument == "--next": arguments.extend(options)\n'
+                                       f'os.execv({curl!r}, [{curl!r}, *arguments])\n')
+                    process = subprocess.Popen(
+                        ['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        env=dict(os.environ, **self.environment), start_new_session=True,
+                    )
+                    connections = []
+                    try:
+                        process.stdin.write(source + b'\0' + json.dumps(self.payload()).encode())
+                        process.stdin.close()
+                        process.stdin = None
+                        for _ in self.pins:
+                            connection, _ = listener.accept()
+                            connections.append(connection)
+                            connection.settimeout(3)
+                            self.assertTrue(connection.recv(65536))
+                        # Signal only Python, not its process group: it must stop its own curl transfers.
+                        process.send_signal(interruption)
+                        try:
+                            process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            self.fail('The interrupted installer waited for stalled downloads')
+                        self.assertEqual(process.returncode, 128 + interruption)
+                        for connection in connections:
+                            self.assertEqual(connection.recv(1), b'')
+                        self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
+                    finally:
+                        # Also reap the old implementation's stuck workers when this regression fails.
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        process.communicate(timeout=5)
+                        for connection in connections:
+                            connection.close()
+
+    def test_download_bounds_include_every_transfer_and_queued_batch_at_both_sources(self):
+        for name in ('php8.5-curl', 'php8.5-xml', 'php8.5-mbstring', 'php8.5-zip'):
+            self.pin(name, '8.5.12-1')
+        curl = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        curl.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> "$STATE/curl-arguments"\n' + FAKES['curl'])
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        arguments = (self.state / 'curl-arguments').read_text().splitlines()
+        connections = [arguments[index + 1] for index, value in enumerate(arguments) if value == '--connect-timeout']
+        totals = [float(arguments[index + 1]) for index, value in enumerate(arguments) if value == '--max-time']
+        # Seven transfers need two batches per pass; 150 seconds per batch caps each pass at 300.
+        self.assertEqual(connections, ['15'] * 14)
+        self.assertEqual(totals, [150.0] * 14)
+
+    def test_stalled_tls_downloads_time_out_at_both_sources_without_installing(self):
+        curl = shutil.which('curl', path='/usr/bin:/bin')
+        if curl is None:
+            self.skipTest('requires curl')
+        wrapper = Path(self.environment['PATH'].split(':')[0]) / 'curl'
+        with socket.create_server(('127.0.0.1', 0)) as listener:
+            listener.settimeout(0.05)
+            port = listener.getsockname()[1]
+            # Shorten only existing bounds; the unfixed installer still stalls indefinitely.
+            wrapper.write_text('#!/usr/bin/env python3\nimport os, sys\n'
+                               f'options = ["--noproxy", "*", "--connect-to", "::127.0.0.1:{port}"]\n'
+                               'arguments = list(options)\nprevious = None\n'
+                               'for argument in sys.argv[1:]:\n'
+                               '    arguments.append("0.2" if previous in ("--connect-timeout", "--max-time") else argument)\n'
+                               '    if argument == "--next": arguments.extend(options)\n'
+                               '    previous = argument\n'
+                               f'os.execv({curl!r}, [{curl!r}, *arguments])\n')
+            process = subprocess.Popen(
+                ['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=dict(os.environ, **self.environment), start_new_session=True,
+            )
+            connections = []
+            finished = threading.Event()
+
+            def accept():
+                while not finished.is_set():
+                    try:
+                        connection, _ = listener.accept()
+                        connections.append(connection)
+                    except TimeoutError:
+                        continue
+
+            receiver = threading.Thread(target=accept)
+            receiver.start()
+            try:
+                output, errors = process.communicate(
+                    assemble('php.install-build').encode() + b'\0' + json.dumps(self.payload()).encode(), timeout=3)
+                self.assertEqual(process.returncode, 0, errors.decode())
+                self.assertEqual(json.loads(output)['outcome'], 'download_failed')
+                finished.set()
+                receiver.join(timeout=1)
+                self.assertEqual(len(connections), 2 * len(self.pins))
+                for connection in connections:
+                    connection.settimeout(1)
+                    # Drain the ClientHello; EOF proves no transfer remains alive after timeout.
+                    while connection.recv(65536):
+                        pass
+                self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
+            finally:
+                finished.set()
+                receiver.join(timeout=1)
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate(timeout=5)
+                for connection in connections:
+                    connection.close()
+
+    def test_corrupt_cache_entry_is_replaced_atomically_with_verified_bytes(self):
+        pin = self.pins['php8.5-cli']
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        target = cache / f'php8.5-cli_{pin["sha256"]}.deb'
+        target.write_bytes(b'truncated')
+        old_entry = self.state / 'old-cache-inode'
+        old_entry.hardlink_to(target)
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        self.assertEqual(target.read_bytes(), deb('php8.5-cli', pin['version']))
+        self.assertEqual(old_entry.read_bytes(), b'truncated')
+        self.assertNotEqual(target.stat().st_ino, old_entry.stat().st_ino)
+        self.assertEqual(sorted(path.name for path in cache.iterdir()), self.cached())
+        (self.state / 'calls').write_text('')
+        # Reuse the repaired entries while repairing missing package files.
+        for name in self.pins:
+            (self.state / 'installed' / name).unlink()
+        self.assertEqual(self.run_program()[0], 'applied')
+        self.assertFalse(any(call.startswith('curl ') for call in self.calls()))
+
+    def test_failed_cache_copy_preserves_the_previous_entry_and_removes_staging(self):
+        pin = self.pins['php8.5-cli']
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        target = cache / f'php8.5-cli_{pin["sha256"]}.deb'
+        target.write_bytes(b'truncated')
+        install = Path(self.environment['PATH'].split(':')[0]) / 'install'
+        install.write_text('#!/usr/bin/env bash\n'
+                           'if [ "$1" != -d ] && [[ "${@: -1}" == */php-packages/* ]]; then\n'
+                           '    printf partial > "${@: -1}"; exit 1\nfi\n' + FAKES['install'] + '\n')
+
+        completed = execute('php.install-build', self.payload(), environment=self.environment)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(target.read_bytes(), b'truncated')
+        self.assertEqual(list(cache.iterdir()), [target])
+        self.assertFalse(any(call.startswith('apt-get') for call in self.calls()))
 
     def test_cleans_root_owned_repack_trees_before_installing_as_an_unprivileged_user(self):
         sudo = shutil.which('sudo', path='/usr/bin:/bin')
@@ -199,7 +480,175 @@ class InstallBuildTest(unittest.TestCase):
         outcome, data = self.run_program()
 
         self.assertEqual((outcome, data['changed'], data['restarted']), ('current', [], []))
+        self.assertEqual(data['reloaded'], [])
         self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get'))])
+
+    def test_repairs_upload_progress_in_both_sapis_and_reloads_every_active_master_once(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        (self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')
+        masters = ['php8.5-fpm.service', 'orbit-shop-php8.5-fpm.service']
+        for master in masters:
+            (self.state / f'active-{master}').touch()
+        cli = self.root / 'etc/php/8.5/cli/conf.d/99-cve-2026-109618-upload-progress.ini'
+        fpm = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        cli.unlink()
+        fpm.write_text('session.upload_progress.enabled = 1\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data['changed'], data['restarted']), ('applied', [], []), data)
+        self.assertEqual(data['reloaded'], masters)
+        for path in (cli, fpm):
+            self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get', 'systemctl restart'))])
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+        self.assertEqual(self.run_program()[0], 'current')
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+
+    def test_settings_only_change_reloads_dedicated_masters_regardless_of_the_callers_scope(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        (self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')
+        (self.root / 'etc/php/8.5/fpm/conf.d/20-opentelemetry.ini').symlink_to('/mods/opentelemetry.ini')
+        dedicated = 'orbit-shop-php8.5-fpm.service'
+        (self.state / f'active-{dedicated}').touch()
+        for scope in ('none', 'shared'):
+            with self.subTest(fpm=scope):
+                masters = [dedicated]
+                if scope == 'shared':
+                    (self.state / 'active-php8.5-fpm.service').touch()
+                    masters.insert(0, 'php8.5-fpm.service')
+                (self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini').unlink()
+                (self.state / 'calls').unlink(missing_ok=True)
+
+                outcome, data = self.run_program(fpm=scope, opentelemetry=True)
+
+                self.assertEqual((outcome, data['changed'], data['restarted']), ('applied', [], []), data)
+                self.assertEqual(data['reloaded'], masters)
+                self.assertEqual(data['stale_masters'], [])
+                self.assertEqual(data['deferred'], [])
+                for master in masters:
+                    self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+                self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get', 'systemctl restart'))])
+                self.assertEqual(self.run_program(fpm=scope, opentelemetry=True)[0], 'current')
+                for master in masters:
+                    self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+
+    def test_image_install_writes_the_mitigation_for_every_version_without_services(self):
+        shutil.copytree(self.root / 'etc/php/8.5', self.root / 'etc/php/8.4', symlinks=True)
+        for version in ('8.4', '8.5'):
+            for sapi in ('cli', 'fpm'):
+                (self.root / f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini').unlink()
+        binary = self.root / 'usr/bin/php8.4'
+        binary.write_text((self.root / 'usr/bin/php8.5').read_text().replace('8.5', '8.4'))
+        binary.chmod(0o755)
+        payload = self.payload(fpm='none')
+        payload['versions']['8.4'] = payload['versions']['8.5']
+
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+
+        self.assertEqual(outcome, 'applied', data)
+        for version in ('8.4', '8.5'):
+            for sapi in ('cli', 'fpm'):
+                path = self.root / f'etc/php/{version}/{sapi}/conf.d/99-cve-2026-109618-upload-progress.ini'
+                self.assertTrue(path.is_file(), path)
+                self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl')])
+
+    def test_plan_does_not_write_upload_progress_files(self):
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+
+        self.assertEqual(self.run_program(mode='plan')[0], 'planned')
+
+        self.assertFalse(path.exists())
+        self.assertEqual(self.calls(), [])
+
+    def test_arm64_refuses_php_before_downloads_or_changes(self):
+        dpkg = Path(self.directory.name) / 'bin/dpkg'
+        dpkg.write_text(dpkg.read_text().replace('echo amd64', 'echo arm64'))
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data.get('reason')), ('download_failed', 'PHP is not available for arm64'))
+        self.assertFalse(path.exists())
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(list((self.state / 'installed').iterdir()), [])
+
+    def test_failed_mitigation_validation_restores_files_so_convergence_can_retry(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        (self.state / 'active-php8.5-fpm.service').touch()
+        (self.state / 'fpm-invalid').touch()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data.get('restored')), ('fpm_invalid', True), data)
+        self.assertFalse(path.exists())
+        self.assertNotIn('systemctl reload php8.5-fpm.service', self.calls())
+        (self.state / 'fpm-invalid').unlink()
+        self.assertEqual(self.run_program()[0], 'applied')
+        self.assertIn('systemctl reload php8.5-fpm.service', self.calls())
+
+    def test_shared_scope_defers_invalid_shared_master_and_keeps_settings_for_pool_publication(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        shared = 'php8.5-fpm.service'
+        master = 'orbit-shop-php8.5-fpm.service'
+        (self.state / f'active-{shared}').touch()
+        (self.state / f'active-{master}').touch()
+        # Shared FPM uses the default configuration, without --fpm-config.
+        (self.state / 'fpm-invalid-').touch()
+
+        outcome, data = self.run_program(fpm='shared')
+
+        self.assertEqual((outcome, data.get('deferred'), data.get('reloaded')), ('applied', [shared], [master]), data)
+        self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertNotIn(f'systemctl reload {shared}', self.calls())
+        self.assertEqual(self.calls().count(f'systemctl reload {master}'), 1)
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
+
+    def test_none_scope_defers_invalid_dedicated_master_without_undoing_other_reloads(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        first, second = 'orbit-aaa-php8.5-fpm.service', 'orbit-bbb-php8.5-fpm.service'
+        for master in (first, second):
+            (self.state / f'active-{master}').touch()
+        (self.state / f'fpm-invalid-{second}').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual((outcome, data.get('deferred'), data.get('reloaded')), ('applied', [second], [first]), data)
+        self.assertEqual(path.read_text(), 'session.upload_progress.enabled = 0\n')
+        self.assertEqual(self.calls().count(f'systemctl reload {first}'), 1)
+        self.assertNotIn(f'systemctl reload {second}', self.calls())
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
+
+    def test_convergence_rolls_back_settings_with_reload_after_a_later_master_fails_validation(self):
+        self.run_program(fpm='none')
+        path = self.root / 'etc/php/8.5/fpm/conf.d/99-cve-2026-109618-upload-progress.ini'
+        path.unlink()
+        first, second = 'orbit-aaa-php8.5-fpm.service', 'orbit-bbb-php8.5-fpm.service'
+        for master in (first, second):
+            (self.state / f'active-{master}').touch()
+        (self.state / f'fpm-invalid-{second}').touch()
+
+        outcome, data = self.run_program(fpm='all')
+
+        self.assertEqual((outcome, data.get('restored'), data.get('unit')), ('fpm_invalid', True, second), data)
+        self.assertFalse(path.exists())
+        self.assertEqual(self.calls().count(f'systemctl reload {first}'), 2)
+        self.assertNotIn(f'systemctl reload {second}', self.calls())
+        self.assertFalse([call for call in self.calls() if call.startswith('systemctl restart')])
 
     def test_refuses_installed_packages_outside_the_recipe_before_any_change(self):
         self.install('php8.5-soap', '1.2.1')
@@ -254,6 +703,20 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(self.run_program()[0], 'download_failed')
         self.assertNotIn(f'php8.5-cli_{pin["sha256"]}.deb', self.cached())
         self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
+
+    def test_retries_only_failed_files_after_a_partially_successful_mirror_pass(self):
+        name = 'php8.5-cli'
+        pin = self.pins[name]
+        origin = self.state / 'served' / pin['url'].removeprefix('https://').replace('/', '_')
+        mirror = self.state / 'served' / ('mirror.example_php_' + name + '_' + pin['sha256'] + '.deb')
+        mirror.write_bytes(origin.read_bytes())
+
+        self.assertEqual(self.run_program()[0], 'applied')
+
+        self.assertNotIn('curl ' + pin['url'], self.calls())
+        for other in ('php-common', 'php8.5-pcov'):
+            self.assertIn('curl ' + self.pins[other]['url'], self.calls())
+        self.assertEqual(len(self.cached()), 3)
 
     def test_corrupt_mirror_stops_even_when_the_original_source_has_valid_bytes(self):
         pin = self.pins['php8.5-cli']
@@ -700,6 +1163,23 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(outcome, 'fpm_invalid')
         self.assertNotIn('systemctl restart php8.5-fpm.service', self.calls())
         self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.11-1' for name in self.pins))
+
+    def test_package_updates_restart_all_active_colocated_masters(self):
+        for name in self.pins:
+            self.install(name, '8.5.11-1')
+        masters = ['php8.5-fpm.service', 'orbit-gateway-php8.5-fpm.service']
+        for master in masters:
+            (self.state / f'active-{master}').touch()
+
+        outcome, data = self.run_program(fpm='all')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertEqual(data['changed'], ['php-common', 'php8.5-cli', 'php8.5-pcov'])
+        self.assertEqual(data['restarted'], masters)
+        self.assertEqual(data['stale_masters'], [])
+        for master in masters:
+            self.assertEqual(self.calls().count(f'systemctl restart {master}'), 1)
+        self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.12-1' for name in self.pins))
 
     def test_places_pcov_only_where_asked_and_never_in_php_fpm(self):
         (self.root / 'etc/php/8.5/fpm/conf.d/20-pcov.ini').symlink_to('/mods/pcov.ini')

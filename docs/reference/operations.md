@@ -162,7 +162,9 @@ An operation holds its target from the start request to its terminal status. A s
 - each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
 - each `queued` operation whose job was queued more than 10 minutes ago and has not started.
 
-The sweep queues a `queued` operation again only while the `operations` queue holds no waiting or running job. With one worker, an operation that waits behind a long one still has its job in the queue, so it never gets a second one.
+The sweep queues a stale `queued` operation again only while the `operations` queue holds no waiting or delayed job and the operation's attempt lease is free. It refreshes the operation's status and dispatch time under that lease, then releases the lease before publishing the replacement. An idle worker can then run the replacement as soon as it appears. With one worker, an operation that waits behind a long one still has a waiting job, so the sweep adds no second one.
+
+Redis reservations do not count as waiting jobs. A reservation proves that a process popped the job, not that its handler runs. In particular, a Horizon metadata error can discard a popped job while the worker stays alive. Such a reservation must not block recovery until the 1,800-second reservation expiry. The sweep can recover a queued operation after 10 minutes, at the next scheduled sweep, while its old reservation still exists. If the old copy later reaches the handler, the attempt lease and conditional claim prevent a second execution.
 
 The next worker then looks at the step that was running:
 
@@ -177,7 +179,7 @@ The kind finishes its domain record in both failure cases. A lost deploy or roll
 
 A resumed operation plans its steps again. When the plan differs from the first attempt, for example because someone added a deploy step in between, it fails with `operation.plan_changed`.
 
-The sweeper checks processes on the Gateway's own host. A worker that ran on another host counts as lost.
+The attempt lease is local to the Gateway host. All operation workers and the sweeper run on that host; worker process IDs are diagnostic information, not a liveness test.
 
 ## Errors
 

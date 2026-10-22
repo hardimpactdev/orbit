@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\WebSocket\\DestroyWebSocketAppRequest",
+    "route": "DELETE /api/v1/websocket-apps/{websocket_app}",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "websocket.app_in_use",
+            "message": "Remove the app from each Instance first.",
+            "details": {}
+        }
+    }
+}

@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "Every architecture decision record behind Orbit, with its status and the records it extends or amends."
 ---
 
-The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) describes the steps.
+The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/hardimpactdev/orbit/blob/main/docs/decisions/README.md) describes the steps.
 
 Records lists the decisions in progress. Retired decisions lists every retired number and the page that now holds the decision.
 
@@ -32,16 +32,15 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
 | [0211](/decisions/0211-ship-node-changes-as-remote-programs) | Ship Node changes as remote programs | Superseded on 2026-10-19 by [0225](/decisions/0225-make-node-changes-through-agent-commands) |
 | [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
-| [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress |
+| [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
 | [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress |
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
-| [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) | Run one gate from handoff to merge | In progress; changes [CI main cache imports](/reference/instance-setup#import-ci-main-caches); shares the `Administration: write` grant of [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) |
+| [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) | Run one gate from handoff to merge | In progress; changes [CI main cache imports](/reference/instance-setup#import-ci-main-caches); leaves runner registration with the [operator](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration) |
 | [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) | Give each task group one workspace holder and one sender | In progress; approved on 2026-10-18; built after [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) and before the Tasks extension move; supersedes the scope of backlog group 1758 |
 | [0225](/decisions/0225-make-node-changes-through-agent-commands) | Make Node changes through agent commands | In progress; decided on 2026-10-19; supersedes [0211](/decisions/0211-ship-node-changes-as-remote-programs); runtime build follows [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) |
-
 | [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
 
 ## Retired decisions
@@ -101,7 +100,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0051 | Select discovery-only feature delivery (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0052 | Seed worktrees from successful main test baselines | [Feature delivery: Main caches come only from clean main](/reference/implementation-loop#main-caches-come-only-from-clean-main) |
 | 0053 | Use local review checks for feature landing (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
-| 0054 | Maintain main caches asynchronously | [Feature delivery: Maintenance runs in the background](/reference/implementation-loop#maintenance-runs-in-the-background) |
+| 0054 | Maintain main caches asynchronously | [Feature delivery: Only main CI publishes](/reference/implementation-loop#only-main-ci-publishes) |
 | 0055 | Restrict Grafana access to authorized Gateway peers | [Metrics role: Grafana access](/reference/metrics#grafana-access) |
 | 0056 | Retain proof topologies for interactive review (superseded) | [Contributor guide: Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) |
 | 0057 | Limit Metrics exporters to managed Nodes | [Metrics role: Exporter selection](/reference/metrics#exporter-selection) |
@@ -258,3 +257,5 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
 | 0220 | Serialize task workspaces with one durable lease | [Tasks: Workspace lease](/reference/tasks#workspace-lease) |
 | 0222 | Give task VMs a cloned topology seed | [Compute drivers: The topology seed](/reference/compute-drivers#the-topology-seed); [Incus topologies: One template Node](/reference/incus-topologies#one-template-node); [Incus topologies: Composed from one template](/reference/incus-topologies#composed-from-one-template); [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm) |
+| 0227 | Manage PostgreSQL on trusted private networks with explicit bindings and no port firewall | [Database servers: Why it works this way](/reference/database-servers#why-it-works-this-way); [PostgreSQL migration](/reference/postgresql-migration) |
+| 0228 | Serve several Reverb apps on the websocket role | [Reverb apps: Why it works this way](/reference/websocket-apps#why-it-works-this-way); [Reverb apps: Deploy and recover](/reference/websocket-apps#deploy-and-recover) |

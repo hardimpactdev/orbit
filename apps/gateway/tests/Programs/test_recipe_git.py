@@ -186,7 +186,7 @@ class RecipeGitTest(unittest.TestCase):
             self.installed['git'] = '1:2.54.0-vendor1'
             self.assertEqual(recipe.assess(bumped, self.installed, git_names=self.tools)['git']['status'], 'unsupported_newer')
             (self.apt / 'orbit-git.json').write_text('not json')
-            self.assertFalse(recipe.git_owned('git', PIN, self.tools))
+            self.assertFalse(recipe.artifact_owned('git', PIN, self.tools, 'git'))
 
     def test_mixed_or_wrong_suite_sources_and_conflicting_backups_are_refused(self):
         for content in (SOURCE.replace('resolute', 'other'),

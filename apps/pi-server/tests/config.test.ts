@@ -1,13 +1,20 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { readConfig } from "../src/config.ts";
 
 const TOKEN = "config-test-token-with-more-than-32-chars";
 
+const roots: string[] = [];
+afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
 function tokenFile(): string {
-    const path = join(mkdtempSync(join(tmpdir(), "pi-config-")), "token");
+    const root = mkdtempSync(join(tmpdir(), "pi-config-"));
+    roots.push(root);
+    const path = join(root, "token");
     writeFileSync(path, `${TOKEN}\n`);
 
     return path;

@@ -32,7 +32,7 @@ use App\Models\TaskVm;
  * goes in the latest group of its roles, so it waits until every lower-risk Node is done:
  *
  * 1. `app-dev` (and `agent`)
- * 2. `metrics` and `analytics` (and `s3`)
+ * 2. `ci-runner`, `metrics` and `analytics` (and `s3`)
  * 3. `database`, `websocket`, `vpn`, and `router`
  * 4. `app-prod` and `ingress`
  *
@@ -46,6 +46,7 @@ final readonly class FleetRolloutMembership
     public const array Groups = [
         RoleName::AppDev->value => 1,
         'agent' => 1,
+        RoleName::CiRunner->value => 2,
         RoleName::Metrics->value => 2,
         RoleName::Analytics->value => 2,
         's3' => 2,

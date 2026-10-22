@@ -27,17 +27,18 @@ final readonly class GatewaySchedule
     /**
      * @param  int  $uniqueFor  seconds a lost job keeps its unique lock
      * @param  int|null  $overlapMinutes  the overlap lock of the inline command; null for none
+     * @param  list<string>  $arguments
      */
-    public static function command(Schedule $schedule, string $command, int $uniqueFor, ?int $overlapMinutes = null, GatewayQueue $queue = GatewayQueue::Tasks): Event
+    public static function command(Schedule $schedule, string $command, int $uniqueFor, ?int $overlapMinutes = null, GatewayQueue $queue = GatewayQueue::Tasks, array $arguments = []): Event
     {
         if (! GatewayQueueRedis::configured()) {
-            $event = $schedule->command($command);
+            $event = $schedule->command($command, $arguments);
 
             return $overlapMinutes === null ? $event : $event->withoutOverlapping($overlapMinutes);
         }
 
-        return $schedule->call(static function () use ($command, $uniqueFor, $queue): void {
-            self::dispatch(new RunScheduledCommand($command, $uniqueFor, $queue));
+        return $schedule->call(static function () use ($command, $uniqueFor, $queue, $arguments): void {
+            self::dispatch(new RunScheduledCommand($command, $uniqueFor, $queue, $arguments));
         })->name($command);
     }
 

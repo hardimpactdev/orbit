@@ -4,22 +4,23 @@ sidebarTitle: "First contribution"
 description: "The steps a person follows to make a first change to Orbit, from a fresh clone to a merged pull request."
 covers:
   - .github/pull_request_template.md
+  - bin/project-vocabulary
 ---
 
 # Your first contribution
 
 This page is the short path from a fresh clone to a merged pull request, for a person who works by hand. The [contributor guide](/contributor-guide) holds the full rules, and each step below links to the part that explains it.
 
-The contributor guide also describes work that Orbit's maintainers and Orbit's own agents do, such as Orbit Tasks and Incus review. You do not run that work. [What you can skip](#what-you-can-skip) lists it. Ask questions and report bugs in [GitHub issues](https://github.com/nckrtl/orbit/issues).
+The contributor guide also describes work that Orbit's maintainers and Orbit's own agents do, such as Orbit Tasks and Incus review. You do not run that work. [What you can skip](#what-you-can-skip) lists it. Ask questions and report bugs in [GitHub issues](https://github.com/hardimpactdev/orbit/issues).
 
 ## 1. Get the code and the tools
 
-Fork [nckrtl/orbit](https://github.com/nckrtl/orbit) on GitHub, then clone your fork:
+Fork [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit) on GitHub, then clone your fork:
 
 ```bash
 git clone https://github.com/YOUR-ACCOUNT/orbit.git
 cd orbit
-git remote add upstream https://github.com/nckrtl/orbit.git
+git remote add upstream https://github.com/hardimpactdev/orbit.git
 ```
 
 Before each change, start a branch from the latest `main` of the main repository:
@@ -50,13 +51,13 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the cache that selects affected tests. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the Pint and PHPStan caches. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
 
 Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
 ## 3. Pick a project and read its guidance
 
-Orbit has nine projects, and the [README](https://github.com/nckrtl/orbit#repository) lists them. Each project has an `AGENTS.md` file with its coding and testing rules, such as [`apps/cli/AGENTS.md`](https://github.com/nckrtl/orbit/blob/main/apps/cli/AGENTS.md). The file is written for agents, and its rules apply to people too. Read it before you change that project.
+Orbit has nine projects, and the [README](https://github.com/hardimpactdev/orbit#repository) lists them. Each project has an `AGENTS.md` file with its coding and testing rules, such as [`apps/cli/AGENTS.md`](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/AGENTS.md). The file is written for agents, and its rules apply to people too. Read it before you change that project.
 
 Before you build a feature, read the [mission](/mission), the [architecture](/architecture), and the [concepts](/concepts). A feature that makes a significant architecture decision also includes an ADR, as [Check the architecture](/contributor-guide#1-check-the-architecture) explains.
 
@@ -76,10 +77,10 @@ Then build the change and its tests. A bug fix adds a test that fails before the
 
 ## 5. Run the checks
 
-In an Orbit task, the implementer runs only `composer test:affected` in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
+In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
 
 ```bash
-composer test:affected
+composer test
 composer check
 ```
 
@@ -104,9 +105,11 @@ CI also runs checks from the repository root that no project check covers. They 
 
 The MCP tool manifest is generated from the API reference, so an API change can make both commands report drift. When either does, run `bin/docs-openapi` and then `bin/mcp-tools` without `--check`, and commit their output. The other checks name what to fix.
 
+The vocabulary checker permits GitHub and [Reverb app](/reference/websocket-apps) identifiers. They belong to those integrations. Orbit uses Project and Instance identifiers for its own records.
+
 ## 6. Open a pull request
 
-Push your branch to your fork and open a pull request against `main`. The [pull request template](https://github.com/nckrtl/orbit/blob/main/.github/pull_request_template.md) has three sections:
+Push your branch to your fork and open a pull request against `main`. The [pull request template](https://github.com/hardimpactdev/orbit/blob/main/.github/pull_request_template.md) has three sections:
 
 - **Change**: the problem and the resulting behavior. Link an issue when one exists.
 - **Architecture and documentation**: the ADRs and the pages that the change adds or updates.

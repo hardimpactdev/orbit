@@ -2,7 +2,7 @@
 
 ## Establish the environment
 
-Orbit has five Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, `packages/php-sdk`, and `apps/e2e`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses a Pest fork; do not infer supported flags from upstream documentation alone.
+Orbit has five Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, `packages/php-sdk`, and `apps/e2e`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses stock Pest; confirm a flag against the locked version before you rely on it.
 
 Run `composer guidance:check` where required. If dependencies are missing, install from the lockfile before interpreting failures. Do not overwrite modified guidance to fix an absent `vendor/` directory. Keep environment failures separate from test failures.
 
@@ -35,14 +35,14 @@ Prefer datasets for cases sharing setup and assertions. Move duplicate validatio
 
 ## Validate
 
-Follow the root `AGENTS.md` check policy. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` for those invocations rather than silently changing test scripts; `bin/review-check` runs no tests.
+Follow the root `AGENTS.md` check policy. Filtered runs give fast feedback on the touched files; full runs are the evidence. Required architecture gates and full runs have different purposes. Check `.github/workflows/ci.yml` for those invocations rather than silently changing test scripts; `bin/review-check` runs no tests.
 
-For a fresh baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI uses `--tia --fresh` to discard the selection graph and execute every test in the selected configuration. Preserve plain output through `bin/pest-plain` and take the process count from `bin/check-processes`. From a PHP project, a typical run is:
+For a baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI runs stock Pest and executes every test in the selected configuration. Preserve plain output through `bin/pest-plain` and take the process count from `bin/check-processes`. From a PHP project, a typical run is:
 
 ```bash
-../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --fresh --compact --colors=never
+../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never
 ```
 
-Run every relevant configuration and separately gated group; a default full run does not imply privileged or Incus scenarios executed. Record counts, failures, skips, duration, coverage-driver availability, configuration, and whether TIA selected or actually executed tests. PCOV or Xdebug is needed for TIA; do not follow generic performance advice to disable the driver while relying on TIA.
+Run every relevant configuration and separately gated group; a default full run does not imply privileged or Incus scenarios executed. Record counts, failures, skips, duration, and configuration.
 
 Run `git diff --check`. Follow the documentation skill for prose and generated context changes. Root `composer check` is Orbit's cross-project gate; report missing dependencies or environment limits without claiming a pass. Avoid installing new audit or mutation dependencies when existing tooling and a controlled mutation suffice.

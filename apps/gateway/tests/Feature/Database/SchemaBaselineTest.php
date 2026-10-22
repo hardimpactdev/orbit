@@ -145,14 +145,15 @@ it('records the complete squashed history exactly once and leaves no pending mig
         static fn (string $path): string => basename($path, '.php'),
         glob(database_path('migrations/*.php')),
     );
-    // The baseline restores 261 earlier records; Laravel then records it and each later migration.
-    $expectedCount = 261 + count($migrations);
+    // The baseline restores 263 earlier records; Laravel then records it and each later migration.
+    $expectedCount = 263 + count($migrations);
 
     expect($history)->toHaveCount($expectedCount)
         ->and(array_unique($history))->toHaveCount($expectedCount)
         ->and($history[0])->toBe('2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table')
-        ->and($history[261])->toBe('2026_12_03_000000_allow_cold_recipe_image_rebuilds')
-        ->and(array_slice($history, 261))->toBe($migrations);
+        ->and($history)->toContain('2026_10_21_200327_add_private_endpoints_to_database_servers', '2026_10_22_055111_add_locale_to_database_connections_table')
+        ->and($history[263])->toBe('2026_12_03_000000_allow_cold_recipe_image_rebuilds')
+        ->and(array_slice($history, 263))->toBe($migrations);
     $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
     expect(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($history);
 });

@@ -8,7 +8,7 @@ Run from any directory:
 shellcheck checks every Bash program under core and extension resources, and ruff 0.17.0 checks every Python program and
 the direct tests with apps/gateway/ruff.toml. A remote program with libraries, and a fragment that the Gateway appends to another program,
 is checked as the Node receives it; each finding names the file and line where it occurs. Then the direct program
-unittest cases in apps/gateway/tests/Programs run with pytest-xdist, one file per worker. A missing tool fails the check.
+unittest cases in apps/gateway/tests/Programs run with pytest-xdist, individual tests across workers. A missing tool fails the check.
 See docs/reference/remote-programs.md.
 """
 import json
@@ -211,7 +211,7 @@ def main():
 
     tests = GATEWAY / 'tests/Programs'
     completed = subprocess.run(
-        ['pytest', '-n', '4', '--dist=loadfile', '-q', '-p', 'no:cacheprovider', str(tests)],
+        ['pytest', '-n', 'auto', '--dist=load', '-q', '-p', 'no:cacheprovider', str(tests)],
         env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
         check=False,
     )

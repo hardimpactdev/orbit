@@ -233,7 +233,7 @@ final class GatewayReleaseFixture implements ProcessRunner
         $current = $this->layout->currentPath();
         exec('chmod -R u+w '.escapeshellarg($this->layout->sharedPath()).' 2>/dev/null; rm -rf '.escapeshellarg($this->layout->sharedPath()).' '.escapeshellarg($current));
         $this->git($this->base, 'clone', '--quiet', '--no-local', $this->origin, $current);
-        $this->git($current, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/orbit.git');
+        $this->git($current, 'remote', 'set-url', 'origin', 'https://github.com/hardimpactdev/orbit.git');
         $sha = trim($this->git($current, 'rev-parse', 'HEAD'));
         $this->git($current, 'checkout', '--quiet', '--detach', $sha);
         file_put_contents($current.'/apps/gateway/.env', $env);
@@ -284,7 +284,7 @@ final class GatewayReleaseFixture implements ProcessRunner
     public function cleanup(): void
     {
         if (is_dir($this->base)) {
-            exec('find -P '.escapeshellarg($this->base).' -type d -exec chmod u+wx {} + && rm -rf -- '.escapeshellarg($this->base));
+            exec('find -P '.escapeshellarg($this->base).' -type d -exec chmod u+rwx {} \\; && rm -rf -- '.escapeshellarg($this->base));
         }
     }
 

@@ -19,6 +19,9 @@ describe('MCP tool manifest', function (): void {
         'agent:realtime:auth',
         'agent:workspaces',
         'agent:log-streams',
+        'websocket:registry:snapshot',
+        'websocket:runtime:boot',
+        'websocket:runtime:report',
         'instance:log-stream:create',
         'instance:log-stream:renew',
         'instance:log-stream:destroy',
@@ -94,4 +97,14 @@ describe('MCP tool manifest', function (): void {
             expect($name)->toMatch('/\A[a-z0-9_-]{1,64}\z/');
         }
     });
+});
+
+it('accepts a UUID for WebSocket operation status and documents pending application', function (): void {
+    $tool = collect(ToolManifest::default()->definitions())->first(static fn ($definition): bool => $definition->name === 'websocket-operation-show');
+    expect($tool?->inputSchema['properties']['operation']['type'] ?? null)->toBe('string')
+        ->and($tool?->inputSchema['properties']['operation']['format'] ?? null)->toBe('uuid');
+    $api = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $response = $api['paths']['/api/v1/websocket-apps']['post']['responses']['202']['content']['application/json']['schema'];
+    expect($response['required'])->toContain('operation')
+        ->and($response['properties']['operation']['properties']['state']['enum'])->toBe(['pending', 'applied', 'superseded']);
 });

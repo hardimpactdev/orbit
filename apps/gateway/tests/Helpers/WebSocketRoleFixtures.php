@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Actions\WebSocket\ReportWebSocketRuntimeAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketRegistry;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketRuntime;
+use Illuminate\Support\Str;
 
 /**
- * Activates the `websocket` role on a Node and generates its Reverb
- * credentials through the real credential manager, so realtime tests
+ * Activates the `websocket` role on a Node and returns the Gateway's Reverb
+ * app from the real credential manager, so realtime tests
  * exercise the same resolution path production code does instead of
  * poking `broadcasting.*` config directly.
  *
@@ -32,7 +38,24 @@ function activate_websocket_role(?Node $node = null): array
         ['status' => LifecycleStatus::Active],
     );
 
-    $credentials = app(WebSocketCredentialManager::class)->ensure($node->refresh());
+    confirm_websocket_runtime($node->refresh());
+    new WebSocketDnsTarget()->markServing($node->id);
 
-    return [$node, $credentials];
+    return [$node, WebSocketApp::query()->where('name', WebSocketApp::GatewayName)->sole()->credentials()];
+}
+
+/** Confirm a real registry snapshot, as a process does before accepting Gateway clients. */
+function confirm_websocket_runtime(Node $node): WebSocketRuntime
+{
+    $credentials = app(WebSocketCredentialManager::class)->ensure($node);
+    $runtime = WebSocketRuntime::query()->findOrFail($credentials->processId);
+    $reports = app(ReportWebSocketRuntimeAction::class);
+    $boot = (string) Str::uuid();
+    $reports->register($runtime, $boot);
+    $reports->execute($runtime, [
+        'boot_id' => $boot, 'sequence' => 1, ...app(WebSocketRegistry::class)->version(),
+        'state' => 'serving', 'app_count' => WebSocketApp::query()->count(), 'connections' => [],
+    ]);
+
+    return $runtime->refresh();
 }

@@ -76,6 +76,8 @@
               "reference/gateway-environment",
               "reference/database-connections",
               "reference/database-servers",
+              "reference/postgresql-migration",
+              "reference/websocket-apps",
               "reference/vaultwarden",
               "reference/processes-and-schedules",
               "reference/schedules",
@@ -197,6 +199,7 @@
               "cli/route",
               "cli/env",
               "cli/database",
+              "cli/websocket",
               "cli/vault",
               "cli/process",
               "cli/schedule"
@@ -435,6 +438,8 @@
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
               "POST /api/v1/instances/{instance}/transfer",
+              "DELETE /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
+              "PUT /api/v1/instances/{instance}/websocket-apps/{websocket_app}",
               "GET /api/v1/projects/{project}/setup-steps",
               "POST /api/v1/projects/{project}/setup-steps",
               "DELETE /api/v1/projects/{project}/setup-steps/{step}",
@@ -487,6 +492,22 @@
               "DELETE /api/v1/database-servers/{database_server}",
               "GET /api/v1/database-servers/{database_server}",
               "POST /api/v1/database-servers/{database_server}/close"
+            ]
+          },
+          {
+            "group": "WebSocket apps",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/websocket-apps",
+              "POST /api/v1/websocket-apps",
+              "DELETE /api/v1/websocket-apps/{websocket_app}",
+              "GET /api/v1/websocket-apps/{websocket_app}",
+              "POST /api/v1/websocket-apps/{websocket_app}/rotate",
+              "GET /api/v1/websocket-operations/{operation}",
+              "GET /api/v1/websocket-registry",
+              "PUT /api/v1/websocket-registry/processes/{runtime}",
+              "POST /api/v1/websocket-registry/processes/{runtime}/boots",
+              "POST /api/v1/websocket-sync"
             ]
           },
           {
@@ -689,12 +710,12 @@
     ],
     "primary": {
       "type": "github",
-      "href": "https://github.com/nckrtl/orbit"
+      "href": "https://github.com/hardimpactdev/orbit"
     }
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/nckrtl/orbit"
+      "github": "https://github.com/hardimpactdev/orbit"
     }
   },
   "api": {
@@ -1346,7 +1367,7 @@
     },
     {
       "source": "/decisions/0054-maintain-main-caches-asynchronously",
-      "destination": "/reference/implementation-loop#maintenance-runs-in-the-background"
+      "destination": "/reference/implementation-loop#only-main-ci-publishes"
     },
     {
       "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",
@@ -1599,6 +1620,14 @@
     {
       "source": "/decisions/0222-give-task-vms-a-cloned-topology-seed",
       "destination": "/reference/compute-drivers#the-topology-seed"
+    },
+    {
+      "source": "/decisions/0228-serve-several-reverb-apps-on-the-websocket-role",
+      "destination": "/reference/websocket-apps#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0227-manage-postgresql-and-private-database-endpoints",
+      "destination": "/reference/database-servers#why-it-works-this-way"
     }
   ]
 }

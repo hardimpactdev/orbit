@@ -9,7 +9,7 @@ it('keeps ordinary stock Pest shards complete and enforces the no-sudo boundary'
     $process = new Process(
         ['python3', '-I', dirname(__DIR__, 2).'/Fixtures/check-pest-shards-tests.py'],
         $repository,
-        ['PYTHONDONTWRITEBYTECODE' => '1', 'GITHUB_OUTPUT' => false, 'ORBIT_TIA_DIRECTORY' => false],
+        ['PYTHONDONTWRITEBYTECODE' => '1', 'GITHUB_OUTPUT' => false],
     );
     $process->setTimeout(180);
     $process->run();

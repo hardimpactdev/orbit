@@ -2465,10 +2465,10 @@ it('reuses the Pi reviewer when both opening send responses are lost', function 
             throw new ConnectionException('response lost');
         }
         if ($request->method() === 'GET') {
-            $sessionId = basename(rtrim($request->url(), '/'));
+            $sessionId = basename(rtrim(parse_url($request->url(), PHP_URL_PATH), '/'));
 
             return Http::response([
-                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 2,
+                'kind' => 'state', 'run' => 'run-1', 'sequence' => 2,
                 'session' => ['id' => $sessionId],
                 'state' => 'done',
                 'turnId' => $sessionId === 'implementer-thread' ? $pi->implementerKey : ($pi->keys[0] ?? ''),

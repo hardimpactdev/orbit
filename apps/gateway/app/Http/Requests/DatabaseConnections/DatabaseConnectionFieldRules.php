@@ -65,6 +65,7 @@ final readonly class DatabaseConnectionFieldRules
             'instance_id' => ['missing'],
             'patterns' => ['missing'],
             'allow' => ['missing'],
+            'locale' => ['missing'],
         ];
     }
 
@@ -95,8 +96,10 @@ final readonly class DatabaseConnectionFieldRules
         }
 
         return match ($serverDriver) {
+            DatabaseDriver::Pgsql => [...$rules, 'patterns' => ['missing'], 'allow' => ['missing'], 'locale' => ['sometimes', 'required', 'string', Rule::in(['C', 'C.UTF-8'])]],
             DatabaseDriver::Redis => [
                 ...$rules,
+                'locale' => ['missing'],
                 'slug' => [...$rules['slug'], Rule::notIn([ValkeyAclUser::ADMIN])],
                 'database' => ['sometimes', 'integer', 'min:0', 'max:999', self::strictInteger(...)],
                 'patterns' => ['required', 'array', 'list', 'min:1', 'max:32'],
@@ -104,7 +107,7 @@ final readonly class DatabaseConnectionFieldRules
                 'allow' => ['required', 'array', 'list', 'min:1', 'max:64'],
                 'allow.*' => ['required', 'string', 'max:128', 'regex:'.self::ACL_RULE_PATTERN, Rule::notIn(self::ACL_REFUSED_RULES)],
             ],
-            default => [...$rules, 'patterns' => ['missing'], 'allow' => ['missing']],
+            default => [...$rules, 'locale' => ['missing'], 'patterns' => ['missing'], 'allow' => ['missing']],
         };
     }
 
@@ -121,7 +124,7 @@ final readonly class DatabaseConnectionFieldRules
     /** @return list<string> */
     public static function storeKeys(): array
     {
-        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password', 'server', 'instance_id', 'patterns', 'allow'];
+        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password', 'server', 'instance_id', 'patterns', 'allow', 'locale'];
     }
 
     /** @return list<string> */

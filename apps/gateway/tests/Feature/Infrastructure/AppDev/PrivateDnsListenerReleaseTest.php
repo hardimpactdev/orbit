@@ -8,8 +8,6 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\SubprocessFixture;
 
-pest()->group('subprocess');
-
 it('builds the release from the listener classes only, with an id that follows their contents', function (): void {
     $release = PrivateDnsListenerRelease::fromGateway();
     $files = $release->files();

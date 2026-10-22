@@ -20,7 +20,9 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 ## Machine software recipe
 
-The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+The Node.js artifact pin is `24.22.1`, including the [October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Nodes and task images install it through the shared recipe installer. Vite+ project pins and retained releases select their own runtimes and must be updated separately.
+
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
@@ -36,10 +38,10 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
 | `tools` | Object keyed by the loader's known tool identifiers; each value has a concrete `version` (an Ubuntu floor or exact artifact version) and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
-| `php` | The [PHP build](#php-build): `versions`, `shared`, `ci`, `rollback`, `pcov`, `opentelemetry`, and `purge_extras` |
+| `php` | The [PHP build](#php-build): `versions`, `shared`, `ci`, `rollback`, `pcov`, and `opentelemetry` |
 | `artifact_mirror` | The HTTPS base URL, without a trailing slash, of the [recipe artifact mirror](#the-recipe-artifact-mirror). Installers try it before each artifact's own URL |
 | `git` | The Git package set, `packages`, and the review date of the Git security notices, `usn_since` |
-| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names or `ci-runner`. Each value lists additional tool identifiers and PHP sets |
+| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. Every pin must equal the newest version across the release's archive, updates, and security pockets on every declared architecture. An older pin or one available only from today's rolling archive fails online validation.
@@ -48,7 +50,7 @@ Ubuntu pins are version floors on installed machines. The same Debian package on
 
 A newer package from another release, a third-party source, or an unproved origin is refused before package changes; it is never downgraded. An installed version listed in any untrusted index is refused even if a trusted index also lists it or offers a newer candidate. Plans label it `unsupported_newer` with a `refusal` field naming `origin:<tool>`.
 
-APT policy from the normal sources or the cached recipe snapshot must associate the installed version with an index whose release metadata names `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, ports, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
+APT policy must associate the installed version with a trusted Ubuntu index. Evidence can come from the normal sources, the refreshed generic Ubuntu pockets during application, or the cached recipe snapshot. The index's release metadata must name `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, ports, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
 
 Rolling pocket indexes drop superseded builds. When the installed version appears only in dpkg status, convergence dates it by the earliest matching `install` or `upgrade` action in `/var/log/dpkg.log*`, including compressed rotations. Without an action, it uses the earliest `status installed` record for that version. Later trigger runs do not change the date. It must find that exact package version in a trusted index at `snapshot.ubuntu.com` at that time. A newer Ubuntu candidate alone is not proof.
 
@@ -60,7 +62,7 @@ There is a known fail-closed window between `apt update` and installation. If Ub
 
 Recipe installs use a temporary snapshot source and leave the normal Ubuntu sources in place, so unattended-upgrades can continue installing security updates. Application repairs the exact snapshot source file written by earlier Orbit convergence. It first saves that file beside the APT configuration as `ubuntu.sources.orbit-snapshot-backup`, then restores archive, updates, backports, and security sources with the Ubuntu archive keyring, or ports on arm64, and logs the repair through `logger` with the `orbit-recipe` tag. Other source content is preserved.
 
-The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. The post-repair refresh reads only `ubuntu.sources`, so a broken third-party repository cannot block it. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
+The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. See [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) for APT index refresh during application. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
 
 Node convergence and image installs refuse Ubuntu downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
@@ -68,7 +70,7 @@ The recipe pins both Ubuntu `docker.io` and `containerd` for Docker roles and th
 
 Docker CE is not the recipe's Ubuntu `docker.io` provider. Convergence refuses it with `docker-provider:docker-ce` before planning or installing packages. It never stops containers to change providers. Follow the explicit [Docker provider migration](/reference/docker-provider-migration) during a planned window. That command may downgrade Docker and containerd after inventory and compatibility checks; normal recipe convergence still refuses downgrades.
 
-An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
+An `artifact` tool has an `artifacts` object keyed by every declared architecture, except PHP packages, which support amd64 only. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each supported architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
@@ -88,7 +90,7 @@ Exact Git pins block automatic Ubuntu and PPA security updates. Orbit owns the d
 
 Review each notice even when its Ubuntu version differs from the PPA build; the check does not claim that Ubuntu version ordering proves a PPA fix. Close the issue only after reviewing the fixes and rolling out the pin. Advance `git.usn_since` explicitly after reviewing the covered notices.
 
-Git bumps stay separate from the nightly snapshot and PHP build pull requests. The snapshot flow changes its date and Ubuntu pins together; the PHP bump authenticates Sury's indexes and knows PHP's package sets. No automated flow verifies Launchpad's signed indexes, so a maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
+Git bumps stay separate from the nightly snapshot and artifact pull requests. The snapshot flow changes its date and Ubuntu pins together; the artifact bump authenticates Sury and Zabbly indexes and updates their package sets. No automated flow verifies Launchpad's signed indexes, so a maintainer bumps Git by hand. To bump Git, verify the PPA's signed `resolute` indexes, change both package versions, URLs, and SHA-256 digests together for amd64 and arm64, download and hash all three distinct files, and validate the recipe. After merge, the mirror workflow retains the files and normal recipe convergence rolls out the build.
 
 The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
@@ -111,7 +113,7 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 | `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
 | `app-prod` | The application prerequisites and JavaScript/Composer managers, as for `app-dev`, and `php:8.5` only. The PHP step installs `php:8.4` when an Instance selects it |
 | `websocket` | Caddy, Composer, OpenSSL, `php-curl`, `php-xml`, and `php:8.5` |
-| `ci-runner` | `acl`, `attr`, `unzip`, and `php:8.5`. A roleless Node that runs CI jobs, such as Sabre, selects it with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). It is not a Node role |
+| `ci-runner` | `incus`, `acl`, `attr`, `unzip`, and `php:8.5`. The [CI runner role](/reference/node-provisioning#ci-runner-role) selects this profile through the normal role union |
 | `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
 | `base` | The full `app-dev` set, explicit image-build packages described below, the nested Incus packages, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
 
@@ -121,18 +123,20 @@ The base also includes the existing image builder's 26 explicit Ubuntu packages:
 
 The base also holds the nested Incus packages, so a task VM [runs a topology](#prepare-the-topology) without an install:
 
-- `incus`, pinned to 6.0.5, whose recovery API adopts the [topology seed](#build-the-base-image).
-- `qemu-system-x86`, `ovmf`, `qemu-system-modules-spice`, `qemu-utils`, `virtiofsd`, and `dnsmasq-base`, which Incus VMs need but the Incus package only recommends.
+- The exact Incus 7.0 LTS package set, whose recovery API adopts the [topology seed](#build-the-base-image).
+- `dnsmasq-base`, for the nested bridge.
 - `btrfs-progs`, for the pool of the topology seed.
 - `nftables`, for the isolation table.
 
-The recipe installs packages without recommended packages, so QEMU's GUI stack stays out. The `base` profile is amd64 only, because Pi is, so the amd64 QEMU packages suffice. The topology Nodes start from the same base and carry these packages unused.
+Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `base-image-clean.sh` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
 ### PHP build
 
-The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
+The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, the VPN private DNS listener, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
+
+PHP supports amd64 only. PHP packages, including the shared Sury dependencies, declare no arm64 artifacts. Profiles that include PHP support only amd64; PHP installation on arm64 fails with `PHP is not available for arm64` before changing packages. Other tools retain their declared architecture support. The artifact mirror takes only the PHP artifacts declared in the recipe.
 
 | Field | Contract |
 | --- | --- |
@@ -143,7 +147,10 @@ The recipe is the single source of truth for Orbit's PHP build. Every machine th
 | `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
 | `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
-| `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
+
+The `vpn` profile names `php:8.5` because `orbit-private-dns.service` runs that CLI runtime. Its recipe identity changes with this membership, as with every profile change. VPN-only Nodes keep the shared PHP-FPM service disabled and inactive, including after package updates; an existing mask stays in place. A Node with a Gateway or application role instead validates and refreshes its active FPM masters.
+
+After the PHP installer reports `applied` on an active VPN Node, recipe and VPN role convergence publish private DNS through the existing publication path. Publication self-tests the installed release and replaces a stale listener behind its active socket, then verifies socket ownership and the loaded catalog. A failed self-test leaves the running listener untouched and fails convergence clearly.
 
 A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
@@ -152,7 +159,7 @@ Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
 - `php.ci` names an undeclared version;
-- `php.purge_extras` names another profile than `ci-runner`, or `artifact_mirror` is not an HTTPS URL.
+- `artifact_mirror` is not an HTTPS URL.
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. The other PHP profiles, `app-prod`, `websocket`, and `gateway`, keep PCOV installed but not loaded.
 
@@ -164,6 +171,14 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 
 `php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
 
+The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-upload-progress.ini` for every PHP version it installs. It writes `session.upload_progress.enabled = 0` to mitigate CVE-2026-109618 and CVE-2026-109619, which allow unauthenticated remote code execution through session upload progress in multipart requests. It replaces the operator's emergency file at the same path and repairs missing or changed files on later convergence.
+
+A settings-only change validates every active PHP-FPM master, including dedicated production masters, regardless of the caller's FPM scope. It gracefully reloads those that pass. An Instance step reports and logs invalid masters as deferred, keeps the INI, and continues reloading the other masters. Recipe convergence instead fails and restores the previous settings. Rollback uses reload for masters that were reloaded and restart only for masters that were restarted. Images have no active masters, so this reload is a no-op.
+
+Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step, `node:converge-recipe`, or the rollout after the PHP build bump. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
+
+The recipe pins PHP 8.4.27 and 8.5.12, which fix CVE-2026-109618 and CVE-2026-109619. The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
+
 Before it changes anything, the installer checks the machine:
 
 1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it. With `purge` it deletes the source instead.
@@ -174,9 +189,15 @@ Before it changes anything, the installer checks the machine:
 Then it gets the files:
 
 1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
-2. It downloads each pinned file that is not installed at its version. It tries `artifact_mirror` first, then the pin's URL.
+2. It downloads missing pinned files with one `curl --parallel --parallel-max 4` process per source pass. It tries `artifact_mirror` first, then the pin's URL for files with transport failures.
+
+   Each file uses a separate candidate path. All files pass verification before rollback preparation and serial package installation. An interrupt stops the curl process and its active transfers before the installer exits.
+
+   Each transfer has a 15-second connection limit. Each source pass divides a 300-second budget across its batches of four transfers and sets curl's total transfer limit accordingly. Both source passes fit within 600 seconds of the installer's 900-second limit.
 3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
-4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one. A file already there is not downloaded again. The cache grows with each build; an operator can delete the files of builds that no machine runs.
+4. It keeps every file in `/var/cache/orbit/php-packages`. A cached file with the expected digest is not downloaded again. A corrupt entry is replaced.
+
+   Cache writes stage a complete file in the cache directory, check its digest, then rename it atomically into place. The cache grows with each build; an operator can delete the files of builds that no machine runs.
 
 Then it keeps the installed build for a rollback:
 
@@ -220,7 +241,7 @@ Each caller sets two options:
 
 | Caller | Extra packages | PHP-FPM |
 | --- | --- | --- |
-| Recipe convergence | `refuse`, or `purge` on a `php.purge_extras` profile | `all`: the shared service and each active dedicated master; a failure rolls back |
+| Recipe convergence | `refuse` on every host, including a Node with `ci-runner`; the container installer requests `purge` explicitly | `all`: the shared service and each active dedicated master; a failure rolls back |
 | PHP step of an Instance | `keep`, so a deploy never removes a site's extension | `shared`: the shared service, left running when its pools fail `php-fpm -t` |
 | Image build | `refuse` | `none` |
 | `bin/php-build install` | `refuse`, or `purge` with `--purge-extras` | `shared` |
@@ -239,7 +260,7 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 `bin/php-build mirror` downloads every external Debian artifact of every architecture and checks its recipe digest. The workflow lists published assets before downloading, skips those files, and uploads each missing file to the `php-build-mirror` release, named `<package>_<digest>.deb`. It retains the existing release URL. That release is a prerelease and never the latest release.
 
-Sury and Launchpad delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
+Sury, Launchpad, and Zabbly can delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
 
 #### Bump Vite+
 
@@ -249,20 +270,24 @@ Change both `vp` and `vp-cli` versions, URLs, and integrity pins together. Regen
 
 Sury keeps only its newest build in its pool, so keep the recipe on Sury's newest patch. One pull request changes every pin of a version together, with each URL, SHA-256 digest, and version. A partial change fails the loader.
 
-`bin/php-build bump` makes that change. It downloads Sury's signing key and refuses it unless it matches the pinned SHA-256 digest. It verifies the signed `InRelease` file of the recipe's Ubuntu release with `gpgv`, and checks each package index against it. For every architecture, it then moves each pin of every PHP set, `php-common` and `libgd3` included, to the newest version in the index, with its URL and digest. It stops without writing when Sury is between builds, so that two core pins of one version differ. `--dry-run` prints the changes and writes nothing.
+`bin/recipe-artifacts bump` makes that change. It downloads Sury's signing key and refuses it unless it matches the pinned SHA-256 digest. It verifies the signed `InRelease` file of the recipe's Ubuntu release with `gpgv`, and checks each package index against it. For every architecture, it then moves each pin of every PHP set, `php-common` and `libgd3` included, to the newest version in the index, with its URL and digest. It stops without writing when Sury is between builds, so that two core pins of one version differ. `--dry-run` prints the changes and writes nothing.
 
-[Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
+[Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, with the snapshot pull request. One `nightly/artifacts-<digest>` pull request holds all authenticated Sury and Incus pin changes. The digest names those pins; later nights reuse the PR, and a closed PR is never reopened.
+
+The Gateway App verifies its signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. That proof is cached for one hour per head; failed index fetches retry at most hourly. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
+
+The Gateway needs `python3`, `gpg`, and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 2. Each task VM host [builds a new base image](#build-the-base-image).
 3. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
-4. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
+4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
 
 ### Recipe identity
 
 The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
-Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
 
 [Base image builds](#build-the-base-image) record the same identity in the image and build row. Schema version `1` and a short display hash are not substitutes.
 
@@ -278,7 +303,15 @@ Online validation verifies that the exact snapshot exists for the release and ar
 
 Use `php artisan orbit:machine-recipe --validate-ubuntu` to check only Ubuntu snapshot pins, without fetching artifacts. CI runs this signed-index check when `recipe.json` changes or the event has no comparison base; a hand-edited snapshot date with stale pins fails Required checks. A handoff push compares with the branch's merge base with `origin/main`, not the previous handoff, so later handoffs keep checking recipe changes that have not merged.
 
-Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+CI restores and stores verified InRelease files and compressed Packages indexes with stock `actions/cache` only when the recipe needs validation, keyed by snapshot identifier and architecture set. `ORBIT_RECIPE_SNAPSHOT_CACHE` selects the metadata directory. Cache reads repeat signature, release, architecture, size, and SHA-256 checks; a cache hit makes no network request. Cached metadata never substitutes for a missing pin.
+
+Snapshot metadata fetches retry HTTP 5xx and connection failures at the same pinned URL, with four attempts and waits of 10, 20, and 30 seconds. Each attempt allows 15 seconds to connect, stops if transfer speed stays below one byte per second for 15 seconds, and has a 120-second total cap. A slow transfer that keeps making progress can finish within that cap. Persistent HTTP failures or stalls normally exhaust the attempts in about two minutes; four transfers that each reach the total cap take at most nine minutes including backoff. HTTP 4xx and verification failures fail immediately.
+
+Artifact downloads keep their separate policy: a 600-second total cap per attempt, up to three attempts with 500-millisecond waits for HTTP 500/502/503/504, and no retry for connection failures before trying the next artifact URL.
+
+Node convergence uses the same four-attempt backoff for snapshot indexes and package downloads, with 15-second transport timeouts. A simple loop retries only explicit HTTP 5xx or connection-reset fetch failures. APT’s own retries stay disabled because they retry some HTTP 4xx and miss some HTTP 5xx. An unsigned-repository message caused by the same failed release fetch does not suppress the retry. Authentication, digest, package, and mixed failures stop immediately.
+
+Git build watch retries upstream 5xx and connection failures with four attempts, a 15-second request timeout, and waits of 10, 20, and 30 seconds. Its `check` job is an advisory update signal, not a required merge check; persistent failures remain visible. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
 | Failure | Required diagnostic |
 | --- | --- |
@@ -311,13 +344,11 @@ A pin for each environment was rejected. CI, Nodes, and images would each keep a
 
 The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
 
-Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the `ci-runner` profile purges, because its machine runs nothing but CI jobs.
+Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the container installer uses the `ci-runner` profile to purge, because each container runs only CI jobs. A host with that role can share other workloads and always refuses extras.
 
 A separate scheduled GitHub workflow for the bump would duplicate the nightly recipe pull request flow and its GitHub App. Also, a pull request that `GITHUB_TOKEN` opens starts no CI.
 
-PHP artifact bumps still need maintainer review. The [nightly Ubuntu rollout policy](#nightly-ubuntu-rollout-policy) covers snapshot and Ubuntu pin bumps.
-
-Sabre did not wait for a `ci-runner` role. Its hand-managed PHP would keep breaking the cache match until then. A profile that a roleless Node selects manages it now.
+The `ci-runner` role selects the CI host recipe and replaces the recorded-profile exception. Roleless operator Nodes do not gain workload or maintenance status from old profile settings.
 
 #### Git from exact artifacts
 
@@ -536,7 +567,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
 4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
-5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
+5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
@@ -725,6 +756,199 @@ Create, start, stop, and delete are idempotent by name. A running VM counts as c
 
 Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. The claim checks `task_vms.enabled` before it allocates a VM. The jobs of an existing row use the provider whatever `enabled` says, so Orbit still destroys task VMs after you turn them off.
 
+### Incus LTS packages and upgrades
+
+Incus uses Zabbly's signed `lts-7.0` repository for Ubuntu 26.04. Each artifact records its exact Debian `version`, because architecture build timestamps differ. The tool `version` names their shared 7.0.x point release. The recipe pins `incus`, `incus-base`, and `incus-client` for amd64 and arm64. Zabbly bundles QEMU, qemu-img, virtiofsd, firmware, and the agent. Hosts remove the obsolete separate Ubuntu `incus-agent` package. Rebuilt images start from stock; their stock agent unit runs `/run/incus_agent/incus-agent`, supplied by the outer host. The installer does not replace that unit.
+
+`bin/recipe-artifacts bump` authenticates Sury and Zabbly indexes and updates their complete package sets together. It verifies the pinned signing key digests, `InRelease` signatures, package index hashes, and Incus Debian file digests. The nightly job opens one artifact bump PR under the [shared artifact update policy](#bump-the-php-build). Only changed Incus artifacts are downloaded; merge verification reads signed indexes without downloading Debian files. The existing [artifact mirror](#the-recipe-artifact-mirror) retains the same content-addressed Debian files used by Git and Sury. Managed machines have no rolling Zabbly APT source. Review the [7.0 release notes](https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641) and [7.0.1 fixes](https://discuss.linuxcontainers.org/t/incus-7-0-1-lts-has-been-released/26942) for new requirements. The 7.0 line is supported until June 2031.
+
+The `ci-runner` role selects the complete Incus package set. Configured task VM hosts also add that set to their role-selected recipe tools. Other roles do not select Incus merely because it is installed; inventory those hosts separately before planning an upgrade.
+
+Fleet convergence applies every non-Incus change while holding Incus. It records the exact held pins in the Node's `settings.machine_recipe_incus_hold` and raises an alert for each Node and held version, requesting a drain and explicit convergence. A partial convergence records `machine_recipe.partial_version`, never the complete recipe `version`. Later snapshots and PHP security builds continue to converge. A successful convergence clears the hold when Incus needs no further change.
+
+The operator drains the host, inspects `php artisan node:converge-recipe NODE --dry-run`, then explicitly runs `php artisan node:converge-recipe NODE`. An Incus change refuses before package mutation when any project has active instances; the error names them. Live task VM rows also refuse convergence. Zabbly hooks restart the daemon directly despite `policy-rc.d`, starting its one-way database migration. A package downgrade alone is not a rollback.
+
+Incus 7.0 requires Linux 6.12, cgroup v2, QEMU 8.2, nftables 1.0, dnsmasq 2.90, and ZFS 2.1 when using ZFS. Ubuntu 26.04 uses kernel 7.0 and cgroup v2. Incus 6.0.5 already uses nftables; 7.0 removes the alternative xtables backend. Orbit's bridge and ACL setup continues to use nftables. The harness's separate iptables rules use Ubuntu's nft backend; its isolation hook precedes either filter chain. Orbit uses neither storage buckets nor OVN.
+
+Orbit uses complete CLI command names and explicit archive destinations, compatible with 7.0's stricter argument parsing. Its regular image archives do not use the changed file-copy behavior. Existing Ubuntu VMs retain their NVRAM filenames. On hosts only, the installer adds firmware aliases in Zabbly's bundled firmware directory. Incus 7.0.1 searches `INCUS_EDK2_PATH` then `/usr/share/OVMF`, while its AppArmor profile permits only `INCUS_EDK2_PATH` when set ([firmware selection](https://github.com/lxc/incus/blob/v7.0.1/internal/server/device/edk2/driver_edk2.go), [AppArmor](https://github.com/lxc/incus/blob/v7.0.1/internal/server/apparmor/instance.go)). Remove the aliases after an upstream release fixes selection and confinement and a VM created on Ubuntu Incus boots without them. Rebuilt images and new VMs do not need these aliases.
+
+Roll out Shark first, then Beast, then Sabre. Services needs a separate maintenance plan if its inventory contains an Incus server; its current roles do not select Incus. Deploying the Incus 7 recipe does not require pausing task VMs or clearing host settings: fleet convergence holds the Incus change for explicit convergence. Recipe convergence skips Docker CE hosts.
+
+Before deploying the Incus 7 recipe, the operator must complete Shark's first convergence with a Gateway release and recipe that still pin Ubuntu Incus, as a separate maintenance operation approved by Nick. Check the recorded recipe with `php artisan node:converge-recipe shark --status` on that Gateway release before merging. Without a recorded `machine_recipe`, its first convergence may include unrelated changes. Resolve those changes from its dry run, converge, and verify Doctor. The Incus 7 dry run must then isolate the Incus upgrade and deliberate pin removals. Automatic Gateway releases make this a pre-merge prerequisite.
+
+1. Drain Shark with the admission procedure below. Inventory every project with `incus list --all-projects`.
+2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
+3. Restart Incus 6 with guests stopped. Inspect `php artisan node:converge-recipe shark --dry-run`, then run `php artisan node:converge-recipe shark`.
+4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
+5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
+6. Run `php artisan task-vms:build-image shark`. Require base and seed verification and promotion before the topology gate.
+7. Run one complete topology task group explicitly on Shark. Require seed adoption, Node copies, enrollment, checks, teardown, and clone removal.
+
+After Shark passes, upgrade Beast. Confirm that Beast's Docker CE → `docker.io` migration is applied. Merging its code does not prove host convergence. Rebuild and promote Beast's base and seed. Run the same topology gate.
+
+Upgrade Sabre after both task VM hosts pass. Drain every `orbit-ci` runner container. Back up its stopped `dir` pool and Incus database. Converge explicitly. Start and verify one runner before resuming CI. The ZFS backup below applies only to ZFS pools. Preserve Sabre's `dir` data with a separate offline copy.
+
+Handle any Incus server on Services last, in a separately approved maintenance window with its service owners. Its app and database roles do not select Incus. Ordinary recipe convergence will not upgrade that server.
+
+The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task VM 7.0.1 → topology Node chain remains unverified until it passes. Failure stops rollout and invokes the rehearsed rollback below before normal admission resumes.
+
+The drain includes every `orbit-ci` container on the host, task VMs, builders, and parked task VMs. Inventory names at rollout time; do not rely on a fixed runner list. Preserve parked guest data and configurations before finishing their rows; retain an offline representative old-image guest for compatibility checks. Do not delete unrelated workloads. Beast's drain also includes every operator-owned VM in every project, including any remaining `adr0223-memory-20261019` VMs. Never clear Beast's task VM settings for this upgrade.
+
+The existing admission control is global: set `ORBIT_TASK_VMS_ENABLED=false` (`task_vms.enabled`) on the Gateway and reload its configuration and workers. Keep it false through convergence and rollback; there is no per-host maintenance switch. New claims are blocked while existing rows can finish and be destroyed. Wait for all rows on this host to end, including parked rows, and for image builds to finish. Stop CI dispatch before shutting down runner containers.
+
+Save and disable instance autostart across every project before stopping guests; daemon restarts during package installation must leave them stopped. Keep these per-instance overrides through upgrade verification or rollback verification. Do not edit profiles: Doctor compares the runner profile exactly. Do not start a manual build, instance, or resume during this window.
+
+Save this script as `/root/incus-upgrade-autostart.py` on the maintenance host. Run `python3 /root/incus-upgrade-autostart.py hold /root/rollback/autostart.json` as root while Incus 6 is still running, before stopping guests or taking the backup. It records each affected instance's original local value, including an absent value inherited from a profile, before any mutation. A failed hold leaves the manifest for inspection; do not continue until every recorded instance has `boot.autostart=false`. Keep the manifest outside the Incus storage backup and retain it through rollback.
+
+```python
+# incus-upgrade-autostart
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+action, filename, *selection = sys.argv[1:]
+manifest = Path(filename)
+if action == "hold":
+    if selection:
+        raise SystemExit("hold does not accept an instance selection")
+    instances = json.loads(subprocess.check_output(
+        ["incus", "list", "--all-projects", "--format=json"], text=True))
+    saved = [
+        {"project": item["project"], "name": item["name"],
+         "value": item["config"].get("boot.autostart")}
+        for item in instances
+    ]
+    manifest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with manifest.open("x") as stream:
+        json.dump(saved, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    for item in saved:
+        subprocess.check_call(["incus", "--project", item["project"], "config", "set",
+                               item["name"], "boot.autostart=false"])
+elif action == "restore":
+    saved = json.loads(manifest.read_text())
+    if selection:
+        saved = [item for item in saved if f'{item["project"]}/{item["name"]}' in selection]
+        if len(saved) != len(set(selection)):
+            raise SystemExit("selection is missing from the manifest")
+    for item in saved:
+        command = ["incus", "--project", item["project"], "config"]
+        if item["value"] is None:
+            command += ["unset", item["name"], "boot.autostart"]
+        else:
+            command += ["set", item["name"], "boot.autostart=" + item["value"]]
+        subprocess.check_call(command)
+else:
+    raise SystemExit("expected hold or restore")
+```
+
+After host verification, keep CI dispatch paused and manually start one inventoried runner with `incus --project orbit-ci start NAME`. Verify it before restoring its value with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json orbit-ci/NAME`. After the host's topology and runner gates pass, restore the remaining values with `python3 /root/incus-upgrade-autostart.py restore /root/rollback/autostart.json`, then resume CI dispatch and admission. Restoring autostart does not start stopped instances; start the remaining guests deliberately. Use the same one-runner verification and restore sequence after rollback. The stopped database backup already contains the disabled overrides, so restoring it keeps guests stopped when Incus 6 starts.
+
+The installer repeats the active-instance preflight immediately before package installation, so an instance started since the first preflight refuses the upgrade. Inventory with `incus project list`, `incus list --all-projects --format=json`, `incus project show orbit-tasks`, `incus storage show POOL`, `incus storage volume list POOL --project orbit-tasks`, and `zfs list -t all -r DATASET`. Compare the before and after records.
+
+For an offline backup, first stop every instance and confirm no QEMU process uses its storage. Run as root, setting `dataset` to the host's Incus dataset. The archive excludes mounted storage; the recursive ZFS snapshot preserves it from the same stopped state.
+
+```bash
+set -euo pipefail
+backup=/root/rollback
+dataset=i7pool/incus
+install -d -m 0700 "$backup/debs"
+# Install dpkg-repack before the maintenance window if the old debs are unavailable.
+for package in incus incus-base incus-client incus-agent; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    if [ "$package" = incus-agent ]; then continue; fi
+    echo "Required rollback package is not installed: $package" >&2; exit 1
+  fi
+  version=$(dpkg-query -W -f='${Version}' "$package")
+  (cd "$backup/debs" && apt-get download "$package=$version") ||
+    (cd "$backup/debs" && dpkg-repack "$package")
+done
+units=(incus-startup.service incus-user.socket incus.socket incus-user.service incus.service)
+systemctl stop "${units[@]}"
+systemctl mask "${units[@]}"
+if pgrep -x incusd || pgrep -f '(^|/)qemu-system-(x86_64|aarch64)( |$)'; then
+  echo "Incus or QEMU is still running" >&2; exit 1
+fi
+paths=(var/lib/incus)
+for path in etc/default/incus etc/incus; do
+  if [ -e "/$path" ]; then paths+=("$path"); fi
+done
+for unit in "${units[@]}"; do
+  path="etc/systemd/system/$unit.d"
+  if [ -d "/$path" ]; then paths+=("$path"); fi
+done
+tar --one-file-system --acls --xattrs -cpf "$backup/incus6.tar" -C / "${paths[@]}"
+zfs snapshot -r "$dataset@pre7"
+```
+
+Unmask and start the daemon and sockets before explicit convergence, with all guests still stopped.
+
+Rollback must keep the migrated database inaccessible to Incus 6. Pause admissions, builders, CI dispatch, and resumes; stop all guests. Check which later writes the storage rollback would lose. The rollback sequence follows an earlier rehearsal as root in a disposable Ubuntu 26.04 VM. The backup block above was added later and has not been rehearsed verbatim. Set `backup` and `dataset` to the stopped-state backup and the host's Incus ZFS dataset. Never use these example paths on a live host.
+
+```bash
+set -euo pipefail
+backup=/root/rollback
+dataset=i7pool/incus
+units=(incus-startup.service incus-user.socket incus.socket incus-user.service incus.service)
+systemctl stop "${units[@]}"
+systemctl mask "${units[@]}"
+zfs list -H -t snapshot -o name -r "$dataset" > "$backup/rollback-snapshots.all"
+sed -n '/@pre7$/p' "$backup/rollback-snapshots.all" > "$backup/rollback-snapshots"
+grep -Fx "$dataset@pre7" "$backup/rollback-snapshots"
+if pgrep -x incusd; then echo "Incus is still running" >&2; exit 1; fi
+
+# Remove only the aliases this installer created, with their expected targets.
+for pair in \
+  OVMF_CODE_4M.ms.fd:OVMF_CODE.4MB.fd \
+  OVMF_CODE_4M.secboot.fd:OVMF_CODE.4MB.fd \
+  OVMF_CODE_4M.fd:OVMF_CODE.4MB.fd \
+  OVMF_VARS_4M.ms.fd:OVMF_VARS.4MB.ms.fd \
+  OVMF_VARS_4M.fd:OVMF_VARS.4MB.fd \
+  OVMF_VARS_4M.secboot.fd:OVMF_VARS.4MB.ms.fd; do
+  link=/opt/incus/share/qemu/${pair%%:*}
+  if [ -L "$link" ]; then
+    test "$(readlink "$link")" = "${pair#*:}"
+    rm -- "$link"
+  fi
+done
+rm -f /etc/apt/preferences.d/orbit-incus /etc/apt/orbit-incus.json
+DEBIAN_FRONTEND=noninteractive apt-get install --yes --allow-downgrades \
+  --no-install-recommends "$backup"/debs/*.deb
+
+# Package hooks and either socket must remain unable to start Incus 6.
+if systemctl start "${units[@]}"; then exit 1; fi
+for unit in "${units[@]}"; do
+  test "$(systemctl is-enabled "$unit" || true)" = masked
+done
+if pgrep -x incusd; then echo "Incus is still running" >&2; exit 1; fi
+if timeout 10 incus query /1.0; then exit 1; fi
+if pgrep -x incusd; then echo "Incus is still running" >&2; exit 1; fi
+
+# Replace the migrated database; do not overlay it with the old files.
+rm -rf /var/lib/incus/database
+tar -xpf "$backup/incus6.tar" -C /
+while IFS= read -r snapshot; do
+  zfs rollback -r "$snapshot"
+done < "$backup/rollback-snapshots"
+
+# An overlay restore leaves Incus 7's compiled AppArmor policy behind.
+rm -rf /var/lib/incus/security/apparmor/cache
+install -d -m 0700 /var/lib/incus/security/apparmor/cache
+systemctl daemon-reload
+systemctl unmask "${units[@]}"
+systemctl start incus.socket incus.service incus-user.socket
+incus version
+```
+
+The retained files must include `incus`, `incus-base`, and `incus-client` at `6.0.5-8`, plus `incus-agent` at that version if it was installed. `--allow-downgrades` crosses Zabbly's `1:` epoch. This release creates no agent override, udev rule, or copied helper. Compare these paths with the backup and restore any pre-existing unit overrides before unmasking. Restore the recorded unit activation state after verification.
+
+The [earlier rehearsal](https://github.com/nckrtl/orbit/pull/1358#issuecomment-6261395054) upgraded to 7.0.1, then downgraded to 6.0.5 with all five units masked. Package hooks, explicit starts, and an API query could not start the old daemon; the migrated database files stayed byte-identical. Restoring the database and recursive ZFS snapshot recovered the project, VM, and custom volume. The VM booted and read both original data markers; writes made after the upgrade were absent. Clearing the AppArmor cache is required: an overlay restore alone left a compiled 7.0 policy that denied the old QEMU binary. Repeat these inventory, boot, agent, and data checks on the real host before resuming admission.
+
+Restore the prior Gateway release with its loader and recipe, and select its retained image and seed before resuming admission. The new loader cannot decode the old Ubuntu Incus recipe. Never adopt a 7.0 image or seed with a 6.0 daemon. Prefer a forward fix if restoring storage would discard work.
+
 ### Prepare an Incus host
 
 Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
@@ -833,7 +1057,7 @@ Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin
 
 At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
 
-The job runs every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR checks finish. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
+The job runs every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR checks finish. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same job opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
 
 Refresh and merge use one rule to end a nightly PR: close an App `nightly/recipe-*` PR once main’s snapshot has reached its date or a newer-date App PR is open. This runs before Required checks, evidence resolution, or merge attempts, whatever kept the PR open. It covers failed checks, rejected evidence, and refused merges.
 
@@ -843,13 +1067,13 @@ For today’s date, Refresh rebuilds a remaining failed PR only if main advanced
 
 Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. Refresh leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. The shared closing rule still applies to superseded App PRs. Other bots' reviews and edits also block recovery; only cross-references are ignored.
 
-A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or PHP build PR.
+A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or artifact PR.
 
 A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
-Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. The change must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+Each minute the Gateway merges its date and artifact PRs after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
 
 Successful evidence verification records the head SHA. Retries reuse that result until the head changes, avoiding repeated index downloads after a refused merge. Required checks and the live PR target, author, head, and draft state are still checked before each merge attempt.
 
@@ -869,7 +1093,7 @@ On the next available minute, the maintenance job visits one Node. Later ticks v
 
 Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. A running visit may finish past 06:00. The serving Gateway also goes last.
 
-Only active managed Linux Nodes with roles participate, and a roleless Node that recorded the `ci-runner` profile, such as Sabre, which joins the service tier. Task VMs, macOS, and other roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
+Only active managed Linux Nodes with roles participate. The `ci-runner` role joins the overnight service tier. Task VMs, macOS, and roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
 
 The first build row for the current recipe carries `fleet_convergence`, shown by `task-vms:image-builds`: generation, progress, stopping point, per-Node changes, and the alert receipt. This adds no ledger table.
 
@@ -1153,7 +1377,7 @@ Configure the Project like this:
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, a fresh workspace gets the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
+Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
 
 The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches seeded from the read-only host cache.
 
@@ -1198,7 +1422,7 @@ When the unit fails, or stops without a result, the subtask asks for assistance 
 
 ### Prove work on a topology
 
-The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
+The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
