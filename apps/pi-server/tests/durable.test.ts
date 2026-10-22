@@ -4,13 +4,14 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, fauxProvider } from "@earendil-works/pi-ai";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { PROVIDER_RETRY_POLICY } from "../src/registry.ts";
 import { retryDelayMs } from "@earendil-works/pi-ai/utils/retry";
 import { type Harness, startHarness, TOKEN, waitFor } from "./support.ts";
 
 let h: Harness | undefined;
 afterEach(async () => {
+    vi.restoreAllMocks();
     await h?.close();
     h = undefined;
 });
@@ -74,6 +75,90 @@ describe("Durable admissions and lifecycle", () => {
         await h.request("POST", "/sessions/durable/messages", { key: "retry", text: "go" });
         expect((await settled(h)).state).toBe("done");
         expect(requests).toBe(2);
+    });
+
+    it("reports a failed blocking compaction for the current submission and after reopen", async () => {
+        h = await startHarness({
+            harnessSettings: {
+                compaction: {
+                    enabled: true,
+                    reserveTokens: 100,
+                    keepRecentTokens: 50,
+                    backgroundTokens: 0,
+                },
+                retry: { enabled: false },
+            },
+        });
+        const getModel = h.modelRuntime.getModel.bind(h.modelRuntime);
+        vi.spyOn(h.modelRuntime, "getModel").mockImplementation((provider, id) => {
+            const model = getModel(provider, id);
+            return model === undefined ? undefined : { ...model, contextWindow: 1000 };
+        });
+        await create(h);
+        let compactions = 0;
+        h.faux.setResponses([
+            fauxAssistantMessage("first answer " + "x".repeat(8000)),
+            (context) => {
+                expect(JSON.stringify(context)).toContain("context summarization assistant");
+                compactions++;
+                return fauxAssistantMessage("", {
+                    stopReason: "error",
+                    errorMessage: "401 Invalid API key",
+                });
+            },
+        ]);
+        await h.request("POST", "/sessions/durable/messages", { key: "first", text: "go" });
+        expect((await settled(h)).state).toBe("done");
+        const stream = h.stream("durable", (events) =>
+            events.some(
+                (event) => event.turnId === "second" && ["failed", "done"].includes(event.state),
+            ),
+        );
+        await h.request("POST", "/sessions/durable/messages", { key: "second", text: "continue" });
+        const snapshot = await settled(h);
+        expect(compactions).toBe(1);
+        expect(snapshot).toMatchObject({
+            turnId: "second",
+            state: "failed",
+            error: "Compaction failed: Summarization failed: 401 Invalid API key",
+        });
+        const events = await stream;
+        expect(events.some((event) => event.turnId === "second" && event.state === "done")).toBe(
+            false,
+        );
+        expect(
+            snapshot.entries.filter((entry: any) => entry.message.role === "assistant"),
+        ).toHaveLength(1);
+        h = await h.restart();
+        expect((await h.request("GET", "/sessions/durable")).body).toMatchObject({
+            turnId: "second",
+            state: "failed",
+            error: "Compaction failed: Summarization failed: 401 Invalid API key",
+        });
+    });
+
+    it("reports a faulted generation for the current submission and after reopen", async () => {
+        h = await startHarness();
+        await create(h);
+        h.faux.setResponses([fauxAssistantMessage("first answer")]);
+        await h.request("POST", "/sessions/durable/messages", { key: "first", text: "go" });
+        expect((await settled(h)).state).toBe("done");
+        const fault = vi.spyOn(h.modelRuntime, "getModel").mockImplementation(() => {
+            throw new Error("Model catalog unavailable");
+        });
+        await h.request("POST", "/sessions/durable/messages", { key: "second", text: "continue" });
+        expect(await settled(h)).toMatchObject({
+            turnId: "second",
+            state: "failed",
+            error: "Model catalog unavailable",
+        });
+        fault.mockRestore();
+        h = await h.restart();
+        expect((await h.request("GET", "/sessions/durable")).body).toMatchObject({
+            turnId: "second",
+            state: "failed",
+            error: "Model catalog unavailable",
+        });
     });
 
     it("accepts every ADR 0229 send-key character through 128 bytes and deduplicates after restart", async () => {
@@ -236,6 +321,7 @@ describe("compiled Bun crash recovery with no model network", () => {
         );
     });
     afterEach(async () => {
+        vi.restoreAllMocks();
         for (const child of processes) {
             if (child.exitCode === null && child.signalCode === null) {
                 const exit = once(child, "exit");

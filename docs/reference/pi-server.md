@@ -209,17 +209,19 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | --- | --- |
 | No completed turn | `idle` |
 | A turn was accepted and has not settled | `working` |
-| The last assistant message stopped normally | `done` |
-| The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
+| The current submission was answered with a normal stop | `done` |
+| The current submission failed, including compaction, a task failure, a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `working`, while Durable resumes the turn |
 | Durable parked a task after its restart limit | `failed`, with a clear crash-loop error |
 | Durable is waiting to retry a transient provider error | `working`, with retry attempt, category, and due time in `error` |
 
-Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Classification reads only the last assistant message with stop reason `error`, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
+Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Terminal state comes from the current Durable submission, including its persisted failure detail when compaction fails without an assistant answer. An earlier turn’s answer cannot make the current turn succeed. Classification reads the current turn’s provider failure, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
 
 For `openai-responses` (the API used by `orbit-task-vm`) and `openai-codex-responses`, Orbit observes HTTP responses and SSE error records before the SDK replaces them with human-readable messages. This includes streamed `error` and `response.failed` records received after HTTP 200. Orbit stores only the resulting category (or an explicit non-transient result) on the failed assistant message, so unloading or restarting the server preserves it.
 
 Codex sessions use SSE so HTTP and streamed error codes follow the same classification path; the SDK's WebSocket transport does not expose that evidence. The `openai-responses` adapter already uses SSE; Orbit keeps its transport settings.
+
+Durable 1.4.0 has no retry-decision hook. A Bun patch to pi-ai 1.4.0 makes its shared retry check honor `orbitProviderError` before its text fallback: a transient category permits retry, and explicit `null` forbids it. Orbit supplies that decision through the same classifier used for thread state, for generation and compaction alike. Durable remains the only retry owner and keeps the 1, 2, 4, and 8 minute waits.
 
 The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. Durable owns [automatic retries](/reference/tasks#retry-a-transient-provider-error). Exhausted retries end `failed` with the provider category; the Gateway asks for assistance.
 
@@ -241,7 +243,9 @@ The version in startup logs and capabilities comes from the Pi dependency pinned
 
 The initial artifact `pi-server-e5933d4c8696-linux-x64` embeds Pi 0.87.1 from source commit `e5933d4c8696` (2026-10-11). The recipe recorded that artifact on 2026-10-14. The source dependency bump to Pi 1.2.0 on 2026-10-22 did not rebuild or replace the pin. No binary build timestamp is recorded in the recipe; its source commit and SHA-256 identify it. A startup log of 0.87.1 from that pin is expected.
 
-An operator must build this revision, retain the resulting executable, and set both artifact variables to its path and digest before new groups use Durable.
+An operator must build this revision, retain the resulting executable, and set both artifact variables to its path and digest before new groups use Durable. Keep the old artifact and its path and SHA-256 pin for rollback.
+
+To roll back future groups, restore both old artifact variables. Drain groups running Durable before rolling back Gateway code, so the old Gateway retry budget cannot stack on Durable’s retries. Do not replace the binaries of existing JSONL groups in place. There is no in-place downgrade from SQLite to JSONL; let existing groups finish or retire them and start new groups with the selected artifact. No base-image rebuild is required.
 
 ## Test worker file access
 
@@ -253,7 +257,7 @@ The worker ACL test copies the Bun runtime and the tool-output module into its t
 
 ### Fast test fixtures
 
-Tests that provoke a provider failure disable Pi's auto-retry in their in-memory settings as well as the provider's HTTP retries. Production disables provider/SDK retries inside a request; Durable owns the four-retry budget. Tests assert one provider request, send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff.
+Most tests that provoke a provider failure disable Durable retries in their in-memory settings as well as the provider's HTTP retries. Retry regressions enable Durable with short delays and assert request counts for structured terminal failures and transient recovery. Production disables provider/SDK retries inside a request; Durable owns the four-retry budget. Tests assert one provider request, send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff.
 
 Workspace TMPDIR tests call the workspace bash tool in-process with a private inherited TMPDIR; the worker ACL test still crosses the real user boundary.
 

@@ -37,5 +37,8 @@
             "version": "1.4.2",
             "onFail": "download"
         }
+    },
+    "patchedDependencies": {
+        "@earendil-works/pi-ai@1.4.0": "patches/@earendil-works%2Fpi-ai@1.4.0.patch"
     }
 }

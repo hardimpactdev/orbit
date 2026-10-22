@@ -25,6 +25,7 @@ import {
     type DocumentState,
     type HarnessSettings,
     type LiveState,
+    type SubmissionRecord,
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -230,6 +231,7 @@ interface LiveSession {
     }>;
     entries: TranscriptEntry[];
     turnId: string | null;
+    submission: SubmissionRecord | undefined;
     sending: Promise<unknown>;
     admitting: number;
     sequence: number;
@@ -688,6 +690,14 @@ export class SessionRegistry {
             const entries = raw.flatMap((entry) =>
                 transcriptEntry(entry, outcome.value?.toolResults),
             );
+            const turnId = raw.reduce<string | null>((key, entry) => inputKey(entry) ?? key, null);
+            const submission =
+                turnId === null
+                    ? undefined
+                    : await harness.commit(
+                          (tx) => tx.submissionByRequest(conversation.id, turnId),
+                          context,
+                      );
             const live: LiveSession = {
                 id,
                 run: randomBytes(8).toString("hex"),
@@ -697,7 +707,8 @@ export class SessionRegistry {
                 view,
                 outcome,
                 entries,
-                turnId: raw.reduce<string | null>((key, entry) => inputKey(entry) ?? key, null),
+                turnId,
+                submission,
                 sending: Promise.resolve(),
                 admitting: 0,
                 sequence: 0,
@@ -715,17 +726,33 @@ export class SessionRegistry {
             };
             loaded = live;
             live.lastState = stateKey(this.derive(live), usage(entries), live.turnId);
-            view.subscribe((value) => {
-                live.lastUsedAt = Date.now();
-                for (const rawEntry of value.entries) {
-                    live.turnId = inputKey(rawEntry) ?? live.turnId;
-                    for (const entry of transcriptEntry(rawEntry, outcome.value?.toolResults)) {
-                        if (!live.entrySequences.has(entry.id)) live.entries.push(entry);
+            // Submission settlements are authoritative even when no assistant entry is appended.
+            harness.subscribeCommits((publication) => {
+                for (const change of publication.changes) {
+                    if (
+                        change.type === "submission" &&
+                        change.value.type === "input" &&
+                        change.value.conversationId === conversation.id &&
+                        (live.submission === undefined || change.value.id >= live.submission.id)
+                    ) {
+                        live.submission = change.value;
+                        live.turnId = change.value.requestId ?? null;
                     }
                 }
-                if (value.docs["pi.live"]?.run !== undefined) this.publishState(live);
-                this.publishEntries(live);
-                this.publishState(live);
+                // Chord delivers the adopted view in a microtask, before this projection.
+                queueMicrotask(() => {
+                    const value = view.value;
+                    live.lastUsedAt = Date.now();
+                    for (const rawEntry of value.entries) {
+                        live.turnId = inputKey(rawEntry) ?? live.turnId;
+                        for (const entry of transcriptEntry(rawEntry, outcome.value?.toolResults)) {
+                            if (!live.entrySequences.has(entry.id)) live.entries.push(entry);
+                        }
+                    }
+                    if (value.docs["pi.live"]?.run !== undefined) this.publishState(live);
+                    this.publishEntries(live);
+                    this.publishState(live);
+                });
             });
             this.live.set(id, live);
             harness.resume();
@@ -890,14 +917,40 @@ export class SessionRegistry {
         ) {
             return { state: "failed", error: "The turn was interrupted." };
         }
-        const last = [...live.entries]
-            .reverse()
+        const submission = live.submission;
+        if (
+            live.view.value.docs["pi.live"]?.run !== undefined ||
+            submission?.status === "placed" ||
+            submission?.status === "queued"
+        ) {
+            return { state: "working", error: null };
+        }
+        if (submission === undefined) return { state: "idle", error: null };
+        if (submission.status === "done") {
+            const answer = live.entries.find((entry) => entry.id === String(submission.answer));
+            return deriveState({
+                working: false,
+                interruptedByRestart: false,
+                lastAssistant: answer?.message as AssistantMessage | undefined,
+            });
+        }
+        // Unanswered submissions include compaction/model/task failures with no assistant answer.
+        // Only current-turn assistant evidence can supply the sanitized provider category.
+        const last = live.entries
+            .filter((entry) => Number(entry.id) > Number(submission.entry))
             .map((entry) => entry.message as AssistantMessage)
-            .find((message) => message.role === "assistant");
+            .findLast((message) => message.role === "assistant");
         return deriveState({
-            working: live.view.value.docs["pi.live"]?.run !== undefined,
+            working: false,
             interruptedByRestart: false,
-            lastAssistant: last,
+            lastAssistant: {
+                ...(last?.errorMessage === submission.detail ? last : {}),
+                stopReason: submission.reason === "aborted" ? "aborted" : "error",
+                errorMessage:
+                    typeof submission.detail === "string"
+                        ? submission.detail
+                        : `The turn failed: ${submission.reason}.`,
+            },
         });
     }
 
