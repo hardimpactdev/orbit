@@ -153,6 +153,31 @@ describe('Project removal with task history', function (): void {
         TaskVmState::Destroying, TaskVmState::Failed,
     ]);
 
+    it('returns 409 and preserves every row when a finished group has an unreleased workspace lease', function (string $status, string $match): void {
+        $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
+        $history = projectDestroyTaskHistory($project, TaskGroupStatus::Completed);
+        $lease = $history['task_workspace_leases'][0];
+        $changes = [
+            'status' => $status,
+            'active_instance_id' => $lease['instance_id'],
+            'group_id' => $match === 'group_id' ? $lease['group_id'] : 0,
+            'task_id' => $match === 'task_id' ? $lease['task_id'] : null,
+        ];
+        DB::table('task_workspace_leases')->where('id', $lease['id'])->update($changes);
+        $history['task_workspace_leases'][0] = [...$lease, ...$changes];
+
+        $this->deleteJson("/api/v1/projects/{$project->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.task_workspace_lease_active')
+            ->assertJsonPath('error.message', "Project [acme] still has workspace lease [{$lease['id']}] of kind [implementer] in status [{$status}].");
+
+        $this->assertModelExists($project);
+        foreach ($history as $table => $rows) {
+            expect(DB::table($table)->get()->map(static fn (object $row): array => (array) $row)->all())
+                ->toBe($rows);
+        }
+    })->with(['held', 'queued', 'unknown'])->with(['group_id', 'task_id']);
+
     it('rolls back task history cleanup when deleting the Project fails', function (): void {
         $project = Project::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/site.git']);
         $history = projectDestroyTaskHistory($project, TaskGroupStatus::Completed);
