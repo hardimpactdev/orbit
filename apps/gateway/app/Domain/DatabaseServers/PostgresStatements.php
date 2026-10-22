@@ -69,6 +69,141 @@ final readonly class PostgresStatements
             ."ALTER DEFAULT PRIVILEGES FOR ROLE {$ownerName} IN SCHEMA public GRANT {$sequences} ON SEQUENCES TO {$user};\n\\connect postgres\n";
     }
 
+    /**
+     * @param  list<string>  $databases
+     * @param  list<string>  $usernames
+     */
+    public function removalBlockers(array $databases, array $usernames): string
+    {
+        $names = implode(', ', array_map($this->literal(...), $databases)) ?: 'NULL';
+        $roles = implode(', ', array_map($this->literal(...), $usernames)) ?: 'NULL';
+
+        return <<<SQL
+            SELECT DISTINCT blocker FROM (
+                SELECT datname::text AS blocker FROM pg_stat_activity WHERE datname IN ({$names})
+                UNION ALL
+                SELECT database::text FROM pg_replication_slots WHERE database IN ({$names})
+                UNION ALL
+                SELECT database::text FROM pg_prepared_xacts WHERE database IN ({$names})
+                UNION ALL
+                SELECT d.datname::text FROM pg_subscription s JOIN pg_database d ON d.oid = s.subdbid WHERE d.datname IN ({$names})
+                UNION ALL
+                SELECT COALESCE(d.datname::text, owned.datname::text, r.rolname::text)
+                FROM pg_shdepend dep
+                JOIN pg_roles r ON dep.refclassid = 'pg_authid'::regclass AND dep.refobjid = r.oid
+                LEFT JOIN pg_database d ON d.oid = dep.dbid
+                LEFT JOIN pg_database owned ON dep.dbid = 0 AND dep.classid = 'pg_database'::regclass AND dep.objid = owned.oid
+                WHERE r.rolname IN ({$roles})
+                  AND (dep.dbid <> 0 AND d.datname NOT IN ({$names})
+                       OR dep.dbid = 0 AND (owned.oid IS NULL OR owned.datname NOT IN ({$names})))
+            ) blockers ORDER BY blocker;
+
+            SQL;
+    }
+
+    /** Journal and close admission together, preserving the first snapshot across retries.
+     * @param  list<string>  $databases
+     */
+    public function fenceDatabases(array $databases): string
+    {
+        foreach ($databases as $database) {
+            $this->identifier($database);
+        }
+        $names = implode(', ', array_map($this->literal(...), $databases)) ?: 'NULL';
+
+        return <<<SQL
+            BEGIN;
+            DO \$lock\$ BEGIN PERFORM pg_advisory_xact_lock(hashtextextended('orbit.database-removal', 0)); END \$lock\$;
+            CREATE SCHEMA IF NOT EXISTS orbit_admin;
+            REVOKE ALL ON SCHEMA orbit_admin FROM PUBLIC;
+            CREATE TABLE IF NOT EXISTS orbit_admin.database_removal_fences (
+                database_name text PRIMARY KEY,
+                database_oid oid NOT NULL,
+                allow_connections boolean NOT NULL
+            );
+            REVOKE ALL ON orbit_admin.database_removal_fences FROM PUBLIC;
+            LOCK TABLE orbit_admin.database_removal_fences IN EXCLUSIVE MODE;
+            INSERT INTO orbit_admin.database_removal_fences
+                SELECT datname, oid, datallowconn FROM pg_database WHERE datname IN ({$names})
+                ON CONFLICT (database_name) DO NOTHING;
+            DO \$orbit\$
+            DECLARE item record;
+            BEGIN
+                FOR item IN
+                    SELECT f.*, d.oid AS current_oid FROM orbit_admin.database_removal_fences f
+                    JOIN pg_database d ON d.datname = f.database_name WHERE f.database_name IN ({$names})
+                    ORDER BY f.database_name
+                LOOP
+                    IF item.database_oid <> item.current_oid THEN
+                        RAISE EXCEPTION 'Database identity changed during removal';
+                    END IF;
+                    EXECUTE format('ALTER DATABASE %I ALLOW_CONNECTIONS false', item.database_name);
+                END LOOP;
+            END \$orbit\$;
+            COMMIT;
+
+            SQL;
+    }
+
+    /** Restore surviving databases and forget completed drops in one transaction.
+     * @param  list<string>  $databases
+     */
+    public function restoreDatabaseAdmission(array $databases): string
+    {
+        foreach ($databases as $database) {
+            $this->identifier($database);
+        }
+        $names = implode(', ', array_map($this->literal(...), $databases)) ?: 'NULL';
+
+        return <<<SQL
+            DO \$orbit\$
+            DECLARE item record;
+            BEGIN
+                PERFORM pg_advisory_xact_lock(hashtextextended('orbit.database-removal', 0));
+                IF to_regclass('orbit_admin.database_removal_fences') IS NULL THEN
+                    RETURN;
+                END IF;
+                LOCK TABLE orbit_admin.database_removal_fences IN EXCLUSIVE MODE;
+                FOR item IN
+                    SELECT f.*, d.oid AS current_oid FROM orbit_admin.database_removal_fences f
+                    LEFT JOIN pg_database d ON d.datname = f.database_name WHERE f.database_name IN ({$names})
+                    ORDER BY f.database_name
+                LOOP
+                    IF item.current_oid IS NOT NULL THEN
+                        IF item.database_oid <> item.current_oid THEN
+                            RAISE EXCEPTION 'Database identity changed during removal';
+                        END IF;
+                        EXECUTE format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', item.database_name, CASE WHEN item.allow_connections THEN 'true' ELSE 'false' END);
+                    END IF;
+                END LOOP;
+                DELETE FROM orbit_admin.database_removal_fences WHERE database_name IN ({$names});
+            END \$orbit\$;
+
+            SQL;
+    }
+
+    /** Hold a session lock and admission fence through the final check and every drop.
+     * @param  list<string>  $databases
+     * @param  list<string>  $users
+     */
+    public function dropFencedDatabases(array $databases, array $users): string
+    {
+        $blockers = rtrim(trim($this->removalBlockers($databases, $users)), ';');
+        $drops = '';
+        foreach ($databases as $database) {
+            $drops .= $this->dropDatabase($database);
+        }
+        foreach ($users as $user) {
+            $drops .= $this->dropUser($user);
+        }
+
+        return "DO \$lock\$ BEGIN PERFORM pg_advisory_lock(hashtextextended('orbit.database-removal', 0)); END \$lock\$;\n"
+            .$this->fenceDatabases($databases)
+            ."WITH blockers AS ({$blockers}) SELECT EXISTS (SELECT FROM blockers) AS blocked\n\\gset orbit_\n"
+            ."\\if :orbit_blocked\n{$blockers};\n\\else\n{$drops}\\endif\n"
+            .$this->restoreDatabaseAdmission($databases);
+    }
+
     public function dropDatabase(string $database): string
     {
         return 'DROP DATABASE IF EXISTS '.$this->identifier($database).";\n";

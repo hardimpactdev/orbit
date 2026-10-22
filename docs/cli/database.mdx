@@ -258,7 +258,7 @@ orbit database:destroy app --force
 ```
 
 <Warning>
-The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user.
+The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user. The [whole-set preflight](/reference/database-servers#remove-a-database) returns `database.in_use` (409) for connected clients or blocking dependencies before dropping anything. Stop clients or remove the dependencies, then retry.
 
 The Gateway returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 </Warning>

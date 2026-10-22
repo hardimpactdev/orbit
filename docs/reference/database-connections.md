@@ -97,6 +97,8 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
+| `database.server_in_use` | 409 | Another managed database removal holds a server in the planned set. Retry when it finishes. |
+| `database.in_use` | 409 | A session or dependency blocks managed database removal. Nothing is dropped. |
 | `database.server_missing` | 404 | No server has that slug. |
 | `database.server_inactive` | 409 | The server is not active yet. |
 | `database.slug_conflict` | 409 | Another connection has the slug. |
@@ -111,7 +113,7 @@ An Instance owns a database that Orbit created for it: by `database:create --ser
 
 A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-seed) also registers an owned connection named `<project>-<instance>` on the target Node. Its path is `<production_home>/database.sqlite`. Orbit attaches it under `DB` and synchronizes the production `.env` before the clone completes. An interrupted clone reuses the connection and attachment when it resumes; the candidate's `DB_*` values do not copy.
 
-[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Orbit never drops a database that it only registered.
+[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
 ## Test databases
 
