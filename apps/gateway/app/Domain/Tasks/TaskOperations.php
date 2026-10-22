@@ -97,7 +97,7 @@ final readonly class TaskOperations
             ->when($subtask !== null, fn ($query) => $query->where('input->subtask', $subtask))->first();
         if ($operation instanceof Operation) {
             $this->extension->execute();
-            $this->cancel->execute($operation, targetEnding: true);
+            $this->cancel->execute($operation, targetEnding: $subtask === null);
         }
     }
 }

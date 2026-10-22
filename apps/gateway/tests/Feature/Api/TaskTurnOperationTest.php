@@ -324,7 +324,7 @@ describe('tasks.turn', function (): void {
         expect($task->refresh()->status)->toBe(TaskStatus::Running);
     });
 
-    it('records an unconfirmed cancel before answering 502 and retries the stop on its next read', function (): void {
+    it('records an unconfirmed cancel before answering 502 and retries the stop on its next read', function (bool $subtask): void {
         [$group, $task] = turn_operation_group();
         $driver = turn_operation_fakes();
         $driver->supportsInterruption = true;
@@ -332,16 +332,18 @@ describe('tasks.turn', function (): void {
         app(OperationRunner::class)->run($operation->id);
         $driver->observation = new AgentObservation(state: AgentThreadState::Working, turnId: 'operation-'.$operation->id);
 
-        $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertStatus(502)->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
+        $path = $subtask ? '/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id.'/cancel' : '/api/v1/operations/'.$operation->id.'/cancel';
+        $this->call('POST', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertStatus(502)->assertJsonPath('error.code', 'tasks.subtask_interrupt_failed');
         expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
         expect($operation->cancel_requested_at)->not->toBeNull();
+        expect($task->refresh()->status)->toBe(TaskStatus::Running);
         $driver->duringInterrupt = function () use ($driver, $operation): void {
             $driver->observation = new AgentObservation(state: AgentThreadState::Failed, turnId: 'operation-'.$operation->id);
         };
         $this->travel(10)->seconds();
         app(OperationRunner::class)->read($operation->id);
         expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
-    });
+    })->with(['operation cancel' => false, 'subtask cancel' => true]);
 
     it('replays the same keyed turn before validation and refuses other group work', function (): void {
         [$group, $task] = turn_operation_group();
