@@ -562,6 +562,7 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "POST /api/v1/task-groups/{group}/turn",
               "GET /api/v1/task-questions",
               "POST /api/v1/task-questions/{question}/close",
               "GET /api/v1/tasks/status"

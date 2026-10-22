@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -247,6 +248,26 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('websocket_apps', 1);
         $this->assertDatabaseCount('websocket_registry_operations', 1);
     });
+
+    it('starts and replays an external turn through the generated tool', function (string $endpoint): void {
+        enable_operation_queue();
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'Turn', 'slug' => 'turn', 'repository_url' => 'https://github.com/acme/turn.git']);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Turn', 'brief' => 'Turn.', 'status' => 'running', 'orchestration' => 'external', 'implementer_model' => 'gpt-5.6-luna']);
+        $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'One', 'brief' => 'One.', 'status' => 'running']);
+        $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->gateway->id, 'name' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/srv/turn', 'status' => 'source_resolved']);
+        $group->taskable()->associate($workspace)->save();
+        $arguments = ['group' => $group->id, 'subtask' => $task->id, 'role' => 'implementer', 'prompt' => 'Do it.', 'thread' => 'new', 'Idempotency-Key' => 'mcp.turn.c1'];
+
+        $first = mcp_tool($this, $endpoint, 'tasks-turn', $arguments);
+        $task->update(['status' => 'completed']);
+        $second = mcp_tool($this, $endpoint, 'tasks-turn', $arguments);
+
+        expect($first['operation']['kind'])->toBe('tasks.turn');
+        expect($first['poll']['tool'])->toBe('operation-show');
+        expect($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseCount('operations', 1);
+    })->with(['/mcp', '/mcp/search']);
 
     it('starts and replays task provision through the generated tool', function (string $endpoint): void {
         enable_operation_queue();

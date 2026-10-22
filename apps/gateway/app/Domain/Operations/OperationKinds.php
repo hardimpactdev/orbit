@@ -8,6 +8,7 @@ use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
 use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskProvisionOperation;
+use App\Domain\Tasks\TaskTurnOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
 
@@ -28,6 +29,8 @@ final readonly class OperationKinds
 
     public const string TasksProvision = 'tasks.provision';
 
+    public const string TasksTurn = 'tasks.turn';
+
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';
 
@@ -40,6 +43,7 @@ final readonly class OperationKinds
         self::InstanceRollback => InstanceRollbackOperation::class,
         self::TasksCheck => TaskCheckOperation::class,
         self::TasksProvision => TaskProvisionOperation::class,
+        self::TasksTurn => TaskTurnOperation::class,
     ];
 
     /** @param array<string, class-string<OperationKind>> $kinds */

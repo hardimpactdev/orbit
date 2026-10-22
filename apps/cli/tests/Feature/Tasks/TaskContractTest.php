@@ -57,6 +57,10 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks/tasks-check/not-orchestrated', 'tasks:check', ['group' => '1', '--subtask' => '2', '--phase' => 'baseline'], 1);
     });
 
+    it('renders a refused external turn', function (): void {
+        run_task_contract('tasks/tasks-turn/not-orchestrated', 'tasks:turn', ['group' => '1', '--subtask' => '2', '--role' => 'implementer', '--prompt' => 'Implement exactly this prompt.', '--thread' => 'new'], 1);
+    });
+
     it('renders a refused provision', function (): void {
         run_task_contract('tasks/tasks-provision/not-orchestrated', 'tasks:provision', ['group' => '1'], 1);
     });

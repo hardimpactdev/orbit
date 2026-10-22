@@ -114,6 +114,28 @@ The result holds `outcome` (`passed`, `failed`, or `changed`), each deliverable'
 
 A direct `operation:cancel` stops a waiting check as `tasks:check:cancel` does. Orbit records the cancel request first. An unconfirmed stop returns `502 tasks.check_unreachable`, keeps the operation `waiting`, and retries the stop on its next delayed read. Group cancel and complete end the open operation first. When the VM does not answer, they end it `cancelled` without that 502 and follow the existing [unreachable Node rule](#cancel-a-stuck-task).
 
+#### Run an external turn
+
+`tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+
+The shared task-operation rules apply. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A parked VM queues its resume, and the operation waits before preparing or sending the turn.
+
+| Input | Rule |
+| --- | --- |
+| `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |
+| `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
+| `check` | A reviewer needs a passed handoff check for this subtask with a recorded commit; otherwise 422 `tasks.commit_not_checked`. HEAD must equal that commit, or the start returns 409 `tasks.head_moved` |
+
+The operation holds the group and sends one turn through Pi. The send key is its `Idempotency-Key`, or `operation-{id}`. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
+
+When the turn ends, a delayed read reconciles the workspace lease, thread state, and metrics. Orbit stores and clears the receipt without acting on its outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null`. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
+
+After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
+
+A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash-loop park or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
+
+Direct operation cancellation interrupts the held subtask turn and confirms that its lease ended. Subtask cancellation first cancels its turn operation, including receipt collection and the reviewer reset, before recording the subtask as cancelled. A cancel received during send waits for the same confirmed stop. An unconfirmed interrupt returns HTTP 502 `tasks.subtask_interrupt_failed` after recording the cancel request. The operation stays `waiting`, retains its target, and retries the stop on the next delayed read.
+
 ### Task lifecycle
 
 A task moves through these statuses from preparation to its end.
@@ -149,6 +171,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Any peer |
 | `tasks:provision` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
 | `tasks:check` | `POST /api/v1/task-groups/{group}/check` | Gateway |
+| `tasks:turn` | `POST /api/v1/task-groups/{group}/turn` | Gateway |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
 | `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
@@ -749,7 +772,7 @@ An operator's [resolution](#assistance-and-resolution) is not a scheduler send. 
 
 ### Fetch before a turn
 
-Before every agent turn, the Gateway fetches `origin` in the task workspace. The fetch runs before the message is sent. That message is the opening prompt, a reminder, a review, a resumed turn, or an operator message that starts a turn.
+For a tick group, before every agent turn, the Gateway fetches `origin` in the task workspace. The fetch runs before the message is sent. That message is the opening prompt, a reminder, a review, a resumed turn, or an operator message that starts a turn.
 
 The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. The Gateway runs this fetch in its own mirror of the Project and sends the refs to the task VM, so the token never reaches the VM. The token never appears in the origin URL, the arguments, or `.git/config`. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
@@ -1744,6 +1767,10 @@ These reasons explain the design. Check them before you propose a change.
 ### External checks own their lease and commit
 
 A turn and its check are separate operations. The check waits for the turn to release the workspace, so a receipt scope cannot lend it the implementer's lease. Reusing detached check supervision keeps tick and external checks under one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
+
+### An external turn records evidence without choosing the next step
+
+The orchestrator owns the prompt, gates, budgets, and assistance. The turn operation only sends, waits, and records evidence. Applying a blocked receipt inside Orbit would create a second lifecycle owner. Durable owns restart resume and provider retries, so the Gateway never starts a replacement turn for them. Reviewers reset to the passed handoff commit to preserve what was checked. Consults keep the tree because it contains the implementer's work.
 
 ### Provision keeps effects separate from lifecycle decisions
 

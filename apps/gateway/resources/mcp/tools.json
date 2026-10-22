@@ -9951,6 +9951,81 @@
       }
     },
     {
+      "name": "tasks-turn",
+      "extension": "tasks",
+      "title": "Run one agent turn",
+      "description": "Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model and reviewer check. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/turn",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "subtask": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "implementer",
+              "reviewer",
+              "consult"
+            ],
+            "description": "implementer, reviewer, or consult"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 100000,
+            "description": "The orchestrator prompt"
+          },
+          "thread": {
+            "type": "string",
+            "pattern": "^(?:new|[1-9][0-9]*)$(?![\\s\\S])",
+            "description": "new or an existing thread ID"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Model for a new thread"
+          },
+          "check": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conditionally required."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "subtask",
+          "role",
+          "prompt",
+          "thread"
+        ]
+      }
+    },
+    {
       "name": "tasks-update",
       "extension": "tasks",
       "title": "Update a Task group",

@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
@@ -23,6 +24,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
+use App\Infrastructure\Tasks\RemoteTaskReviewReset;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
@@ -288,7 +290,12 @@ function review_diff_instance(string $checkout, array $group = []): Instance
 
 function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 {
-    return new RemoteTaskReviewDiff(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+    return new RemoteTaskReviewDiff(review_workspace_executor($ssh));
+}
+
+function review_workspace_executor(SshExecutor $ssh): TaskWorkspaceExecutor
+{
+    return new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $ssh,
         new class implements SshKeyProvider
         {
@@ -311,7 +318,7 @@ function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )));
+    ));
 }
 
 function review_diff_result(CommandResult $result): SshExecutor
@@ -339,4 +346,24 @@ it('reviews only changes since an uncommitted reviewed tree', function (): void 
 
     expect(array_column($diff['files'], 'path'))->toBe(['tracked.php'])
         ->and($diff['diff'])->toContain('return 3;')->not->toContain('earlier.php');
+});
+
+it('restores the checked commit and removes reviewer tracked and untracked changes', function (): void {
+    $checkout = review_diff_checkout();
+    $checked = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    file_put_contents($checkout.'/tracked.php', "<?php return 2;\n");
+    (new Process(['git', '-C', $checkout, 'commit', '-am', 'reviewer commit', '--quiet']))->mustRun();
+    file_put_contents($checkout.'/tracked.php', "<?php return 3;\n");
+    mkdir($checkout.'/untracked');
+    file_put_contents($checkout.'/untracked/new.txt', "reviewer scratch\n");
+    $instance = review_diff_instance($checkout);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
+    app(TaskWorkspaceLease::class)->run($group, 'turn_result', 'test:reset', function () use ($instance, $checked): void {
+        (new RemoteTaskReviewReset(review_workspace_executor(new LocalShellSshExecutor)))->reset($instance, $checked);
+    });
+
+    expect(trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput()))->toBe($checked);
+    expect(file_get_contents($checkout.'/tracked.php'))->toBe("<?php\nreturn 1;\n");
+    expect(file_exists($checkout.'/untracked'))->toBeFalse();
+    expect((new Process(['git', '-C', $checkout, 'status', '--porcelain']))->mustRun()->getOutput())->toBe('');
 });

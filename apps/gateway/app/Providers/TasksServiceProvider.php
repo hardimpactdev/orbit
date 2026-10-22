@@ -32,6 +32,7 @@ use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
+use App\Domain\Tasks\TaskReviewReset;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
@@ -56,6 +57,7 @@ use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
+use App\Infrastructure\Tasks\RemoteTaskReviewReset;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
@@ -82,6 +84,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
         TaskReviewDiff::class => RemoteTaskReviewDiff::class,
+        TaskReviewReset::class => RemoteTaskReviewReset::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,

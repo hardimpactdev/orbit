@@ -27,6 +27,7 @@ use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
@@ -126,6 +127,7 @@ use App\Domain\Tasks\TaskTurnFetcher;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
+use App\Domain\Tasks\TaskTurnOperation;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
@@ -225,6 +227,11 @@ final class TaskOrchestrationEntryPoints
     public const array EffectInfrastructure = [
         StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
         TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
+        StartTaskTurnAction::class => ['execute' => 'tasks.turn explicitly admits an external group through shared TaskOperations.'],
+        TaskTurnOperation::class => [
+            'send' => 'tasks.turn is the external group holder and sole turn sender.',
+            'run' => 'Runs the external turn operation under its group hold.',
+        ],
         TaskClaimAdmission::class => ['provisionWorkspace' => 'Shared claim provisioning; tasks.provision admits external groups and never starts a subtask or check.'],
         StartTaskProvisionAction::class => ['execute' => 'tasks.provision is the explicit external operation; shared admission requires an open external group.'],
         TaskProvisionOperation::class => [
@@ -263,6 +270,15 @@ final class TaskOrchestrationEntryPoints
             'stop' => 'Stops the operation check and removes its queued lease.',
             'abandon' => 'Removes queued ownership without retrying an effect.',
         ],
+        StartTaskTurnAction::class => ['execute' => 'tasks.turn admission is covered by TaskTurnOperationTest.'],
+        TaskTurnOperation::class => [
+            'validate' => 'External operation input validation, with no turn dispatch.',
+            'run' => 'Plans one external turn and records its evidence without lifecycle decisions.',
+            'waitingStep' => 'External turn waiting hooks.',
+            'read' => 'Reconciles VM and workspace ownership before recording turn completion.',
+            'stop' => 'Interrupts the external turn and confirms its lease ended.',
+            'abandon' => 'Releases unstarted preparation; raises no assistance.',
+        ],
         TaskStatusMoves::class => [
             'group' => 'Validates external board moves without performing task effects.',
             'subtask' => 'Validates external board moves without performing task effects.',
@@ -276,6 +292,7 @@ final class TaskOrchestrationEntryPoints
         TaskOperations::class => [
             'start' => 'Shared admission requires an open external group and one operation hold.',
             'requireOpenExternal' => 'Shared operation-only external group guard.',
+            'requireCurrentSubtask' => 'Shared operation workspace, subtask ownership and order validation.',
             'cancelOpen' => 'Group cancel and complete stop the open operation before cleanup.',
         ],
         TaskProvisionOperation::class => [

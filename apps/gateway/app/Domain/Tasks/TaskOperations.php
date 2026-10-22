@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use Closure;
@@ -74,12 +75,29 @@ final readonly class TaskOperations
         }
     }
 
-    public function cancelOpen(Task $group): void
+    public function requireCurrentSubtask(Task $group, int $subtask): Task
     {
-        $operation = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))->first();
+        if (! $group->taskable instanceof Instance) {
+            throw new ResourceOperationException('tasks.no_workspace', 'This task group has no workspace.', 409);
+        }
+        $task = Task::query()->where('parent_id', $group->id)->findOrFail($subtask);
+        $current = Task::query()->where('parent_id', $group->id)
+            ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
+            ->orderBy('position')->orderBy('id')->value('id');
+        if ($current !== $task->id) {
+            throw new ResourceOperationException('tasks.subtask_not_current', 'Only the current open subtask can run.', 409);
+        }
+
+        return $task;
+    }
+
+    public function cancelOpen(Task $group, ?int $subtask = null): void
+    {
+        $operation = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
+            ->when($subtask !== null, fn ($query) => $query->where('input->subtask', $subtask))->first();
         if ($operation instanceof Operation) {
             $this->extension->execute();
-            $this->cancel->execute($operation, targetEnding: true);
+            $this->cancel->execute($operation, targetEnding: $subtask === null);
         }
     }
 }
