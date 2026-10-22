@@ -9,7 +9,7 @@ it('checks Docs quality and the full suite once in the project matrix on the imm
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['project'];
     $steps = array_column($job['steps'], null, 'name');
-    $docs = array_filter($job['strategy']['matrix']['project'], fn (array $project): bool => $project['directory'] === 'apps/docs');
+    $docs = array_filter(docsWorkflowMatrix()['project'], fn (array $project): bool => $project['directory'] === 'apps/docs');
 
     expect($docs)->toHaveCount(1);
     expect(array_filter(array_keys($workflow['jobs']), fn (string $name): bool => str_contains($name, 'docs')))->toBeEmpty();
@@ -29,12 +29,13 @@ it('requires the project matrix including Docs to succeed on every event', funct
 
     expect($required['if'])->toBe('always()');
     expect($required['needs'])->toContain('project');
-    expect($step['env']['PROJECT_RESULT'])->toBe('${{ needs.project.result }}');
+    expect($step['env']['NEEDS'])->toBe('${{ toJSON(needs) }}');
 
-    $environment = array_fill_keys(array_keys($step['env']), 'success');
-    $environment['CHANGE_RUN'] = $changeRun ? 'true' : 'false';
-    $environment['PROJECT_RESULT'] = $result;
-    $process = new Process(['bash', '-e', '-c', $step['run']], env: $environment);
+    $selected = array_fill_keys(array_diff($required['needs'], ['changes']), true);
+    $needs = array_fill_keys(array_keys($selected), ['result' => 'success']);
+    $needs['changes'] = ['result' => 'success', 'outputs' => ['jobs' => json_encode($selected, JSON_THROW_ON_ERROR)]];
+    $needs['project']['result'] = $result;
+    $process = new Process(['bash', '-e', '-c', $step['run']], env: ['NEEDS' => json_encode($needs, JSON_THROW_ON_ERROR)]);
     $process->run();
 
     expect($process->getExitCode())->toBe($exitCode);
@@ -53,7 +54,7 @@ it('provisions Gateway runtime and web dependencies before the Docs merge proof 
     $steps = array_column($job['steps'], null, 'name');
     $names = array_keys($steps);
 
-    expect(array_column($job['strategy']['matrix']['project'], 'directory'))->toContain('apps/docs');
+    expect(array_column(docsWorkflowMatrix()['project'], 'directory'))->toContain('apps/docs');
     expect($job['defaults']['run']['working-directory'])->toBe('${{ matrix.project.directory }}');
     expect($steps['Install dependencies'])->toMatchArray([
         'if' => "matrix.project.directory != 'apps/e2e'",
@@ -76,4 +77,29 @@ it('provisions Gateway runtime and web dependencies before the Docs merge proof 
     expect($names)->toContain('Run full test suite');
     expect(array_search('Install generated merge proof dependencies', $names, true))
         ->toBeLessThan(array_search('Run full test suite', $names, true));
+});
+
+/** @return array{project: list<array{name: string, directory: string}>} */
+function docsWorkflowMatrix(): array
+{
+    $process = new Process(['python3', 'bin/ci-changes', '--change-run', 'false'], base_path('../..'));
+    $process->mustRun();
+
+    return json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR)['matrix'];
+}
+
+it('checks environment documentation in Docs so ordinary docs changes need only the Docs job', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
+    $step = $steps['Check that every environment variable is documented'];
+
+    expect($step)->toMatchArray([
+        'if' => "matrix.project.directory == 'apps/docs'",
+        'working-directory' => '.',
+        'run' => 'php bin/env-docs',
+    ]);
+    $process = new Process(['bash', '-ec', $step['run']], base_path('../..'));
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
 });

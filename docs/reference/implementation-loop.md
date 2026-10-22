@@ -81,20 +81,21 @@ CI selects Node.js from the root `.node-version`, currently `24.22.1`, which inc
 
 CI passes its job-scoped, read-only `GITHUB_TOKEN` to Composer through workflow-level `COMPOSER_AUTH`. GitHub API requests use `github-oauth`; `codeload.github.com` uses bearer authentication too, because Composer does not send the API OAuth header to that host. The token stays in the workflow environment and is not written to an auth file.
 
-GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. It has these jobs.
+GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. Change runs select touched projects and their consumers. Main, nightly, and manual runs select everything. It has these jobs.
 
 | Job | Checks |
 | --- | --- |
-| One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. On every event, Gateway runs quality checks and the shard-union check here; its tests run in the shard jobs |
-| Gateway shards (five) | Every event: stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
-| Gateway privileged | Every CI event: the whole privileged group on one disposable GitHub-hosted runner |
-| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
+| Changed projects | Tests the path map, compares the change head with its merge base, and selects projects and consumers before suite jobs start |
+| One job per selected Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the full tests. When selected, Gateway runs quality checks and the shard-union check here; its tests run in the shard jobs. Docs also runs `bin/env-docs` |
+| Gateway shards (five) | When Gateway is touched: stock Pest shards of the full non-privileged Gateway suite, independent of the quality job |
+| Gateway privileged | When Gateway is touched: the whole privileged group on one disposable GitHub-hosted runner |
+| API reference | `bin/project-vocabulary`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, separate `bun run test:unit` and `bun run test:browser` steps, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
-| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
+| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. Untouched jobs are skipped before they take a runner |
 | Remote programs | Installs shellcheck, ruff 0.17.0, and the pinned pytest requirements, then runs `bin/remote-programs-check`: the lint and direct tests of the Gateway's [remote programs](/reference/remote-programs#lint-and-direct-tests) |
-| Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. A pull request that changes neither `apps/desktop` nor `ci.yml` skips these steps |
-| Required checks | Passes only when every other job passes, as described below |
+| Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. Untouched jobs are skipped before they take a runner |
+| Required checks | Requires successful detection and successful selected jobs; accepts only explicitly untouched skips, as described below |
 
 Gateway project and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
@@ -142,13 +143,13 @@ Then the pull request's CI runs, and `main` stays green after the merge. After t
 
 [Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges CI-role hosts in the overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
-`Required checks` requires the project matrix, including Docs, on every event. It also requires every Gateway shard to succeed on every event, so a skipped shard fails it.
+`Required checks` applies the [project selection and skip rules](#full-suites-gate-merges) below. When Gateway is selected, every shard and the privileged job must pass.
 
 The [Feature delivery merge gate](#full-suites-gate-merges) defines the required PR test coverage. Stock Pest sharding divides Gateway tests among the configured shards, excluding the privileged group. A union check verifies that no test class is missing. The required privileged job runs every privileged test.
 
 Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
-Every main push, scheduled run and manual dispatch runs the same jobs as a pull request: each Composer project's full suite with `pest --parallel`, and the Gateway suite in the Gateway shards. CI records no graph and saves no files for [task workspaces](#ci-cache-refs).
+Every main push, scheduled run and manual dispatch selects all projects: each Composer project's full suite with `pest --parallel`, and the Gateway suite in the Gateway shards. CI records no graph and saves no files for [task workspaces](#ci-cache-refs).
 
 A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with the configured Gateway shards and no cache saves.
 
@@ -561,7 +562,11 @@ Main always runs full suites, sharded as on a pull request. This keeps merge and
 
 ### Full suites gate merges
 
-Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref. Orbit runs all five Composer suites on each PR, including architecture tests and tests that start PHP subprocesses.
+Nick decided on 2026-10-19 that PR `Required checks` run the full test suite of every touched project on the merge ref, including architecture tests and tests that start PHP subprocesses. On 2026-10-21 he confirmed that untouched projects must start no CI jobs. The `changes` job compares the PR head with its merge base and applies the path and consumer map in [`bin/ci-changes`](https://github.com/hardimpactdev/orbit/blob/main/bin/ci-changes). That file owns project paths, shared contracts, and their consumers.
+
+Root Composer files, workflow and action files, `bin/`, `tools/`, shared configuration, and unknown paths select everything. Ordinary documentation pages select only Docs; API documentation also selects API reference checks, and generated API contracts, CLI guides, and the delivery-line reference select their tested consumers.
+
+Each selected project runs its full suite. Job conditions skip untouched projects before they take a runner, and the Composer matrix contains only selected projects. `Required checks` accepts a skipped job only when `changes` succeeded and explicitly marked that job untouched. A failure, cancellation, missing selection, or unexpected skip fails the gate. Main pushes, schedules, and manual dispatches select every project, so main checks the dependency map within one merge.
 
 Review and merge with `merge_check: Required checks` waits for that check on the reviewed head. Only the pull request's own `pull_request` run for that head counts, also when the head is the last handoff commit, so the merge with the current base is tested before it lands. GitHub’s merge API still checks the expected head. Main pushes, schedules and dispatches run the same full suites.
 
