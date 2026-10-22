@@ -34,6 +34,10 @@ case ${1-} in
     touch /home/orbit/.orbit/gateway.sqlite
     chown orbit:orbit /home/orbit/.orbit/gateway.sqlite
     chmod 0600 /home/orbit/.orbit/gateway.sqlite
+    # The Gateway reads its encryption key from ORBIT_HOME, as on any Gateway (bin/bootstrap).
+    if ! "${orbit_env[@]}" "$checkout/bin/gateway-app-key"; then
+      exit 69
+    fi
     cd "$gateway"
     if ! "${orbit_env[@]}" php artisan migrate --force; then
       exit 70

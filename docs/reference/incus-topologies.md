@@ -126,7 +126,7 @@ Every Node keeps the template's root disk, which has the size of the base image'
 
 A copy can override only the devices of the template, which has its root disk and nothing else, so the NIC and the mount are added after the copy.
 
-`bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
+`bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env`, writes the Gateway encryption key to the guest's `/home/orbit/.orbit/gateway.app-key` with `bin/gateway-app-key` when it is absent, and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
 
 For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads the Node's host key. It passes the Node's roles, WireGuard address, and host key fingerprint to `orbit:node-provision`. Enrollment is serial, because it writes the Gateway's SQLite store.
 
