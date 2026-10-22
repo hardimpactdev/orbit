@@ -448,6 +448,56 @@ it('records a chosen PostgreSQL builtin locale and creates from template0', func
     expect($this->admin->sql())->toContain("TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE '{$locale}'");
 })->with(['C', 'C.UTF-8']);
 
+it('advertises PostgreSQL locale through the generated API and served MCP schema', function (): void {
+    $openapi = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $variants = $openapi['paths']['/api/v1/database-connections']['post']['requestBody']['content']['application/json']['schema']['oneOf'];
+    expect($variants[1]['properties']['locale']['enum'])->toBe(['C', 'C.UTF-8']);
+    expect($variants[0]['properties'])->not->toHaveKey('locale');
+    expect($variants[2]['properties'])->not->toHaveKey('locale');
+
+    $response = $this->postJson('/mcp/search', [
+        'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        'params' => ['name' => 'search_tools', 'arguments' => ['query' => 'database-create', 'limit' => 1]],
+    ])->assertOk()->assertJsonPath('result.isError', false);
+    $found = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
+    expect($found['tools'][0]['name'])->toBe('database-create');
+    $schema = $found['tools'][0]['inputSchema'];
+    expect($schema['properties']['locale']['enum'] ?? null)->toBe(['C', 'C.UTF-8']);
+    expect($schema['oneOf'][1]['properties']['locale'])->toBe($schema['properties']['locale']);
+    expect($schema['oneOf'][0]['properties'])->not->toHaveKey('locale');
+    expect($schema['oneOf'][2]['properties'])->not->toHaveKey('locale');
+});
+
+it('creates PostgreSQL databases with the requested locale through MCP', function (string $locale): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+
+    $response = $this->postJson('/mcp', [
+        'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        'params' => ['name' => 'database-create', 'arguments' => ['slug' => 'mcp-pg', 'server' => $this->server->slug, 'locale' => $locale]],
+    ])->assertOk()->assertJsonPath('result.isError', false);
+    $created = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($created['data']['locale'])->toBe($locale);
+    $this->assertDatabaseHas('database_connections', ['slug' => 'mcp-pg', 'locale' => $locale]);
+    expect($this->admin->sql())->toContain("TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE '{$locale}'");
+})->with(['C', 'C.UTF-8']);
+
+it('returns the API locale validation error through MCP without creating a database', function (): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+
+    $response = $this->postJson('/mcp', [
+        'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        'params' => ['name' => 'database-create', 'arguments' => ['slug' => 'mcp-pg', 'server' => $this->server->slug, 'locale' => 'en_US.utf8']],
+    ])->assertOk()->assertJsonPath('result.isError', true);
+    $error = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($error['status'])->toBe(422);
+    expect($error['error']['code'])->toBe('validation.failed');
+    expect($error['error']['details'])->toHaveKey('locale');
+    $this->assertDatabaseMissing('database_connections', ['slug' => 'mcp-pg']);
+    expect($this->admin->sql())->toBe('');
+});
+
 it('refuses unsupported or injected PostgreSQL locales before SQL execution', function (mixed $locale): void {
     $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
     $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => $locale])

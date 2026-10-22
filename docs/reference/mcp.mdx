@@ -82,6 +82,8 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `instance-update` sets the deployment branch, `auto_deploy`, or both, of a production Instance. Send `instance` and at least one of `branch` or `auto_deploy`, a JSON boolean. `auto_deploy: true` also resumes [automatic deployment](/reference/deployments#automatic-deployments) after a manual deployment or a rollback paused it. `instance-show` returns the state under `auto_deploy`.
 
+`database-create` accepts optional `locale` when creating a database on a PostgreSQL server: `C` or `C.UTF-8`. Send `slug`, `server`, and `locale` together. The API applies the same validation as the CLI; external registration, MySQL, and Valkey refuse `locale`. Without it, PostgreSQL uses the server image default.
+
 ### Operations
 
 `instance-deploy` and `instance-rollback` start an [operation](/reference/operations) and return at once. They never hold the request open and never stream:
