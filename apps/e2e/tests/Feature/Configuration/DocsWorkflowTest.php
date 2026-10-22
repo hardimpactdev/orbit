@@ -17,7 +17,7 @@ it('checks Docs quality and the full suite once in the project matrix on the imm
     expect($steps['Run project quality checks']['run'])->toBe('composer check');
     expect($steps['Run full test suite'])->toMatchArray([
         'if' => "matrix.project.directory != 'apps/gateway'",
-    ])->and($steps['Run full test suite']['run'])->toBe('../../bin/pest-plain vendor/bin/pest --parallel --compact');
+    ])->and($steps['Run full test suite']['run'])->toBe('../../bin/pest-plain vendor/bin/pest --parallel --default-time-limit=5 --compact');
     expect(array_filter($job['steps'], fn (array $step): bool => str_contains($step['run'] ?? '', 'vendor/bin/pest --parallel')))->toHaveCount(1);
     expect(array_filter($job['steps'], fn (array $step): bool => ($step['run'] ?? '') === 'composer check'))->toHaveCount(1);
 });
