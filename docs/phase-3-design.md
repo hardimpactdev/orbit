@@ -1,6 +1,6 @@
 # Phase 3 design: Swamp on the Orbit Gateway
 
-Status: draft for Nick's decision (2026-10-22). Nothing here changes Orbit yet.
+Status: Nick chose option B, built as B1 then B2 (2026-10-22). Nothing here changes Orbit yet.
 
 ## Settled
 
@@ -95,9 +95,35 @@ What it answers: whether Swamp can run Orbit's task loop. Cost: eight Gateway
 operations, plus the Pi-on-Instance decision, through Orbit's normal PR flow.
 It also makes two orchestrators of the same loop until one is retired.
 
+## Layers with Pi Durable
+
+A parallel spike (`hardimpactdev/orbit-pi-durable`, thread "How Swamp Fits
+Into Orbit and Pi") tests `@earendil-works/pi-durable`: one agent
+conversation that survives crashes (atomic commit log, `requestId` dedup,
+stored retry sleeps, crash-loop parking) and `pi-env` (tools run in the VM over
+SSH, model credentials stay on the host). It is the layer below Swamp, not a
+second orchestrator:
+
+| Layer | Owns | Replaces in Orbit |
+| --- | --- | --- |
+| Swamp (`orbit-subtasks`) | Subtask lifecycle: stages, gates, budgets, approvals, journal | `tasks:tick` state machine, caps, assistance flow |
+| Gateway primitives | Every effect, exactly-once per key | Task-specific workspace, check and push paths |
+| Pi Durable (+ `pi-env`) | One agent turn, crash-proof | Send keys, restart re-orient (2 resumes), provider retry 1/2/4/8 min, `pi-server` store |
+
+- Swamp's key `<workItem>.<stage>.c<cycle>` is the Gateway operation key and
+  Pi Durable's `requestId`.
+- With `pi-env`, the model key never enters the workspace, so operation 5
+  (per-run model key) may shrink to "the Gateway's Pi host holds the key".
+- Pi Durable's own task graph is not used for the lifecycle; one orchestrator.
+- Caveat: Pi Durable is experimental (API changes without notice; 17 versions
+  in a month) and needs Pi 1.4 (`apps/pi-server` is on 1.2).
+
+B1 does not depend on Pi Durable. B2's agent-turn operation should be built on
+it if its spike holds.
+
 ## Recommendation
 
-Do **B**, in two steps:
+Do **B** (chosen), in two steps:
 
 1. **B1, no agents** (operations 1, 2, 3, 6 and idempotency keys): rerun
    php-sdk and gateway with mechanical, handoff and publish on the Gateway.
@@ -105,7 +131,8 @@ Do **B**, in two steps:
    This proves Gateway-side exactly-once, the kill and recover tests against
    the Gateway, and serve.
 2. **B2, agents** (operations 4 and 5): implement, consult and review as Pi
-   turns, after the Pi-on-Instance decision.
+   turns, backed by Pi Durable with `requestId` = the Swamp key, after the
+   Pi-on-Instance decision and the Pi Durable spike.
 
 If the answer Nick wants is only "can Swamp coordinate Orbit tasks", **A** is
 enough and needs almost no Orbit change.
@@ -129,8 +156,11 @@ for production is a later decision.
 
 ## Open decisions for Nick
 
-1. A (outer loop) or B (primitives)?
-2. For B: Pi on app-dev Instances, or agent turns only in task VMs?
-3. For B: build B1 first (no agents), then B2?
+1. ~~A or B?~~ B.
+2. ~~B1 first?~~ Yes, then B2.
+3. For B2: Pi on app-dev Instances, or agent turns only in task VMs (with
+   `pi-env`, tools could run in either while keys stay on the host)?
 4. Gateway → Swamp notification: Reverb subscription, or a signed webhook to
    serve?
+5. How the B1 Gateway work is run: Orbit docs/ADR first, then implementation
+   PRs, through Orbit's usual flow.
