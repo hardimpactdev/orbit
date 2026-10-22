@@ -16,6 +16,11 @@ final class OperationIdempotency
 
     public ?string $fingerprint = null;
 
+    /**
+     * Reads the current winner; another start can record it between reads.
+     *
+     * @phpstan-impure
+     */
     public function replay(string $kind): ?Operation
     {
         if ($this->kind !== $kind || $this->key === null) {

@@ -10,7 +10,7 @@ use Throwable;
 
 final readonly class InstanceProvisionFailure
 {
-    public function __construct(public string $cause) {}
+    public function __construct(public string $cause, public ?string $errorCode = null) {}
 
     public static function fromException(Throwable $exception): self
     {
@@ -20,6 +20,6 @@ final readonly class InstanceProvisionFailure
             default => null,
         };
 
-        return new self($exception::class.($step === null ? '' : ' ['.$step.']').': '.$exception->getMessage());
+        return new self($exception::class.($step === null ? '' : ' ['.$step.']').': '.$exception->getMessage(), $exception instanceof ResourceOperationException ? $exception->errorCode : null);
     }
 }

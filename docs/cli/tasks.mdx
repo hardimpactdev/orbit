@@ -376,6 +376,15 @@ Human output shows the state, the kind, the source, the cursor, the token metric
 A thread that has not started yet shows no entries. A `t3` thread fails with `tasks.agent_transcript_unavailable`. A thread whose Node is gone fails with `tasks.agent_unavailable` when Orbit saved no transcript. A thread whose Pi server cannot serve the read fails with `tasks.agent_read_failed` when Orbit saved no transcript. An invalid `--after-sequence` fails with `validation.failed`.
 
 
+## orbit tasks:provision
+
+```bash
+orbit tasks:provision <group> [--idempotency-key=KEY] [--json]
+```
+
+Provision the numeric task `group` through the Gateway's `tasks.provision` operation. The group must use external orchestration and be `todo`. If you omit `group` in a terminal, choose a todo group from the prompt. Machine mode requires its ID. The command follows capacity waits until the workspace is ready. It starts no subtask or check. `--idempotency-key` reuses the same operation on a repeated start. Ctrl-C stops following; it leaves the operation running. Use `tasks:cancel` to end the group and stop a waiting provision. See [Provision an external group](/reference/tasks#provision-an-external-group).
+
+
 ## Related
 
 - [`project`](/cli/project) lists the Projects that a task can belong to.

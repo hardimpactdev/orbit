@@ -86,6 +86,20 @@ For an external group, `tasks:tick` only parks an idle VM, records whether its p
 
 The tick never claims, starts, sends, advances, reviews, consults, reminds, settles, or raises assistance for an external group. Every existing Tasks entry point that sends a turn, starts a check, or changes a claim skips the group or refuses with HTTP 409 `tasks.orchestrated_externally`. This includes comment sends, direction answers, deliverable correction resumes, and operator baseline retries. Stale-reservation release skips the group, so a claim waiting for a VM keeps its reservation. Group cancel and complete remain available. Resolutions clear assistance without sending a turn, and subtask cancellation interrupts work without advancing the group.
 
+#### Provision an external group
+
+`tasks:provision <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. All task operations share one target hold: another open operation returns HTTP 409 `operation.target_busy`. A tick group returns HTTP 409 `tasks.not_orchestrated`, and an ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
+
+Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
+
+The operation reserves the group and uses the same VM allocation and workspace provisioning as a scheduler claim. When capacity is full or the VM is still provisioning, the operation stays `waiting` and the group stays `reserved`. Delayed reads continue the claim when the VM is ready. Task VMs that are disabled or misconfigured, or a VM that fails, fail the operation with the task VM error, such as `task_vm.invalid_config`. Any provisioning failure ends the group `failed`, clears its reservation, and leaves VM removal to existing cleanup. A retry needs a new group.
+
+Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit }`, naming the workspace Instance, its Node, and its start commit.
+
+The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
+
+To stop a waiting provision, use `tasks:cancel`. Group cancel and complete first cancel the group's open operation. Cancelling provision clears its claim reservation, so cleanup can remove what it created. Cancelling the operation alone does not end the group. Group cancellation keeps the existing rule for an unreachable Node: end the group, keep the workspace, and request removal assistance.
+
 The remaining lifecycle and scheduler descriptions on this page describe `tick` groups unless they state otherwise.
 
 ### Task lifecycle
@@ -121,6 +135,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Workspace Node |
 | `tasks:list` | `GET /api/v1/task-groups` | Any peer |
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Any peer |
+| `tasks:provision` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
 | `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
@@ -1713,6 +1728,10 @@ New Projects have no task check until one is configured, regardless of type. Exi
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### Provision keeps effects separate from lifecycle decisions
+
+An external orchestrator needs the same task VM and workspace as the scheduler, without starting a baseline or an agent. Provision shares the claim's provisioning path and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
 ### One owner of external work
 

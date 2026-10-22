@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Sleep;
@@ -14,6 +15,7 @@ use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -391,4 +393,54 @@ describe('operation commands', function (): void {
             ->and(Artisan::output())->toContain('Cancel requested', 'orbit operation:show 42');
         $mock->assertSent(static fn ($request): bool => $request instanceof CancelOperationRequest && (string) $request->body() === '{}');
     });
+});
+
+describe('tasks:provision', function (): void {
+    beforeEach(function (): void {
+        MockClient::global(gateway_fixture_mock());
+        app(GatewayExtensionState::class)->discover();
+        MockClient::destroyGlobal();
+    });
+
+    it('follows a capacity wait and returns the final operation with its provision result', function (bool $json): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
+        $mock = cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'provision'], [cli_step('provision', 1, 'waiting', 4)]),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null,
+                'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]], [cli_step('provision', 1, 'succeeded', 7)]),
+        ], $seen, ProvisionTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('tasks:provision', ['group' => '17', '--idempotency-key' => 'group.provision.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        $output = Artisan::output();
+        if ($json) {
+            $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            expect($data['kind'])->toBe('tasks.provision');
+            expect($data['result'])->toBe(['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]);
+        } else {
+            expect($output)->toContain('Provision task group [17]', 'Claimed task VM', 'Provision succeeded.');
+        }
+        $mock->assertSentCount(1, ProvisionTaskGroupRequest::class);
+        expect($mock->findResponseByRequest(ProvisionTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.provision.c1');
+        expect($seen)->toBe($json ? ['after_sequence=0', 'after_sequence=4', ''] : ['after_sequence=0', 'after_sequence=4']);
+    })->with([false, true]);
+
+    it('returns a VM error from the followed operation', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
+        cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'provision', 'error_code' => 'task_vm.invalid_config', 'poll_after_seconds' => null],
+                [cli_step('provision', 1, 'failed', 5, error: 'task_vm.invalid_config')]),
+        ], $seen, ProvisionTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('tasks:provision', ['group' => '17', '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error_code'])->toBe('task_vm.invalid_config');
+    });
+
+    it('refuses missing or invalid group input before Gateway access', function (?string $group, string $code): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('tasks:provision', [...($group === null ? [] : ['group' => $group]), '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([[null, 'tasks.group_required'], ['bad', 'tasks.group_invalid']]);
 });

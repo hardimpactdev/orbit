@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Operation;
 use App\Models\OperationStep;
@@ -72,7 +73,7 @@ final readonly class OperationRunner
 
                 try {
                     $operation->refresh();
-                    $this->abandon($this->kinds->for($operation->kind), $operation, OperationOutcome::failed('operation.failed'), $this->failedStep($operation));
+                    $this->abandon($this->kinds->for($operation->kind), $operation, OperationOutcome::failed($exception instanceof ResourceOperationException ? $exception->errorCode : 'operation.failed'), $this->failedStep($operation));
                 } catch (Throwable) {
                     throw $exception;
                 }
@@ -164,7 +165,7 @@ final readonly class OperationRunner
             return;
         } catch (Throwable $exception) {
             Log::error('An operation ended with an unexpected error.', ['operation' => $operation->id, 'error' => $exception->getMessage()]);
-            $this->abandon($kind, $operation, OperationOutcome::failed('operation.failed'), $this->failedStep($operation));
+            $this->abandon($kind, $operation, OperationOutcome::failed($exception instanceof ResourceOperationException ? $exception->errorCode : 'operation.failed'), $this->failedStep($operation));
 
             return;
         } finally {
@@ -251,7 +252,7 @@ final readonly class OperationRunner
      */
     public function finishWithoutRun(Operation $operation, OperationOutcome $outcome): void
     {
-        $this->finish($operation, $outcome, null);
+        $this->abandon($this->kinds->for($operation->kind), $operation, $outcome, null);
     }
 
     private function abandon(OperationKind $kind, Operation $operation, OperationOutcome $failure, ?string $failedStep): void

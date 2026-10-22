@@ -11,6 +11,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
@@ -31,6 +32,8 @@ final readonly class CancelTaskGroupAction
 
     public function execute(Task $group): Task
     {
+        app(TaskOperations::class)->cancelOpen($group);
+
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group), wait: false);
     }
 
