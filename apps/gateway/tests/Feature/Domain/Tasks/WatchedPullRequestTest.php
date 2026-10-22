@@ -201,6 +201,9 @@ it('follows a repository move to the same pull request number on the task branch
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls?*' => Http::response($rows),
+        // GitHub follows the transfer redirect, so the old name answers with the moved repository.
+        'https://api.github.com/repos/acme/orbit' => Http::response(['id' => 7, 'full_name' => 'acme/orbit']),
+        'https://api.github.com/repos/old-owner/orbit' => Http::response(['id' => 7, 'full_name' => 'acme/orbit']),
     ]);
 
     app(WatchTaskBranchPullRequestAction::class)->execute($group);
@@ -215,6 +218,28 @@ it('follows a repository move to the same pull request number on the task branch
     'same number after a newer pull request' => ['todo', [branch_watch_row(43), branch_watch_row(42, 'closed')], 'https://github.com/acme/orbit/pull/42'],
     'another number' => ['todo', [branch_watch_row(43)], null],
     'no pull request' => ['completed', [], null],
+]);
+
+it('refuses a same-number pull request on the task branch of an unrelated repository', function (?array $previous, int $status): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    $group = branch_watch_group(status: 'settling', subtaskStatus: 'completed');
+    $group->update(['pr_url' => 'https://github.com/old-owner/orbit/pull/42']);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([branch_watch_row(42)]),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['id' => 7, 'full_name' => 'acme/orbit']),
+        'https://api.github.com/repos/old-owner/orbit' => Http::response($previous ?? ['message' => 'Not Found'], $status),
+    ]);
+
+    app(WatchTaskBranchPullRequestAction::class)->execute($group);
+
+    expect($group->fresh()->pr_url)->toBe('https://github.com/old-owner/orbit/pull/42');
+})->with([
+    'another repository id' => [['id' => 8, 'full_name' => 'old-owner/orbit'], 200],
+    'old repository not visible' => [null, 404],
+    'old repository unreadable' => [null, 502],
 ]);
 
 it('keeps a moved pr_url and throttles the look when the branch list is unreadable', function (): void {

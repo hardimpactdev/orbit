@@ -375,6 +375,20 @@ final readonly class HttpGitHubApi implements GitHubApi
         return TaskBranchUpdate::Unavailable;
     }
 
+    public function repositoryId(#[SensitiveParameter] string $token, GitHubRepository $repository): ?int
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository)));
+        if (in_array($response->status(), [403, 404], true)) {
+            return null;
+        }
+        $id = $response->json('id');
+        if (! $response->successful() || ! is_int($id) || $id < 1) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $id;
+    }
+
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)

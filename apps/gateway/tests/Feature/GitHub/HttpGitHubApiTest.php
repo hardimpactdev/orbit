@@ -91,3 +91,34 @@ describe('HttpGitHubApi requested reviewers', function (): void {
             ->toThrow(GitHubApiException::class, 'GitHub refused the reviewer request (422): Review cannot be requested from pull request author.');
     });
 });
+
+describe('HttpGitHubApi repository id', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+    });
+
+    it('follows the redirect of a transferred repository to its id', function (): void {
+        Http::fake([
+            'https://api.github.com/repos/old-owner/shop' => Http::response('', 301, ['Location' => 'https://api.github.com/repositories/7']),
+            'https://api.github.com/repositories/7' => Http::response(['id' => 7, 'full_name' => 'acme/shop']),
+        ]);
+
+        expect(app(GitHubApi::class)->repositoryId('ghs_read', GitHubRepository::fromOrigin('https://github.com/old-owner/shop.git')))->toBe(7);
+    });
+
+    it('reads a missing repository as null and fails on another answer', function (int $status, array $body, ?int $id): void {
+        Http::fake(['https://api.github.com/repos/acme/shop' => Http::response($body, $status)]);
+        $read = fn (): ?int => app(GitHubApi::class)->repositoryId('ghs_read', GitHubRepository::fromOrigin('https://github.com/acme/shop.git'));
+
+        if ($status === 502 || $body === []) {
+            expect($read)->toThrow(GitHubApiException::class);
+        } else {
+            expect($read())->toBe($id);
+        }
+    })->with([
+        'not found' => [404, ['message' => 'Not Found'], null],
+        'forbidden' => [403, ['message' => 'Forbidden'], null],
+        'server failure' => [502, ['message' => 'Bad gateway'], null],
+        'no id' => [200, [], null],
+    ]);
+});

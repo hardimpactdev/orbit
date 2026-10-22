@@ -1198,7 +1198,9 @@ While a task has a subtask in `todo`, `running`, or `reviewing`, Orbit looks for
 
 The list can contain more than one pull request. Orbit watches the first open pull request in GitHub's default order. When the list has no open pull request, Orbit watches the first pull request on the page. It stores the URL, number, and state in `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`. These fields appear on the task in the API and `tasks:show --json`. It does not write `pr_url`, with one exception: a repository move. An empty list or an unreadable list leaves `watched_pr_url` and the assistance flag as they are, and the task keeps starting subtasks.
 
-When `pr_url` names a pull request in another repository, for example after GitHub transferred the repository and the Project's `repository_url` changed, Orbit cannot read it. Orbit then looks at the branch even when no subtask is open. When the list has a pull request with the same number as `pr_url`, Orbit sets `pr_url` to that pull request's URL, because GitHub keeps the number on a transfer. With no open subtask, this look writes only `pr_url`. Another number leaves `pr_url` as it is.
+When `pr_url` names a pull request in another repository, for example after GitHub transferred the repository and the Project's `repository_url` changed, Orbit cannot read it. Orbit then looks at the branch even when no subtask is open.
+
+A number and a branch name do not prove a move. So Orbit also reads both repositories from GitHub, which follows its redirect from a transferred repository. Orbit sets `pr_url` only when both reads return the same repository ID and the list has a pull request with the same number as `pr_url`. GitHub keeps the number on a transfer. With no open subtask, this look writes only `pr_url`. Another number, another repository, or a failed read leaves `pr_url` as it is.
 
 `pr_url` remains the pull request Orbit opens on the last subtask. That approval still requires the pull request description, and Jev still checks `brief_coverage`. Cancel treats a `settling` or `waiting_for_review` task with `pr_url` as published. `watched_pr_url` does not change those rules.
 

@@ -29,7 +29,7 @@ final readonly class WatchTaskBranchPullRequestAction
         if ($repository === null) {
             return;
         }
-        $moved = $this->movedPullRequestNumber($group, $repository);
+        $moved = $this->movedPullRequest($group, $repository);
         $open = $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true));
         if ($moved === null && ! $open) {
             return;
@@ -56,12 +56,12 @@ final readonly class WatchTaskBranchPullRequestAction
             'watched_pr_number' => $selected->number,
             'watched_pr_state' => $selected->state->value,
         ] : [];
-        // GitHub keeps the number when it transfers a repository. The task branch has a pull request
-        // with that number here, so it is the same pull request.
+        // GitHub keeps the number when it transfers a repository. A number and a branch name do not prove
+        // a move, so GitHub must also resolve the old repository to this one.
         $followed = null;
         if ($moved !== null) {
             foreach ($pullRequests as $pullRequest) {
-                if ($pullRequest->number === $moved) {
+                if ($pullRequest->number === $moved[1] && $this->sameRepository($repository, $moved[0])) {
                     $followed = $pullRequest->url;
                     $attributes['pr_url'] = $followed;
                     break;
@@ -79,17 +79,33 @@ final readonly class WatchTaskBranchPullRequestAction
     }
 
     /**
-     * The number in pr_url when it names a pull request in another repository, as it does after the
-     * repository moved. Null when pr_url is unset or belongs to this repository.
+     * The repository and number in pr_url when it names a pull request in another repository, as it does after
+     * the repository moved. Null when pr_url is unset or belongs to this repository.
+     *
+     * @return array{GitHubRepository, int}|null
      */
-    private function movedPullRequestNumber(Task $group, GitHubRepository $repository): ?int
+    private function movedPullRequest(Task $group, GitHubRepository $repository): ?array
     {
         $url = $group->pr_url;
         if (! is_string($url) || $url === '' || $repository->pullRequestNumber($url) !== null
-            || preg_match('#\Ahttps://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/([1-9][0-9]{0,9})\z#D', $url, $matches) !== 1) {
+            || preg_match('#\Ahttps://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9._-]+)/pull/([1-9][0-9]{0,9})\z#D', $url, $matches) !== 1) {
             return null;
         }
+        $previous = GitHubRepository::fromOrigin('https://github.com/'.$matches[1]);
 
-        return (int) $matches[1];
+        return $previous === null ? null : [$previous, (int) $matches[2]];
+    }
+
+    /** Whether GitHub resolves the old repository, through its transfer redirect, to the Project repository. */
+    private function sameRepository(GitHubRepository $repository, GitHubRepository $previous): bool
+    {
+        try {
+            $token = $this->access->cachedReadToken($repository);
+            $id = $this->github->repositoryId($token, $repository);
+
+            return $id !== null && $this->github->repositoryId($token, $previous) === $id;
+        } catch (Throwable) {
+            return false;
+        }
     }
 }
