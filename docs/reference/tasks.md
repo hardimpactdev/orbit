@@ -26,7 +26,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
-Project removal also requires every associated workspace lease to be `released`. A `held`, `queued`, or unknown lease status returns HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. All records, including lease operations, remain unchanged. A missing Instance does not prove release. Project deletion does not release leases and removes only released leases and their operations.
+Project removal also requires every associated workspace lease to be `released` or `cancelled`, a withdrawn waiter. A `held`, `queued`, or unknown lease status returns HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. All records, including lease operations, remain unchanged. A missing Instance does not prove release. Project deletion does not release leases and removes only released and cancelled leases and their operations.
 
 ## Extension switch and status
 
