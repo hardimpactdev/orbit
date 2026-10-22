@@ -28,12 +28,47 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\BufferedBashProgram;
 use Tests\Support\LinuxHost;
 
 pest()->group('privileged');
+
+beforeAll(function (): void {
+    foreach ([['public', null], ['server/web/public', null], ['public', 'storage'], ['apps/site/public', 'apps/site/storage']] as [$root, $storage]) {
+        orb219_repository_seed($root, $storage);
+    }
+});
+
+it('keeps deployment repository copies independent of their seed and each other', function (): void {
+    $seed = orb219_repository_seed('public', 'storage');
+    $sandbox = sys_get_temp_dir().'/orbit-deployment-seed-copy-'.bin2hex(random_bytes(6));
+    mkdir($sandbox, 0o700);
+    try {
+        foreach (['first', 'second'] as $copy) {
+            new Process(['cp', '-a', '--', $seed, "$sandbox/$copy"])->mustRun();
+        }
+        $initial = new Process(['git', '-C', $seed, 'rev-parse', 'HEAD'])->mustRun()->getOutput();
+        file_put_contents("$sandbox/first/public/index.php", '<?php // private');
+        file_put_contents("$sandbox/first/storage/app/public/seed.txt", 'private storage');
+        new Process(['git', '-C', "$sandbox/first", 'remote', 'set-url', 'origin', '/private-origin'])->mustRun();
+        new Process(['git', '-C', "$sandbox/first", 'add', '.'])->mustRun();
+        new Process(['git', '-C', "$sandbox/first", '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'private'])->mustRun();
+        expect(new Process(['git', '-C', "$sandbox/first", 'rev-parse', 'HEAD'])->mustRun()->getOutput())->not->toBe($initial);
+        foreach ([$seed, "$sandbox/second"] as $unchanged) {
+            expect(file_get_contents("$unchanged/public/index.php"))->toBe("<?php\n")
+                ->and(file_get_contents("$unchanged/storage/app/public/seed.txt"))->toBe('seed')
+                ->and(new Process(['git', '-C', $unchanged, 'rev-parse', 'HEAD'])->mustRun()->getOutput())->toBe($initial)
+                ->and(new Process(['git', '-C', $unchanged, 'remote', 'get-url', 'origin'])->mustRun()->getOutput())->toBe("https://example.test/deployment.git\n")
+                ->and(new Process(['git', '-C', $unchanged, 'status', '--porcelain'])->mustRun()->getOutput())->toBe('');
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+});
 
 it('prepares a fresh branch-pinned release without changing current', function (string $webRoot, string $target): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
@@ -157,13 +192,8 @@ it('seeds shared storage before steps and keeps existing files through later rel
     $storage = $directory.'storage';
 
     try {
-        $filesystem->ensureDirectoryExists($repository.'/'.$root);
-        $filesystem->ensureDirectoryExists($repository.'/'.$storage.'/app/public');
-        file_put_contents($repository.'/'.$root.'/index.php', '<?php');
-        file_put_contents($repository.'/'.$storage.'/app/public/seed.txt', 'seed');
-        foreach ([['git', 'init', '-q', '-b', 'main', $repository], ['git', '-C', $repository, 'add', '.'], ['git', '-C', $repository, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'seed']] as $arguments) {
-            new Process($arguments)->mustRun();
-        }
+        $filesystem->ensureDirectoryExists($repository);
+        new Process(['cp', '-a', '--', orb219_repository_seed($root, $storage).'/.', $repository])->mustRun();
         $filesystem->ensureDirectoryExists($home.'/releases');
         $filesystem->ensureDirectoryExists($home.'/state', 0700);
         $filesystem->ensureDirectoryExists($sandbox.'/bin');
@@ -186,7 +216,7 @@ it('seeds shared storage before steps and keeps existing files through later rel
 
         foreach (['20260911-a1', '20260912-a2'] as $name) {
             $arguments[8] = $name;
-            new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $script)->mustRun();
+            new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$script)->mustRun();
             $release = $home.'/releases/'.$name;
             expect(is_link($release.'/'.$storage))->toBeTrue()
                 ->and(realpath($release.'/'.$storage))->toBe($home.'/'.$storage)
@@ -207,7 +237,7 @@ it('seeds shared storage before steps and keeps existing files through later rel
         array_splice($arguments, 3, 3, [$repository, $user, $home]);
         $arguments[7] = '20260912-a2';
         $arguments[8] = trim(new Process(['git', '-C', $repository, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
-        new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $activation)->mustRun();
+        new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$activation)->mustRun();
 
         if ($declared !== null) {
             expect(is_dir($home.'/var/uploads'))->toBeTrue()
@@ -268,7 +298,7 @@ it('refuses unsafe shared directory placement before removing source files', fun
             relative_root=public
             __SHARED_PATHS__
             BASH, 'public', [$path]);
-        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $script);
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$script);
 
         expect($process->run())->not->toBe(0)
             ->and(file_get_contents($sandbox.'/outside/keep.txt'))->toBe('untouched')
@@ -318,7 +348,7 @@ it('allows only the exact public storage target and refuses nested or unrelated 
             user=$(id -un)
             check_web_root_links "$release" "$release/public"
             BASH;
-        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $program);
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: BufferedBashProgram::stdinPrelude($sandbox).$program);
 
         expect($process->run() === 0)->toBe($allowed);
     } finally {
@@ -590,16 +620,7 @@ it('reads retained releases from a private SSH working directory', function (boo
         file_put_contents("$sandbox/state/release-layout", $repository."\0caddy\0".$home."\0initial\0");
         chmod("$sandbox/state/release-layout", 0o600);
         new Process(['sudo', 'chown', '--', 'root:root', "$sandbox/state/release-layout"])->mustRun();
-        foreach ([
-            ['git', 'init', '--quiet', $release],
-            ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
-            ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
-            ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
-            ['git', '-C', $release, 'add', 'public/index.php'],
-            ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
-        ] as $arguments) {
-            new Process($arguments)->mustRun();
-        }
+        new Process(['cp', '-a', '--', orb219_repository_seed().'/.git', $release])->mustRun();
         $commit = trim(new Process(['git', '-C', $release, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
         new Process(['sudo', 'chown', '-R', '--', 'caddy:caddy', $home])->mustRun();
         $script = str_replace(
@@ -611,7 +632,7 @@ it('reads retained releases from a private SSH working directory', function (boo
         $process = new Process(
             ['bash', '-seu', '--', $repository, 'caddy', $home, 'fixture-instance', $webRoot, "$sandbox/state"],
             "$sandbox/ssh-home",
-            input: $script,
+            input: BufferedBashProgram::stdinPrelude($sandbox).$script,
         );
         $process->mustRun();
 
@@ -669,16 +690,7 @@ it('skips partial directories while executing the retained release listing', fun
         );
         chmod($sandbox.'/bin/sudo', 0755);
 
-        foreach ([
-            ['git', 'init', '--quiet', $release],
-            ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
-            ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
-            ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
-            ['git', '-C', $release, 'add', $webRoot.'/index.php'],
-            ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
-        ] as $arguments) {
-            new Process($arguments)->mustRun();
-        }
+        new Process(['cp', '-a', '--', orb219_repository_seed($webRoot).'/.git', $release])->mustRun();
         $commit = trim((new Process(['git', '-C', $release, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
 
         $script = str_replace(
@@ -702,7 +714,7 @@ it('skips partial directories while executing the retained release listing', fun
             ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', $webRoot],
             env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
         );
-        $process->setInput($script);
+        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
         $process->mustRun();
 
         expect($process->getOutput())
@@ -726,6 +738,8 @@ it('prunes a production home to the selected, the previous, and the newest other
     $sandbox = sys_get_temp_dir().'/orbit-release-prune-'.bin2hex(random_bytes(6));
     $home = $sandbox.'/home';
     $repository = 'https://example.test/deployment.git';
+    $worker = null;
+    $workerInput = null;
 
     try {
         foreach (['initial', '20260101000000-a', '20260102000000-b', '20260103000000-c', '20260104000000-d'] as $name) {
@@ -733,16 +747,7 @@ it('prunes a production home to the selected, the previous, and the newest other
             $filesystem->ensureDirectoryExists($release.'/public');
             file_put_contents($release.'/public/index.php', "<?php\n");
             symlink('../../.env', $release.'/.env');
-            foreach ([
-                ['git', 'init', '--quiet', $release],
-                ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
-                ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
-                ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
-                ['git', '-C', $release, 'add', 'public/index.php'],
-                ['git', '-C', $release, 'commit', '--quiet', '-m', $name],
-            ] as $arguments) {
-                new Process($arguments)->mustRun();
-            }
+            new Process(['cp', '-a', '--', orb219_repository_seed().'/.git', $release])->mustRun();
         }
         $filesystem->ensureDirectoryExists($home.'/storage/app/public');
         file_put_contents($home.'/storage/app/public/upload.txt', 'retained upload');
@@ -781,18 +786,17 @@ it('prunes a production home to the selected, the previous, and the newest other
         expect(array_slice($arguments, 8))->toBe(['3', '20260104000000-d', $previous ?? '']);
         array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
         // A running Process, such as a queue worker that a deployment did not restart, works in an old release.
-        $worker = new Process(['sleep', '60'], $home.'/releases/'.($busy ?? 'initial').'/public');
         if ($busy !== null) {
+            $directory = $home.'/releases/'.$busy.'/public';
+            $workerInput = new InputStream;
+            $worker = new Process(['bash', '-c', 'printf "%s\\n" "$PWD"; IFS= read -r release'], $directory, input: $workerInput);
             $worker->start();
-            for ($attempt = 0; $attempt < 100 && @readlink('/proc/'.$worker->getPid().'/cwd') !== $home.'/releases/'.$busy.'/public'; $attempt++) {
-                usleep(10_000);
-            }
+            expect($worker->waitUntil(static fn (): bool => $worker->getOutput() === $directory."\n"))->toBeTrue();
         }
 
         $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
+        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
         $process->mustRun();
-        $worker->stop(0);
 
         expect($process->getOutput())->toBe(implode('', array_map(static fn (string $line): string => $line."\n", $output)))
             ->and($process->getErrorOutput())->toBe('')
@@ -800,6 +804,8 @@ it('prunes a production home to the selected, the previous, and the newest other
             ->and(readlink($home.'/current'))->toBe('releases/20260104000000-d')
             ->and(file_get_contents($home.'/storage/app/public/upload.txt'))->toBe('retained upload');
     } finally {
+        $worker?->stop(0);
+        $workerInput?->close();
         new Process(['chmod', '-R', 'u+w', '--', $sandbox])->run();
         $filesystem->deleteDirectory($sandbox);
     }
@@ -828,9 +834,7 @@ it('removes nothing when it cannot read where a running process works', function
             $filesystem->ensureDirectoryExists($release.'/public');
             file_put_contents($release.'/public/index.php', "<?php\n");
             symlink('../../.env', $release.'/.env');
-            foreach ([['git', 'init', '--quiet', $release], ['git', '-C', $release, 'remote', 'add', 'origin', $repository], ['git', '-C', $release, 'add', 'public/index.php'], ['git', '-C', $release, '-c', 'user.email=orbit@example.test', '-c', 'user.name=Orbit Test', 'commit', '--quiet', '-m', $name]] as $arguments) {
-                new Process($arguments)->mustRun();
-            }
+            new Process(['cp', '-a', '--', orb219_repository_seed().'/.git', $release])->mustRun();
         }
         $filesystem->ensureDirectoryExists($home.'/state');
         $filesystem->ensureDirectoryExists($sandbox.'/bin');
@@ -849,7 +853,7 @@ it('removes nothing when it cannot read where a running process works', function
         array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
 
         $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
+        $process->setInput(BufferedBashProgram::stdinPrelude($sandbox).$script);
 
         expect($process->run())->not->toBe(0)
             ->and($process->getOutput())->toBe('')
@@ -880,6 +884,33 @@ it('rejects traversal before asking the remote host to inspect a release', funct
 
     expect($ssh->commands)->toBe([]);
 });
+
+/** Committed setup is read-only; each case copies its own writable repository and index. */
+function orb219_repository_seed(string $root = 'public', ?string $storage = null): string
+{
+    static $seeds = [];
+    $key = json_encode([$root, $storage], JSON_THROW_ON_ERROR);
+    if (! isset($seeds[$key])) {
+        $seed = sys_get_temp_dir().'/orbit-deployment-seed-'.bin2hex(random_bytes(6));
+        mkdir($seed.'/'.$root, 0o755, true);
+        file_put_contents($seed.'/'.$root.'/index.php', "<?php\n");
+        if ($storage !== null) {
+            mkdir($seed.'/'.$storage.'/app/public', 0o755, true);
+            file_put_contents($seed.'/'.$storage.'/app/public/seed.txt', 'seed');
+        }
+        foreach ([
+            ['git', 'init', '--quiet', '--initial-branch=main', $seed],
+            ['git', '-C', $seed, 'remote', 'add', 'origin', 'https://example.test/deployment.git'],
+            ['git', '-C', $seed, 'add', '.'],
+            ['git', '-C', $seed, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--quiet', '-m', 'fixture'],
+        ] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+        $seeds[$key] = $seed;
+    }
+
+    return $seeds[$key];
+}
 
 /**
  * @param  list<CommandResult>  $results

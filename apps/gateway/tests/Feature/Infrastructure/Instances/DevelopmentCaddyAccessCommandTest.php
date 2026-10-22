@@ -253,12 +253,12 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
     'shared Git failed recovery' => [true, true],
 ]);
 
-it('finishes its walk while setup removes and replaces files under the checkout and the Web root', function (): void {
+it('finishes paired walks while setup removes and replaces files under the checkout and the Web root', function (int $run): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
 
-    // Two private checkouts let the ten real walks run in pairs, without racing each other's ACL grants.
+    // Five cases each own two real walks; no pair races another pair's mutable ACL grants.
     $roots = [development_caddy_access_fixture(), development_caddy_access_fixture()];
     $processes = [];
 
@@ -288,41 +288,39 @@ it('finishes its walk while setup removes and replaces files under the checkout 
         }
         $failures = [];
         $completedWalks = 0;
-        foreach (range(1, 5) as $run) {
-            foreach ($roots as $root) {
-                $checkout = "$root/checkout";
-                foreach (["$checkout/vendor", "$checkout/web/site/build"] as $directory) {
-                    foreach (['vanished', 'replaced'] as $entry) {
-                        new Filesystem()->ensureDirectoryExists("$directory/$entry");
-                        file_put_contents("$directory/$entry/file", 'old');
-                    }
-                }
-                $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-                $processes[$root] = $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-                $process->setInput($command->input)->start();
-            }
-            foreach (['checkout' => 'vendor', 'web' => 'web/site/build'] as $phase => $relative) {
-                foreach ($processes as $root => $process) {
-                    $directory = "$root/checkout/$relative";
-                    expect($process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "acl-walk:$phase\n")))
-                        ->toBeTrue($process->getErrorOutput());
-                    new Filesystem()->deleteDirectory("$directory/vanished");
-                    new Filesystem()->deleteDirectory("$directory/replaced");
-                    mkdir("$directory/replaced", 0o755);
-                    file_put_contents("$directory/replaced/file", "replacement $run");
-                    file_put_contents("$root/walk-continue", "continue\n");
+        foreach ($roots as $root) {
+            $checkout = "$root/checkout";
+            foreach (["$checkout/vendor", "$checkout/web/site/build"] as $directory) {
+                foreach (['vanished', 'replaced'] as $entry) {
+                    new Filesystem()->ensureDirectoryExists("$directory/$entry");
+                    file_put_contents("$directory/$entry/file", 'old');
                 }
             }
-            foreach ($processes as $process) {
-                if ($process->wait() !== 0) {
-                    $failures[] = $process->getErrorOutput();
-                }
-                $completedWalks++;
+            $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+            $processes[$root] = $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
+            $process->setInput($command->input)->start();
+        }
+        foreach (['checkout' => 'vendor', 'web' => 'web/site/build'] as $phase => $relative) {
+            foreach ($processes as $root => $process) {
+                $directory = "$root/checkout/$relative";
+                expect($process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "acl-walk:$phase\n")))
+                    ->toBeTrue($process->getErrorOutput());
+                new Filesystem()->deleteDirectory("$directory/vanished");
+                new Filesystem()->deleteDirectory("$directory/replaced");
+                mkdir("$directory/replaced", 0o755);
+                file_put_contents("$directory/replaced/file", "replacement $run");
+                file_put_contents("$root/walk-continue", "continue\n");
             }
+        }
+        foreach ($processes as $process) {
+            if ($process->wait() !== 0) {
+                $failures[] = $process->getErrorOutput();
+            }
+            $completedWalks++;
         }
 
         expect($failures)->toBe([]);
-        expect($completedWalks)->toBe(10);
+        expect($completedWalks)->toBe(2);
         foreach ($roots as $root) {
             $checkout = "$root/checkout";
             // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
@@ -333,7 +331,7 @@ it('finishes its walk while setup removes and replaces files under the checkout 
                 "$checkout/web/site/build/late/app.js", "$checkout/web/site/index.html",
                 "$checkout/.env", "$checkout/source.txt", "$checkout/web/private.txt",
             ]);
-            expect($reads["$checkout/web/site/build/replaced/file"])->toBe('replacement 5')
+            expect($reads["$checkout/web/site/build/replaced/file"])->toBe("replacement $run")
                 ->and($reads["$checkout/vendor/replaced/file"])->toBeNull()
                 ->and($reads["$checkout/web/site/build/late/app.js"])->toBe('late asset')
                 ->and($reads["$checkout/web/site/index.html"])->toBe('first page');
@@ -352,7 +350,7 @@ it('finishes its walk while setup removes and replaces files under the checkout 
             new Filesystem()->deleteDirectory($root);
         }
     }
-});
+})->with([1, 2, 3, 4, 5]);
 
 it('treats only a vanished entry as harmless, and fails on any other walk error', function (string $error, bool $succeeds): void {
     if (LinuxHost::delegate($this)) {
