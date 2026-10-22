@@ -14,7 +14,7 @@ covers:
 
 # Remote programs
 
-A remote program is a file that the Gateway runs on a Node to inspect or change it. Each program has a stable name, a documented input, and a result with a named outcome. The Gateway sends the program with every call, so nothing is installed on the Node. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) supersedes ADR 0211. New Node behavior uses named Rust agent commands. Existing programs stay only until their area migrates after ADR 0224.
+A remote program is a file that the Gateway runs on a Node to inspect or change it. Each program has a stable name, a documented input, and a result with a named outcome. The Gateway sends the program with every call, so nothing is installed on the Node. [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands) supersedes ADR 0211. New Node behavior uses named Rust agent commands. Existing programs stay only until their area migrates; only the Tasks area waits for ADR 0224.
 
 ## Program files
 

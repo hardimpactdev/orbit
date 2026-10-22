@@ -14,7 +14,7 @@ Every script that the Gateway runs on a Node moves out of PHP strings into a pro
 
 Superseded on 2026-10-19 by ADR 0225.
 
-Superseded by [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands). New work uses named Rust agent commands; the remaining programs migrate after ADR 0224.
+Superseded by [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands). New work uses named Rust agent commands; the remaining programs migrate by area; only the Tasks area waits for ADR 0224.
 
 Principle: [Deterministic first](/mission#principles). Lint and direct tests decide what code can decide about Node-side code, and named outcomes replace exit codes that a reader must decode. It also serves [One way, one name](/mission#principles): one runner, one contract, and one stable name for each program. No principle exception is proposed.
 
