@@ -239,13 +239,25 @@ There is no import of old JSONL sessions. Task VMs are disposable per group, so 
 
 Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; [Run Pi on a task VM](#run-pi-on-a-task-vm) shows how the Gateway installs it. A new task VM gets the binary when the Gateway prepares it at claim; the base image does not need a rebuild. A VM that is already prepared keeps its binary until it is destroyed, so no running turn restarts.
 
+To move new groups to Durable:
+
+1. Build this revision and retain the resulting executable.
+2. Set both artifact variables to its path and SHA-256.
+3. Keep the old artifact and its path and SHA-256 pin for rollback.
+
+### Reported version
+
 The version in startup logs and capabilities comes from the Pi dependency pinned in the compiled source, not the current checkout or a global Pi install. Building a new checkout does not change the Gateway artifact pin.
 
-The initial artifact `pi-server-e5933d4c8696-linux-x64` embeds Pi 0.87.1 from source commit `e5933d4c8696` (2026-10-11). The recipe recorded that artifact on 2026-10-14. The source dependency bump to Pi 1.2.0 on 2026-10-22 did not rebuild or replace the pin. No binary build timestamp is recorded in the recipe; its source commit and SHA-256 identify it. A startup log of 0.87.1 from that pin is expected.
+For example, the initial artifact `pi-server-e5933d4c8696-linux-x64` embeds Pi 0.87.1 from source commit `e5933d4c8696` (2026-10-11). The recipe recorded that artifact on 2026-10-14. The source dependency bump to Pi 1.2.0 on 2026-10-22 did not rebuild or replace the pin. No binary build timestamp is recorded in the recipe; its source commit and SHA-256 identify it. A startup log of 0.87.1 from that pin is expected.
 
-An operator must build this revision, retain the resulting executable, and set both artifact variables to its path and digest before new groups use Durable. Keep the old artifact and its path and SHA-256 pin for rollback.
+### Roll back
 
-To roll back future groups, restore both old artifact variables. Drain groups running Durable before rolling back Gateway code, so the old Gateway retry budget cannot stack on Durable’s retries. Do not replace the binaries of existing JSONL groups in place. There is no in-place downgrade from SQLite to JSONL; let existing groups finish or retire them and start new groups with the selected artifact. No base-image rebuild is required.
+To roll back future groups, restore both old artifact variables. No base-image rebuild is required.
+
+- Before you roll back Gateway code, drain groups running Durable, so the old Gateway retry budget cannot stack on Durable’s retries.
+- Do not replace the binaries of existing JSONL groups in place.
+- There is no in-place downgrade from SQLite to JSONL. Let existing groups finish, or retire them and start new groups with the selected artifact.
 
 ## Test worker file access
 
