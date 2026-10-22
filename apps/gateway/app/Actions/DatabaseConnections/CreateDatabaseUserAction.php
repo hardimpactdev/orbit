@@ -8,7 +8,6 @@ use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
-use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -64,13 +63,13 @@ final readonly class CreateDatabaseUserAction
 
         if ($server->driver === DatabaseDriver::Pgsql
             && ! DatabaseUser::query()->where('database_connection_id', $connection->id)->where('username', $data->username)->exists()
-            && $this->admin->execute($server, $this->sql($server)->userNamed($data->username)) !== []) {
+            && $this->admin->execute($server, $this->statements->forDriver($server->driver)->userNamed($data->username)) !== []) {
             throw new ResourceOperationException('database.name_conflict', 'That PostgreSQL role already exists outside this connection.', 409);
         }
         $this->admin->execute(
             $server,
-            $this->sql($server)->ensureUser($data->username, $data->password)
-                .$this->sql($server)->replaceGrant($connection->database, $data->username, $data->readOnly, $connection->username),
+            $this->statements->forDriver($server->driver)->ensureUser($data->username, $data->password)
+                .$this->statements->forDriver($server->driver)->replaceGrant($connection->database, $data->username, $data->readOnly, $connection->username),
         );
 
         return DatabaseUser::query()->updateOrCreate(
@@ -80,14 +79,9 @@ final readonly class CreateDatabaseUserAction
             ],
             [
                 'password' => $data->password,
-                'privileges' => $this->sql($server)->privilegeText($connection->database, $data->readOnly),
+                'privileges' => $this->statements->forDriver($server->driver)->privilegeText($connection->database, $data->readOnly),
                 'created_by' => $createdBy,
             ],
         );
-    }
-
-    private function sql(DatabaseServer $server): MysqlStatements|PostgresStatements
-    {
-        return $server->driver === DatabaseDriver::Pgsql ? new PostgresStatements : $this->statements;
     }
 }

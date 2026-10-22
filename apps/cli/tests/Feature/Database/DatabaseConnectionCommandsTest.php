@@ -688,3 +688,18 @@ it('sends the explicit attachment network with its prefix through the SDK', func
 
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['prefix' => 'CATALOG_DB', 'network' => $network]);
 })->with(['lan', 'wireguard']);
+
+it('sends the PostgreSQL builtin locale when creating a database on a server', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
+        ...database_cli_gateway_data(), 'driver' => 'pgsql', 'server' => 'services-postgres', 'locale' => 'C.UTF-8',
+    ], status: 201);
+    $this->artisan('database:create', ['slug' => 'mealou-food-catalog', '--server' => 'services-postgres', '--locale' => 'C.UTF-8', '--json' => true])
+        ->expectsOutputToContain('"locale":"C.UTF-8"')->assertExitCode(0);
+    expect($mockClient->getLastRequest()?->body()->all())->toBe(['slug' => 'mealou-food-catalog', 'server' => 'services-postgres', 'locale' => 'C.UTF-8']);
+});
+
+it('refuses a locale without a server before contacting the Gateway', function (): void {
+    $mockClient = MockClient::global([]);
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'app', '--locale' => 'C.UTF-8', '--json' => true]);
+    expect($exit)->toBe(1)->and($output)->toContain('database.server_required')->and($mockClient->getLastPendingRequest())->toBeNull();
+});

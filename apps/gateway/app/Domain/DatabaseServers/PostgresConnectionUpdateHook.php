@@ -17,7 +17,7 @@ final readonly class PostgresConnectionUpdateHook implements DatabaseConnectionU
         if ($proposed->server?->driver !== DatabaseDriver::Pgsql) {
             return;
         }
-        foreach (['driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password'] as $field) {
+        foreach (['driver', 'node_id', 'host', 'port', 'database', 'locale', 'path', 'username', 'password'] as $field) {
             if ($proposed->{$field} !== $proposed->getOriginal($field)) {
                 throw new ResourceOperationException('database.server_connection_managed', 'Create a new managed PostgreSQL connection and move its consumers instead of changing its identity or credentials.', 409);
             }

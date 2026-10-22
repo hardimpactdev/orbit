@@ -7,7 +7,6 @@ namespace App\Actions\DatabaseConnections;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
-use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\ValkeyAclLock;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -77,7 +76,7 @@ final readonly class DropServerDatabaseAction
                 ...$databases,
                 ...$this->admin->execute(
                     $server,
-                    $this->sql($server)->databasesNamed($connection->test_database, $connection->test_database),
+                    $this->statements->forDriver($server->driver)->databasesNamed($connection->test_database, $connection->test_database),
                 ),
             ];
         }
@@ -85,11 +84,11 @@ final readonly class DropServerDatabaseAction
         $sql = '';
 
         foreach (array_values(array_unique($databases)) as $database) {
-            $sql .= $this->sql($server)->dropDatabase($database);
+            $sql .= $this->statements->forDriver($server->driver)->dropDatabase($database);
         }
 
         foreach ($this->unsharedUsers($connection, $server) as $username) {
-            $sql .= $this->sql($server)->dropUser($username);
+            $sql .= $this->statements->forDriver($server->driver)->dropUser($username);
         }
 
         if ($sql !== '') {
@@ -126,10 +125,5 @@ final readonly class DropServerDatabaseAction
         }
 
         return $usernames;
-    }
-
-    private function sql(DatabaseServer $server): MysqlStatements|PostgresStatements
-    {
-        return $server->driver === DatabaseDriver::Pgsql ? new PostgresStatements : $this->statements;
     }
 }

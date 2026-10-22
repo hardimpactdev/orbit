@@ -6,8 +6,12 @@ namespace App\Domain\DatabaseServers;
 
 use App\Data\Processes\AddProcessData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -143,5 +147,43 @@ final readonly class DatabaseServerProcess
         }
 
         return $ports;
+    }
+
+    public static function lanHost(DatabaseServer $server): ?string
+    {
+        $address = $server->node->lan_ip;
+        if (! $server->private_endpoints_managed || $server->status !== LifecycleStatus::Active || ! self::ipv4($address)) {
+            return null;
+        }
+        $publications = $server->process?->runtime_config['ports'] ?? [];
+        foreach (is_array($publications) ? $publications : [] as $spec) {
+            $mapping = is_string($spec) ? DockerPublishedPort::parse($spec) : null;
+            if ($mapping !== null && $mapping->bindAddress === $address && $mapping->publishedPort === $server->port) {
+                return $address;
+            }
+        }
+
+        return null;
+    }
+
+    public static function validatePrivateAddresses(Node $node): void
+    {
+        if (! self::privateIpv4($node->wireguard_ip) || (filled($node->lan_ip) && ! self::privateIpv4($node->lan_ip))) {
+            throw new ResourceOperationException('validation.failed', 'Database publication requires private IPv4 addresses.', 422);
+        }
+    }
+
+    private static function privateIpv4(?string $address): bool
+    {
+        if (! is_string($address) || ! self::ipv4($address)) {
+            return false;
+        }
+
+        return array_any(['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], fn ($range) => Ipv4Subnet::from($range)->contains($address));
+    }
+
+    private static function ipv4(?string $address): bool
+    {
+        return is_string($address) && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
     }
 }

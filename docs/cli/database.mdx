@@ -38,7 +38,7 @@ Register an existing database, or create a new one on a [Database server](/refer
 
 ```bash
 orbit database:create <slug> --driver=DRIVER [options]
-orbit database:create <slug> --server=SERVER [--instance=INSTANCE]
+orbit database:create <slug> --server=SERVER [--instance=INSTANCE] [--locale=LOCALE]
 orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX]
 ```
 
@@ -56,7 +56,8 @@ orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE 
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
 | `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
-| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, `--locale` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--locale=LOCALE` | With a PostgreSQL `--server`: builtin `C.UTF-8` or `C`. Omission inherits the image default. |
 | `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
 | `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. It starts with a literal key prefix, not a glob character. Required there. Repeat it for more patterns. |
 | `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. `@all` and `@scripting` are refused. Required there. Repeat it for more rules. |
@@ -80,6 +81,9 @@ orbit database:create gateway-queue --server=services-valkey --database=1 --patt
 The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
 
 Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
+
+
+With `database:create --server=<pgsql-server>`, `--locale=C.UTF-8` or `--locale=C` selects the builtin PostgreSQL locale provider with UTF8 encoding and template0. The response records `locale`. Omit it to inherit the image default. The option is refused for other drivers and registration.
 
 ## orbit database:list
 
@@ -132,7 +136,7 @@ Updating a record does not rewrite the keys already stored on attached Instances
 Run a MySQL, PostgreSQL or Valkey server as a Docker Node Process. Orbit generates the admin password and keeps it only in the Gateway.
 
 ```bash
-orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--lan-node=NODE]... [--json]
+orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--json]
 orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS --connection=CONNECTION [--tag=TAG] [--json]
 ```
 
@@ -143,7 +147,6 @@ orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS
 | Option | Meaning |
 | --- | --- |
 | `--node=NODE` | Numeric Node ID or Node name. Required. |
-| `--lan-node=NODE` | Explicit active LAN peer Node. Repeat for each peer. Both Nodes need IPv4 LAN addresses. |
 | `--driver=DRIVER` | `mysql`, `pgsql` or `redis`. A `redis` server runs Valkey. Defaults to `mysql`. |
 | `--tag=TAG` | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. Defaults to `8.4` for mysql, `18` for pgsql and `8.1` for redis. |
 | `--port=PORT` | Port to publish on WireGuard and, when present, LAN. Defaults to `3306` for mysql, `5432` for pgsql and `6379` for redis. |
@@ -153,7 +156,7 @@ orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS
 ```bash
 orbit database:server:create beast-mysql --node=beast
 orbit database:server:create beast-valkey --node=beast --driver=redis
-orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434 --lan-node=app-prod --lan-node=gateway
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434
 ```
 
 Run the same command again to continue a failed create, or to [repair](/reference/database-servers#repair-a-valkey-server) an active Valkey server whose ACL differs from its records. [Database servers](/reference/database-servers#create-a-server) describes the steps, retry, adoption, and errors.

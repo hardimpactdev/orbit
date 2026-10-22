@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseConnections;
 
-use App\Domain\DatabaseServers\DatabaseServerLanPolicy;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 
 /**
- * Prefixed connection keys. Explicit LAN selection uses the managed server's peer policy;
+ * Prefixed connection keys. Explicit LAN selection requires active Nodes with IPv4 LAN addresses;
  * the default keeps the connection's recorded host and port.
  */
 final readonly class DatabaseConnectionEnvProjection
@@ -57,19 +57,12 @@ final readonly class DatabaseConnectionEnvProjection
         $host = (string) $connection->host;
         $server = $connection->server;
         if ($network === 'lan') {
-            if (! $server instanceof DatabaseServer || ! $consumer instanceof Node || ! (new DatabaseServerLanPolicy)->eligible($server, $consumer)) {
-                throw new ResourceOperationException('database.lan_unavailable', 'The consumer must be an active LAN peer of this server.', 422);
+            if (! $server instanceof DatabaseServer || ! $consumer instanceof Node || $server->node->status !== LifecycleStatus::Active || $consumer->status !== LifecycleStatus::Active || filter_var($server->node->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || filter_var($consumer->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new ResourceOperationException('database.lan_unavailable', 'Both Nodes must be active with an IPv4 LAN address.', 422);
             }
             $host = (string) $server->node->lan_ip;
         } elseif ($network !== 'wireguard') {
             throw new ResourceOperationException('validation.failed', 'The network must be wireguard or lan.', 422);
-        }
-        if (! $server instanceof DatabaseServer && $consumer instanceof Node) {
-            foreach (DatabaseServer::query()->where('private_endpoints_managed', true)->where('port', $connection->port)->with('node')->get() as $candidate) {
-                if ($host === $candidate->node->lan_ip && ! (new DatabaseServerLanPolicy)->eligible($candidate, $consumer)) {
-                    throw new ResourceOperationException('database.lan_unavailable', 'This LAN alias requires an active server peer.', 422);
-                }
-            }
         }
         $port = (int) $connection->port;
         $values[$this->key($prefix, 'HOST')] = $host;

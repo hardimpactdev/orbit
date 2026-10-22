@@ -9,7 +9,6 @@ use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\DatabaseServerLanPolicy;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyProcessAdoption;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
@@ -56,7 +55,6 @@ final readonly class CreateDatabaseServerAction
         private ProcessRuntimeManager $runtime,
         private ProcessSpecification $specifications,
         private DatabaseServerAdmin $admin,
-        private DatabaseServerLanPolicy $lan,
         private ValkeyServerAdmin $valkey,
         private ValkeyProcessAdoption $adoption,
         private WriteValkeyAclFileAction $aclFile,
@@ -91,7 +89,7 @@ final readonly class CreateDatabaseServerAction
             );
         }
 
-        $this->lan->validate($node, $data->lanNodeIds ?? []);
+        DatabaseServerProcess::validatePrivateAddresses($node);
         if ($data->driver === DatabaseDriver::Pgsql && preg_match(DatabaseServerProcess::POSTGRES_TAG_PATTERN, $data->tag) !== 1) {
             throw new ResourceOperationException('validation.failed', 'Managed PostgreSQL requires a major 18 image tag.', 422);
         }
@@ -112,10 +110,6 @@ final readonly class CreateDatabaseServerAction
         $server = $reserved['server'];
         // Only an explicit create/retry opts an existing server into private publication checks.
         $server->update(['private_endpoints_managed' => true]);
-
-        if ($data->lanNodeIds !== null) {
-            $server->update(['lan_node_ids' => array_values(array_unique($data->lanNodeIds))]);
-        }
 
         if ($server->status !== LifecycleStatus::Active) {
             if ($server->driver === DatabaseDriver::Redis) {
@@ -173,7 +167,6 @@ final readonly class CreateDatabaseServerAction
                         'process_id' => $adoption['process']->id,
                         'tag' => $data->tag,
                         'port' => $adoption['port'],
-                        'lan_node_ids' => $data->lanNodeIds ?? [],
                         'root_password' => $adoption['connection']->password ?: Str::random(self::ROOT_PASSWORD_LENGTH),
                         'default_open' => ! filled($adoption['connection']->password),
                         'status' => LifecycleStatus::Provisioning,
@@ -192,7 +185,6 @@ final readonly class CreateDatabaseServerAction
                     'process_id' => null,
                     'tag' => $data->tag,
                     'port' => $port,
-                    'lan_node_ids' => $data->lanNodeIds ?? [],
                     'root_password' => Str::random(self::ROOT_PASSWORD_LENGTH),
                     'status' => LifecycleStatus::Provisioning,
                 ]);

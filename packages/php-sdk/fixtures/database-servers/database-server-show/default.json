@@ -14,7 +14,6 @@
             "port": 3306,
             "status": "active",
             "databases_count": 1,
-            "lan_node_ids": [],
             "databases": [
                 {
                     "id": 1,
@@ -30,7 +29,8 @@
                     "server": "beast-mysql",
                     "owner_instance_id": 1,
                     "test_database": "dlf_leden_test",
-                    "lan_host": null
+                    "lan_host": null,
+                    "locale": null
                 }
             ]
         },

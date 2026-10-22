@@ -74,7 +74,7 @@ describe('database:server:create', function (): void {
             ->assertJsonPath('data.databases_count', 0);
 
         expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count', 'lan_node_ids',
+            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
         ]);
 
         $server = DatabaseServer::query()->sole();
@@ -343,8 +343,8 @@ it('rejects PostgreSQL images outside major 18 before reserving a server', funct
 it('publishes SQL servers only on explicit private addresses even with a public interface', function (string $driver, int $port): void {
     $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
-    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver, 'lan_node_ids' => [$this->gateway->id]]))
-        ->assertCreated()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
+    $this->postJson('/api/v1/database-servers', database_server_request($this->dbNode, ['driver' => $driver]))
+        ->assertCreated();
     $server = DatabaseServer::query()->sole();
     expect($server->process->runtime_config['ports'])->toBe(["10.44.0.80:{$port}:{$port}", "10.0.0.6:{$port}:{$port}"]);
     $rendered = app(DockerProcessRenderer::class)->createArguments($server->process, app(ProcessTargetResolver::class)->forNodeAdmission($this->dbNode));
@@ -372,16 +372,6 @@ it('resumes PostgreSQL initialization with the original password and Process aft
     expect($server->failed_step)->toBe('readiness')->and($server->process->runtime_config['environment']['POSTGRES_PASSWORD'])->toBe($password);
     $this->postJson('/api/v1/database-servers', $request)->assertOk();
     expect($server->refresh()->process_id)->toBe($processId)->and($server->root_password)->toBe($password)->and($server->process->runtime_config['environment'])->toBe([]);
-});
-
-it('replaces LAN peers on an existing server and preserves the list when omitted', function (): void {
-    $this->dbNode->update(['lan_ip' => '10.0.0.6']);
-    $this->gateway->update(['lan_ip' => '10.0.0.5']);
-    $request = database_server_request($this->dbNode);
-    $this->postJson('/api/v1/database-servers', $request)->assertCreated();
-    $this->postJson('/api/v1/database-servers', [...$request, 'lan_node_ids' => [$this->gateway->id]])->assertOk()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
-    $this->postJson('/api/v1/database-servers', $request)->assertOk()->assertJsonPath('data.lan_node_ids', [$this->gateway->id]);
-    $this->postJson('/api/v1/database-servers', [...$request, 'lan_node_ids' => []])->assertOk()->assertJsonPath('data.lan_node_ids', []);
 });
 
 it('enables private endpoint management only for the selected server', function (): void {

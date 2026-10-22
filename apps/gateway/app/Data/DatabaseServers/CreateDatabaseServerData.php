@@ -13,7 +13,6 @@ use Spatie\LaravelData\Data;
  */
 final class CreateDatabaseServerData extends Data
 {
-    /** @param list<int>|null $lanNodeIds */
     public function __construct(
         public string $slug,
         public int $nodeId,
@@ -22,6 +21,5 @@ final class CreateDatabaseServerData extends Data
         public ?int $port,
         public ?int $processId = null,
         public ?string $connection = null,
-        public ?array $lanNodeIds = null,
     ) {}
 }

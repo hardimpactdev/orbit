@@ -65,11 +65,22 @@ Check free disk for a dump, restored database and rollback copy. Test backups in
 
 ## Create the target after approval
 
-Use a free port and the slug for the database whose move Nick approved.
+Use port 5434 after confirming it is free, and the slug for the database whose move Nick approved.
+
+Mealou requires the builtin `C.UTF-8` locale. Create its canonical database with `database:create mealou-food-catalog --server=services-postgres --locale=C.UTF-8` before restore. Orbit renders `TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8'` and records `locale` on the connection. Verify `pg_database.datlocprovider = 'b'` and `datlocale = 'C.UTF-8'` before copying data and after restore. Do not restore into a database with the image's libc default. For each other database, inventory its source provider and locale and choose the matching supported builtin locale or stop for a separate migration decision.
+
+The supported choices are builtin `C.UTF-8` and `C`; omission inherits the image default. Inventory ICU or libc source locales and stop for a separate migration decision if they cannot use one of these choices. Locale is fixed when the target database is created.
+
+```sql
+SELECT datname, datlocprovider, datlocale, pg_encoding_to_char(encoding)
+FROM pg_database WHERE datname = 'mealou_food_catalog';
+```
+
+Expect `b`, `C.UTF-8`, and `UTF8` for Mealou.
 
 ```bash
-orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434 --lan-node=app-prod --lan-node=gateway
-orbit database:create mealou-food-catalog --server=services-postgres
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434
+orbit database:create mealou-food-catalog --server=services-postgres --locale=C.UTF-8
 orbit database:create device-catalog --server=services-postgres
 ```
 
@@ -116,7 +127,7 @@ These records remain external aliases; the new canonical managed connection owns
 
 ### Reattach and verify consumers
 
-Reattach each consumer with its original prefix, then `env:sync` and restart or redeploy only that consumer. For a canonical managed connection, `instance:database:add ... --network=lan` explicitly selects LAN for an active consumer in the server LAN peer list. External aliases keep their explicit host; use LAN only when every attached consumer is an active peer. Doctor and attachment selection check aliases against that same policy. Keep a shared alias on WireGuard if any consumer is not eligible. WireGuard is the default for every other consumer.
+Reattach each consumer with its original prefix, then `env:sync` and restart or redeploy only that consumer. For a canonical managed connection, `instance:database:add ... --network=lan` selects LAN when both the server and consumer Nodes are active with IPv4 LAN addresses. The operator confirms they share a reachable LAN. External aliases keep their recorded host; use a LAN host only after confirming every attached consumer can reach it. Orbit does not scan aliases against managed servers. Keep a shared alias on WireGuard if any consumer needs it. WireGuard remains the default.
 
  Run `vault:sync` and Doctor, check the consumer's health and application queries, then move the next consumer. A record update alone does not update attached environment values.
 
@@ -138,4 +149,4 @@ After the agreed observation window, get separate approval to remove old Process
 
 On 2026-10-21, disposable PostgreSQL 18 retained a fixture database after its container was recreated without POSTGRES_PASSWORD, using the documented parent volume mount. Real SQL checks confirmed that downgrading a writer removed INSERT on current and future owner tables while keeping SELECT.
 
-Database publication uses explicit WireGuard and LAN bindings with no port firewall. Check the final Process bindings before each cutover: `10.44.0.3:5434:5432` and `10.0.0.6:5434:5432` only. Reject `0.0.0.0`, an unqualified port mapping, or Services' public address 85.9.217.155. The stored LAN peer list guides connection selection, not network access. Keep the private networks unreachable from the public internet. PostgreSQL uses SCRAM passwords and the image's stock `pg_hba.conf` defaults.
+Database publication uses explicit WireGuard and LAN bindings with no port firewall. Check the final Process bindings before each cutover: `10.44.0.3:5434:5432` and `10.0.0.6:5434:5432` only. Reject `0.0.0.0`, an unqualified port mapping, or Services' public address 85.9.217.155. Keep the private networks unreachable from the public internet. PostgreSQL uses SCRAM passwords and the image's stock `pg_hba.conf` defaults.

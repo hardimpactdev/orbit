@@ -170,3 +170,10 @@ it('replaces PostgreSQL write grants with read-only grants including owner defau
     expect($this->admin->sql())->toContain('SCRAM-SHA-256$', 'GRANT CONNECT ON DATABASE "dlf_leden" TO "reader";', 'GRANT USAGE ON SCHEMA public TO "reader";', 'REVOKE ALL ON ALL TABLES', 'REVOKE ALL ON ALL SEQUENCES', 'FOR ROLE "dlf_main" IN SCHEMA public REVOKE ALL ON TABLES', 'FOR ROLE "dlf_main" IN SCHEMA public GRANT SELECT ON TABLES')
         ->not->toContain(DATABASE_USER_SECRET);
 });
+
+it('labels PostgreSQL write grants without claiming database ownership', function (): void {
+    $connection = DatabaseConnection::query()->sole();
+    $connection->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $connection->update(['driver' => 'pgsql']);
+    $this->postJson('/api/v1/database-connections/dlf-leden/users', ['username' => 'writer', 'password' => DATABASE_USER_SECRET])->assertCreated()->assertJsonPath('data.privileges', 'DATA WRITE ON "dlf_leden"');
+});

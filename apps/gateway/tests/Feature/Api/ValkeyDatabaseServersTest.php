@@ -107,7 +107,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->assertJsonPath('data.databases_count', 0);
 
         expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count', 'lan_node_ids',
+            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
         ]);
 
         $server = DatabaseServer::query()->sole();
@@ -813,6 +813,6 @@ describe('database:server:close boundary', function (): void {
 it('publishes Valkey only on explicit LAN and WireGuard addresses', function (): void {
     $this->dbNode->update(['lan_ip' => '10.0.0.6', 'public_ssh_host' => '85.9.217.155']);
     $this->gateway->update(['lan_ip' => '10.0.0.5']);
-    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, ['lan_node_ids' => [$this->gateway->id]]))->assertCreated();
+    $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode, []))->assertCreated();
     expect(DatabaseServer::query()->sole()->process->runtime_config['ports'])->toBe(['10.44.0.80:6379:6379', '10.0.0.6:6379:6379']);
 });

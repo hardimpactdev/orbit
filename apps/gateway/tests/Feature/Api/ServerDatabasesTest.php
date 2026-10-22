@@ -439,3 +439,43 @@ it('refuses PostgreSQL Instance ownership before creating database objects', fun
         ->toThrow(ResourceOperationException::class, 'Instance-owned databases require MySQL.');
     expect($this->admin->sql())->toBe('');
 });
+
+it('records a chosen PostgreSQL builtin locale and creates from template0', function (string $locale): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => $locale])
+        ->assertCreated()->assertJsonPath('data.locale', $locale);
+    expect(DatabaseConnection::query()->where('slug', 'mealou')->sole()->locale)->toBe($locale);
+    expect($this->admin->sql())->toContain("TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE '{$locale}'");
+})->with(['C', 'C.UTF-8']);
+
+it('refuses unsupported or injected PostgreSQL locales before SQL execution', function (mixed $locale): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => $locale])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($this->admin->sql())->toBe('');
+})->with(['en_US.utf8', "C.UTF-8'; DROP DATABASE postgres;--", '', null, 18]);
+
+it('refuses a locale for MySQL instead of silently ignoring it', function (): void {
+    $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => 'C.UTF-8'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($this->admin->sql())->toBe('');
+});
+
+it('refuses locale on external registration', function (): void {
+    $this->postJson('/api/v1/database-connections', ['slug' => 'external', 'driver' => 'pgsql', 'host' => 'db.example.test', 'database' => 'app', 'username' => 'app', 'password' => 'fixture', 'locale' => 'C.UTF-8'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($this->admin->sql())->toBe('');
+});
+
+it('refuses locale on a Valkey server', function (): void {
+    $this->server->update(['driver' => 'redis']);
+    $this->postJson('/api/v1/database-connections', ['slug' => 'cache', 'server' => $this->server->slug, 'patterns' => ['app:*'], 'allow' => ['@read'], 'locale' => 'C.UTF-8'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+});
+
+it('refuses changing a managed PostgreSQL locale after creation', function (): void {
+    $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+    $this->postJson('/api/v1/database-connections', ['slug' => 'mealou', 'server' => $this->server->slug, 'locale' => 'C.UTF-8'])->assertCreated();
+    $this->patchJson('/api/v1/database-connections/mealou', ['locale' => 'C'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(DatabaseConnection::query()->sole()->locale)->toBe('C.UTF-8');
+});

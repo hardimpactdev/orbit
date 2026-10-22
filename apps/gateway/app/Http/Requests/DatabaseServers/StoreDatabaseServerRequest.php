@@ -9,7 +9,6 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Http\Requests\DatabaseConnections\DatabaseConnectionFieldRules;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -34,8 +33,6 @@ final class StoreDatabaseServerRequest extends FormRequest
             'node_id' => ['required', 'integer', 'min:1', 'exists:nodes,id', self::strictInteger(...)],
             'driver' => ['sometimes', 'string', Rule::enum(DatabaseDriver::class)->only([DatabaseDriver::Mysql, DatabaseDriver::Redis, DatabaseDriver::Pgsql])],
             'tag' => ['sometimes', 'string', 'max:128', 'regex:'.($this->input('driver') === 'pgsql' ? DatabaseServerProcess::POSTGRES_TAG_PATTERN : self::TAG_PATTERN)],
-            'lan_node_ids' => ['sometimes', 'array', 'list', 'max:256'],
-            'lan_node_ids.*' => ['integer', 'min:1', 'distinct', 'exists:nodes,id', self::strictInteger(...)],
             'port' => ['sometimes', 'integer', 'min:1', 'max:65535', self::strictInteger(...), 'prohibits:process_id'],
             // Adoption of an existing Valkey Process (ADR 0221): the Process supplies the port.
             'process_id' => ['required_with:connection', 'integer', 'min:1', self::strictInteger(...)],
@@ -49,7 +46,7 @@ final class StoreDatabaseServerRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['slug', 'node_id', 'driver', 'tag', 'port', 'process_id', 'connection', 'lan_node_ids'],
+                ['slug', 'node_id', 'driver', 'tag', 'port', 'process_id', 'connection'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -76,7 +73,6 @@ final class StoreDatabaseServerRequest extends FormRequest
                 is_int($validated['port'] ?? null) => $validated['port'],
                 default => $driver->defaultPort() ?? self::DEFAULT_PORT,
             },
-            lanNodeIds: isset($validated['lan_node_ids']) ? ValidatedData::integerList($validated['lan_node_ids']) : null,
             processId: $processId,
             connection: is_string($validated['connection'] ?? null) ? $validated['connection'] : null,
         );

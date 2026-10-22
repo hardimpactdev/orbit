@@ -31,7 +31,6 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 | `--node=NODE` | required | Numeric Node ID or Node name. The Node must be an active Linux Node with Docker. |
 | `--driver=DRIVER` | `mysql` | `mysql`, `pgsql` or `redis`. |
 | `--tag=TAG` | `8.4` for mysql, `18` for pgsql, `8.1` for redis | Image tag. The image is `mysql:<tag>`, `postgres:<tag>` or `valkey/valkey:<tag>`. |
-| `--lan-node=NODE` | none | Repeat to name active Nodes eligible for LAN connection selection. A create retry replaces the set; omission preserves it. The API accepts an empty list to clear it. |
 | `--port=PORT` | `3306` for mysql, `5432` for pgsql, `6379` for redis | Port published on the Node's WireGuard address and its LAN address when present. |
 
 ### A MySQL server
@@ -50,7 +49,7 @@ After step 4, the root password exists only encrypted in the Gateway. It is not 
 Create PostgreSQL 18 on an explicit free port:
 
 ```bash
-orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434 --lan-node=app-prod --lan-node=gateway
+orbit database:server:create services-postgres --node=17 --driver=pgsql --port=5434
 ```
 
 PostgreSQL follows the MySQL steps with `postgres:<tag>`, command `postgres`, container port 5432, and first-start variable `POSTGRES_PASSWORD`. The default tag is `18`; accepted tags are `18`, `18.N`, and these versions with an image variant suffix. Other majors and `latest` return `validation.failed`. The named volume mounts at `/var/lib/postgresql`, because PostgreSQL 18 stores data in `/var/lib/postgresql/18/docker`. The pre-18 mount `/var/lib/postgresql/data` is wrong for this image. Readiness runs an authenticated TCP SQL query; the image's temporary initialization server is socket-only. A retry reuses the encrypted password, Process and volume, and finishes password removal before returning active.
@@ -65,9 +64,9 @@ Create application objects as the managed owner. Custom schemas need explicit op
 
 Managed Database servers serve clients inside the Orbit network only. All three drivers publish one explicit IPv4 Docker binding on the Node's WireGuard IP and a second on its LAN IP when present. Publication requires RFC 1918 private IPv4 addresses. Orbit never binds `0.0.0.0`, an IPv6 wildcard, or the Node's public address. Services also has the public interface 85.9.217.155; that address must never appear in a Database server's bindings.
 
-The private networks are the trust boundary. Nick accepts access from clients that can reach those private addresses without a port firewall. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. PostgreSQL keeps the image's stock `pg_hba.conf` defaults and SCRAM password authentication. Operators must keep these private addresses unreachable from the public internet.
+The private networks are the trust boundary. Clients that can reach those private addresses have network access to the ports. Ports published by Docker bypass UFW. Orbit adds no database port firewall, iptables chain, UFW hook, Docker service drop-in or PostgreSQL source rules. PostgreSQL keeps the image's stock `pg_hba.conf` defaults and SCRAM password authentication. Operators must keep these private addresses unreachable from the public internet.
 
-The stored connection host stays WireGuard. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the server's stored LAN peer list. This list records connection selection eligibility; it does not restrict network access. A shared Cluster is not required.
+The stored connection host stays WireGuard. Explicit LAN selection requires only that the server and consumer Nodes are active and each has an IPv4 LAN address. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the private network. A shared Cluster is not required.
 
 Existing servers keep their publications until an explicit create retry. That retry enables private publication and SQL Doctor checks for the selected server. Existing Valkey ACL checks still run. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
 
@@ -150,6 +149,9 @@ Orbit refuses a name with `database.name_conflict` when the server already has t
 On MySQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
 `database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
+
+
+PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 
 ## Create an ACL user on a Valkey server
 
@@ -282,6 +284,8 @@ The server commands return these codes.
 | `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
 
+PostgreSQL refuses database removal while clients remain connected; stop those clients and retry. Orbit does not force-disconnect them.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -332,9 +336,9 @@ PostgreSQL uses the existing MySQL Process, encrypted admin credential, provisio
 
 ### Private networks are the boundary
 
-This is the trust model for decision 0227, as directed by Nick for PR #1441. Managed servers are consumed only inside Orbit's private networks. Explicit WireGuard and LAN bindings keep Docker from listening on a public interface. Wildcard bindings were rejected because Docker bypasses UFW and Services has a public interface. A port firewall and custom `pg_hba.conf` source filtering were rejected: Nick accepts the risk within these private networks. No script-gate exception is needed.
+This is the trust model for decision 0227, recorded for PR #1441. Managed servers are consumed only inside Orbit's private networks. Explicit WireGuard and LAN bindings keep Docker from listening on a public interface. Wildcard bindings were rejected because Docker bypasses UFW and Services has a public interface. A port firewall and custom `pg_hba.conf` source filtering were rejected: the private networks are trusted. No script-gate exception is needed.
 
-A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. Explicit peer Nodes guide connection selection only. WireGuard stays the default; automatic selection would change existing consumers.
+A shared Cluster does not prove LAN reachability. Services has no Cluster and must not join prod to serve app-prod. The operator selects LAN for clients on the same data-centre network. WireGuard stays the default; automatic selection would change existing consumers.
 
 ### Migration preserves connection identities
 

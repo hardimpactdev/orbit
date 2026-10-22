@@ -59,6 +59,8 @@ A form-request rule `present` marks that property required, as `required` does.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
 
+Database creation publishes three body variants: registration, SQL server creation, and Valkey ACL creation. The SQL server variant includes optional `locale` with the builtin PostgreSQL values from `DatabaseConnectionFieldRules::onServer()`. Registration and Valkey omit it. The runtime also checks the named server's driver.
+
 The Instance update schema keeps `shared_paths` nullable, so `null` can restore its default; [shared paths](/reference/deployments#shared-paths) defines the directory rules.
 
 The installed [Process update](/reference/processes-and-schedules#update-in-place) uses `PATCH /api/v1/processes/{process}`. Its generated body reuses create rules but excludes identity, `preset`, and `start`, and requires `runtime` and `command`. Process create, installed update, and Project definition write schemas expose Docker `environment` as a name-to-string map, not a list. Process responses retain nullable `working_directory`. Regenerate the web API types with `bun run types` in `apps/web` after these schemas change.

@@ -17,7 +17,7 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process#orbit-processcreate) lists the accepted combinations.
 
-`database:server:create --lan-node` selects allowed LAN consumers. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
+`database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
 
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 

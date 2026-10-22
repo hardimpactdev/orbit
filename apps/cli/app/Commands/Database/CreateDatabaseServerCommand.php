@@ -22,7 +22,6 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
         {--connection= : Existing redis connection for adoption}
         {--tag= : Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql}
         {--port= : Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql}
-        {--lan-node=* : Explicit LAN peer Node ID or registered name (repeatable)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -79,18 +78,9 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $lanNodeIds = [];
-        foreach ($this->option('lan-node') as $selector) {
-            $peerId = $this->resolveNodeId($connector, $selector);
-            if ($peerId === null) {
-                return self::FAILURE;
-            }
-            $lanNodeIds[] = $peerId;
-        }
         $server = $this->sendWithProgress(
             $connector,
             new CreateDatabaseServerRequest(
-                lanNodeIds: $lanNodeIds === [] ? null : array_values(array_unique($lanNodeIds)),
                 slug: $slug,
                 nodeId: $nodeId,
                 tag: $tag,

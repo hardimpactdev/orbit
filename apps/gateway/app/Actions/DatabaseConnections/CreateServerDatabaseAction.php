@@ -71,6 +71,7 @@ final readonly class CreateServerDatabaseAction
             database: $server->driver === DatabaseDriver::Pgsql ? $this->postgresName($data->slug) : $this->names->database($data->slug),
             instance: $instance,
             createdBy: $createdBy,
+            locale: $data->locale,
         );
     }
 
@@ -81,6 +82,7 @@ final readonly class CreateServerDatabaseAction
         string $database,
         ?Instance $instance,
         ?string $createdBy,
+        ?string $locale = null,
     ): DatabaseConnection {
         $this->assertActive($server);
         $this->assertHoldsDatabases($server);
@@ -95,14 +97,22 @@ final readonly class CreateServerDatabaseAction
         $testDatabase = $instance instanceof Instance ? $this->names->testDatabase($database) : null;
         $credentials = $this->credentials($server, $database, $instance);
 
+        if ($locale !== null && $server->driver !== DatabaseDriver::Pgsql) {
+            throw new ResourceOperationException('validation.failed', 'A locale requires a PostgreSQL server.', 422);
+        }
+        $statements = $this->statements->forDriver($server->driver);
+        $createDatabase = $statements instanceof PostgresStatements
+            ? $statements->createDatabase($database, $locale)
+            : $statements->createDatabase($database);
+
         $this->assertNamesFree($server, $database, $testDatabase, $credentials);
 
-        $sql = $this->sql($server)->ensureUser($credentials['username'], $credentials['password'])
-            .$this->sql($server)->createDatabase($database)
-            .$this->sql($server)->grantAll($database, $credentials['username']);
+        $sql = $statements->ensureUser($credentials['username'], $credentials['password'])
+            .$createDatabase
+            .$statements->grantAll($database, $credentials['username']);
 
         if ($testDatabase !== null) {
-            $sql .= $this->sql($server)->createDatabase($testDatabase)
+            $sql .= $this->statements->forDriver($server->driver)->createDatabase($testDatabase)
                 .$this->statements->grantAllWithPrefix($testDatabase, $credentials['username']);
         }
 
@@ -123,6 +133,7 @@ final readonly class CreateServerDatabaseAction
                 $testDatabase,
                 $credentials,
                 $createdBy,
+                $locale,
             ): DatabaseConnection {
                 $connection = DatabaseConnection::query()->create([
                     'slug' => $slug,
@@ -133,6 +144,7 @@ final readonly class CreateServerDatabaseAction
                     'host' => $server->node->wireguard_ip,
                     'port' => $server->port,
                     'database' => $database,
+                    'locale' => $locale,
                     'test_database' => $testDatabase,
                     'path' => null,
                     'username' => $credentials['username'],
@@ -142,7 +154,7 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $credentials['username'],
-                    'privileges' => $this->sql($server)->privilegeText($database, prefix: $testDatabase),
+                    'privileges' => $this->statements->forDriver($server->driver)->privilegeText($database, prefix: $testDatabase),
                     'created_by' => $createdBy,
                 ]);
 
@@ -193,8 +205,6 @@ final readonly class CreateServerDatabaseAction
 
         $testDatabase = $this->names->testDatabase($database);
         $credentials = $this->credentials($server, $database, $instance);
-        $this->assertNamesFree($server, $database, $testDatabase, $credentials);
-
         try {
             $connection = DB::transaction(function () use (
                 $slug,
@@ -225,7 +235,7 @@ final readonly class CreateServerDatabaseAction
                 DatabaseUser::query()->create([
                     'database_connection_id' => $connection->id,
                     'username' => $credentials['username'],
-                    'privileges' => $this->sql($server)->privilegeText($database, prefix: $testDatabase),
+                    'privileges' => $this->statements->forDriver($server->driver)->privilegeText($database, prefix: $testDatabase),
                     'created_by' => $createdBy,
                 ]);
 
@@ -266,12 +276,12 @@ final readonly class CreateServerDatabaseAction
 
         $this->admin->execute(
             $server,
-            $this->sql($server)->ensureUser($connection->username, $connection->password)
-                .$this->sql($server)->dropDatabase($connection->database)
-                .$this->sql($server)->dropDatabase($connection->test_database)
-                .$this->sql($server)->createDatabase($connection->database)
-                .$this->sql($server)->grantAll($connection->database, $connection->username)
-                .$this->sql($server)->createDatabase($connection->test_database)
+            $this->statements->forDriver($server->driver)->ensureUser($connection->username, $connection->password)
+                .$this->statements->forDriver($server->driver)->dropDatabase($connection->database)
+                .$this->statements->forDriver($server->driver)->dropDatabase($connection->test_database)
+                .$this->statements->forDriver($server->driver)->createDatabase($connection->database)
+                .$this->statements->forDriver($server->driver)->grantAll($connection->database, $connection->username)
+                .$this->statements->forDriver($server->driver)->createDatabase($connection->test_database)
                 .$this->statements->grantAllWithPrefix($connection->test_database, $connection->username),
         );
     }
@@ -465,7 +475,7 @@ final readonly class CreateServerDatabaseAction
             }
         }
 
-        if ($this->admin->execute($server, $this->sql($server)->databasesNamed($database, $testDatabase)) !== []) {
+        if ($this->admin->execute($server, $this->statements->forDriver($server->driver)->databasesNamed($database, $testDatabase)) !== []) {
             throw $this->nameConflict($server, $database);
         }
 
@@ -483,7 +493,7 @@ final readonly class CreateServerDatabaseAction
                 ->whereIn('database_connection_id', $connections->pluck('id'))
                 ->exists();
 
-        if ($recorded || $this->admin->execute($server, $this->sql($server)->userNamed($username)) !== []) {
+        if ($recorded || $this->admin->execute($server, $this->statements->forDriver($server->driver)->userNamed($username)) !== []) {
             throw $this->nameConflict($server, $username);
         }
     }
@@ -500,14 +510,14 @@ final readonly class CreateServerDatabaseAction
         #[SensitiveParameter]
         array $credentials,
     ): void {
-        $sql = $this->sql($server)->dropDatabase($database);
+        $sql = $this->statements->forDriver($server->driver)->dropDatabase($database);
 
         if ($testDatabase !== null) {
-            $sql .= $this->sql($server)->dropDatabase($testDatabase);
+            $sql .= $this->statements->forDriver($server->driver)->dropDatabase($testDatabase);
         }
 
         if ($credentials['new']) {
-            $sql .= $this->sql($server)->dropUser($credentials['username']);
+            $sql .= $this->statements->forDriver($server->driver)->dropUser($credentials['username']);
         }
 
         try {
@@ -543,11 +553,6 @@ final readonly class CreateServerDatabaseAction
             message: "Database server [{$server->slug}] already has a database or user named [{$name}].",
             status: 409,
         );
-    }
-
-    private function sql(DatabaseServer $server): MysqlStatements|PostgresStatements
-    {
-        return $server->driver === DatabaseDriver::Pgsql ? new PostgresStatements : $this->statements;
     }
 
     private function postgresName(string $slug): string

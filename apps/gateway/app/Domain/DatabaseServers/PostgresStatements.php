@@ -28,9 +28,14 @@ final readonly class PostgresStatements
             ."ALTER ROLE {$name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ".$this->literal($verifier).";\n";
     }
 
-    public function createDatabase(string $database): string
+    public function createDatabase(string $database, ?string $locale = null): string
     {
-        return 'CREATE DATABASE '.$this->identifier($database).";\n";
+        if ($locale !== null && ! in_array($locale, ['C', 'C.UTF-8'], true)) {
+            throw new ResourceOperationException('validation.failed', 'PostgreSQL builtin locale must be C or C.UTF-8.', 422);
+        }
+
+        return 'CREATE DATABASE '.$this->identifier($database)
+            .($locale === null ? '' : " TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE ".$this->literal($locale)).";\n";
     }
 
     /** Ownership is explicit; only this role's objects receive the default grants. */
@@ -89,7 +94,7 @@ final readonly class PostgresStatements
 
     public function privilegeText(string $database, bool $readOnly = false, ?string $prefix = null): string
     {
-        return ($readOnly ? 'CONNECT, USAGE, SELECT' : 'OWNER / DATA WRITE').' ON '.$this->identifier($database);
+        return ($readOnly ? 'CONNECT, USAGE, SELECT' : 'DATA WRITE').' ON '.$this->identifier($database);
     }
 
     private function connect(string $database): string

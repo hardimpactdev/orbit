@@ -4275,6 +4275,7 @@ export interface components {
             owner_instance_id?: number | null;
             test_database?: string | null;
             lan_host?: string | null;
+            locale?: string | null;
         };
         DatabaseUser: {
             id?: number;
@@ -4294,7 +4295,6 @@ export interface components {
             port?: number;
             status?: string;
             databases_count?: number;
-            lan_node_ids?: number[];
         };
         InstanceDeployment: {
             id?: number;
@@ -7614,6 +7614,11 @@ export interface operations {
                     slug: string;
                     server: string;
                     instance_id?: number;
+                    /**
+                     * @description PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default.
+                     * @enum {string}
+                     */
+                    locale?: "C" | "C.UTF-8";
                 } | {
                     slug: string;
                     server: string;
@@ -8277,7 +8282,6 @@ export interface operations {
                     driver?: "mysql" | "redis" | "pgsql";
                     /** @description Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql */
                     tag?: string;
-                    lan_node_ids?: number[];
                     /** @description Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql */
                     port?: number;
                     process_id?: number;

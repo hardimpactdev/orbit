@@ -436,3 +436,14 @@ it('keeps a managed LAN host separate from the default connection host', functio
     expect($response->host)->toBe('10.44.0.3')->and($response->lanHost)->toBe('10.0.0.6')
         ->and($response->toArray())->toMatchArray(['host' => '10.44.0.3', 'lan_host' => '10.0.0.6']);
 });
+
+it('transports and preserves a chosen PostgreSQL builtin locale', function (): void {
+    expect(new CreateDatabaseConnectionRequest(slug: 'mealou', server: 'services-postgres', locale: 'C.UTF-8')->body()->all())
+        ->toBe(['slug' => 'mealou', 'server' => 'services-postgres', 'locale' => 'C.UTF-8']);
+    $response = DatabaseConnectionResponse::fromGatewayData([
+        'id' => 1, 'slug' => 'mealou', 'driver' => 'pgsql', 'node_id' => 17, 'host' => '10.44.0.3',
+        'port' => 5434, 'database' => 'mealou', 'path' => null, 'username' => 'mealou', 'has_password' => true,
+        'locale' => 'C.UTF-8',
+    ], 'request-1');
+    expect($response->locale)->toBe('C.UTF-8')->and($response->toArray()['locale'])->toBe('C.UTF-8');
+});

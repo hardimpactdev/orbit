@@ -123,9 +123,9 @@ it('preserves the Valkey driver and accepts a legacy MySQL response', function (
         ->toThrow(InvalidArgumentException::class);
 });
 
-it('transports PostgreSQL server peers and preserves them in the response', function (): void {
-    $request = new CreateDatabaseServerRequest('postgres', 17, driver: 'pgsql', port: 5434, lanNodeIds: [4, 5]);
-    expect($request->body()->all())->toBe(['slug' => 'postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql', 'lan_node_ids' => [4, 5]]);
-    $response = DatabaseServerResponse::fromGatewayData(database_server_sdk_payload(['driver' => 'pgsql', 'lan_node_ids' => [4, 5]]), 'request-1');
-    expect($response->driver)->toBe('pgsql')->and($response->lanNodeIds)->toBe([4, 5]);
+it('transports PostgreSQL server settings and preserves them in the response', function (): void {
+    $request = new CreateDatabaseServerRequest('postgres', 17, driver: 'pgsql', port: 5434);
+    expect($request->body()->all())->toBe(['slug' => 'postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql']);
+    $response = DatabaseServerResponse::fromGatewayData(database_server_sdk_payload(['driver' => 'pgsql']), 'request-1');
+    expect($response->driver)->toBe('pgsql');
 });

@@ -1761,6 +1761,14 @@
             "type": "integer",
             "minimum": 1
           },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "C",
+              "C.UTF-8"
+            ],
+            "description": "PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default."
+          },
           "patterns": {
             "type": "array",
             "maxItems": 32,
@@ -1878,6 +1886,14 @@
               "instance_id": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "locale": {
+                "type": "string",
+                "enum": [
+                  "C",
+                  "C.UTF-8"
+                ],
+                "description": "PostgreSQL servers only: builtin locale, template0 and UTF8. Omission inherits the image default."
               }
             },
             "required": [
@@ -2143,14 +2159,6 @@
             "pattern": "",
             "maxLength": 128,
             "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql"
-          },
-          "lan_node_ids": {
-            "type": "array",
-            "maxItems": 256,
-            "items": {
-              "type": "integer",
-              "minimum": 1
-            }
           },
           "port": {
             "type": "integer",
