@@ -2,7 +2,7 @@
 
 ## Establish the environment
 
-Orbit has five Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, `packages/php-sdk`, and `apps/e2e`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses a Pest fork; do not infer supported flags from upstream documentation alone.
+Orbit has five Composer projects: `apps/cli`, `apps/gateway`, `apps/docs`, `packages/php-sdk`, and `apps/e2e`. Read each project's manifests, lockfile, Pest bootstrap, PHPUnit configuration, and guidance. Confirm versions from the lockfile and installed packages. The repository uses stock Pest; confirm a flag against the locked version before you rely on it.
 
 Run `composer guidance:check` where required. If dependencies are missing, install from the lockfile before interpreting failures. Do not overwrite modified guidance to fix an absent `vendor/` directory. Keep environment failures separate from test failures.
 

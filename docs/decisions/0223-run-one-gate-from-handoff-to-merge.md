@@ -112,7 +112,7 @@ Measured cases:
 
 ## Decision
 
-The decision has eight parts. They change the Gateway, the root `bin` and `tools` scripts, `.github/workflows/ci.yml`, the agent guidance, and the Pest fork `nckrtl/pestphp-monorepo`.
+The decision has eight parts. They change the Gateway, the root `bin` and `tools` scripts, `.github/workflows/ci.yml`, the agent guidance, and the Pest fork `nckrtl/pestphp-monorepo`. The third amendment removed that fork: Orbit requires stock `pestphp/pest`.
 
 ### 1. One local gate per handoff
 
