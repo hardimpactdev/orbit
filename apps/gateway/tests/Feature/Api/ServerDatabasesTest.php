@@ -656,6 +656,46 @@ describe('PostgreSQL test pool repair', function (): void {
         });
     });
 
+    it('converges every member after repair is interrupted between CREATE and grants', function (string $member): void {
+        postgres_statements_server(function (Closure $psql) use ($member): void {
+            server_database_live_postgres($this, $psql);
+            $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+            $psql("\\connect app\nCREATE TABLE primary_data (id int); INSERT INTO primary_data VALUES (42);\n\\connect app_test_test_2\nSET ROLE dlf_feature_x; CREATE TABLE survivor (id int); INSERT INTO survivor VALUES (17);\nRESET ROLE; GRANT CREATE ON SCHEMA public TO PUBLIC; REVOKE ALL ON SCHEMA public FROM dlf_feature_x;\n\\connect postgres\nGRANT CONNECT ON DATABASE app_test_test_2 TO PUBLIC;\nDROP DATABASE {$member};");
+            $primary = $psql("SELECT oid::text || ':' || datacl::text FROM pg_database WHERE datname = 'app';");
+            $interrupted = true;
+            $admin = Mockery::mock(DatabaseServerAdmin::class);
+            $admin->shouldReceive('execute')->andReturnUsing(static function (DatabaseServer $server, string $sql) use ($psql, $member, &$interrupted): array {
+                if ($interrupted && str_starts_with($sql, 'CREATE DATABASE "'.$member.'"')) {
+                    $psql(explode("\n", $sql)[0]);
+                    $interrupted = false;
+                    throw new ResourceOperationException('database.server_command_failed', 'Interrupted before managed grants.', 502);
+                }
+                $output = $psql($sql);
+
+                return $output === '' ? [] : explode("\n", $output);
+            });
+            app()->instance(DatabaseServerAdmin::class, $admin);
+            $publicConnect = "SELECT count(*) FROM pg_database, LATERAL aclexplode(COALESCE(datacl, acldefault('d', datdba))) acl WHERE datname = '{$member}' AND acl.grantee = 0 AND acl.privilege_type = 'CONNECT';";
+
+            $this->postJson('/api/v1/database-connections', $request)->assertStatus(502);
+            expect($psql($publicConnect))->toBe('1');
+            $identities = $psql("SELECT datname || ':' || oid FROM pg_database WHERE datname LIKE 'app%' ORDER BY datname;");
+
+            foreach ([1, 2] as $attempt) {
+                $this->postJson('/api/v1/database-connections', $request)->assertOk();
+                expect($psql($publicConnect))->toBe('0');
+                expect($psql("SELECT datname || ':' || oid FROM pg_database WHERE datname LIKE 'app%' ORDER BY datname;"))->toBe($identities);
+                expect($psql("SELECT oid::text || ':' || datacl::text FROM pg_database WHERE datname = 'app';"))->toBe($primary);
+                expect($psql("SELECT count(*) FROM pg_database, LATERAL aclexplode(datacl) acl WHERE datname IN ('app_test', 'app_test_test_1', 'app_test_test_2') AND acl.grantee = 0 AND acl.privilege_type = 'CONNECT';"))->toBe('0');
+                expect($psql("SELECT count(*) FROM pg_database WHERE datname IN ('app_test', 'app_test_test_1', 'app_test_test_2') AND pg_get_userbyid(datdba) = 'dlf_feature_x';"))->toBe('3');
+                foreach (['app_test', 'app_test_test_1', 'app_test_test_2'] as $name) {
+                    expect($psql("\\connect {$name}\nSELECT count(*) FROM pg_namespace, LATERAL aclexplode(nspacl) acl WHERE nspname = 'public' AND acl.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'dlf_feature_x') AND acl.privilege_type IN ('USAGE', 'CREATE'); SELECT count(*) FROM pg_namespace, LATERAL aclexplode(nspacl) acl WHERE nspname = 'public' AND acl.grantee = 0 AND acl.privilege_type = 'CREATE';"))->toBe("2\n0");
+                }
+                expect($psql("\\connect app\nSELECT id FROM primary_data;\n\\connect app_test_test_2\nSELECT id FROM survivor;"))->toBe("42\n17");
+            }
+        });
+    })->with(['app_test', 'app_test_test_1']);
+
     it('refuses a missing managed role with 409 without creating databases or a role', function (): void {
         $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
         $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];

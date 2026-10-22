@@ -12,7 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 
-/** Restore missing recorded test databases without changing surviving databases or credentials. */
+/** Restore recorded test databases and converge their managed grants without replacing data. */
 final readonly class RepairPostgresTestDatabasesAction
 {
     public function __construct(
@@ -39,10 +39,12 @@ final readonly class RepairPostgresTestDatabasesAction
             }
 
             $present = $this->admin->execute($server, $this->statements->databasesIn($names));
-            foreach (array_diff($names, $present) as $name) {
+            foreach ($names as $name) {
+                $create = in_array($name, $present, true)
+                    ? ''
+                    : $this->statements->createDatabase($name, $connection->locale, $username);
                 $this->admin->execute($server,
-                    $this->statements->createDatabase($name, $connection->locale, $username)
-                    .$this->statements->grantAll($name, $username));
+                    $create.$this->statements->grantAll($name, $username));
             }
 
             return $connection;

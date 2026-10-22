@@ -163,9 +163,11 @@ Repeat the original `database:create` request for an Instance-owned PostgreSQL c
 orbit database:create app-dev --server=beast-pg --instance=606 --test-processes=4
 ```
 
-Orbit checks the recorded `<name>_test` and exact worker names as admin, then creates only missing members with the recorded locale, managed Instance ownership and public-schema grants. It does not change the primary database, existing members, credentials, attachments or unrecorded names. A primary database that is missing is not recreated by pool repair. Existing pool names owned by another role or a missing managed role return `database.name_conflict` (409) before any creation; Orbit never adopts a foreign database. Repair and database removal share the server lock.
+Orbit checks the recorded `<name>_test` and exact worker names as admin, then creates only missing members with the recorded locale and managed Instance ownership. It reapplies managed ownership and public-schema grants and revokes PUBLIC database access on every recorded member, including existing ones. This completes a repair interrupted after CREATE but before the grants.
 
-A successful retry returns the same connection with status 200. A failure keeps the connection record and any members already restored, so repeat the same request to finish. Stop the affected test run before repair. Repeating repair on a complete pool makes no changes. Use [Doctor](#check-a-server-with-doctor) to find missing members, and check the [connection budget](/reference/database-connections#test-databases) before restarting tests.
+The primary database, member data and identities, credentials, attachments and unrecorded names stay unchanged. A primary database that is missing is not recreated by pool repair. Existing pool names owned by another role or a missing managed role return `database.name_conflict` (409) before any change; Orbit never adopts a foreign database. Repair and database removal share the server lock.
+
+A successful retry returns the same connection with status 200. A failure keeps the connection record and any members already restored, so repeat the same request to finish. Stop the affected test run before repair. Repeating repair on a complete pool converges the same grants without recreating databases. Use [Doctor](#check-a-server-with-doctor) to find missing members, and check the [connection budget](/reference/database-connections#test-databases) before restarting tests.
 
 ## Create an ACL user on a Valkey server
 
