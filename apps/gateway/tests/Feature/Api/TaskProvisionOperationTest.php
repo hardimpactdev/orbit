@@ -379,6 +379,21 @@ describe('tasks.provision', function (): void {
         expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
     });
 
+    it('leaves an open provision untouched when group cancellation is disabled', function (): void {
+        $group = provision_operation_group();
+        TaskVmSettingsBuilder::bind();
+        $operation = provision_operation_start($group);
+        app(OperationRunner::class)->run($operation->id);
+        app(TaskExtensionState::class)->disable();
+
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/cancel')->assertConflict()->assertJsonPath('error.code', 'extension.disabled');
+
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        expect($operation->cancel_requested_at)->toBeNull();
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved);
+        expect($group->reserved_at)->not->toBeNull();
+    });
+
     it('keeps disabled task VMs as a tick claim wait', function (): void {
         $group = provision_operation_group(orchestration: TaskOrchestration::Tick);
         app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());

@@ -283,6 +283,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tasks:complete' => ServingNode::Gateway,
         'tasks:create' => ServingNode::Gateway,
         'tasks:list' => ServingNode::Collection,
+        'tasks:provision' => ServingNode::Gateway,
         'tasks:question:close' => ServingNode::Gateway,
         'tasks:question:list' => ServingNode::Collection,
         'tasks:show' => ServingNode::Collection,

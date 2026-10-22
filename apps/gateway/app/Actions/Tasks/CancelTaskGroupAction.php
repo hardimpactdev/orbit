@@ -32,7 +32,6 @@ final readonly class CancelTaskGroupAction
 
     public function execute(Task $group): Task
     {
-        $this->requireExtension->execute();
         app(TaskOperations::class)->cancelOpen($group);
 
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group), wait: false);
@@ -40,6 +39,8 @@ final readonly class CancelTaskGroupAction
 
     private function cancel(Task $group): Task
     {
+        $this->requireExtension->execute();
+
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         $unpublished = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && ($group->pr_url === null || $group->pr_url === '');

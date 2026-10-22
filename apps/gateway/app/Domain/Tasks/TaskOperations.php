@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -22,6 +23,7 @@ final readonly class TaskOperations
         private CancelOperationAction $cancel,
         private OperationIdempotency $idempotency,
         private TaskExecutionLock $execution,
+        private RequireTasksExtensionAction $extension,
     ) {}
 
     /**
@@ -76,6 +78,7 @@ final readonly class TaskOperations
     {
         $operation = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))->first();
         if ($operation instanceof Operation) {
+            $this->extension->execute();
             $this->cancel->execute($operation);
         }
     }
