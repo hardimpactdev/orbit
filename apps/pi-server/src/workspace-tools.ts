@@ -72,13 +72,7 @@ function createOffloadingReadTool(options: WorkspaceToolOptions) {
         async execute(toolCallId, params, signal, onUpdate, ctx) {
             const cwd = ctx?.cwd || options.cwd;
             const delegate = () =>
-                createReadToolDefinition(cwd).execute(
-                    toolCallId,
-                    params,
-                    signal,
-                    onUpdate,
-                    ctx as ExtensionContext,
-                );
+                createReadToolDefinition(cwd).execute(toolCallId, params, signal, onUpdate, ctx);
             if (signal?.aborted) {
                 throw new Error("Operation aborted");
             }

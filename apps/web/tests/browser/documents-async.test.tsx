@@ -219,6 +219,8 @@ it.each(["rows", "destinations", "history"] as const)(
                 await page.getByRole("button", { name: "Move", exact: true }).click();
             }
             await expect.poll(() => observed.size).toBeGreaterThan(0);
+            // A queued visibility event can outlive the observer's disconnection.
+            const queued = [...observed.values()];
             const key =
                 scope === "rows"
                     ? ["documents", 1, "list"]
@@ -228,8 +230,8 @@ it.each(["rows", "destinations", "history"] as const)(
             const invalidation = queryClient.invalidateQueries({ queryKey: key });
             await expect.poll(() => refreshing).toBe(true);
             // Other scopes can have visible sentinels too. Notify all of them; the refreshing one
-            // must be disconnected and may not issue a next-page request until its refresh ends.
-            for (const notify of observed.values()) notify();
+            // must preserve its active fetch even if its observer has already disconnected.
+            for (const notify of queued) notify();
             expect(nextRequests).toBe(0);
             refresh.release();
             await invalidation;

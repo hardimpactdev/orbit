@@ -59,7 +59,7 @@ Install the browsers once with `bunx playwright install webkit chromium`; [CI](/
 
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
-After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
+After a change to `docs/openapi.json`, run `bun run types` and commit the regenerated `src/api/schema.d.ts`. The `tools/api-types` Bun workspace owns the generator and its TypeScript 5 compiler API dependency. The web app uses TypeScript 7 for type checking. `bun install --frozen-lockfile` installs both workspaces from one lockfile. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
 
 ## Pi server
 

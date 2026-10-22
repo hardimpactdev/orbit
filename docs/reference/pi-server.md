@@ -12,6 +12,8 @@ The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessi
 
 Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
 
+The Pi SDK packages share one `pi-ai` and `pi-agent-core` version, including transitive dependencies. Orbit passes Pi’s tool context through when it delegates a read.
+
 ## Configure the server
 
 The server reads command-line flags first, then the environment. Orbit's systemd Processes pass only arguments, so every setting has a flag. The token has only a file flag, because arguments are visible to other users and are stored in the Process definition. The server refuses to start without a bind address and a token.

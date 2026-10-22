@@ -819,13 +819,21 @@ function tools(cwd: string) {
 }
 
 async function run(
-    tool: { execute: (...args: any[]) => Promise<{ content: { type: string; text?: string }[] }> },
+    tool: {
+        execute: (...args: any[]) => Promise<{
+            content: { type: string; text?: string }[];
+            isError?: boolean;
+        }>;
+    },
     params: Record<string, unknown>,
     id = "call:1",
 ): Promise<{ text: string; isError: boolean }> {
     try {
         const result = await tool.execute(id, params, undefined, undefined, undefined);
-        return { text: result.content.map((block) => block.text ?? "").join(""), isError: false };
+        return {
+            text: result.content.map((block) => block.text ?? "").join(""),
+            isError: result.isError ?? false,
+        };
     } catch (error) {
         return { text: error instanceof Error ? error.message : String(error), isError: true };
     }

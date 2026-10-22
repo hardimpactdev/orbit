@@ -74,7 +74,7 @@ function activityTransport(rows: { current: Activity[] }): Transport {
 
 it("lists Activity after Tasks and opens the newest rows", async () => {
     const app = await openApp("/activity", { "ai-router": true });
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
 
     await expect
         .poll(() => {
@@ -89,10 +89,10 @@ it("lists Activity after Tasks and opens the newest rows", async () => {
             );
         })
         .toBe(true);
-    await expect.element(footer()).toHaveTextContent("1-7 jump");
-    await expect.element(pane("Activity")).toHaveTextContent("gateway");
-    await expect.element(pane("Activity")).toHaveTextContent("beast");
-    await expect.element(pane("Activity")).toHaveTextContent("8s");
+    await expect.element(footer()).toMatchTextContent("1-7 jump");
+    await expect.element(pane("Activity")).toMatchTextContent("gateway");
+    await expect.element(pane("Activity")).toMatchTextContent("beast");
+    await expect.element(pane("Activity")).toMatchTextContent("8s");
 
     await userEvent.keyboard("{ArrowRight}{Enter}{Enter}");
     await expect.poll(app.url).toContain("/activity/150");
@@ -104,18 +104,18 @@ it("filters by status, command and node, and a new filter clears the older page"
     const app = await openApp("/activity?status=failed");
     await expect.element(page.getByRole("button", { name: "status: failed ▾" })).toBeVisible();
     expect(page.getByRole("button", { name: "Filters, 1 active" }).query()).toBeNull();
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
-    await expect.element(pane("Activity")).not.toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
+    await expect.element(pane("Activity")).not.toMatchTextContent("instance:deploy");
 
     await page.getByRole("button", { name: "status: failed ▾" }).click();
     await expect.poll(app.url).toBe("/activity");
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
 
     await page.getByRole("textbox", { name: "Command" }).fill("node:add");
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toContain("command=node");
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
-    await expect.element(pane("Activity")).not.toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
+    await expect.element(pane("Activity")).not.toMatchTextContent("instance:deploy");
 
     await expect
         .poll(() =>
@@ -222,7 +222,7 @@ async function scrollToEnd(): Promise<void> {
 
 it("loads older rows as the log scrolls and then shows the end", async () => {
     const app = await openApp("/activity");
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
     expect(document.querySelector("[data-activity-end]")).toBeNull();
     expect(page.getByRole("button", { name: "Older rows" }).query()).toBeNull();
 
@@ -277,8 +277,8 @@ it("shows a new row and a finished row when their notices arrive", async () => {
             return inner(method, path, body);
         },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("process:start");
-    await expect.element(pane("Activity")).not.toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).toMatchTextContent("process:start");
+    await expect.element(pane("Activity")).not.toMatchTextContent("node:add");
 
     rows.current = rows.current.map((row) =>
         row.id === 3
@@ -302,8 +302,8 @@ it("shows a new row and a finished row when their notices arrive", async () => {
             error_code: "activity.interrupted",
         },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("process:start");
-    await expect.element(pane("Activity")).toHaveTextContent("activity.interrupted");
+    await expect.element(pane("Activity")).toMatchTextContent("process:start");
+    await expect.element(pane("Activity")).toMatchTextContent("activity.interrupted");
     const before = activityPaths.length;
 
     rows.current = [
@@ -321,7 +321,7 @@ it("shows a new row and a finished row when their notices arrive", async () => {
         at: "2026-09-20T12:00:04Z",
         data: { id: 4, command: "instance:deploy", status: "running" },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
     expect(document.querySelector("[data-activity-new]")).toBeNull();
     expect(activityPaths).toHaveLength(before);
 });
@@ -341,7 +341,7 @@ it("keeps the visible rows still and offers N new when a row arrives below the t
             return inner(method, path, body);
         },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("node:list");
+    await expect.element(pane("Activity")).toMatchTextContent("node:list");
     const log = activityLog();
     log.scrollTop = 240;
     log.dispatchEvent(new Event("scroll"));
@@ -368,7 +368,7 @@ it("keeps the visible rows still and offers N new when a row arrives below the t
         at: "2026-09-20T12:00:05Z",
         data: { id: 62, command: "review:arrived-later", status: "succeeded" },
     });
-    await expect.element(page.getByRole("button", { name: "2 new" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /↑ 2 new$/ })).toBeVisible();
     await expect
         .poll(() => {
             const again = document.querySelector(`[data-activity-id="${anchorId}"]`);
@@ -383,7 +383,7 @@ it("keeps the visible rows still and offers N new when a row arrives below the t
     log.scrollTop = 0;
     log.dispatchEvent(new Event("scroll"));
     await expect.poll(() => document.querySelector("[data-activity-new]")).toBeNull();
-    await expect.element(pane("Activity")).toHaveTextContent("review:arrived-later");
+    await expect.element(pane("Activity")).toMatchTextContent("review:arrived-later");
 
     log.scrollTop = 240;
     log.dispatchEvent(new Event("scroll"));
@@ -395,15 +395,15 @@ it("keeps the visible rows still and offers N new when a row arrives below the t
         at: "2026-09-20T12:00:06Z",
         data: { id: 63, command: "review:one-more", status: "succeeded" },
     });
-    await page.getByRole("button", { name: "1 new" }).click();
+    await page.getByRole("button", { name: /↑ 1 new$/ }).click();
     await expect.poll(() => activityLog().scrollTop).toBeLessThan(2);
-    await expect.element(pane("Activity")).toHaveTextContent("review:one-more");
+    await expect.element(pane("Activity")).toMatchTextContent("review:one-more");
     await expect.poll(() => document.querySelector("[data-activity-new]")).toBeNull();
 });
 
 it("returns to the same scroll position after opening a row", async () => {
     const app = await openApp("/activity");
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
     const log = activityLog();
     log.scrollTop = 320;
     log.dispatchEvent(new Event("scroll"));
@@ -431,17 +431,17 @@ it("returns to the same scroll position after opening a row", async () => {
 
 it("opens a row on its own route, including the stored properties, and back keeps the filters", async () => {
     const app = await openApp("/activity?status=failed&command=node:add");
-    await expect.element(pane("Activity")).toHaveTextContent("node.ssh_host_fingerprint_required");
+    await expect.element(pane("Activity")).toMatchTextContent("node.ssh_host_fingerprint_required");
     await pane("Activity")
         .getByRole("row", { name: /node.ssh_host_fingerprint_required/ })
         .click();
 
     await expect.poll(app.url).toContain("/activity/148");
     await expect.poll(app.url).toContain("status=failed");
-    await expect.element(pane("Activity")).toHaveTextContent("node.ssh_host_fingerprint_required");
-    await expect.element(pane("Activity")).toHaveTextContent("10.44.0.1");
-    await expect.element(pane("Properties")).toHaveTextContent("[REDACTED]");
-    await expect.element(pane("Properties")).toHaveTextContent("spare");
+    await expect.element(pane("Activity")).toMatchTextContent("node.ssh_host_fingerprint_required");
+    await expect.element(pane("Activity")).toMatchTextContent("10.44.0.1");
+    await expect.element(pane("Properties")).toMatchTextContent("[REDACTED]");
+    await expect.element(pane("Properties")).toMatchTextContent("spare");
     expect(app.gateway.requests.some((request) => request.path === "/api/v1/activities/148")).toBe(
         true,
     );
@@ -450,7 +450,7 @@ it("opens a row on its own route, including the stored properties, and back keep
     await expect.poll(app.url).toContain("/activity?");
     await expect.poll(app.url).toContain("status=failed");
     await expect.poll(app.url).toContain("command=");
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
 });
 
 it("keeps the menu, filters, older rows and detail usable on a phone", async () => {
@@ -580,7 +580,7 @@ it("scrolls, marks the end, and keeps its place on a phone", async () => {
         at: "2026-09-20T12:01:01Z",
         data: { id: 82, command: "review:phone-new", status: "succeeded" },
     });
-    await expect.element(page.getByRole("button", { name: "1 new" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /↑ 1 new$/ })).toBeVisible();
     await expect
         .poll(() => {
             const row = document.querySelector(`[data-activity-id="${anchorId}"]`);
@@ -590,7 +590,7 @@ it("scrolls, marks the end, and keeps its place on a phone", async () => {
                 : 999;
         })
         .toBeLessThan(2);
-    await page.getByRole("button", { name: "1 new" }).click();
+    await page.getByRole("button", { name: /↑ 1 new$/ }).click();
     await expect.poll(() => activityLog().scrollTop).toBeLessThan(2);
     await expect.element(page.getByRole("button", { name: "Open activity 82" })).toBeVisible();
 
@@ -665,9 +665,9 @@ it("shows a long path, the request id, and empty collections on a phone", async 
             return inner(method, requestPath, body);
         },
     });
-    await expect.element(pane("Properties")).toHaveTextContent(path);
-    await expect.element(pane("Activity")).toHaveTextContent(requestId);
-    await expect.element(pane("Properties")).toHaveTextContent("[REDACTED]");
+    await expect.element(pane("Properties")).toMatchTextContent(path);
+    await expect.element(pane("Activity")).toMatchTextContent(requestId);
+    await expect.element(pane("Properties")).toMatchTextContent("[REDACTED]");
 
     const pathValue = fits("path");
     const requestValue = fits("Request");
@@ -685,7 +685,7 @@ it("shows a long path, the request id, and empty collections on a phone", async 
     await expect
         .poll(() => document.querySelector('[data-activity-value="items"]')?.textContent)
         .toBe("[]");
-    await expect.element(pane("Properties")).not.toHaveTextContent("None");
+    await expect.element(pane("Properties")).not.toMatchTextContent("None");
     expect(fits("meta").textContent).toBe("{}");
 });
 
@@ -707,7 +707,7 @@ it("retries an older page when the reader asks again", async () => {
             return inner(method, path, body);
         },
     });
-    await expect.element(pane("Activity")).toHaveTextContent("instance:deploy");
+    await expect.element(pane("Activity")).toMatchTextContent("instance:deploy");
     activityLog().scrollTop = activityLog().scrollHeight;
     activityLog().dispatchEvent(new Event("scroll"));
     const retry = page.getByRole("button", { name: "Could not load older activity. Try again" });
@@ -724,7 +724,7 @@ it("retries an older page when the reader asks again", async () => {
 it("keeps phone filters when nothing matches, and clearing them shows rows", async () => {
     await page.viewport(390, 800);
     const app = await openApp("/activity?command=review:does-not-exist");
-    await expect.element(pane("Activity")).toHaveTextContent("No activity.");
+    await expect.element(pane("Activity")).toMatchTextContent("No activity.");
     await expect.element(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible();
     expect(document.querySelector("[data-activity-filters]")).toBeNull();
     await page.getByRole("button", { name: "Filters, 1 active" }).click();
@@ -734,7 +734,7 @@ it("keeps phone filters when nothing matches, and clearing them shows rows", asy
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toBe("/activity");
     await expect.element(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
-    await expect.element(pane("Activity")).not.toHaveTextContent("No activity.");
+    await expect.element(pane("Activity")).not.toMatchTextContent("No activity.");
     await expect.element(page.getByRole("button", { name: "Open activity 150" })).toBeVisible();
 });
 
@@ -990,7 +990,7 @@ it("restores a phone anchor after rows arrive while its detail is open", async (
                 ? activityTransport(rows)(method, path, body)
                 : inner(method, path, body),
     });
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
     activityLog().scrollTop = 1500;
     activityLog().dispatchEvent(new Event("scroll"));
     await settle();
@@ -1012,7 +1012,7 @@ it("restores a phone anchor after rows arrive while its detail is open", async (
     await settle();
     app.router.history.back();
     await expect.poll(() => app.url().split("?")[0]).toBe("/activity");
-    await expect.element(page.getByRole("button", { name: "20 new" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /↑ 20 new$/ })).toBeVisible();
     await expect
         .poll(() => {
             const row = document.querySelector(`[data-activity-id="${id}"]`);
@@ -1032,7 +1032,7 @@ it("gives a removed anchor's place to the next older row", async () => {
                 ? activityTransport(rows)(method, path, body)
                 : inner(method, path, body),
     });
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
     activityLog().scrollTop = 240;
     activityLog().dispatchEvent(new Event("scroll"));
     await settle();
@@ -1060,7 +1060,7 @@ it("gives a removed anchor's place to the next newer row when no older row remai
                 ? activityTransport(rows)(method, path, body)
                 : inner(method, path, body),
     });
-    await expect.element(pane("Activity")).toHaveTextContent("node:add");
+    await expect.element(pane("Activity")).toMatchTextContent("node:add");
     const log = activityLog();
     log.style.flex = "none";
     log.style.height = "80px";

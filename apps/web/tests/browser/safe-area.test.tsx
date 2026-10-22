@@ -240,7 +240,7 @@ it("shows only messages and paused updates in the phone footer, above the home i
         setLiveness("live");
         await expect.element(page.getByRole("contentinfo")).not.toBeInTheDocument();
         ui.set({ message: "Saved changes" });
-        await expect.element(page.getByRole("contentinfo")).toHaveTextContent("Saved changes");
+        await expect.element(page.getByRole("contentinfo")).toMatchTextContent("Saved changes");
         const footer = document.querySelector("footer")!;
         expect(footer.innerText.trim()).toBe("Saved changes");
         expect(padding(footer).bottom).toBe("38px");
