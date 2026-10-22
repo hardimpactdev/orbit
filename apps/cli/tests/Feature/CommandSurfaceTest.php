@@ -709,7 +709,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'instance:database:add' => [
             ['slug'],
-            ['instance' => null, 'prefix' => null, 'network' => null, 'json' => false],
+            ['instance' => null, 'prefix' => null, 'replace' => false, 'network' => null, 'json' => false],
         ],
         'instance:database:remove' => [
             ['slug'],

@@ -85,6 +85,10 @@ it('attaches mysql keys into stored Instance env and redacts the password', func
     ]);
     expect(DatabaseConnectionTarget::query()->sole()->prefix)->toBe('DB');
 
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/app", ['prefix' => 'DB'])
+        ->assertOk()->assertJsonPath('data.changed', false);
+    expect(DatabaseConnectionTarget::query()->count())->toBe(1);
+
     $activity = Activity::query()->where('request_id', $attach->json('meta.request_id'))->sole();
     $encoded = json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR);
 
@@ -133,7 +137,7 @@ it('writes sqlite-appropriate keys and clears leftover host keys on prefix reuse
         'PUT',
         "/api/v1/instances/{$this->instance->id}/database-connections/local",
         server: ['CONTENT_TYPE' => 'application/json'],
-        content: '{}',
+        content: '{"replace":true}',
     )
         ->assertOk()
         ->assertJsonPath('data.keys', [
@@ -479,7 +483,7 @@ it('persists explicit LAN selection between active LAN Nodes and keeps WireGuard
     $url = "/api/v1/instances/{$this->instance->id}/database-connections/catalog";
     $this->putJson($url, ['network' => 'lan'])->assertOk()->assertJsonPath('data.host', '10.0.0.6');
     expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('lan')->and(stored_env($this->instance)['DB_HOST'])->toBe('10.0.0.6');
-    $this->putJson($url, ['network' => 'wireguard'])->assertOk()->assertJsonPath('data.host', $connection->host);
+    $this->putJson($url, ['network' => 'wireguard', 'replace' => true])->assertOk()->assertJsonPath('data.host', $connection->host);
     expect(DatabaseConnectionTarget::query()->sole()->network)->toBe('wireguard');
 });
 
@@ -509,3 +513,44 @@ it('refuses LAN attachments when either Node is inactive or lacks an IPv4 LAN ad
         ->toThrow(ResourceOperationException::class);
     expect(DatabaseConnectionTarget::query()->count())->toBe(0);
 })->with(['server', 'consumer'])->with([['status', 'failed'], ['lan_ip', null], ['lan_ip', '::1']]);
+
+it('refuses to change stored connection keys without explicit replace and preserves the mapping', function (bool $mapped, ?bool $replace): void {
+    $old = DatabaseConnection::query()->create(['slug' => 'current', 'driver' => 'mysql', 'host' => 'old.example.test', 'port' => 3306, 'database' => 'current', 'username' => 'current', 'password' => DATABASE_ATTACHMENT_SECRET]);
+    DatabaseConnection::query()->create(['slug' => 'empty', 'driver' => 'pgsql', 'host' => 'next.example.test', 'port' => 5432, 'database' => 'empty', 'username' => 'next', 'password' => 'next-secret']);
+    $values = ['DB_CONNECTION' => 'mysql', 'DB_DATABASE' => 'current', 'DB_HOST' => 'old.example.test', 'DB_PASSWORD' => DATABASE_ATTACHMENT_SECRET, 'DB_PORT' => '3306', 'DB_USERNAME' => 'current'];
+    foreach ($values as $key => $value) {
+        InstanceEnvironmentValue::query()->create(['instance_id' => $this->instance->id, 'env_key' => $key, 'env_value' => $value]);
+    }
+    if ($mapped) {
+        $old->targets()->create(['instance_id' => $this->instance->id, 'prefix' => 'DB']);
+    }
+    $body = $replace === null ? ['prefix' => 'DB'] : ['replace' => $replace];
+
+    $response = $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/empty", $body)
+        ->assertConflict()->assertJsonPath('error.code', 'database.environment_conflict');
+
+    expect(stored_env($this->instance))->toBe($values);
+    expect(DatabaseConnectionTarget::query()->pluck('database_connection_id')->all())->toBe($mapped ? [$old->id] : []);
+    expect($response->getContent())->not->toContain(DATABASE_ATTACHMENT_SECRET, 'next-secret');
+})->with([true, false])->with([null, false]);
+
+it('requires explicit replace before clearing keys that the new driver omits', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'local', 'driver' => 'sqlite', 'node_id' => $this->instance->node_id, 'path' => '/tmp/app.sqlite']);
+    foreach (['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => '/tmp/app.sqlite', 'DB_HOST' => 'keep.example.test'] as $key => $value) {
+        InstanceEnvironmentValue::query()->create(['instance_id' => $this->instance->id, 'env_key' => $key, 'env_value' => $value]);
+    }
+
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/local", ['prefix' => 'DB'])
+        ->assertConflict()->assertJsonPath('error.code', 'database.environment_conflict');
+    expect(stored_env($this->instance)['DB_HOST'])->toBe('keep.example.test');
+    expect(DatabaseConnectionTarget::query()->count())->toBe(0);
+});
+
+it('rejects a nonboolean replacement choice before changing stored state', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'app', 'driver' => 'sqlite', 'node_id' => $this->instance->node_id, 'path' => '/tmp/app.sqlite']);
+
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/app", ['replace' => 'true'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(stored_env($this->instance))->toBe([]);
+    expect(DatabaseConnectionTarget::query()->count())->toBe(0);
+});

@@ -3518,6 +3518,10 @@
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Database connection slug."
           },
+          "replace": {
+            "type": "boolean",
+            "description": "Allow changing or removing existing stored connection keys"
+          },
           "network": {
             "type": "string",
             "enum": [

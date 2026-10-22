@@ -713,3 +713,12 @@ it('preserves an explicitly empty locale for Gateway validation', function (): v
         ->expectsOutputToContain('validation.failed')->assertExitCode(1);
     expect($mockClient->getLastRequest()?->body()->all()['locale'])->toBe('');
 });
+
+it('sends explicit replacement consent through the typed attachment request', function (): void {
+    $mockClient = database_cli_mock(AddInstanceDatabaseRequest::class, database_cli_attachment_data());
+
+    $this->artisan('instance:database:add', ['slug' => 'app', '--instance' => '12', '--replace' => true, '--json' => true])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())->toBe(['replace' => true]);
+});

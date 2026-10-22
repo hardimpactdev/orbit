@@ -65,7 +65,7 @@ final readonly class CloneInstanceDatabaseAction
                 $connection->update(['clone_step' => DatabaseCloneStep::Filled]);
             }
 
-            $this->attach->execute($instance, $connection, InstanceDatabaseClonePlanner::PREFIX);
+            $this->attach->execute($instance, $connection, InstanceDatabaseClonePlanner::PREFIX, replace: true);
             $this->synchronize->execute($instance);
 
             if ($connection->clone_step === DatabaseCloneStep::Filled) {

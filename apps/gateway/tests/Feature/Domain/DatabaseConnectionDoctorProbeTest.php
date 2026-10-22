@@ -237,7 +237,7 @@ it('restores drifted stored env from the registry with the same attach projectio
         ->and(json_encode($drifted, JSON_THROW_ON_ERROR))
         ->not->toContain(DATABASE_CONNECTION_DOCTOR_SECRET);
 
-    app(AttachDatabaseConnectionAction::class)->execute($instance, $connection, 'DB');
+    app(AttachDatabaseConnectionAction::class)->execute($instance, $connection, 'DB', replace: true);
 
     $restored = database_connection_doctor_probe()->inspect(database_connection_doctor_context($node));
     $stored = database_connection_doctor_stored($instance);
@@ -264,7 +264,7 @@ it('restores sqlite path keys and clears leftover host keys on prefix reuse', fu
         'node_id' => $node->id,
         'path' => '/var/lib/app/database.sqlite',
     ]);
-    app(AttachDatabaseConnectionAction::class)->execute($instance, $sqlite, 'DB');
+    app(AttachDatabaseConnectionAction::class)->execute($instance, $sqlite, 'DB', replace: true);
 
     $instance->environmentValues()->create([
         'env_key' => 'DB_HOST',
@@ -283,7 +283,7 @@ it('restores sqlite path keys and clears leftover host keys on prefix reuse', fu
     expect(array_map(static fn ($issue): string => $issue->code, $drifted->issues))
         ->toBe([DatabaseConnectionDoctorIssueCode::EnvMismatch->value]);
 
-    app(AttachDatabaseConnectionAction::class)->execute($instance, $sqlite, 'DB');
+    app(AttachDatabaseConnectionAction::class)->execute($instance, $sqlite, 'DB', replace: true);
 
     expect(database_connection_doctor_probe()->inspect(database_connection_doctor_context($node))->issues)
         ->toBe([])
