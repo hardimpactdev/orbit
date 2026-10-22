@@ -1,0 +1,136 @@
+# Phase 3 design: Swamp on the Orbit Gateway
+
+Status: draft for Nick's decision (2026-10-22). Nothing here changes Orbit yet.
+
+## Settled
+
+- Swamp keeps the state machine (`orbit-subtasks`); the Gateway performs every
+  side effect and owns exactly-once per idempotency key.
+- Orbit runs agent turns on the Pi driver. Swamp never runs an agent itself.
+- GitHub pushes and pull requests are Orbit's job (its GitHub App). Swamp
+  never touches GitHub.
+- `swamp serve` is the orchestrator, on the Team plan with a collective token
+  and `SWAMP_SIGNIN_TOKEN`.
+
+## What the Gateway offers today
+
+Source: Orbit docs and `docs/openapi.json` at `8bd95343a`.
+
+| Effect | Today | Gap |
+| --- | --- | --- |
+| Workspace per work item | `POST /instances`, `POST /instances/{id}/setup`, `DELETE /instances/{id}`. Synchronous; a retry with the same name resumes. | Branch only, no base commit. Setup runs inside one request (570 s limit). Task-VM workspaces exist only through a task-group claim. |
+| Run a command (`composer update`, `check`, `test`) | Not found. Schedules give only success/error; task checks run only inside a group. | New async run-command operation. |
+| Sub-project dependency update | `POST /instances/{id}/dependencies/update`, repository root only. | A `directory` input, async. |
+| Pi agent turn | Only inside a task group (one subtask at a time), driven by `tasks:tick`: VM, baseline, implementer, handoff check, reviewer, push, PR. | No standalone turn. The caller cannot set the prompt or model. |
+| Model key per run | Keys exist per task VM and die with the VM. | No issue or revoke route. |
+| Branch / PR handoff | The Gateway pushes `task-{id}` (or `task-{id}-handoff`) itself and opens the PR on approval. | No "publish this workspace commit" route. |
+| Assistance | Task comments `assistance_requested` / `resolution`, task questions. | Only for task subtasks. |
+| Notifications | Reverb `task_group.created/updated` on the private `orbit` channel. | No outbound webhooks. |
+| Idempotency keys | Only the websocket-app routes accept `Idempotency-Key`. | All effectful routes above. |
+
+Two accepted ADRs constrain any outside orchestrator:
+
+- **ADR 0223**: one Gateway gate per handoff. The full suite runs in CI on the
+  pushed handoff commit, and CI `Required checks` is the only integration gate.
+- **ADR 0224**: `tasks:tick` is the only place that starts an actor or sends a
+  turn. Requests only record intent and wake the tick. An outside caller
+  cannot be a second sender or holder for a group.
+
+## Two ways to do phase 3
+
+### A. Swamp above Orbit tasks (outer loop)
+
+One factory work item maps to one Orbit task group with one subtask.
+Swamp plans, fans out, gates approvals and records the outcome. Orbit runs the
+inner loop it already has: VM, baseline, implementer, handoff, review, push, PR.
+
+- The factory shrinks to `plan → create group → wait → outcome`. Swamp
+  creates the group in `todo` with deliverables (`fails_on_base` command
+  deliverables for the sub-project's check), reads `GET /task-groups/{id}` on
+  each tick or on Reverb notices, and records evidence from its status.
+- Assistance stays in Orbit (task comments). Swamp's human gates cover only
+  the plan approval (majors) and the final outcome.
+- Gateway change: small, possibly none. Useful additions: an `Idempotency-Key`
+  on `POST /task-groups`, and an external reference field on a group so Swamp
+  can find its group after a crash.
+- What it answers: Swamp can plan and coordinate many Orbit tasks. It does
+  **not** replace the hand-rolled orchestration inside Orbit tasks, which is
+  what the spike set out to test.
+
+### B. Swamp replaces the inner loop (primitives)
+
+The Gateway exposes primitives, and Swamp's stage workflows call them in place
+of local git, Composer and agents. To respect ADR 0224, every primitive is an
+operation the Gateway queues and its own worker or tick executes. Swamp records
+intent and polls; it never sends a turn itself.
+
+New Gateway operations (each async, `202` + `operation-show`, each with an
+`Idempotency-Key`):
+
+1. `POST /instances` with `base_commit` (or `start_ref`), and async setup.
+2. `POST /instances/{id}/runs` {command, directory, timeout}: exit code, a
+   redacted 16 KiB output tail, cancel. This replaces `@nckrtl/composer`.
+3. `dependencies/update` with a `directory`, for one sub-project.
+4. `POST /instances/{id}/agent-turns` {role, prompt, model?}: one Pi turn in
+   the workspace, read with a transcript cursor, cancel. Queued for the tick
+   or worker, so the tick stays the only sender. Today Pi runs only on task
+   VMs, so this needs a decision: Pi on app-dev Instances, or the workspace is
+   a task VM.
+5. A per-run AI Router key bound to the turn (issued and revoked by the
+   Gateway; Swamp never sees it).
+6. `POST /instances/{id}/publish` {commit, branch, pr?}: push through the App
+   and open or update the PR.
+7. Assistance and status outside task groups, or Swamp's own human gates only
+   (`approve` through the serve API), with the Gateway mirroring them read-only.
+8. Notifications: Reverb events for these operations (no webhooks needed if
+   serve can subscribe; otherwise a signed webhook to `swamp serve`).
+
+Swamp side: the five stage workflows keep their shape. `@nckrtl/composer`,
+`@swamp/git` and `@swamp/agent-runner` steps become one `@nckrtl/orbit-gateway`
+behavior (`create_workspace`, `run`, `agent_turn`, `publish`, `remove`), each
+call keyed `<workItem>.<stage>.c<cycle>`. The guards and the driver stay. The
+local scratch worktrees and the CLIProxyAPI stopgap go away.
+
+What it answers: whether Swamp can run Orbit's task loop. Cost: eight Gateway
+operations, plus the Pi-on-Instance decision, through Orbit's normal PR flow.
+It also makes two orchestrators of the same loop until one is retired.
+
+## Recommendation
+
+Do **B**, in two steps:
+
+1. **B1, no agents** (operations 1, 2, 3, 6 and idempotency keys): rerun
+   php-sdk and gateway with mechanical, handoff and publish on the Gateway.
+   Review becomes a human gate in B1, so no agent primitive is needed yet.
+   This proves Gateway-side exactly-once, the kill and recover tests against
+   the Gateway, and serve.
+2. **B2, agents** (operations 4 and 5): implement, consult and review as Pi
+   turns, after the Pi-on-Instance decision.
+
+If the answer Nick wants is only "can Swamp coordinate Orbit tasks", **A** is
+enough and needs almost no Orbit change.
+
+## Keys (B)
+
+- **Swamp:** a collective token and `SWAMP_SIGNIN_TOKEN` for serve; Swamp
+  vault for serve's own secrets.
+- **Swamp → Gateway:** WireGuard identity of the serve Node plus a node access
+  grant to the app-dev Node (today's model); no API token.
+- **Gateway → Swamp** (only if webhooks): a serve token with grants for
+  `subtasks-driver` run and `approve`, and a webhook signing secret.
+- **Per agent turn:** an AI Router key issued and revoked by the Gateway.
+- **GitHub:** Orbit's App, inside the Gateway only.
+
+## Where serve runs
+
+Beast for the spike, as a user systemd unit with `~/.config/swamp/env.sh`, a
+1-minute `trigger.schedule` on `subtasks-driver`, and `--auto-resume`. A Node
+for production is a later decision.
+
+## Open decisions for Nick
+
+1. A (outer loop) or B (primitives)?
+2. For B: Pi on app-dev Instances, or agent turns only in task VMs?
+3. For B: build B1 first (no agents), then B2?
+4. Gateway → Swamp notification: Reverb subscription, or a signed webhook to
+   serve?
