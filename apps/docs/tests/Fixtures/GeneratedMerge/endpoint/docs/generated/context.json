@@ -1,0 +1,77 @@
+{
+    "schema_version": 1,
+    "documents": [
+        {
+            "path": "docs/README.md",
+            "title": "Documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/architecture.md",
+            "title": "Documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/concepts.md",
+            "title": "Documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/decisions/README.md",
+            "title": "Documentation",
+            "kind": "decision",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/decisions/overview.mdx",
+            "title": "Decisions",
+            "kind": "decision",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/domains/README.md",
+            "title": "Documentation",
+            "kind": "domain",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/mission.md",
+            "title": "Mission",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/README.md",
+            "title": "Documentation",
+            "kind": "solution",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/tech-stack.md",
+            "title": "Documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        }
+    ]
+}

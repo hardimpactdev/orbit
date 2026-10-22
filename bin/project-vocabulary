@@ -169,9 +169,20 @@ function project_vocabulary_scan(string $root): array
                 continue;
             }
 
+            // These patterns have no line anchors. A line can match only if
+            // the whole file matches too; avoid testing every clean line
+            // against every pattern. Findings and exceptions stay line-based.
+            $activePatterns = array_filter(
+                $patterns,
+                static fn (array $entry): bool => preg_match($entry[1], $contents) === 1,
+            );
+            if ($activePatterns === []) {
+                continue;
+            }
+
             $lines = preg_split('/\R/', $contents) ?: [];
             foreach ($lines as $index => $line) {
-                foreach ($patterns as [$name, $pattern]) {
+                foreach ($activePatterns as [$name, $pattern]) {
                     if (($name === 'app_id' || $name === 'appId') && project_vocabulary_app_id_allowed($relative, $line)) {
                         continue;
                     }

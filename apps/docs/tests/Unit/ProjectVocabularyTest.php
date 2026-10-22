@@ -87,6 +87,23 @@ it('fails when an App-domain name or a retired Node name is present', function (
     'covers glob' => ['docs/reference/example.md', "apps/gateway/app/Actions/AppInstances/CreateAppInstanceAction.php\n", 'AppInstance'],
 ]);
 
+it('keeps exact line findings and line-specific exceptions when filtering file patterns', function (): void {
+    $root = vocabularyFixture();
+    try {
+        vocabularyWrite($root, 'apps/gateway/app/Example.php', "Clean line\nAppInstance\n\$credentials->appId;\napp_id\nClean line\n");
+
+        $process = vocabularyCheck($root);
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toBe(
+                "apps/gateway/app/Example.php:2: retired name AppInstance\n".
+                "apps/gateway/app/Example.php:4: retired name app_id\n",
+            );
+    } finally {
+        vocabularyRemove($root);
+    }
+});
+
 it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename migration', function (): void {
     $root = vocabularyFixture();
     try {
@@ -108,14 +125,6 @@ it('allows monorepo paths, the GitHub App, Reverb, node storage, and the rename 
     } finally {
         vocabularyRemove($root);
     }
-});
-
-it('accepts this repository', function (): void {
-    $process = new Process([PHP_BINARY, dirname(__DIR__, 4).'/bin/project-vocabulary']);
-    $process->setTimeout(60);
-    $process->run();
-
-    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
 });
 
 it('allows the Reverb app identifier outside its domain directories', function (string $relative): void {

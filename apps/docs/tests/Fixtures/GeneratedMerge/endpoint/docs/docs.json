@@ -1,0 +1,55 @@
+{
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "mission",
+              "architecture",
+              "tech-stack",
+              "concepts"
+            ]
+          },
+          {
+            "group": "Records",
+            "pages": [
+              "decisions/overview"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Routes",
+            "openapi": "/openapi.json",
+            "pages": [
+              "POST /api/v1/routes"
+            ]
+          },
+          {
+            "group": "Activities",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/activities",
+              "GET /api/v1/merge-fixture-alpha",
+              "GET /api/v1/merge-fixture-beta"
+            ]
+          },
+          {
+            "group": "Conn",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/conn/me"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": []
+}

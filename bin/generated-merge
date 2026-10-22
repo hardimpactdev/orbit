@@ -1,21 +1,16 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -S
 """Merge maintained indexes, then regenerate contracts in a private source merge.
 
 Install with --install. Git calls --merge O A B path current-label other-label.
-The inner --sources driver deliberately ignores derived snapshots; it must never
-call the outer driver recursively. No network, hooks, or source-tree writes.
+The inner --sources driver merges only maintained indexes. A stock no-op Git
+driver discards derived conflicts before regeneration; neither calls the outer
+driver. No network, hooks, or source-tree writes.
 """
-import fcntl
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
-import shlex
-import shutil
 import subprocess
 import sys
-import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 DRIVER = Path(__file__).resolve()
@@ -23,6 +18,7 @@ ARTIFACTS = (
     'docs/generated/context.json', 'docs/docs.json', 'docs/decisions/overview.mdx',
     'docs/openapi.json', 'apps/web/src/api/schema.d.ts', 'apps/gateway/resources/mcp/tools.json',
 )
+MAINTAINED = ('docs/docs.json', 'docs/decisions/overview.mdx')
 MISSING = object()
 
 
@@ -36,6 +32,8 @@ def git(root, *args):
 
 
 def install(root):
+    import shlex
+
     command = f'{shlex.quote(str(DRIVER))} --merge %O %A %B %P %X %Y'
     git(root, 'config', '--local', 'merge.orbit-generated.name', 'Regenerate Orbit contracts')
     git(root, 'config', '--local', 'merge.orbit-generated.driver', command)
@@ -101,6 +99,8 @@ def merge_value(base, ours, theirs):
 
 
 def merge_text(base, ours, theirs):
+    import tempfile
+
     with tempfile.TemporaryDirectory(prefix='orbit-text-merge-') as directory:
         files = [Path(directory) / name for name in ('ours', 'base', 'theirs')]
         for file, text in zip(files, (ours, base, theirs)):
@@ -147,13 +147,14 @@ def overview(base, ours, theirs):
 def sources(arguments):
     base, ours, theirs, path = arguments
     if path == 'docs/docs.json':
+        import json
+
         values = [json.loads(Path(file).read_text()) for file in (base, ours, theirs)]
         Path(ours).write_text(json.dumps(merge_value(*values), indent=2, ensure_ascii=False) + '\n')
     elif path == 'docs/decisions/overview.mdx':
         Path(ours).write_text(overview(*[Path(file).read_text() for file in (base, ours, theirs)]))
-    elif path not in ARTIFACTS:
-        raise ValueError(f'unexpected generated path: {path}')
-    # Other files are regenerated, never treated as source inputs.
+    else:
+        raise ValueError(f'unexpected maintained path: {path}')
 
 
 LOCKS = ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock')
@@ -167,6 +168,8 @@ def check_dependencies(tree, root):
 
 
 def dependencies(tree, root):
+    import shutil
+
     check_dependencies(tree, root)
     # Copy Composer's loader so its baseDir points into the preview, not into
     # the source checkout. Third-party packages themselves can be shared.
@@ -186,38 +189,36 @@ def dependencies(tree, root):
         if env.exists():
             (tree / project / '.env').symlink_to(env)
     for project in ('apps/web', 'apps/web/tools/api-types'):
-        (tree / project / 'node_modules').symlink_to(root / project / 'node_modules', target_is_directory=True)
+        destination = tree / project / 'node_modules'
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(root / project / 'node_modules', target_is_directory=True)
 
 
 def regenerate(tree):
     env = dict(os.environ, APP_CONFIG_CACHE=str(tree / 'private-config.php'),
                ORBIT_DOCS_ROOT=str(tree / 'docs'))
+    # Run generators sequentially so each sees the preceding generated outputs.
     run('php', str(tree / 'apps/docs/artisan'), 'orbit:docs-index', cwd=tree, env=env)
     run(str(tree / 'bin/docs-openapi'), cwd=tree, env=env)
     run(str(tree / 'bin/mcp-tools'), cwd=tree, env=env)
-    run(str(tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'), str(tree / 'docs/openapi.json'),
-        '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
+    run('bun', '--bun', str(tree / 'apps/web/tools/api-types/node_modules/.bin/openapi-typescript'),
+        str(tree / 'docs/openapi.json'), '-o', str(tree / 'apps/web/src/api/schema.d.ts'), cwd=tree, env=env)
 
 
 def merge(arguments):
+    import fcntl
+    import hashlib
+    import shutil
+
     _base, ours, _theirs, path, current, other = arguments
     if path not in ARTIFACTS:
         raise ValueError(f'unexpected generated path: {path}')
-    root = Path(git(Path.cwd(), 'rev-parse', '--show-toplevel'))
-    # Labels are refs for normal merges and merge-tree. Ref resolution is
-    # deliberately strict: do not guess HEAD during a rebase or virtual merge.
+    top, git_dir = git(Path.cwd(), 'rev-parse', '--show-toplevel', '--absolute-git-dir').splitlines()
+    root = Path(top)
+    # Labels are refs for normal merges and merge-tree. Resolve each strictly
+    # as one commit; never guess HEAD for rebases or virtual merges.
     commits = [git(root, 'rev-parse', '--verify', '--end-of-options', f'{label}^{{commit}}')
                for label in (current, other)]
-    # Installed packages have no portable attestation tying them to a lockfile.
-    # Even when the checkout lock matches the preview, it may have changed since
-    # setup last installed vendor. Refuse lock changes on either branch rather
-    # than guessing (or doing network installs inside a merge driver).
-    ancestor = git(root, 'merge-base', *commits)
-    for commit in commits:
-        changed = git(root, 'diff', '--name-only', ancestor, commit, '--', *LOCKS)
-        if changed:
-            raise ValueError(f'dependency_lock_changed: {changed}; install the merged locked '
-                             'dependencies and regenerate explicitly; refusing stale dependencies')
     dependency_root = Path(os.environ.get('ORBIT_GENERATED_MERGE_DEPENDENCIES', str(root)))
     # Git invokes a separate process for every artifact. Publish only complete
     # builds, under a lock, so parallel invocations cannot see partial output.
@@ -225,19 +226,38 @@ def merge(arguments):
     for lock in LOCKS:
         fingerprint.update((dependency_root / lock).read_bytes())
     key = '-'.join([*commits, fingerprint.hexdigest()])
-    cache = Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit/generated-merge'
+    cache = Path(git_dir) / 'orbit/generated-merge'
     cache.mkdir(parents=True, exist_ok=True)
     output = cache / key
     with (cache / f'{key}.lock').open('w') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX)
         if not output.exists():
+            import shlex
+            import tempfile
+
+            # Commits are immutable and a published cache already passed this
+            # check. Refuse changed locks before building, never guess that the
+            # installed packages attest to a branch's lockfile.
+            ancestor = git(root, 'merge-base', *commits)
+            for commit in commits:
+                changed = git(root, 'diff', '--name-only', ancestor, commit, '--', *LOCKS)
+                if changed:
+                    raise ValueError(f'dependency_lock_changed: {changed}; install the merged locked '
+                                     'dependencies and regenerate explicitly; refusing stale dependencies')
             with tempfile.TemporaryDirectory(prefix='build-', dir=cache) as directory:
                 tree = Path(directory) / 'tree'
                 git(root, 'clone', '--quiet', '--shared', '--no-checkout', str(root), str(tree))
                 git(tree, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', commits[0])
                 inner = f'{shlex.quote(str(DRIVER))} --sources %O %A %B %P'
+                # Derived snapshots are not merge inputs. Git can keep ours
+                # without starting Python for each file; regeneration replaces
+                # every byte before the cache is published.
+                (tree / '.git/info/attributes').write_text(''.join(
+                    f'{path} merge=orbit-discard-derived\n'
+                    for path in ARTIFACTS if path not in MAINTAINED))
                 result = git(tree, '-c', f'merge.orbit-generated.driver={inner}',
                              '-c', 'merge.orbit-generated.recursive=binary',
+                             '-c', 'merge.orbit-discard-derived.driver=true',
                              'merge-tree', '--write-tree', *commits)
                 merged_tree = result.splitlines()[0]
                 git(tree, 'read-tree', '--reset', '-u', merged_tree)

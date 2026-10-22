@@ -149,6 +149,24 @@ The [Feature delivery merge gate](#full-suites-gate-merges) defines the required
 
 Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
+CLI and Docs limit each test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
+
+The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
+
+The check prepares independent branch commits and expected combined trees from current source files and recorded outputs, then gives each case a fresh private repository. Cold generators still prove both merge orders, generated-file conflicts, cache assertions, and independent freshness. Merge callbacks and freshness checks both use the original installed, locked web CLI through Bun, without a bundled or minified replacement.
+
+The merge driver and the runner for this check start Python without loading site packages. The driver imports modules only for the requested mode. This reduces repeated cold startup. The fixture uses Composer's runtime-only autoloaders, so generator subprocesses do not load Pest, PHPUnit or other development tools. Its Composer files remain private; installed packages stay read-only.
+
+Both orders must equal the same recorded generator output and complete source tree. Separate read-only cases rebuild the base and combined fixtures to check every recorded byte. The fixture contains only the source corpus these proofs need, not unrelated applications or tests; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
+
+The animation composition proof runs the real renderer at a 50 ms interval, retaining at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. The proof for printing lines still observes five frames at the real 300 ms cadence in each frame order.
+
+The repository vocabulary proof runs the real executable over the whole maintained corpus. The scanner first selects patterns that occur anywhere in a file, then keeps the same line findings and line-specific exceptions. It does not run every pattern against every clean line.
+
+The Rector cache regression directly checks that the project's `composer rector` command includes the `--clear-cache` argument. The tooling baseline keeps this command identical in all five Composer projects and rejects a command without that argument. This checks the cache invalidation contract inside the test's two-second limit, without starting Rector or moving part of the proof into an unmeasured hook.
+
+CLI applications, configuration, containers, and command objects are freshly built for each feature test. CI adds no private bytecode cache or separate cache-coverage lane.
+
 Every main push, scheduled run and manual dispatch selects all projects: each Composer project's full suite with `pest --parallel`, and the Gateway suite in the Gateway shards. CI records no graph and saves no files for [task workspaces](#ci-cache-refs).
 
 A push to a `task-*-handoff` branch is a task's [handoff commit](/reference/tasks#handoff-ci). CI runs it as it runs a pull request, with the configured Gateway shards and no cache saves.
@@ -294,16 +312,18 @@ In an Orbit task, run the tests that cover the change in each changed project di
 | Command | Result |
 | --- | --- |
 | `vendor/bin/pest --compact PATH` or `--filter=NAME` | Runs the tests that cover a change |
-| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the test suite. |
+| `composer check` | Runs `guidance:check`, PHPStan, Rector, and the Pint check. It does not run the full Pest suite. |
 | `composer test` | Runs the project's full suite in parallel processes |
 | `composer format` | Applies Pint's Laravel preset |
 | `composer analyse` | Runs PHPStan. The applications use Larastan. |
 
-In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
+In `apps/docs`, `composer check` also runs the documentation lint, the API fixture check, and the external generated-merge proof. `guidance:check` runs the project's guidance tests. In every project, `bin/guidance-check` creates a private temporary directory for Blade views before Pest starts, then removes it when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
 
 Confirm that the tests of the feature ran. A filter that matches no test is not acceptance evidence.
 
 Each project requires stock `pestphp/pest` from its lock file. Stock Pest includes test impact analysis, which turns on with `--tia` or `--locally`, a `PEST_TIA` environment variable, or a `tia()` configuration. Orbit uses none of them, and a contract test checks the project scripts, the PHPUnit configuration, the workflows, the CI actions, and the `bin` scripts. To adopt a new release, update the dependency and the lock file in every project, then run the project checks.
+
+Stock ParaTest detects the available runner CPUs for full Docs runs in CI, which use `pest --parallel` and record no graph. Every Pest case remains subject to the two-second limit. The external generated-merge proof runs sequentially in the quality step, separate from ParaTest; see the [fixture guidance](/contributor-guide#3-implement-and-verify).
 
 Root `bin/test` queues the five project suites through the same weighted lane allocator as the candidate gate. The total of concurrent Pest workers stays within the [available process budget](#parallel-processes), including when the budget is smaller than the number of suites. Each finished suite frees its share for the remaining suites.
 
@@ -338,7 +358,7 @@ Each parallel Rector worker keeps its cache in its own directory under `vendor/r
 
 Gateway's `RunScheduledCommand` keeps an explicit default for its command arguments so jobs queued before that property existed can still deserialize. Its Rector configuration excludes that class from constructor promotion, which would lose the property default on those payloads. A queue regression test covers this deployment boundary.
 
-The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget and let stock ParaTest detect all runner CPUs, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
+The PHP helper `tools/check-processes.php` invokes `bin/check-processes`; it contains no allocation rule. The candidate gate and `bin/test` use `tools/check_budget.py` to split the resource-derived budget between their lanes and suites with the internal `ORBIT_CHECK_PROCESSES` variable. A positive integer lane share is used verbatim, and an invalid share fails the check. Do not set it on a Project or in an operator shell. CI test commands bypass this local gate budget. Stock ParaTest detects all runner CPUs, as [Gateway shards](#gateway-shards) describes. CI quality tools still use this helper.
 
 ### The candidate gate
 
@@ -586,7 +606,9 @@ Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. 
 
 CI does not restore or save Rector's cache. Every project's `composer rector` uses `--clear-cache`, including runs through `composer check` in CI and the local review gate. Rector's unchanged-file cache does not track all class dependencies: a parent-only property change can leave an unchanged child's missing `#[Override]` undetected. Clearing the cache trades warm-run speed for a complete check of the configured Rector paths; Pint, PHPStan, and Pest keep their existing caches. The candidate gate narrows the files instead of keeping a cache, as [The gate checks changed files](#the-gate-checks-changed-files) explains.
 
-The regression in `apps/docs/tests/Unit/ToolingBaselineTest.php` warms the cache with an empty parent and a child that declares `public string $name = '';`, then adds that same property only to the parent. Before the fix, the second check exits 0 without reporting the child. With the project's check command, it exits 2 and proposes `#[\Override]` on the child's property. The dry run leaves the child unchanged.
+The regression in `apps/docs/tests/Unit/ToolingBaselineRectorCacheTest.php` reads the project's Composer script in the test body and requires an exact `--clear-cache` argument. Removing the argument makes the test fail. `bin/tooling-baseline` keeps the Rector command identical in every project, and its drift test rejects removal of the argument from another project too.
+
+Running Rector twice from cold exceeded the stock two-second per-test limit on CI. The direct command assertion checks the setting Orbit owns instead of retesting Rector's cache implementation. No Rector work or assertions run in a class-level hook.
 
 Gateway timings were measured in the task workspace on Linux x86_64, with four CPUs, PHP 8.5.11, and Rector 2.6.7. They were 126.24 seconds for an uncached run and 0.65 seconds for a warm run before the fix. After adding `--clear-cache`, `composer rector` took 154.77 seconds on the first run and 118.92 seconds on the repeat. These are wall-clock samples, not a performance guarantee: checks now pay the full analysis cost on every run.
 

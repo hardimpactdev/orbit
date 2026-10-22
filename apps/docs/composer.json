@@ -45,6 +45,7 @@
             "@guidance:check",
             "@docs:lint",
             "@fixtures:check",
+            "@merge:check",
             "@analyse",
             "@rector",
             "@format:check"
@@ -58,6 +59,7 @@
         "format:check": "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)",
         "guidance:check": "../../bin/guidance-check",
         "lint": "@format:check",
+        "merge:check": "python3 -S tests/generated_merge_test.py",
         "rector": "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never",
         "post-autoload-dump": [

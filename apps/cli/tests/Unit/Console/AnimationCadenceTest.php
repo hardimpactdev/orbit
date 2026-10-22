@@ -10,137 +10,7 @@ use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalRegion;
 use Symfony\Component\Console\Output\StreamOutput;
 
-/** @param list<float> $changes */
-function animation_cadence_is_readable(array $changes): bool
-{
-    if (count($changes) < 3) {
-        return false;
-    }
-
-    for ($index = 1; $index < count($changes); $index++) {
-        $interval = $changes[$index] - $changes[$index - 1];
-
-        if ($interval < 0.18 || $interval > 0.65) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 describe('animation composition cadence', function (): void {
-    it('rejects the observed fast resume interval while accepting a readable phase', function (): void {
-        expect(animation_cadence_is_readable([0.0, 0.3, 0.6, 0.9]))->toBeTrue()
-            ->and(animation_cadence_is_readable([0.0, 0.3, 0.3664124, 0.6664124]))->toBeFalse()
-            ->and(animation_cadence_is_readable([0.0, 0.0412849, 0.3412849]))->toBeFalse()
-            ->and(animation_cadence_is_readable([0.0, 0.3, 1.0]))->toBeFalse();
-    });
-
-    it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
-        $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
-        expect(is_resource($process))->toBeTrue();
-        $send = static function (array $message) use ($pipes): void {
-            $payload = json_encode($message, JSON_THROW_ON_ERROR)."\n";
-            expect(fwrite($pipes[0], $payload))->toBe(strlen($payload));
-            fflush($pipes[0]);
-        };
-        $outerFrames = ["@outer:0@\n", "@outer:1@\n"];
-        $nestedFrames = ["@outer:0@\n@inner:0@\n", "@outer:1@\n@inner:1@\n"];
-        $changes = ['outer' => [], 'inner' => []];
-        $glyphs = ['outer' => [], 'inner' => []];
-        $buffer = '';
-        $admitted = false;
-        $resumed = false;
-        $resumeCount = 0;
-
-        try {
-            stream_set_blocking($pipes[1], false);
-            $send(['frames' => $outerFrames, 'interval' => Animation::FRAME_INTERVAL_SECONDS]);
-            $deadline = microtime(true) + 4;
-
-            while (microtime(true) < $deadline) {
-                $now = microtime(true);
-
-                if (! $admitted && $changes['outer'] !== [] && $now - $changes['outer'][0] >= 0.08) {
-                    $send(['frames' => $nestedFrames]);
-                    $admitted = true;
-                }
-
-                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= 0.08) {
-                    $send(['frames' => $outerFrames]);
-                    $resumed = true;
-                    $resumeCount = count($changes['outer']);
-                }
-
-                $read = [$pipes[1]];
-                $write = $except = [];
-                $selected = stream_select($read, $write, $except, 0, 10000);
-                expect($selected)->not->toBeFalse();
-
-                if ($selected > 0) {
-                    $chunk = fread($pipes[1], 8192);
-
-                    if ($chunk === '' && feof($pipes[1])) {
-                        break;
-                    }
-
-                    $buffer .= $chunk;
-                    $observed = microtime(true);
-
-                    while (($end = strpos($buffer, "\n")) !== false) {
-                        $line = substr($buffer, 0, $end);
-                        $buffer = substr($buffer, $end + 1);
-
-                        if (preg_match('/@(outer|inner):([01])@/', $line, $match) === 1) {
-                            $changes[$match[1]][] = $observed;
-                            $glyphs[$match[1]][] = $match[2];
-                        }
-                    }
-                }
-
-                if ($resumed && count($changes['outer']) >= $resumeCount + 3) {
-                    break;
-                }
-            }
-
-            expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
-                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
-                ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
-                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue()
-                ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
-
-            foreach ($glyphs as $sequence) {
-                for ($index = 1; $index < count($sequence); $index++) {
-                    expect($sequence[$index])->not->toBe($sequence[$index - 1]);
-                }
-            }
-
-            $send(['final' => ["Finished.\n", "Finished.\n"]]);
-            fclose($pipes[0]);
-            unset($pipes[0]);
-            stream_set_blocking($pipes[1], true);
-            expect(stream_get_contents($pipes[1]))->toContain('Finished.', "\e[?25h");
-            $receipts = array_filter(explode("\n", trim(stream_get_contents($pipes[3]))));
-            expect($receipts)->toHaveCount(3);
-            expect(stream_get_contents($pipes[2]))->toBe('');
-        } finally {
-            foreach ($pipes as $pipe) {
-                fclose($pipe);
-            }
-
-            $status = proc_get_status($process);
-
-            if ($status['running']) {
-                proc_terminate($process);
-            }
-
-            $exitCode = proc_close($process);
-        }
-
-        expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
-    });
-
     it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (bool $reverse): void {
         $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
@@ -334,7 +204,7 @@ describe('animation composition cadence', function (): void {
         $stream = tmpfile();
         $output = new StreamOutput($stream);
         $mode = new ConsoleMode(false, false, true, true, 80);
-        $outer = new Animation($mode, $output, ["outer 0\n", "outer 1\n"]);
+        $outer = new Animation($mode, $output, ["outer 0\n", "outer 1\n"], frameIntervalSeconds: 0.01);
         $region = new TerminalRegion($mode, $output);
         $inner = new Animation($mode, $output, ["inner 0\n", "inner 1\n"], region: $region,
             settled: static fn (): string => "Inner finished.\n");

@@ -723,6 +723,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2169,6 +2170,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
