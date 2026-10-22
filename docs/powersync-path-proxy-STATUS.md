@@ -21,4 +21,6 @@ Scoped PHPStan, Pint, and Rector check the changed PHP sources. Generated web ty
 
 The first independent review found that a pool update could move an Instance away from a proxied source Route or reassign it into a proxied destination. The guard now checks every affected Route before workload preparation and target changes. Four regression cases cover both directions with enabled publication and incomplete withdrawal. All four fail without the fix and pass with it.
 
-The reviewer confirmed the four branch-local documentation waivers and found no new extension plug-in point. Incus reproduction remains outstanding. A second review checks the fix and rebased feature before the PR opens.
+The reviewer confirmed the four branch-local documentation waivers and found no new extension plug-in point. Incus reproduction remains outstanding. The second independent review approved PR preparation at `59408a4bae3fbc8fe7f0805a1540209817b3f4d6`, against base `120e4eda2da02dab929ff854a830994986abad8a`, with no new blocking defects.
+
+An extra standalone PHPStan run on `bin/docs-nav` reports two existing CLI-entry-point type findings. The same check on the pinned base script reports the same two findings. The changed application sources pass their project PHPStan checks.
