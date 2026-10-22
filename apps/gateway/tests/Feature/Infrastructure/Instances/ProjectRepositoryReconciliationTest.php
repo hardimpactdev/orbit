@@ -10,6 +10,7 @@ use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
+use App\Domain\Projects\ProjectUpdateStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\TaskVms\TaskVmState;
@@ -372,6 +373,103 @@ describe('App repository reconciliation', function (): void {
 
         expect($ssh->commands)->toHaveCount(1)
             ->and($ssh->connections[0]->host)->toBe($this->fixture->defaultInstance->node->wireguard_ip);
+    });
+
+    it('restores an earlier origin when a later checkout fails and records why the update rolled back', function (): void {
+        $second = Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+
+        expect(fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.repository_origin_failed');
+        });
+
+        $update = ProjectUpdate::query()->sole();
+        expect($this->fixture->sources->originMutations)->toBe(['/srv/orbit/apps/acme/default'])
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default', $second->checkout_path])
+            ->and(array_column($update->evidence['origins'], 'mutated', 'path'))
+            ->toBe(['/srv/orbit/apps/acme/default' => true, $second->checkout_path => false])
+            ->and($update->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('keeps a rollback open until its origins are restored, and finishes it on retry', function (): void {
+        Instance::query()->create([
+            'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => 'second',
+            'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/second', 'branch' => 'main', 'status' => InstanceState::Active,
+        ]);
+        $this->fixture->sources->failOriginChangeAt = 2;
+        $this->fixture->sources->failOriginRestores = 1;
+        $update = fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project->refresh(),
+            orb101_repository_data('https://github.com/acme/site.git'),
+        );
+
+        expect($update)->toThrow(ResourceOperationException::class);
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RollingBack)
+            ->and($this->fixture->sources->originRestores)->toBe([]);
+
+        $update();
+
+        expect(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/second'])
+            ->and($this->fixture->project->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('keeps the evidence of a real checkout that changed before a later one failed, and restores it', function (): void {
+        $sandbox = sys_get_temp_dir().'/orbit-app-update-partial-'.Str::uuid();
+        $git = static function (array $arguments): void {
+            $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', ...$arguments]));
+            expect($result->succeeded())->toBeTrue($result->stderr);
+        };
+        $checkouts = [];
+        foreach (['first', 'second'] as $name) {
+            $git(['init', '--initial-branch=main', "{$sandbox}/{$name}"]);
+            $git(['-C', "{$sandbox}/{$name}", 'remote', 'add', 'origin', 'git@github.com:acme/site.git']);
+            $checkouts[] = Instance::query()->create([
+                'project_id' => $this->fixture->project->id, 'node_id' => $this->fixture->node->id, 'name' => $name,
+                'environment' => 'development', 'source_layout' => InstanceSourceLayout::Checkout->value,
+                'checkout_path' => "{$sandbox}/{$name}", 'branch' => 'main', 'status' => InstanceState::Active,
+            ]);
+        }
+        // The second checkout cannot write its config, so its origin change fails after the first one changed.
+        chmod("{$sandbox}/second/.git", 0555);
+        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+        $recorded = [];
+        $origin = static fn (string $path): string => trim((string) shell_exec('git -C '.escapeshellarg($path).' config --get remote.origin.url'));
+
+        try {
+            $failure = null;
+            try {
+                $mutator->changeOrigins($checkouts, 'git@github.com:acme/site.git', 'https://github.com/acme/site.git', [], function (array $rows) use (&$recorded): void {
+                    $recorded = $rows;
+                });
+            } catch (ResourceOperationException $exception) {
+                $failure = $exception->errorCode;
+            }
+
+            expect($failure)->toBe('project.repository_origin_failed');
+
+            expect($origin("{$sandbox}/first"))->toBe('https://github.com/acme/site.git')
+                ->and(array_column($recorded, 'mutated', 'instance_id'))->toBe([$checkouts[0]->id => true, $checkouts[1]->id => false]);
+
+            chmod("{$sandbox}/second/.git", 0755);
+            $mutator->restoreOrigins($recorded);
+
+            expect($origin("{$sandbox}/first"))->toBe('git@github.com:acme/site.git')
+                ->and($origin("{$sandbox}/second"))->toBe('git@github.com:acme/site.git');
+        } finally {
+            @chmod("{$sandbox}/second/.git", 0755);
+            new Filesystem()->deleteDirectory($sandbox);
+        }
     });
 
     it('still reads the proposed repository with a credential from an ordinary checkout', function (): void {

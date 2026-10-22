@@ -15,6 +15,7 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\TaskVm;
+use Closure;
 
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
 {
@@ -59,7 +60,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         }
     }
 
-    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array
+    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence, ?Closure $record = null): array
     {
         $byKey = [];
 
@@ -74,6 +75,20 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             // Evidence from before rows named their Instance carries only the path.
             if (($byKey[$key]['mutated'] ?? $byKey['path:'.$path]['mutated'] ?? false) === true) {
                 continue;
+            }
+
+            // The intent is recorded before the change, so a failure on a later checkout still restores this one.
+            $row = [
+                'instance_id' => $checkout->id,
+                'path' => $path,
+                'previous_url' => $previousUrl,
+                'current_url' => $newUrl,
+                'mutated' => false,
+                'attempted' => true,
+            ];
+            $byKey[$key] = $row;
+            if ($record !== null) {
+                $record(array_values($byKey));
             }
 
             $this->run(
@@ -91,13 +106,10 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 'project.repository_origin_failed',
             );
 
-            $byKey[$key] = [
-                'instance_id' => $checkout->id,
-                'path' => $path,
-                'previous_url' => $previousUrl,
-                'current_url' => $newUrl,
-                'mutated' => true,
-            ];
+            $byKey[$key] = [...$row, 'mutated' => true];
+            if ($record !== null) {
+                $record(array_values($byKey));
+            }
         }
 
         return array_values($byKey);
@@ -112,7 +124,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
     public function restoreOrigins(array $mutations): void
     {
         foreach ($mutations as $mutation) {
-            if ($mutation['mutated'] !== true) {
+            if ($mutation['mutated'] !== true && ($mutation['attempted'] ?? false) !== true) {
                 continue;
             }
 

@@ -507,6 +507,7 @@ final readonly class UpdateProjectAction
                     $update->previous_repository_url,
                     $update->requested_repository_url,
                     $this->originMutations($origins),
+                    fn (array $origins) => $this->recordOrigins($update, $origins),
                 );
             }
 
@@ -616,6 +617,18 @@ final readonly class UpdateProjectAction
     }
 
     /**
+     * Stores the origin evidence before and after each change, so a rollback knows every checkout it may restore.
+     *
+     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $origins
+     */
+    private function recordOrigins(ProjectUpdate $update, array $origins): void
+    {
+        $evidence = $this->storedMap($update->refresh()->evidence) ?? [];
+        $evidence['origins'] = $origins;
+        $update->update(['evidence' => $evidence]);
+    }
+
+    /**
      * Stores what the slug projection did for one prepared Route, so a rollback can undo it.
      *
      * @param  array<string, string>  $facts
@@ -657,7 +670,7 @@ final readonly class UpdateProjectAction
 
     /**
      * @param  array<mixed, mixed>  $origins
-     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @return list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>
      */
     private function originMutations(array $origins): array
     {
@@ -671,6 +684,7 @@ final readonly class UpdateProjectAction
                 || ! is_string($origin['current_url'] ?? null)
                 || ! is_bool($origin['mutated'] ?? null)
                 || (array_key_exists('instance_id', $origin) && ! is_int($origin['instance_id']))
+                || (array_key_exists('attempted', $origin) && ! is_bool($origin['attempted']))
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'project.update_failed',
@@ -685,6 +699,7 @@ final readonly class UpdateProjectAction
                 'previous_url' => $origin['previous_url'],
                 'current_url' => $origin['current_url'],
                 'mutated' => $origin['mutated'],
+                ...(isset($origin['attempted']) ? ['attempted' => $origin['attempted']] : []),
             ];
         }
 
