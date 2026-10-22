@@ -23,7 +23,8 @@ class CreateRouteCommand extends RouteCommand
         {instance? : Numeric Instance ID (custom proxy: domain)}
         {domain? : Route domain}
         {--publication=private : Publication intent}
-        {--node= : Custom proxy serving Node}
+        {--node= : Private custom proxy serving Node}
+        {--ingress= : Public Process Route Ingress Node name or ID}
         {--upstream= : Loopback HTTP URL for a custom proxy Route}
         {--process= : Node Process name or ID for a custom proxy Route}
         {--web-root= : Web root inside the Instance checkout, such as apps/docs/public}
@@ -88,7 +89,7 @@ class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        if ($this->option('node') !== null) {
+        if ($this->option('node') !== null || $this->option('ingress') !== null) {
             return $this->renderGatewayFailure('route.scope_conflict', 'An app Route derives its scope from the Instance.');
         }
 
@@ -130,12 +131,9 @@ class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $publication = $this->option('publication');
-        if ($publication !== null && $publication !== 'private') {
-            return $this->renderGatewayFailure(
-                'route.publication_invalid',
-                'A custom proxy Route is private only.',
-            );
+        $publication = $this->publication($this->option('publication'));
+        if ($publication === null) {
+            return self::FAILURE;
         }
 
         if ($this->stringOption('web-root') !== null) {
@@ -151,6 +149,30 @@ class CreateRouteCommand extends RouteCommand
                 'route.upstream_invalid',
                 'Supply exactly one custom proxy upstream or Process.',
             );
+        }
+
+        if ($publication === 'public') {
+            $processId = filter_var($processRef, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if (! is_int($processId) || $this->option('node') !== null || $upstream !== null) {
+                return $this->renderGatewayFailure('route.scope_required', 'A public custom proxy requires a Process ID and optional Ingress, without Node scope or an upstream URL.');
+            }
+            $connector = $this->gatewayConnector($repository, $connectors);
+            if ($connector === null) {
+                return self::FAILURE;
+            }
+            $ingressRef = $this->stringOption('ingress');
+            $ingressNodeId = $ingressRef !== null ? $this->resolveNodeId($connector, $ingressRef) : null;
+            if ($ingressRef !== null && $ingressNodeId === null) {
+                return self::FAILURE;
+            }
+            $route = $this->sendWithProgress($connector,
+                new CreateRouteRequest(domain: $domain, publication: $publication, processId: $processId, ingressNodeId: $ingressNodeId),
+                RouteResponse::class, ['Create Route', 'Creating Route', 'Created Route']);
+
+            return $route instanceof RouteResponse ? $this->renderRoute($route) : self::FAILURE;
+        }
+        if ($this->option('ingress') !== null) {
+            return $this->renderGatewayFailure('route.scope_required', 'Ingress selection requires public publication and a Process.');
         }
 
         $nodeRef = $this->option('node');
@@ -180,7 +202,7 @@ class CreateRouteCommand extends RouteCommand
             $connector,
             new CreateRouteRequest(
                 domain: $domain,
-                publication: 'private',
+                publication: $publication,
                 nodeId: $nodeId,
                 upstream: $upstream,
                 processId: $processId,

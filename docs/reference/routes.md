@@ -14,14 +14,14 @@ covers:
 
 # Routes
 
-A Route is a domain that reaches an Instance or a Node-local service. This page explains the Route record, domain selection, private and public traffic, and the changes that Orbit coordinates or refuses. [`route`](/cli/route) lists the commands.
+A Route is a domain that reaches an Instance or a Node service. This page explains the Route record, domain selection, private and public traffic, and the changes that Orbit coordinates or refuses. [`route`](/cli/route) lists the commands.
 
 A Route has one of three kinds. The kind never changes.
 
 | Kind | Owner | Serves |
 | --- | --- | --- |
 | `app` | A Project | One Instance, or an ordered pool of production Instances. Orbit creates one for every Instance of a web-serving Project. |
-| `custom_proxy` | The serving Node | A service on that Node's loopback or a Node Process. See [custom proxy Routes](#custom-proxy-routes). |
+| `custom_proxy` | A Node or Cluster | A service on that Node's loopback or a Node Process. See [custom proxy Routes](#custom-proxy-routes). |
 | `analytics_tracking` | One Instance | Plausible's script and event paths. See [Analytics](/reference/analytics#publish-a-tracking-host). |
 
 Each active Instance of a web-serving Project has exactly one Route without a web root: the Instance's own Route. An Instance can be without it only while Orbit creates it, after a failed activation, or while Orbit removes it. A development Instance can also have Routes with a web root, which [serve other directories](#serve-several-web-roots) of its checkout.
@@ -36,7 +36,7 @@ The Gateway stores these fields for each Route. `route:show` returns them.
 | --- | --- |
 | `kind` | `app`, `custom_proxy`, or `analytics_tracking`. |
 | `project_id` | The Project that owns an `app` Route and every one of its targets. Null for the other kinds. |
-| `node_id` or `cluster_id` | The routing scope: exactly one Node or one active Cluster. A custom proxy Route always has Node scope. |
+| `node_id` or `cluster_id` | Exactly one Node or Cluster. App Cluster scope requires an active Cluster. Private custom proxies use Node scope; public Process Routes derive Cluster scope from their Ingress. |
 | `domain` | One normalized domain that no other Route owns. It never changes. A domain change creates a replacement Route. |
 | `web_root` | Null, or a repository-relative web root such as `apps/docs/public`. Null serves the Instance's effective root. See [Serve several web roots](#serve-several-web-roots). |
 | `provenance` | `generated` or `explicit`. It never changes, and Orbit does not infer it from the domain. |
@@ -76,7 +76,7 @@ When neither exists, creation stops before any source or runtime change. An `app
 
 The source branch does not change the generated domain. `instance:create <project> <node> default --branch=release` still generates `<project>.test`.
 
-Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns Routes needs exactly one active Router.
+Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns app Routes needs exactly one active Router. Public Process Routes select their edge independently, as [public Process hostnames](#public-process-hostnames) describes.
 
 A Node keeps its own TLD while it belongs to a Cluster. [cluster](/cli/cluster#placement-and-tlds) lists which Node or Cluster may own a TLD.
 
@@ -88,21 +88,21 @@ A Project slug update recomputes every generated development Route domain from t
 
 Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
 
-Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
+Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
 
 ```bash
 orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public
 ```
 
-The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`, and an optional `web_root`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
+The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`, and an optional `web_root`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. A public custom proxy instead supplies `domain`, `process_id`, `publication: public`, and optional `ingress_node_id`, without `node_id`, `cluster_id`, or `upstream`. The Gateway derives routing scope from the selected Ingress; the Process keeps its own Node and Cluster membership.
 
 | Creation refusal | Meaning |
 | --- | --- |
 | `route.domain_invalid` | The domain is not a valid domain. |
 | `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.ai-router.orbit`. |
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
-| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.scope_required` | A private custom proxy needs a Node; a public custom proxy needs a Process and optional Ingress. |
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
@@ -112,7 +112,7 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
-| `route.upstream_unresolved` | The Process has no single Node-local listener. |
+| `route.upstream_unresolved` | The Process has no single supported listener for this publication. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |
 
 A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
@@ -232,17 +232,43 @@ The first form stores a loopback URL. The second form stores a Node Process and 
 | --- | --- |
 | Domain | Any unique DNS domain, such as `executor.orbit`, `grafana.internal`, or `something.test`. No Cluster TLD, Node TLD, or `.orbit` suffix is required. |
 | Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. Core reserves its own names, and an [extension](/reference/extensions#plug-in-points) can reserve more, such as `collector.ai-router.orbit`. `cli-proxy-api.orbit` is not reserved. |
-| Owner and scope | The serving Node, which must be active and have a WireGuard address. Cluster membership never gives it Cluster scope. |
-| Publication | Private only. |
-| Upstream | HTTP on `127.0.0.1`, `localhost`, or `::1`, or the listener of a Node Process on the serving Node. A remote URL is refused. |
-| Caddy | The serving Node's site terminates Orbit CA TLS and proxies HTTP to the upstream. It keeps `Host` and admits streaming and WebSocket upgrades. |
-| DNS | An exact private record answers with the serving Node. The Cluster Router is not a hop. The record wins over a Cluster TLD answer for the same name. |
-| Create | Stores the Route, issues the Orbit CA leaf, builds Caddy, then publishes DNS. Success returns an `active` Route. An identical retry returns the stored Route and converges nothing. |
-| Destroy | Withdraws the site and DNS record, then removes the leaf. Destroy again to retry a failure. |
+| Owner and scope | Private: the serving Node. Public: the selected active Ingress, with scope derived from its Cluster. The Process Node can be outside that Cluster and needs no role. |
+| Publication | Private with Node scope; public with a Process ID and optional Ingress selection. |
+| Upstream | Private: HTTP on `127.0.0.1`, `localhost`, or `::1`, or the listener of a Node Process on the serving Node. A remote URL is refused. |
+| Caddy | Private: the serving Node's site terminates Orbit CA TLS and proxies HTTP to the upstream. It keeps `Host` and admits streaming and WebSocket upgrades. |
+| DNS | Private: an exact private record answers with the serving Node. The Cluster Router is not a hop. The record wins over a Cluster TLD answer for the same name. |
+| Create | Private: stores the Route, issues the Orbit CA leaf, builds Caddy, then publishes DNS. Success returns an `active` Route. An identical retry returns the stored Route and converges nothing. |
+| Destroy | Withdraws the site and DNS record. Private Routes remove the leaf; public Routes reconcile the Ingress firewall. Destroy again to retry a failure. |
 | Node removal | Refused while the Node serves a custom proxy Route, with `node.has_routes` or `route.reconciliation_required`. |
 | Process removal | Refused while a custom proxy Route targets the Process, with `process.has_routes`. |
 
-To recover a `failed` custom proxy create, destroy the Route and create it again.
+To recover a `failed` private custom proxy create, destroy the Route and create it again. Repeat the identical public Process creation request to resume activation. Destroy withdraws its public site and reconciles the Ingress firewall; repeat destroy after a failure.
+
+### Public Process hostnames
+
+Give a Node Process its own public hostname through a selected Cluster Ingress.
+
+```bash
+orbit route:create sync.example.com --process=267 --publication=public
+```
+
+The API body is `{"domain":"sync.example.com","process_id":267,"publication":"public"}`. Add `ingress_node_id` or CLI `--ingress=<node>` to select an active Ingress by ID (the CLI also accepts an exact Node name). By default, Orbit selects the public Ingress of the Process Node's Cluster. For a Process Node outside a Cluster, Orbit selects the single active Ingress serving existing active public app Routes. No candidate returns `route.ingress_required`; multiple candidates return `route.ingress_ambiguous`. An explicit Ingress must be active with an active `ingress` role.
+
+The stored Route has that Ingress's Cluster scope. Orbit never changes the Process Node's Cluster membership or Caddy sites. The caller needs command access to the selected Ingress and the Process Node; unrelated Cluster members need no grant.
+
+The Process must be an active Node-owned Docker Process on an active Linux Node. When both Nodes have recorded IPv4 LAN addresses in the same /24, Orbit selects the Process Node's LAN address; otherwise it selects WireGuard. Cluster membership does not affect address selection.
+
+The Process must publish exactly one TCP listener on that selected address. A missing or ambiguous listener returns `route.upstream_unresolved` before storing intent. Orbit never rewrites published ports or falls back from a missing LAN listener to WireGuard. Add the LAN publication with `process:update` first. Loopback, wildcard, and UDP listeners are ineligible. A raw `upstream` stays private and loopback-only. Public Process IDs are numeric. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
+
+The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Private DNS answers with the Ingress. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+
+Activation verifies the Process Node's firewall and dials the selected listener from the Ingress before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
+
+It keeps the activation for retry and Doctor reports the blocked path. Orbit adds no hidden firewall opening or Process port rewrite. Use the managed [firewall commands](/cli/firewall) to allow the selected LAN source before retrying. Docker publications bypass UFW, as that page explains; this check requires recorded firewall intent and does not make UFW an isolation boundary for Docker.
+
+Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal and configuration updates are refused with `process.has_routes`; remove the Route first.
+
+Doctor checks public Process Routes on the Ingress in the `route` family. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
 
 The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on a Node backs up and stops serving any hand-placed Caddy site. Create a custom proxy Route for such a site before that build. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) shows an example.
 
@@ -251,9 +277,10 @@ Doctor checks each custom proxy Route on its serving Node in the `route` family:
 | Doctor issue code | Difference |
 | --- | --- |
 | `route.dns_mismatch` | Private DNS does not answer the domain with the serving Node address. |
-| `route.certificate_mismatch` | The Route's Orbit CA leaf is missing on the serving Node. |
+| `route.certificate_mismatch` | The private Route's Orbit CA leaf is missing, or the public Route's ACME certificate is missing or expiring. |
 | `route.caddy_mismatch` | The serving Node's Caddy does not contain the site. |
 | `route.upstream_unreachable` | The upstream does not accept a connection. |
+| `route.firewall_mismatch` | The public Ingress rules or the managed Process listener path do not match. |
 | `route.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 | `route.node_unreachable` | The Gateway could not observe the serving Node. |
 
@@ -349,13 +376,13 @@ Public traffic enters only through Ingress, on HTTP and HTTPS. The firewall neve
 
 ## Publish a public Route
 
-A public Route terminates HTTPS on the Cluster's Ingress, forwards privately to the Cluster's Router, and reaches the `app-prod` workload. The public endpoint never shows which Node runs the workload.
+A public app Route terminates HTTPS on the Cluster's Ingress, forwards privately to the Cluster's Router, and reaches the `app-prod` workload. [Public Process Routes](#public-process-hostnames) use the same Ingress and send HTTP directly to their Process. The public endpoint never shows which Node runs the workload.
 
-A Cluster has at most one active Ingress. The database refuses a second one, and Doctor reports `role.cluster_cardinality_conflict` if two exist. The public edge exists only when all of these hold: the Route is Cluster-scoped, the Cluster is active, the Cluster has an active Router, and its Ingress serves. An Ingress serves while its role is active, while it converges, and after a failed convergence step. A new public activation, or its repeat on deploy, starts only while the Ingress role is active. When a condition is missing, the Route keeps `publication=public` but gets no public listener, certificate, or firewall opening.
+A Cluster has at most one active Ingress. The database refuses a second one, and Doctor reports `role.cluster_cardinality_conflict` if two exist. The public app edge exists only when all of these hold: the Route is Cluster-scoped, the Cluster is active, the Cluster has an active Router, and its Ingress serves. An Ingress serves while its role is active, while it converges, and after a failed convergence step. A new public activation, or its repeat on deploy, starts only while the Ingress role is active. When a condition is missing, the Route keeps `publication=public` but gets no public listener, certificate, or firewall opening.
 
 A public edge is live when the Route is `active` or `activating`, its Cluster is eligible, and its `replacement_step` is at or past `public-activated`. A finished public Route stores `ingress-firewall`, a later step. A public Route whose `replacement_step` is empty has not finished activation and has no live public site.
 
-The Ingress site names the public domain and forwards to the Router. It never names an Instance, a workload Node, or a backend pool, so the Router keeps backend selection. Ingress forwards Orbit CA HTTPS to the Router's LAN address when the Router has one, and to its WireGuard address otherwise. It keeps the original `Host`, the HTTPS scheme, and the client address.
+The public app Ingress site names the domain and forwards to the Router. It never names an Instance, a workload Node, or a backend pool, so the Router keeps backend selection. Ingress forwards Orbit CA HTTPS to the Router's LAN address when the Router has one, and to its WireGuard address otherwise. It keeps the original `Host`, the HTTPS scheme, and the client address.
 
 Public TLS terminates on the Ingress with a Let's Encrypt certificate that Caddy obtains through `tls force_automate`. Orbit never pins an Orbit CA leaf on a public site, and a Let's Encrypt failure never falls back to Orbit CA. [Caddy configuration](/reference/caddy-configuration#public-ingress-certificates) describes the site block. Create the public DNS record yourself. Orbit calls no DNS provider API and stores no public IP address.
 
@@ -371,7 +398,7 @@ A publication-only change keeps the Route ID and the domain. To publish, the Gat
 
 Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor reports a public Route whose Let's Encrypt certificate is missing or expires within the renewal margin, in addition to checking that the site asks Caddy to manage its certificate. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
 
-A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). Only a Route whose targets are production Instances can be public.
+A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). An app Route can be public only when its targets are production Instances. A [public Process Route](#public-process-hostnames) has no Instance targets.
 
 The Gateway refuses to remove an Ingress while any Route in its Cluster has `publication=public`.
 
@@ -504,7 +531,7 @@ A separate hostname for each service replaces ADR 0231, which published a Proces
 
 ## Remove a Route
 
-`route:destroy` removes a Route and its projections. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
+`route:destroy` removes a Route and its projections. The Gateway refuses an app Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
 
 Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
 
@@ -538,7 +565,9 @@ The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When 
 
 `route:destroy --offline` checks each Node before it changes anything. It skips a Node that is not `active`, or that the [reachability probe](/reference/node-provisioning#remove-a-node) finds unreachable. A Node that answers keeps every step, and a failure on it still stops the removal. The Gateway runs the other steps, deletes the Route, and records a residue for each skipped Node in the same transaction. The response lists them under `retained_on_nodes`, each with `node_id`, `node`, and the `steps` the Node still needs.
 
-Doctor reports each residue as `node.route_residue_retained` in the `node` family, also while the Node is down. The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID and deletes the residue. A failed cleanup keeps the residue and counts the attempt. The artifact is then `skipped`, so another site's broken Caddyfile or pool never halts the fleet rollout, and the next converge tries again. Node removal deletes the residues with the Node.
+Doctor reports each residue as `node.route_residue_retained` in the `node` family, also while the Node is down. The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID, reconciles public firewall policy on an Ingress, and deletes the residue.
+
+A failed cleanup keeps the residue and counts the attempt. The artifact is then `skipped`, so another site's broken Caddyfile or pool never halts the fleet rollout, and the next converge tries again. Node removal deletes the residues with the Node.
 
 The fleet catch-up converges a Node only when it belongs to the [rollout set](/reference/gateway-recovery#rollout-set-and-order). On another Node, such as the Gateway's own, run `orbit node:converge NODE` yourself. `node:converge` needs an `active` Linux Node whose WireGuard address and SSH host key the Gateway manages. The residue of any other Node stays until that Node qualifies again or is removed.
 
@@ -648,3 +677,9 @@ Cluster DNS sends the browser to the Router, not to the workload Node. So the de
 ### Custom proxy Routes for Node services
 
 A Node service that is not an application still needs a unique name, private DNS, a certificate, `route:list`, and Doctor. A synthetic Instance would attach the wrong lifecycle. A separate proxy resource would duplicate Route identity. Operator-supplied Caddy or certificate files would leave unmanaged configuration on the Node.
+
+### Public Process Routes select an edge separately from the workload
+
+A Process can run on a service Node outside any Cluster. Selecting an Ingress independently keeps the service Node's membership and private Caddy sites unchanged. The Process Node's Cluster supplies the natural default; outside a Cluster, the existing public app Routes identify the production edge without a hard-coded Node or Cluster ID. Ambiguity requires an explicit selection. Routing scope follows the selected Ingress internally.
+
+LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.

@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -16,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\Orb101ProjectUpdateFixture;
 use Tests\Support\Orb220DeploymentApiFixture;
@@ -442,4 +446,21 @@ describe('POST /mcp/search', function (): void {
             // The deadline ends with the MCP request.
             ->and($deadline->cap(9_999.0))->toBe(9_999.0);
     });
+});
+
+it('creates a public Process hostname through the generated MCP tool and API validation', function (): void {
+    app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => 'active']);
+    $ingress = Node::query()->create(['name' => 'process-ingress', 'cluster_id' => $cluster->id, 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    foreach ([RoleName::Router, RoleName::Ingress] as $role) {
+        $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => $role, 'status' => 'active']);
+    }
+    $services = Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']);
+    $process = $services->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.3:8095:80/tcp']], 'status' => 'active']);
+    $response = mcp_call($this, 'tools/call', ['name' => 'route-create', 'arguments' => ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public']])->assertOk();
+    expect($response->json('result.isError'))->toBeFalse();
+    $document = json_decode($response->json('result.content.0.text'), true);
+    expect($document['data']['cluster_id'])->toBe($cluster->id)
+        ->and($document['data']['process_id'])->toBe($process->id)
+        ->and($document['data']['replacement_step'])->toBe('ingress-firewall');
 });

@@ -11,6 +11,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 
 final readonly class RouteRemovalGuard
@@ -42,6 +43,7 @@ final readonly class RouteRemovalGuard
         $referenced =
             $node->scopedRoutes()->exists()
             || $node->generatedRoutes()->exists()
+            || RouteCustomProxy::query()->where('node_id', $node->id)->exists()
             || RouteTarget::query()
                 ->whereHas(
                     'instance',
@@ -53,6 +55,7 @@ final readonly class RouteRemovalGuard
             if (Route::query()->where('status', RouteStatus::Active)->where(static function ($query) use ($node): void {
                 $query
                     ->where('node_id', $node->id)
+                    ->orWhereHas('customProxy', static fn ($proxy) => $proxy->where('node_id', $node->id))
                     ->orWhere('generation_basis_node_id', $node->id)
                     ->orWhereHas('targets.instance', static fn ($target) => $target->where('node_id', $node->id));
             })->exists()) {

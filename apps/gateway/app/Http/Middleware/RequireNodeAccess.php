@@ -76,7 +76,8 @@ final readonly class RequireNodeAccess
             return $next($request);
         }
 
-        if (in_array($scope, [ServingNode::CandidateClone, ServingNode::InstanceTransfer, ServingNode::InstanceCreation], true)) {
+        if (in_array($scope, [ServingNode::CandidateClone, ServingNode::InstanceTransfer, ServingNode::InstanceCreation], true)
+            || ($scope === ServingNode::RouteOwning && $this->isPublicProcessRoute($request))) {
             foreach ($servingNodes as $servingNode) {
                 if (! $this->authorizer->allows($consumer, $servingNode)) {
                     $request->attributes->set('orbit.error_code', 'node_access.required');
@@ -97,6 +98,15 @@ final readonly class RequireNodeAccess
         $request->attributes->set('orbit.error_code', 'node_access.required');
 
         return $this->required($consumer, $servingNodes[0]);
+    }
+
+    private function isPublicProcessRoute(Request $request): bool
+    {
+        $route = $request->route('route');
+
+        return $route instanceof \App\Models\Route
+            ? $route->isCustomProxy() && $route->cluster_id !== null
+            : $request->input('publication') === 'public' && $request->input('process_id') !== null;
     }
 
     private function sameNode(Node $consumer, Node $serving): bool

@@ -2,19 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Actions\Doctor\RouteDoctorProbe;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Doctor\CustomProxyRouteInspector;
+use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\CustomProxyRouteProjector;
+use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -29,11 +35,14 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
+use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
+use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -42,14 +51,17 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
+use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\SshNodeCaddyBuilds;
 
 /*
@@ -413,30 +425,29 @@ function certificate_order_bind_projectors(
     CertificateOrderDnsRunner $dnsRuns,
     CertificateOrderPhpFpm $php,
 ): void {
-    $executor = new DevelopmentSshExecutor(
-        $nodes,
-        new class implements SshKeyProvider
+    $keys = new class implements SshKeyProvider
+    {
+        public function privateKeyPath(): string
         {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
+            return '/tmp/orbit-test-key';
+        }
 
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 AAAA';
-            }
-        },
-        new class implements KnownHostsStore
+        public function publicKey(): string
         {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
+            return 'ssh-ed25519 AAAA';
+        }
+    };
+    $knownHosts = new class implements KnownHostsStore
+    {
+        public function path(): string
+        {
+            return '/tmp/orbit-test-known-hosts';
+        }
 
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    );
+        public function put(string $host, int $port, HostKey $key): void {}
+    };
+    $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
+    app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($nodes, $keys, $knownHosts));
     $sites = new DevelopmentSiteRepository;
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
     $certificates = new RemoteAppDevCertificateManager(
@@ -464,6 +475,8 @@ function certificate_order_bind_projectors(
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
     $firewall = new RemoteAppDevRouteFirewallManager($executor);
+    app()->instance(DevelopmentSshExecutor::class, $executor);
+    app()->instance(DnsmasqPrivateDnsManager::class, $dns);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
     app()->instance(RemoteAppDevRouteFirewallManager::class, $firewall);
     app()->instance(AppDevPhpFpmManager::class, $php);
@@ -551,6 +564,9 @@ function certificate_order_certificates(): RemoteAppDevCertificateManager
  */
 final class CertificateOrderNodes implements SshExecutor
 {
+    /** @var list<array{string, string, string}> */
+    public array $forwarding = [];
+
     /** @var array<string, string> */
     public array $live = [];
 
@@ -570,15 +586,25 @@ final class CertificateOrderNodes implements SshExecutor
      */
     public array $down = [];
 
+    /** @var array<string, string> */
+    public array $firewallStatuses = [];
+
     public ?string $failCaddy = null;
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
+        if (in_array('exec 3<>/dev/tcp/$1/$2', $command->arguments, true)) {
+            $this->forwarding[] = [$host, $command->arguments[6], $command->arguments[7]];
+        }
         $input = is_string($command->input) ? $command->input : '';
 
         if (in_array($host, $this->down, true)) {
             return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
+        }
+
+        if ($command->arguments === ['sudo', 'ufw', 'status', 'numbered']) {
+            return new CommandResult(0, $this->firewallStatuses[$host] ?? "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n", '', 1, false);
         }
 
         if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
@@ -624,6 +650,11 @@ final class CertificateOrderNodes implements SshExecutor
     public function hasCertificate(string $host, string $scope): bool
     {
         return isset($this->certificates[$host][$scope]);
+    }
+
+    public function serves(string $host, string $domain): bool
+    {
+        return str_contains($this->live[$host] ?? '', $domain.' {');
     }
 
     public function names(string $host, string $scope): bool
@@ -694,3 +725,64 @@ final readonly class CertificateOrderReachability implements NodeReachabilityPro
         return in_array($node->wireguard_ip, $this->nodes->down, true) ? ExporterDegradationReason::Unreachable : null;
     }
 }
+
+it('withdraws a public Process site on the Ingress and reconciles its firewall without touching the Process Node', function (bool $offline, bool $lan, bool $blocked): void {
+    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
+    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
+    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
+    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:80/tcp']], 'status' => 'active']);
+    if ($lan) {
+        $this->beast->update(['lan_ip' => '10.0.0.6']);
+        $ingress->update(['lan_ip' => '10.0.0.4']);
+        $process->update(['runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp', '10.0.0.6:8095:8080/tcp']]]);
+        FirewallRule::query()->create(['node_id' => $this->beast->id, 'name' => 'sync-ingress', 'action' => 'allow', 'source' => '10.0.0.4', 'port' => '8095', 'protocol' => 'tcp', 'status' => 'active']);
+        $this->nodes->firewallStatuses['10.44.0.7'] = "Status: active\n[ 1] 8095/tcp ALLOW IN 10.0.0.4 # orbit:node:{$this->beast->id}:firewall:sync-ingress\n";
+    }
+    $creationFirewall = new FakeNodeRoleFirewallManager;
+    app()->instance(NodeRoleFirewallManager::class, $creationFirewall);
+    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
+    $body = ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'];
+    if ($blocked) {
+        $allowed = $this->nodes->firewallStatuses['10.44.0.7'];
+        // The Database listener's rule does not permit this Process port.
+        $this->nodes->firewallStatuses['10.44.0.7'] = "Status: active\n[ 1] 5434/tcp ALLOW IN 10.0.0.4 # orbit:rule-123\n";
+        $this->postJson('/api/v1/routes', $body)->assertServerError()->assertJsonPath('error.code', 'route.upstream_firewall_mismatch');
+        $failed = Route::query()->where('domain', 'sync.example.com')->sole();
+        expect($failed->failed_step)->toBe('public-edge-verified');
+        $observation = app(NativeCustomProxyRouteInspector::class)->inspect($failed->customProxy);
+        expect($observation->firewallMatches)->toBeFalse();
+        app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
+        $issues = app(RouteDoctorProbe::class)->inspect(new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null)));
+        expect(array_map(static fn ($issue) => $issue->code, $issues->issues))->toContain('route.firewall_mismatch');
+        $this->nodes->firewallStatuses['10.44.0.7'] = $allowed;
+    }
+    $response = $this->postJson('/api/v1/routes', $body);
+    $blocked ? $response->assertOk() : $response->assertCreated();
+    $id = $response->json('data.id');
+    // A failed verification also reconciles the Ingress during rollback.
+    expect($creationFirewall->commands)->toBe($blocked ? ['converge:ingress', 'converge:ingress'] : ['converge:ingress']);
+    expect($this->nodes->forwarding)->toBe([['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']]);
+    certificate_order_caddy()->build($ingress);
+    expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue();
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldReceive('converge')->once()->withArgs(fn (Node $node, RoleName $role, string $user): bool => $node->id === $ingress->id && $role === RoleName::Ingress && $user === 'orbit');
+    app()->instance(NodeRoleFirewallManager::class, $firewall);
+    $route = Route::query()->findOrFail($id);
+    $acting = app(RouteRemovalProjector::class)->nodes($route);
+    expect(array_map(fn ($target) => $target->node->id, $acting))->toBe([$ingress->id]);
+    if ($offline) {
+        $this->nodes->down = ['10.44.0.4'];
+        $this->deleteJson('/api/v1/routes/'.$id, ['offline' => true])->assertOk()
+            ->assertJsonPath('data.retained_on_nodes.0.node_id', $ingress->id);
+        expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue()
+            ->and(RouteRemovalResidue::query()->exists())->toBeTrue();
+        $this->nodes->down = [];
+        app(RouteResidueFootprintArtifact::class)->apply($ingress);
+        expect(RouteRemovalResidue::query()->exists())->toBeFalse();
+    } else {
+        $this->deleteJson('/api/v1/routes/'.$id)->assertOk();
+    }
+    expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse()
+        ->and($this->nodes->removedWhileNamed)->toBeEmpty()
+        ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
+})->with([[false, false, false], [true, false, false], [false, true, false], [true, true, true]]);

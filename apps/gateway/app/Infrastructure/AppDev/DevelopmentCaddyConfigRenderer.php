@@ -156,6 +156,10 @@ final readonly class DevelopmentCaddyConfigRenderer
             return <<<CADDY
                 reverse_proxy {$site->localHttpUpstream} {
                     flush_interval -1
+                    transport http {
+                        read_timeout 1h
+                        response_header_timeout 1h
+                    }
                 }
                 CADDY;
         }

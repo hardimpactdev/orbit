@@ -7,10 +7,12 @@ namespace App\Infrastructure\Routes;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRoutePrivateOverride;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -47,6 +49,24 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
     public function verifyPublicEdge(Route $route): void
     {
         $ingress = $this->sites->ingressNode($route);
+        if ($route->isCustomProxy()) {
+            $process = $route->customProxy?->process;
+            if ($process === null) {
+                throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_unresolved', 'The public Route Process is missing.');
+            }
+            $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
+            if (! app(PublicProcessRouteFirewall::class)->matches($route, $ingress)) {
+                throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_firewall_mismatch', 'The Process Node firewall must allow the selected Ingress source to the published listener. Add a managed firewall rule and retry.');
+            }
+            try {
+                $this->ssh->execute($ingress, new RemoteCommand(['timeout', '10', 'bash', '-c', 'exec 3<>/dev/tcp/$1/$2', '--', $upstream->host, (string) $upstream->port]),
+                    step: 'public-edge-verified', errorCode: 'route.upstream_unreachable', commandTimeout: 15);
+            } catch (RuntimeConvergenceException $exception) {
+                throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_unreachable', 'The Ingress cannot reach the selected Process listener. Check its listener and firewall before retrying.', previous: $exception);
+            }
+
+            return;
+        }
         $router = $this->sites->routerNode($route);
         $override = $this->sites->privateOverride($route);
 
@@ -74,6 +94,9 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
     {
         $ingress = $this->sites->ingressNode($route);
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
+        if ($route->isCustomProxy()) {
+            app(DnsmasqPrivateDnsManager::class)->converge();
+        }
     }
 
     /** @param list<int> $skippedNodeIds */
@@ -107,6 +130,10 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
             : $this->sites->ingressNode($route);
         if (! in_array($ingress->id, $skippedNodeIds, true)) {
             $this->caddy->build($ingress);
+        }
+
+        if ($route->isCustomProxy()) {
+            return $ingress;
         }
 
         try {

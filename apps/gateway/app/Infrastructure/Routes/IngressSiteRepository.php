@@ -25,6 +25,10 @@ final readonly class IngressSiteRepository
         $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
 
+        if ($ingress !== null && $route->isCustomProxy()) {
+            $router = $ingress;
+        }
+
         if ($ingress === null || $router === null) {
             throw new RuntimeConvergenceException(
                 step: 'ingress',

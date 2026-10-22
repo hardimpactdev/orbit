@@ -17,6 +17,7 @@ use App\Domain\Doctor\DoctorResources;
 use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ReservedPrivateHostname;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -55,7 +56,10 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     /** @return Collection<int, RouteCustomProxy> */
     private function proxies(Node $node): Collection
     {
-        return RouteCustomProxy::query()->with('route')->where('node_id', $node->id)->orderBy('route_id')->get();
+        return RouteCustomProxy::query()->with('route')->where(static fn (Builder $query): Builder => $query
+            ->where(static fn (Builder $private): Builder => $private->where('node_id', $node->id)->whereHas('route', static fn (Builder $route): Builder => $route->where('publication', RoutePublication::Private)))
+            ->orWhereHas('route', static fn (Builder $route): Builder => $route->where('publication', RoutePublication::Public)
+                ->whereHas('cluster.ingressAssignment', static fn (Builder $role): Builder => $role->where('node_id', $node->id))))->orderBy('route_id')->get();
     }
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
@@ -160,7 +164,8 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
         return Route::query()
             ->where(static fn (Builder $query): Builder => $query
                 ->where('node_id', $node->id)
-                ->orWhereIn('cluster_id', $clusters))
+                ->orWhere(static fn (Builder $cluster): Builder => $cluster->whereIn('cluster_id', $clusters)->where('kind', '!=', 'custom_proxy'))
+                ->orWhereHas('customProxy.route.cluster.ingressAssignment', static fn (Builder $role): Builder => $role->where('node_id', $node->id)))
             ->orderBy('id')
             ->get();
     }
@@ -228,6 +233,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
             [$observation->certificateMatches, RouteDoctorIssueCode::CertificateMismatch, 'certificate', 'present', 'absent'],
             [$observation->caddyMatches, RouteDoctorIssueCode::CaddyMismatch, 'Caddy site', 'present', 'absent'],
             [$observation->upstreamReachable, RouteDoctorIssueCode::UpstreamUnreachable, 'upstream', 'reachable', 'unreachable'],
+            [$observation->firewallMatches, RouteDoctorIssueCode::FirewallMismatch, 'Route firewall path', 'matching', 'mismatch'],
         ] as [$matches, $code, $label, $expected, $observed]) {
             if ($matches === true) {
                 continue;

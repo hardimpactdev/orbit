@@ -217,4 +217,5 @@ return [
     '0228' => ['0228-serve-several-reverb-apps-on-the-websocket-role'],
     '0231' => ['0231-publish-a-process-under-an-app-route-path'],
     '0232' => ['0232-precreate-managed-postgresql-test-databases'],
+    '0233' => ['0233-publish-node-processes-through-public-routes'],
 ];

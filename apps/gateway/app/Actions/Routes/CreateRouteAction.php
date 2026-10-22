@@ -20,6 +20,7 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
+use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
@@ -33,6 +34,7 @@ use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -75,7 +77,7 @@ final readonly class CreateRouteAction
     public function executeForRouteCreate(CreateRouteData $data): array
     {
         if ($data->isCustomProxy()) {
-            return $this->run($data);
+            return ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(fn (): array => $this->run($data));
         }
 
         if ($data->instanceId === null || $data->projectId !== null || $data->nodeId !== null || $data->clusterId !== null) {
@@ -314,6 +316,10 @@ final readonly class CreateRouteAction
     /** @return array{route: Route, created: bool} */
     private function persistCustomProxy(CreateRouteData $data, string $domain): array
     {
+        if ($data->publication === RoutePublication::Public) {
+            return $this->persistPublicProcess($data, $domain);
+        }
+
         if ($data->nodeId === null || $data->projectId !== null || $data->instanceId !== null || $data->clusterId !== null) {
             throw new ResourceOperationException(
                 errorCode: 'route.scope_required',
@@ -426,6 +432,61 @@ final readonly class CreateRouteAction
         return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => true];
     }
 
+    /** @return array{route: Route, created: bool} */
+    private function persistPublicProcess(CreateRouteData $data, string $domain): array
+    {
+        if ($data->clusterId !== null || $data->nodeId !== null || $data->processId === null
+            || $data->upstream !== null || $data->projectId !== null || $data->instanceId !== null || $data->webRoot !== null) {
+            throw new ResourceOperationException('route.scope_required', 'A public custom proxy requires a Process and optional Ingress, without Node scope, Cluster scope, or an upstream URL.');
+        }
+        $process = Process::query()->findOrFail($data->processId);
+        if ($process->status !== LifecycleStatus::Active || ! $process->owner instanceof Node || $process->owner->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('route.upstream_unresolved', 'A public Process Route requires an active Process on an active Node.', 409);
+        }
+        $ingress = new PublicProcessRouteIngress()->resolve($process, $data->ingressNodeId);
+        $cluster = Cluster::query()->findOrFail($ingress->cluster_id);
+        $upstream = $this->listeners->resolvePublic($process, $ingress);
+        $route = Route::query()->where('domain', $domain)->first();
+        $created = ! $route instanceof Route;
+        if ($route instanceof Route) {
+            if (! $route->isCustomProxy()) {
+                throw new ResourceOperationException('route.domain_conflict', "Route domain [{$domain}] is already owned.", 409);
+            }
+            $proxy = $route->customProxy;
+            if ($route->publication !== RoutePublication::Public || $route->cluster_id !== $cluster->id
+                || $proxy?->process_id !== $process->id || $proxy->node_id !== $process->owner_id || $proxy->upstream !== $upstream->url()) {
+                throw new ResourceOperationException('route.retry_conflict', 'The Route domain already exists with conflicting intent.', 409);
+            }
+            if ($route->status === RouteStatus::Active) {
+                return ['route' => $route->load(['targets', 'customProxy']), 'created' => false];
+            }
+            if ($route->status !== RouteStatus::Activating) {
+                throw new ResourceOperationException('route.retry_conflict', 'The Route is being removed. Retry its removal.', 409);
+            }
+        } else {
+            try {
+                $route = DB::transaction(function () use ($cluster, $process, $domain, $upstream): Route {
+                    $route = Route::query()->create([
+                        'kind' => RouteKind::CustomProxy, 'cluster_id' => $cluster->id,
+                        'domain' => $domain, 'provenance' => RouteProvenance::Explicit,
+                        'publication' => RoutePublication::Public, 'status' => RouteStatus::Pending,
+                    ]);
+                    $route->customProxy()->create(['node_id' => $process->owner_id, 'process_id' => $process->id, 'upstream' => $upstream->url()]);
+                    $route->update(['status' => RouteStatus::Activating]);
+
+                    return $route;
+                });
+            } catch (QueryException $exception) {
+                throw $this->conflictFromCreateFailure($domain, null, $exception);
+            }
+        }
+        $route->publishSites();
+        $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
+        $route->update(['status' => RouteStatus::Active]);
+
+        return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => $created];
+    }
+
     private function assertIdenticalCustomProxyRetry(
         Route $existing,
         int $nodeId,
@@ -438,6 +499,7 @@ final readonly class CreateRouteAction
         if (
             ! $existing->isCustomProxy()
             || ! $proxy instanceof RouteCustomProxy
+            || $existing->publication !== RoutePublication::Private
             || $existing->node_id !== $nodeId
             || $proxy->process_id !== $processId
             || $proxy->upstream !== $upstream->url()

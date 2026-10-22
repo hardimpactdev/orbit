@@ -38,7 +38,8 @@ final class StoreRouteRequest extends FormRequest
             return [
                 'domain' => ['required', 'string', 'max:253'],
                 'publication' => ['sometimes', Rule::enum(RoutePublication::class)],
-                'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
+                'ingress_node_id' => ['sometimes', 'integer', Rule::exists(new Node()->getTable(), 'id')],
+                'node_id' => ['sometimes', 'integer', Rule::exists(new Node()->getTable(), 'id')],
                 'upstream' => ['sometimes', 'string', 'max:253'],
                 'process_id' => ['sometimes', 'integer', Rule::exists(new Process()->getTable(), 'id')],
             ];
@@ -63,6 +64,8 @@ final class StoreRouteRequest extends FormRequest
                     'publication',
                     'instance_id',
                     'node_id',
+                    'cluster_id',
+                    'ingress_node_id',
                     'upstream',
                     'process_id',
                     'web_root',
@@ -95,7 +98,7 @@ final class StoreRouteRequest extends FormRequest
                 $validator->errors()->add('web_root', self::WebRootMessage);
             }
 
-            if ($this->exists('node_id')) {
+            if ($this->exists('node_id') || $this->exists('cluster_id') || $this->exists('ingress_node_id')) {
                 $validator->errors()->add('node_id', 'An app Route derives its scope from the Instance.');
             }
         }];
@@ -108,8 +111,9 @@ final class StoreRouteRequest extends FormRequest
         if ($this->isCustomProxy()) {
             return new CreateRouteData(
                 domain: $this->string('domain')->toString(),
-                publication: RoutePublication::Private,
-                nodeId: $this->integer('node_id'),
+                publication: RoutePublication::from(is_string($validated['publication'] ?? null) ? $validated['publication'] : RoutePublication::Private->value),
+                nodeId: isset($validated['node_id']) ? $this->integer('node_id') : null,
+                ingressNodeId: isset($validated['ingress_node_id']) ? $this->integer('ingress_node_id') : null,
                 upstream: is_string($validated['upstream'] ?? null) ? $validated['upstream'] : null,
                 processId: isset($validated['process_id']) ? $this->integer('process_id') : null,
             );
@@ -134,14 +138,18 @@ final class StoreRouteRequest extends FormRequest
             $validator->errors()->add('web_root', 'A custom proxy Route has no web root.');
         }
 
-        if ($this->input('project_id') !== null || $this->input('instance_id') !== null || $this->input('cluster_id') !== null) {
-            $validator->errors()->add('scope', 'A custom proxy Route cannot own an App, Instance, or Cluster scope.');
+        if ($this->input('project_id') !== null || $this->input('instance_id') !== null) {
+            $validator->errors()->add('scope', 'A custom proxy Route cannot own an App or Instance.');
         }
 
         $publication = $this->input('publication');
 
-        if ($publication !== null && $publication !== RoutePublication::Private->value) {
-            $validator->errors()->add('publication', 'A custom proxy Route is private only.');
+        if ($publication === RoutePublication::Public->value) {
+            if ($this->exists('cluster_id') || $this->input('node_id') !== null || $this->input('process_id') === null || $this->input('upstream') !== null) {
+                $validator->errors()->add('scope', 'A public custom proxy requires a Process and optional Ingress, without Node scope, Cluster scope, or an upstream URL.');
+            }
+        } elseif ($this->input('node_id') === null || $this->exists('cluster_id') || $this->exists('ingress_node_id')) {
+            $validator->errors()->add('scope', 'A private custom proxy requires a Node and no Cluster.');
         }
 
         $hasUpstream = is_string($this->input('upstream')) && $this->input('upstream') !== '';

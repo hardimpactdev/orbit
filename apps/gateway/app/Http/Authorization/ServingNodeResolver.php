@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Authorization;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicProcessRouteIngress;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -478,6 +479,9 @@ final readonly class ServingNodeResolver
         $route = $request->route('route');
 
         if ($route instanceof Route) {
+            if ($route->isCustomProxy() && $route->cluster_id !== null) {
+                return [...$this->ingressNodes($route->cluster_id), Node::query()->findOrFail($route->customProxy?->node_id)];
+            }
             if ($route->node_id !== null) {
                 return [Node::query()->findOrFail($route->node_id)];
             }
@@ -499,9 +503,27 @@ final readonly class ServingNodeResolver
             return [Node::query()->findOrFail($nodeId)];
         }
 
+        $processId = $this->positiveInteger($request->input('process_id'));
+        if ($request->input('publication') === 'public' && $processId !== null) {
+            $process = Process::query()->findOrFail($processId);
+            if ($process->owner_type === Node::class) {
+                $ingress = new PublicProcessRouteIngress()->resolve($process, $this->positiveInteger($request->input('ingress_node_id')));
+
+                return [$ingress, Node::query()->findOrFail($process->owner_id)];
+            }
+        }
+
         $clusterId = $this->positiveInteger($request->input('cluster_id'));
 
         return $clusterId === null ? [] : $this->clusterNodes($clusterId);
+    }
+
+    /** @return list<Node> */
+    private function ingressNodes(int $clusterId): array
+    {
+        $ingress = Cluster::query()->findOrFail($clusterId)->ingressAssignment?->node;
+
+        return $ingress instanceof Node ? [$ingress] : [];
     }
 
     /** @return list<Node> */

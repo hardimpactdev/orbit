@@ -191,7 +191,7 @@ it('rejects custom proxy create shapes before transport', function (array $argum
             '--publication' => 'public',
             '--json' => true,
         ],
-        'route.publication_invalid',
+        'route.scope_required',
     ],
     'both selectors' => [
         [
@@ -507,7 +507,7 @@ it('rejects the removed hostname argument and option', function (string $command
     ],
 ]);
 
-it('rejects removed route create scope options before transport', function (string $option): void {
+it('rejects app route create scope options before transport', function (string $option, string $code): void {
     $mock = MockClient::global();
     $tester = new CommandTester(app(Kernel::class)->all()['route:create']);
 
@@ -518,9 +518,9 @@ it('rejects removed route create scope options before transport', function (stri
         '--json' => true,
     ], ['interactive' => false]))->toBe(1);
     expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'])
-        ->toBe('input.invalid');
+        ->toBe($code);
     expect($mock->getLastPendingRequest())->toBeNull();
-})->with(['--target', '--cluster']);
+})->with([['--target', 'input.invalid'], ['--cluster', 'input.invalid'], ['--ingress', 'route.scope_conflict']]);
 
 it('rejects an empty update and invalid IDs before transport', function (): void {
     $mock = MockClient::global();
@@ -805,3 +805,18 @@ it('renders Route replacement and failed-step metadata without claiming publicat
         'Failed step', 'configure_ingress', 'route.ingress_failed', 'failed',
     )->not->toContain('Published Route');
 });
+
+it('creates a public Process hostname with explicit Ingress and numeric Process ID', function (?string $ingress): void {
+    $mock = MockClient::global([CreateRouteRequest::class => MockResponse::make([
+        'data' => [...custom_proxy_route_payload(), 'domain' => 'sync.example.com', 'node_id' => null, 'cluster_id' => 9, 'process_id' => 267, 'publication' => 'public'],
+        'meta' => ['request_id' => route_request_id()],
+    ], 201)]);
+    $arguments = ['instance' => 'sync.example.com', '--process' => '267', '--publication' => 'public', '--json' => true];
+    if ($ingress !== null) {
+        $arguments['--ingress'] = $ingress;
+    }
+    $this->artisan('route:create', $arguments)->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'domain' => 'sync.example.com', 'publication' => 'public', ...($ingress !== null ? ['ingress_node_id' => 4] : []), 'process_id' => 267,
+    ]);
+})->with([null, '4']);

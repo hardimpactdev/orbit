@@ -7,7 +7,7 @@ covers:
   - packages/php-sdk/src/Responses/Routes/**
 ---
 
-A Route is a domain that reaches an Instance or a Node-local service. Orbit creates a Project Route for every Instance of a web-serving Project. The `route` family creates explicit Project Routes and custom proxy Routes, changes their targets, domains, and publication, and removes them.
+A Route is a domain that reaches an Instance or a Node service. Orbit creates a Project Route for every Instance of a web-serving Project. The `route` family creates explicit Project Routes and custom proxy Routes, changes their targets, domains, and publication, and removes them.
 
 The [Routes reference](/reference/routes) describes the Route record, domain selection, traffic setup, and the rules that refuse a change while an active Instance depends on a Route.
 
@@ -33,6 +33,7 @@ Create an explicit app Route targeting an Instance, or create a custom proxy Rou
 orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]
 orbit route:create <domain> --node=NODE --upstream=URL
 orbit route:create <domain> --node=NODE --process=PROCESS
+orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=public
 ```
 
 | Argument | Required | Meaning |
@@ -42,8 +43,9 @@ orbit route:create <domain> --node=NODE --process=PROCESS
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--publication=INTENT` | `private` | `private` or `public` for the app form. Custom proxy Routes are private only. |
-| `--node=NODE` | none | Serving Node ID or name, required only for the custom proxy form. |
+| `--publication=INTENT` | `private` | `private` or `public` for the app form. Public custom proxies require a Process and accept an Ingress. |
+| `--node=NODE` | none | Serving Node ID or name for a private custom proxy. |
+| `--ingress=NODE` | derived | Public Process Route Ingress Node name or ID; defaults to the Process Cluster Ingress or the single Ingress serving existing public app Routes. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
 | `--process=PROCESS` | none | Name or ID of a Node Process on the serving Node, for a custom proxy Route. |
 | `--web-root=PATH` | none | A web root inside the Instance's checkout or release, such as `apps/docs/public`. The Route becomes another site of the Instance. A production Instance needs a deployed release. |
@@ -60,14 +62,14 @@ In a terminal, Orbit lists available Instances for an omitted Instance ID and pr
 
 The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. With `--web-root`, the Instance keeps its own Route and gets another site. See [Create and change targets](/reference/routes#create-and-change-targets) and [Serve several web roots](/reference/routes#serve-several-web-roots).
 
-`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It cannot take an Instance or public publication. A successful custom proxy request converges its Node-local serving path.
+`--upstream` or `--process` selects the custom proxy form. Its first argument is the domain. Private publication requires `--node`. Public publication requires a numeric `--process`, with optional `--ingress`, without `--node` or `--upstream`. The Process can run on another Node outside the Cluster. See [public Process hostnames](/reference/routes#public-process-hostnames) for listener and firewall requirements.
 
 | Error code | Meaning |
 | --- | --- |
 | `route.domain_invalid` | The domain is not a valid domain. |
 | `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.ai-router.orbit`. |
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
-| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.scope_required` | A private custom proxy needs a Node; a public custom proxy needs a numeric Process ID and optional Ingress. |
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
