@@ -11,6 +11,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLease;
@@ -31,13 +32,14 @@ final readonly class CancelTaskGroupAction
 
     public function execute(Task $group): Task
     {
+        $this->requireExtension->execute();
+        app(TaskOperations::class)->cancelOpen($group);
+
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group), wait: false);
     }
 
     private function cancel(Task $group): Task
     {
-        $this->requireExtension->execute();
-
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         $unpublished = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && ($group->pr_url === null || $group->pr_url === '');

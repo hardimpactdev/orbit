@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Task;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -117,7 +119,7 @@ describe('POST /mcp', function (): void {
         expect($response->json('result.serverInfo.name'))->toBe('Orbit Gateway')
             ->and($response->json('result.capabilities.tools'))->not->toBeNull()
             ->and($response->json('result.instructions'))->toContain('WireGuard', 'operation-show', 'after_sequence')
-            ->and($response->json('result.instructions'))->toContain('`instance-deploy` and `instance-rollback` start an operation')
+            ->and($response->json('result.instructions'))->toContain('Each tool that starts an operation')
             ->and($response->json('result.instructions'))->not->toContain('`events`');
     });
 
@@ -241,6 +243,27 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('websocket_apps', 1);
         $this->assertDatabaseCount('websocket_registry_operations', 1);
     });
+
+    it('starts and replays task provision through the generated tool', function (string $endpoint): void {
+        enable_operation_queue();
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'Provision', 'slug' => 'provision', 'repository_url' => 'git@github.com:acme/provision.git']);
+        $group = Task::topLevel()->create([
+            'project_id' => $project->id, 'title' => 'Provision', 'brief' => 'Provision.',
+            'status' => 'todo', 'orchestration' => 'external',
+        ]);
+        $arguments = ['group' => $group->id, 'Idempotency-Key' => 'mcp.provision.c1'];
+
+        $first = mcp_tool($this, $endpoint, 'tasks-provision', $arguments);
+        $group->update(['status' => 'running']);
+        $second = mcp_tool($this, $endpoint, 'tasks-provision', $arguments);
+
+        expect($first['operation']['kind'])->toBe('tasks.provision');
+        expect($first['poll']['tool'])->toBe('operation-show');
+        expect($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('jobs', 1);
+    })->with(['/mcp', '/mcp/search']);
 
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();

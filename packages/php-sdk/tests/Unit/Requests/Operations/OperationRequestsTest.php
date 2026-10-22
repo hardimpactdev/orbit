@@ -6,7 +6,9 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -49,6 +51,28 @@ function operation_connector(MockClient $mock): GatewayConnector
 }
 
 describe('operation requests', function (): void {
+    it('starts task provision without a body and preserves the key and typed operation result', function (): void {
+        $request = new ProvisionTaskGroupRequest(17, 'task.provision.c1');
+        $mock = new MockClient([
+            $request::class => MockResponse::make(['data' => operation_payload([
+                'kind' => 'tasks.provision', 'target_type' => 'task_group', 'status' => 'succeeded',
+                'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)],
+            ]), 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202),
+        ]);
+        $response = operation_connector($mock)->send($request)->dto();
+
+        expect($request->getMethod())->toBe(Method::POST);
+        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/provision');
+        expect($request)->not->toBeInstanceOf(HasBody::class);
+        expect($request->headers()->get('Idempotency-Key'))->toBe('task.provision.c1');
+        expect(new ProvisionTaskGroupRequest(17)->headers()->get('Idempotency-Key'))->toBeNull();
+        expect($response)->toBeInstanceOf(OperationResponse::class);
+        expect($response->kind)->toBe('tasks.provision');
+        expect($response->targetType)->toBe('task_group');
+        expect($response->result)->toBe(['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]);
+        $mock->assertSentCount(1);
+    });
+
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([
             [new ShowOperationRequest(42), Method::GET, '/api/v1/operations/42', []],

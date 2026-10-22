@@ -13,16 +13,21 @@ use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
+use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
+use App\Data\Operations\OperationData;
 use App\Data\Tasks\TaskCheckData;
 use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
+use App\Domain\Operations\OperationKinds;
+use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
@@ -49,6 +54,20 @@ final class TaskGroupsController extends Controller
             'data' => TaskGroupData::fromModel($group)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
+    }
+
+    /** Starts tasks.provision and answers 202 with the queued operation. */
+    #[StartsOperation(OperationKinds::TasksProvision)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function provision(EmptyTasksRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json([
+            'data' => OperationData::fromModel($operation)->toArray(),
+            'meta' => $this->meta($request),
+        ], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]

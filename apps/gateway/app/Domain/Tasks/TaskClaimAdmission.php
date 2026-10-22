@@ -79,7 +79,7 @@ final readonly class TaskClaimAdmission
 
             $provisionError = null;
             try {
-                $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
+                $instance = $this->provisionWorkspace($reserved);
             } catch (TaskCapacityException $exception) {
                 $this->releaseReservation($reserved, $exception->getMessage());
                 $this->endClaim($reserved);
@@ -138,6 +138,12 @@ final readonly class TaskClaimAdmission
         }
 
         return $started->fresh(['tasks', 'project', 'taskable']) ?? $started;
+    }
+
+    /** Shared claim provisioning, without starting a subtask or a check. */
+    public function provisionWorkspace(Task $group): Instance|InstanceProvisionFailure|null
+    {
+        return $this->provisioning->provision(InstanceProvisionIntent::for($group));
     }
 
     /** @param list<int> $skipped */

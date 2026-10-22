@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Task;
@@ -38,6 +39,7 @@ final readonly class CompleteTaskGroupAction
     public function execute(Task $group, bool $finishWhenRemovalFails = true): Task
     {
         $this->requireExtension->execute();
+        app(TaskOperations::class)->cancelOpen($group);
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
