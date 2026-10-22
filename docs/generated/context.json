@@ -2208,6 +2208,7 @@
             ],
             "concepts": [
                 "Cluster",
+                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",

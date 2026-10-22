@@ -44,10 +44,11 @@ it('reuses precreated PostgreSQL workers through stock Laravel without CREATEDB 
         $sql = new PostgresStatements;
         $pool = new PostgresTestDatabases;
         $names = ['parallel', ...$pool->names('parallel_test', 2)];
-        $psql($sql->ensureUser('parallel_owner', 'fixture-password'));
+        $create = $sql->ensureUser('parallel_owner', 'fixture-password');
         foreach ($names as $name) {
-            $psql($sql->createDatabase($name, 'C.UTF-8').$sql->grantAll($name, 'parallel_owner'));
+            $create .= $sql->createDatabase($name, 'C.UTF-8').$sql->grantAll($name, 'parallel_owner');
         }
+        $psql($create);
         expect($psql("SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text FROM pg_roles WHERE rolname = 'parallel_owner';"))->toBe('false|false|false');
         $psql("\\connect parallel\nSET ROLE parallel_owner; CREATE TABLE application_data (id bigint); INSERT INTO application_data VALUES (42); RESET ROLE;\n");
         $psql($sql->ensureUser('unrelated_owner', 'unrelated-password').$sql->createDatabase('unrelated').$sql->grantAll('unrelated', 'unrelated_owner'));
@@ -80,15 +81,16 @@ it('reuses precreated PostgreSQL workers through stock Laravel without CREATEDB 
             expect(DB::table('worker_data')->pluck('token')->all())->toBe([2]);
             Schema::drop('worker_data');
             expect(fn () => DB::statement('CREATE DATABASE unmanaged_worker'))->toThrow(QueryException::class, 'permission denied to create database');
+            $psql('ALTER DATABASE parallel_test_test_1 CONNECTION LIMIT 0;');
+            ParallelTesting::resolveTokenUsing(fn (): int => 1);
+            expect(fn () => $probe->ensure('parallel_test'))->toThrow(QueryException::class, 'permission denied to create database');
+            expect($psql("SELECT datname FROM pg_database WHERE datname IN ('parallel', 'parallel_test', 'parallel_test_test_1', 'parallel_test_test_2') ORDER BY datname;"))->toBe("parallel\nparallel_test\nparallel_test_test_2");
         } finally {
             DB::purge('pgsql_pool');
             config()->set('database.default', $default);
             ParallelTesting::resolveTokenUsing(null);
         }
         expect($psql("\\connect parallel\nSELECT id FROM application_data;"))->toBe('42');
-        foreach ($names as $name) {
-            $psql($sql->dropDatabase($name));
-        }
-        $psql($sql->dropUser('parallel_owner'));
+        $psql(implode('', array_map($sql->dropDatabase(...), $names)).$sql->dropUser('parallel_owner'));
     });
 });
