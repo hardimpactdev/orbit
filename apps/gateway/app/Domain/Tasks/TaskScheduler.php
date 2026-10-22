@@ -39,6 +39,9 @@ final readonly class TaskScheduler
     /** Assistance set when a settling group has no pull request and no todo subtask (ADR 0164). */
     public const string MissingPullRequestPrefix = 'The settling group has no reviewed pull request URL.';
 
+    /** Assistance set when pr_url names a pull request outside the Project repository, for example after the repository moved. */
+    public const string ForeignPullRequestPrefix = 'The task pull request URL is not in the Project repository: ';
+
     /** Assistance set when a review request fails. The exception class follows; the message does not. */
     public const string ReviewRequestFailedReason = 'The review could not be requested';
 

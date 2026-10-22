@@ -86,7 +86,7 @@ final class IncusHost implements GuestTransport
     public function instance(string $name): ?IncusInstance
     {
         $this->validateName($name, 'instance');
-        $resources = $this->readJson(['list', $this->target($name), '--format=json']);
+        $resources = $this->readJson(['list', "{$this->remote}:", 'name=^'.str_replace('.', '\\.', $name).'$', '--format=json']);
 
         foreach ($resources as $resource) {
             if (is_array($resource) && ($resource['name'] ?? null) === $name) {

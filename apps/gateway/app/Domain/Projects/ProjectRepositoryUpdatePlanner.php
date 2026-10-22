@@ -100,7 +100,9 @@ final readonly class ProjectRepositoryUpdatePlanner
             return false;
         }
 
-        $common = $worktree->registration_common_repository_path;
+        // A registered worktree records its common repository. A worktree that Orbit created from a seed
+        // checkout records only that seed, whose repository is the common one.
+        $common = $worktree->registration_common_repository_path ?? $worktree->seed_repository;
 
         if (! is_string($common) || $common === '') {
             return false;

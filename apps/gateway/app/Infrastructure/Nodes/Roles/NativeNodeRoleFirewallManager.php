@@ -220,16 +220,36 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         }
 
         $missing = [];
+        $numbers = [];
 
         foreach ($rules as $rule) {
             $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
 
             if ($ownership === UfwRuleOwnership::Drift) {
-                $this->drift($node, $rule, $status);
+                if (! $this->statusParser->replaceablePort($status->stdout, $rule)) {
+                    $this->drift($node, $rule, $status);
+                }
+
+                array_push($numbers, ...$this->ruleNumbers($status->stdout, $rule->shape->comment));
             }
 
-            if ($ownership === UfwRuleOwnership::Missing) {
+            if ($ownership !== UfwRuleOwnership::Exact) {
                 $missing[] = $rule;
+            }
+        }
+
+        rsort($numbers, SORT_NUMERIC);
+
+        foreach (array_unique($numbers) as $number) {
+            $result = $this->execute(
+                $node,
+                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
+                $publicConnection,
+                $managedUser,
+            );
+
+            if (! $result->succeeded()) {
+                $this->fail($node, "Could not delete owned UFW rule [{$number}].", $result);
             }
         }
 

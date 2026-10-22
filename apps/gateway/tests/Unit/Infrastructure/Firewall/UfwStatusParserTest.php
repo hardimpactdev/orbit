@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
@@ -422,3 +423,18 @@ describe('stale source', function (): void {
         'two rules' => "[ 5] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n[ 6] 10.44.0.4 9100/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter",
     ]);
 });
+
+it('refuses a replacement outside the catalog mutable-port contract', function (string $line, bool $mutable): void {
+    $shape = new UfwRuleShape('orbit:analytics-postgres-local', 'allow', 'in', 'any', '10.44.0.2', '5434', 'tcp', 'docker0', null, 'v4');
+    $rule = new UfwManagedRule($shape, ['sudo', 'ufw'], replacePort: $mutable);
+
+    expect(new UfwStatusParser()->replaceablePort("Status: active\n".$line, $rule))->toBeFalse();
+})->with([
+    'fixed catalog port' => ['[1] 10.44.0.2 5432/tcp on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local', false],
+    'unreadable collision' => ['[1] nonsense # orbit:analytics-postgres-local', true],
+    'operator comment' => ['[1] 10.44.0.2 5432/tcp on docker0 ALLOW IN Anywhere # analytics-postgres-local', true],
+    'range' => ['[1] 10.44.0.2 5432:5433/tcp on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local', true],
+    'wrong family' => ['[1] 10.44.0.2 5432/tcp (v6) on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local', true],
+    'duplicate family' => ["[1] 10.44.0.2 5432/tcp on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local\n[2] 10.44.0.2 5432/tcp on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local", true],
+    'unreadable extra entry' => ["[1] 10.44.0.2 5432/tcp on docker0 ALLOW IN Anywhere # orbit:analytics-postgres-local\n[2] nonsense # orbit:analytics-postgres-local", true],
+]);
