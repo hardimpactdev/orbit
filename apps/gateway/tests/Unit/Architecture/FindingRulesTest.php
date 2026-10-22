@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\FindingRuleAnalysis;
 
@@ -165,10 +166,13 @@ PHP);
 });
 
 it('recursively checks nested test files with the exact CI invocation', function (): void {
-    $project = dirname(__DIR__, 3);
-    $directory = $project.'/tests/.classification-fakes-'.bin2hex(random_bytes(6));
-    $nested = $directory.'/Deep';
-    mkdir($nested, 0777, true);
+    $directory = sys_get_temp_dir().'/orbit-classification-fakes-'.bin2hex(random_bytes(6));
+    $project = $directory.'/apps/gateway';
+    $nested = $project.'/tests/Deep';
+    mkdir($nested, 0o700, true);
+    mkdir($directory.'/bin', 0o700);
+    // Mirror the CI layout and argv, without reanalyzing unrelated repository tests twice.
+    symlink(dirname(__DIR__, 5).'/bin/check-classification-fakes', $directory.'/bin/check-classification-fakes');
     $fixture = $nested.'/NestedFakeTest.php';
     $check = static function () use ($project): Process {
         $process = new Process(['php', '../../bin/check-classification-fakes', 'tests'], $project);
@@ -187,9 +191,7 @@ it('recursively checks nested test files with the exact CI invocation', function
         $guarded = $check();
         expect($guarded->getExitCode())->toBe(0, $guarded->getErrorOutput());
     } finally {
-        unlink($fixture);
-        rmdir($nested);
-        rmdir($directory);
+        new Filesystem()->deleteDirectory($directory);
     }
 });
 

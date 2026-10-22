@@ -75,6 +75,7 @@ require_once __DIR__.'/Support/TaskVmGroups.php';
 require_once __DIR__.'/Support/TaskSchedulerTickFixtures.php';
 require_once __DIR__.'/Support/ResponseFixtures.php';
 require_once __DIR__.'/Support/RedactionPcreFailure.php';
+require_once __DIR__.'/Support/ValkeyDeadlineClock.php';
 require_once __DIR__.'/Helpers/MetricsRoleFixtures.php';
 require_once __DIR__.'/Helpers/WebSocketRoleFixtures.php';
 require_once __DIR__.'/Helpers/AgentViewFixtures.php';
