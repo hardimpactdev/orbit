@@ -32,9 +32,13 @@ it('runs real Python command arguments and stdin independently of its compiled s
 ]);
 
 it('uses each real command deadline instead of the host default', function (): void {
-    $host = new ForkedPythonPrograms(timeoutSeconds: 0.1);
+    $host = new ForkedPythonPrograms;
     try {
-        $result = $host->runCommand("import time\nprint('started', flush=True)\ntime.sleep(0.15)\nprint('finished')", [], timeoutSeconds: 0.4);
+        $hung = $host->runCommand("import signal\nprint('started', flush=True)\nsignal.pause()", [], timeoutSeconds: 0.05);
+        $result = $host->runCommand("print('started')\nprint('finished')", [], timeoutSeconds: 0.4);
+
+        expect($hung->exitCode)->toBe(124)->and($hung->stdout)->toBe("started\n")
+            ->and($hung->stderr)->toContain('Python test program timed out.');
 
         expect($result->exitCode)->toBe(0)->and($result->stdout)->toBe("started\nfinished\n");
     } finally {
