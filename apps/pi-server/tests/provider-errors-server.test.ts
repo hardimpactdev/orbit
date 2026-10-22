@@ -27,7 +27,7 @@ it("publishes and reloads real Codex provider evidence rather than the SDK's fri
         }),
     );
     await h.modelRuntime.refresh({ allowNetwork: false });
-    const model = h.modelRuntime.getModel("openai-codex", "gpt-5.5");
+    const model = h.modelRuntime.getModel("openai-codex", "gpt-6.1-sol");
     expect(model).toBeDefined();
     model!.baseUrl = "https://fixture.invalid/backend-api";
 
@@ -60,7 +60,7 @@ it("publishes and reloads real Codex provider evidence rather than the SDK's fri
             await h.request("POST", "/sessions", {
                 id: "codex-error",
                 cwd: h.workspace,
-                model: "openai-codex/gpt-5.5",
+                model: "openai-codex/gpt-6.1-sol",
                 thinkingLevel: "off",
                 appendSystemPrompt: null,
             })

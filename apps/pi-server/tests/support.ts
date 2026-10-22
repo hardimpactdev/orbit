@@ -38,6 +38,7 @@ export async function startHarness(
         allowedProviders?: string[];
         nativeProviders?: Provider[];
         modelsPath?: string;
+        harnessSettings?: import("@earendil-works/pi-durable").HarnessSettings;
     } = {},
 ): Promise<Harness> {
     const root = options.root ?? mkdtempSync(join(tmpdir(), "pi-server-test-"));
@@ -74,6 +75,7 @@ export async function startHarness(
         allowApiKeys: options.allowApiKeys ?? true,
         allowedProviders: options.allowedProviders ?? [],
         idleUnloadMs: 60_000,
+        harnessSettings: options.harnessSettings ?? { retry: { enabled: false } },
     });
     const server: Server = createPiServer({
         registry,
@@ -128,7 +130,7 @@ export async function startHarness(
     const close = async () => {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
-        registry.dispose();
+        await registry.dispose();
     };
 
     return {
@@ -164,4 +166,48 @@ export async function waitFor<T>(
         }
         await new Promise((resolve) => setTimeout(resolve, 20));
     }
+}
+
+/** Replace the old JSONL injection fixture with real Durable commits. Assertions retain their meaning. */
+export async function appendSessionEntries(
+    h: Harness,
+    entries: Array<Record<string, unknown>>,
+): Promise<Map<string, string>> {
+    const { BACKGROUND_CONTEXT } = await import("@earendil-works/chord/context");
+    const { Harness: DurableHarness, createRegistry } = await import("@earendil-works/pi-durable");
+    const { openNodeSqliteStorage } =
+        await import("@earendil-works/pi-durable/storage/sqlite/node");
+    await h.registry.dispose();
+    const durable = await DurableHarness.open(
+        await openNodeSqliteStorage(join(h.root, "agent", "durable", "thread-1.sqlite")),
+        {
+            models: h.modelRuntime,
+            registry: createRegistry(),
+        },
+        BACKGROUND_CONTEXT,
+    );
+    const ids = new Map<string, string>();
+    try {
+        const conversation = await durable.root(BACKGROUND_CONTEXT);
+        await conversation.commit(async (tx) => {
+            for (const entry of entries) {
+                const saved = await tx.appendEntry(
+                    conversation.id,
+                    entry.type === "message"
+                        ? {
+                              kind: `pi.${(entry.message as { role: string }).role}`,
+                              model: [entry.message as import("@earendil-works/pi-ai").Message],
+                          }
+                        : {
+                              kind: "orbit.fixture-usage",
+                              data: entry as import("@earendil-works/chord").JsonValue,
+                          },
+                );
+                ids.set(String(entry.id), String(saved.id));
+            }
+        }, BACKGROUND_CONTEXT);
+    } finally {
+        await durable.close(BACKGROUND_CONTEXT);
+    }
+    return ids;
 }

@@ -1,3 +1,5 @@
+// Ensure telemetry initializes before bundled provider streams (Bun compile ordering).
+import "@earendil-works/pi-ai/models";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { login } from "./login.ts";
 import { piVersion, serve } from "./serve.ts";

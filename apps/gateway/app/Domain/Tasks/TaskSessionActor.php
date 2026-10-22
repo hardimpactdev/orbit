@@ -86,19 +86,6 @@ final readonly class TaskSessionActor
         });
     }
 
-    /**
-     * Continues the same thread after a server restart or resource request. The caller reserves a stable
-     * key before this call. Pi posts it as the send key (ADR 0167).
-     */
-    public function resumeInterruptedTurn(Task $group, TaskThreadObservation $observed, string $message, string $key): void
-    {
-        TaskGroupGuard::requireTick($group);
-        TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
-            $thread = $this->thread($group, $observed);
-            $this->drivers->get($thread->driver)->send($thread, $this->followupMessage($thread, $message, $key), $key);
-        });
-    }
-
     private function followupMessage(AgentThread $thread, string $message, ?string $key): string
     {
         $pending = $key === null ? null : app(TaskWorkspaceLease::class)->pendingSend($thread, $key, includeCompleted: true);

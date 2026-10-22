@@ -1,3 +1,5 @@
+import { withAbortSignal } from "@earendil-works/chord/context";
+import { defineTool as defineDurableTool } from "@earendil-works/pi-durable";
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -47,6 +49,11 @@ export interface WorkspaceToolOptions {
     cwd: string;
     /** Orbit session id, used in the stored file name. */
     sessionId: string;
+    model?: string;
+    thinkingLevel?: string;
+    sessionFile?: string;
+    /** Retain Orbit's completed abort notice when Durable builds an aborted tool receipt. */
+    onAbortedBash?: (taskId: string, text: string) => Promise<void>;
 }
 
 /**
@@ -118,8 +125,10 @@ function createOffloadingReadTool(options: WorkspaceToolOptions) {
     });
 }
 
-function createOffloadingBashTool(options: WorkspaceToolOptions) {
-    const operations = createLocalBashOperations();
+function createOffloadingBashTool(
+    options: WorkspaceToolOptions,
+    operations = createLocalBashOperations(),
+) {
     return defineTool({
         name: "bash",
         label: "bash",
@@ -141,7 +150,7 @@ function createOffloadingBashTool(options: WorkspaceToolOptions) {
                     },
                     signal,
                     timeout,
-                    env: { ...sessionEnv(ctx), TMPDIR: workspaceTmpdir(options.cwd) },
+                    env: { ...sessionEnv(ctx, options), TMPDIR: workspaceTmpdir(options.cwd) },
                 });
                 status = { kind: "exit", code: result.exitCode };
             } catch (error) {
@@ -258,7 +267,10 @@ function appendStatus(text: string, status: string): string {
     return `${text ? `${text}\n\n` : ""}${status}`;
 }
 
-function sessionEnv(ctx: ExtensionContext | undefined): NodeJS.ProcessEnv {
+function sessionEnv(
+    ctx: ExtensionContext | undefined,
+    options: WorkspaceToolOptions,
+): NodeJS.ProcessEnv {
     // Pi's getShellEnv is not exported. Copy it so the agent bin stays on PATH, then set PI_*.
     const env = shellEnv();
     delete env.PI_SESSION_ID;
@@ -267,6 +279,14 @@ function sessionEnv(ctx: ExtensionContext | undefined): NodeJS.ProcessEnv {
     delete env.PI_MODEL;
     delete env.PI_REASONING_LEVEL;
     if (ctx === undefined) {
+        if (options.model !== undefined) {
+            const slash = options.model.indexOf("/");
+            env.PI_SESSION_ID = options.sessionId;
+            env.PI_SESSION_FILE = options.sessionFile;
+            env.PI_PROVIDER = options.model.slice(0, slash);
+            env.PI_MODEL = options.model.slice(slash + 1);
+            env.PI_REASONING_LEVEL = options.thinkingLevel;
+        }
         return env;
     }
     env.PI_SESSION_ID = ctx.sessionManager.getSessionId();
@@ -308,4 +328,100 @@ function resolveReadPath(input: string, cwd: string): string {
 
 function textResult(text: string) {
     return { content: [{ type: "text" as const, text }], details: undefined };
+}
+
+/** Durable registrations; retain the tested Orbit text/notice policy and use api.env for bash. */
+export function createDurableWorkspaceTools(options: WorkspaceToolOptions) {
+    const read = createOffloadingReadTool(options);
+    return [
+        defineDurableTool({
+            name: read.name,
+            description: read.description,
+            parameters: read.parameters,
+            replay: "unsafe",
+            outputLimits: { maxBytes: Number.MAX_SAFE_INTEGER, maxLines: Number.MAX_SAFE_INTEGER },
+            async execute(args, api, context) {
+                try {
+                    const result = await read.execute(
+                        api.callId,
+                        args,
+                        context.abortSignal,
+                        undefined,
+                        undefined as never,
+                    );
+                    return { output: result.content };
+                } catch (error) {
+                    return {
+                        isError: true,
+                        output: [
+                            {
+                                type: "text",
+                                text: error instanceof Error ? error.message : String(error),
+                            },
+                        ],
+                    };
+                }
+            },
+        }),
+        defineDurableTool({
+            name: "bash",
+            description: BASH_DESCRIPTION,
+            parameters: bashParameters,
+            replay: "unsafe",
+            outputLimits: { maxBytes: Number.MAX_SAFE_INTEGER, maxLines: Number.MAX_SAFE_INTEGER },
+            async execute(args, api, context) {
+                const bash = createOffloadingBashTool(options, {
+                    async exec(command, cwd, execution) {
+                        if (api.env === undefined) throw new Error("No execution environment.");
+                        const result = await api.env.exec(
+                            command,
+                            {
+                                cwd,
+                                timeout: execution.timeout,
+                                env: Object.fromEntries(
+                                    Object.entries(execution.env ?? {}).filter(
+                                        (entry): entry is [string, string] =>
+                                            entry[1] !== undefined,
+                                    ),
+                                ),
+                                onOutput: (text) => execution.onData(Buffer.from(text)),
+                            },
+                            execution.signal ? withAbortSignal(execution.signal, context) : context,
+                        );
+                        if (result.ok) return { exitCode: result.value.exitCode };
+                        if (result.error.code === "aborted") throw new Error("aborted");
+                        if (result.error.code === "timeout")
+                            throw new Error(`timeout:${execution.timeout}`);
+                        throw result.error;
+                    },
+                });
+                try {
+                    const result = await bash.execute(
+                        api.callId,
+                        args,
+                        context.abortSignal,
+                        undefined,
+                        undefined as never,
+                    );
+                    return { output: result.content };
+                } catch (error) {
+                    if (context.abortSignal?.aborted) {
+                        await options.onAbortedBash?.(
+                            String(api.taskId),
+                            error instanceof Error ? error.message : String(error),
+                        );
+                    }
+                    return {
+                        isError: true,
+                        output: [
+                            {
+                                type: "text",
+                                text: error instanceof Error ? error.message : String(error),
+                            },
+                        ],
+                    };
+                }
+            },
+        }),
+    ];
 }

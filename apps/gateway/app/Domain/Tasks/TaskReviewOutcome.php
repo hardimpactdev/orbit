@@ -37,19 +37,15 @@ final readonly class TaskReviewOutcome
         TaskGroupGuard::requireTick($group);
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
-        // subtask's thread. A Pi restart of that turn is not this review. Request the review
-        // first, and recover only a review that was already requested (ADR 0167, ADR 0169).
+        // subtask's thread. Request this review before acting on its outcome.
         if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
             $this->nudgeReviewer($scheduler, $task, $reviewer);
 
             return true;
         }
-        $scheduler->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if (! $scheduler->retryProviderFailure($task, $group, $reviewer) && $scheduler->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
-                $scheduler->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
-            }
+            $scheduler->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
 
             return true;
         }

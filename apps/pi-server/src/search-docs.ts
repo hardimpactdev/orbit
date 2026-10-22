@@ -1,3 +1,4 @@
+import { defineTool as defineDurableTool } from "@earendil-works/pi-durable";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -285,4 +286,38 @@ function childEnv(): NodeJS.ProcessEnv {
     );
 
     return { ...env, APP_DEBUG: env.APP_DEBUG ?? "true" };
+}
+
+/** Register the same local Boost call with Durable's unsafe replay policy. */
+export function createDurableSearchDocsTool(options: SearchDocsOptions) {
+    const tool = createSearchDocsTool(options);
+    return defineDurableTool({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        replay: "unsafe",
+        outputLimits: { maxBytes: Number.MAX_SAFE_INTEGER, maxLines: Number.MAX_SAFE_INTEGER },
+        async execute(args, api, context) {
+            try {
+                const result = await tool.execute(
+                    api.callId,
+                    args,
+                    context.abortSignal,
+                    undefined,
+                    undefined as never,
+                );
+                return { output: result.content };
+            } catch (error) {
+                return {
+                    isError: true,
+                    output: [
+                        {
+                            type: "text",
+                            text: error instanceof Error ? error.message : String(error),
+                        },
+                    ],
+                };
+            }
+        },
+    });
 }

@@ -12,7 +12,7 @@ The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessi
 
 Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
 
-The Pi SDK packages share one `pi-ai` and `pi-agent-core` version, including transitive dependencies. Orbit passes Pi’s tool context through when it delegates a read.
+The Pi packages are pinned exactly to 1.4.0, including transitive dependencies. Only the required `@earendil-works/*` packages are temporarily exempt from the three-day release-age gate in `apps/pi-server/bunfig.toml`; remove the exemptions once the 2026-10-21 release passes the gate. Each session runs on one Pi Durable Harness and one SQLite database. Orbit passes Pi’s tool context through when it delegates a read.
 
 ## Configure the server
 
@@ -24,7 +24,7 @@ The server reads command-line flags first, then the environment. Orbit's systemd
 | `--port` | `PI_SERVER_PORT` | `3774` | Port to listen on |
 | `--token-file` | `PI_SERVER_TOKEN_FILE` or `PI_SERVER_TOKEN` | required | Bearer token of at least 32 characters |
 | `--agent-dir` | `PI_SERVER_AGENT_DIR` | `~/.pi/agent` | Pi's directory, which holds the provider sign-ins |
-| `--session-dir` | `PI_SERVER_SESSION_DIR` | `<agent dir>/orbit-sessions` | Session transcripts and Orbit's session records |
+| `--session-dir` | `PI_SERVER_SESSION_DIR` | `<agent dir>/orbit-sessions` | Session bootstrap records (transcripts live in `<agent dir>/durable`) |
 | `--workspace-root`, repeatable | `PI_SERVER_WORKSPACE_ROOTS`, colon-separated | none | When set, a session's workspace must be inside one of these directories |
 | `--allow-api-keys` | `PI_SERVER_ALLOW_API_KEYS=1` | off | Allow every provider signed in with an API key |
 | `--allow-provider`, repeatable | `PI_SERVER_ALLOW_PROVIDERS`, comma-separated | none | Allow one named provider although Pi sees an API key, such as a CLIProxyAPI endpoint |
@@ -136,7 +136,7 @@ Older Pi server binaries send older error shapes. A binary built before this env
 | `http.413` | 413 | The request body is larger than 1 MiB |
 | `server.unhandled` | 500 | The server failed to handle the request |
 
-The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
+The send key is the Durable submission `requestId`. Keys accept letters, digits, `.`, `_`, `:`, and `-`, up to 128 characters. Duplicate detection precedes the busy check and survives restarts. The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
 
 ## Token usage
 
@@ -209,27 +209,55 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | --- | --- |
 | No completed turn | `idle` |
 | A turn was accepted and has not settled | `working` |
-| The last assistant message stopped normally | `done` |
-| The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
-| The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
+| The current submission was answered with a normal stop | `done` |
+| The current submission failed, including compaction, a task failure, a provider error, an interruption, or the output limit | `failed`, with the error |
+| The server restarted while the turn was active | `working`, while Durable resumes the turn |
+| Durable parked a task after its restart limit | `failed`, with a clear crash-loop error |
+| Durable is waiting to retry a transient provider error | `working`, with retry attempt, category, and due time in `error` |
 
-Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Classification reads only the last assistant message with stop reason `error`, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
+Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Terminal state comes from the current Durable submission, including its persisted failure detail when compaction fails without an assistant answer. An earlier turn’s answer cannot make the current turn succeed. Classification reads the current turn’s provider failure, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
 
 For `openai-responses` (the API used by `orbit-task-vm`) and `openai-codex-responses`, Orbit observes HTTP responses and SSE error records before the SDK replaces them with human-readable messages. This includes streamed `error` and `response.failed` records received after HTTP 200. Orbit stores only the resulting category (or an explicit non-transient result) on the failed assistant message, so unloading or restarting the server preserves it.
 
 Codex sessions use SSE so HTTP and streamed error codes follow the same classification path; the SDK's WebSocket transport does not expose that evidence. The `openai-responses` adapter already uses SSE; Orbit keeps its transport settings.
 
-The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. The Gateway uses this field for [automatic retries](/reference/tasks#retry-a-transient-provider-error); older servers without it keep the ordinary failure path.
+Durable 1.4.0 has no retry-decision hook. A Bun patch to pi-ai 1.4.0 makes its shared retry check honor `orbitProviderError` before its text fallback: a transient category permits retry, and explicit `null` forbids it. Orbit supplies that decision through the same classifier used for thread state, for generation and compaction alike. Durable remains the only retry owner and keeps the 1, 2, 4, and 8 minute waits.
+
+The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. Durable owns [automatic retries](/reference/tasks#retry-a-transient-provider-error). Exhausted retries end `failed` with the provider category; the Gateway asks for assistance.
 
 Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `done` or `failed` state to `working`.
 
 ## Restarts
 
-Transcripts persist as Pi session files. After a restart, the server reloads a session when it is first used. Accepted send keys persist, so a repeated send after a restart still starts no turn. The server records a turn as active before it starts and clears the record when the turn settles. A record still marked active after a restart reports `failed` with the error `The Pi server restarted during the turn.` The Gateway resumes that turn. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) states how.
+Transcripts, submissions, tasks, and interruption evidence persist in `<agent dir>/durable/<id>.sqlite`. `<session dir>/<id>.orbit.json` holds only bootstrap configuration. Preserve both directories. `PI_SESSION_FILE` names the SQLite file. Sessions reload on first use and Durable resumes unfinished work. The turn stays `working`; the Gateway sends no re-orientation message or replacement turn. A repeated send key starts no second turn.
+
+Tools are replay-unsafe. A tool cut off by a restart becomes an interrupted result with retained output; Durable does not run it again. The model chooses what to do next. The systemd service must contain child processes when the server dies. After five cut-off runs of the same task, Durable parks it. The server reports `failed` so the Gateway requests assistance. An explicit interrupt clears the parked run before a new keyed turn can start.
+
+There is no import of old JSONL sessions. Task VMs are disposable per group, so roll out to new groups. Workspace skills, AGENTS.md, system and append prompt files, the role prompt, and the five tools remain available. Coding-agent JavaScript extensions are not loaded. Durable owns compaction; long-session compaction, load per host, and a crash during retry sleep remain unproven at the Orbit server level.
 
 ## Roll out a new binary
 
 Pin the new artifact with `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; [Run Pi on a task VM](#run-pi-on-a-task-vm) shows how the Gateway installs it. A new task VM gets the binary when the Gateway prepares it at claim; the base image does not need a rebuild. A VM that is already prepared keeps its binary until it is destroyed, so no running turn restarts.
+
+To move new groups to Durable:
+
+1. Build this revision and retain the resulting executable.
+2. Set both artifact variables to its path and SHA-256.
+3. Keep the old artifact and its path and SHA-256 pin for rollback.
+
+### Reported version
+
+The version in startup logs and capabilities comes from the Pi dependency pinned in the compiled source, not the current checkout or a global Pi install. Building a new checkout does not change the Gateway artifact pin.
+
+For example, the initial artifact `pi-server-e5933d4c8696-linux-x64` embeds Pi 0.87.1 from source commit `e5933d4c8696` (2026-10-11). The recipe recorded that artifact on 2026-10-14. The source dependency bump to Pi 1.2.0 on 2026-10-22 did not rebuild or replace the pin. No binary build timestamp is recorded in the recipe; its source commit and SHA-256 identify it. A startup log of 0.87.1 from that pin is expected.
+
+### Roll back
+
+To roll back future groups, restore both old artifact variables. No base-image rebuild is required.
+
+- Before you roll back Gateway code, drain groups running Durable, so the old Gateway retry budget cannot stack on Durable’s retries.
+- Do not replace the binaries of existing JSONL groups in place.
+- There is no in-place downgrade from SQLite to JSONL. Let existing groups finish, or retire them and start new groups with the selected artifact.
 
 ## Test worker file access
 
@@ -241,7 +269,7 @@ The worker ACL test copies the Bun runtime and the tool-output module into its t
 
 ### Fast test fixtures
 
-Tests that provoke a provider failure disable Pi's auto-retry in their in-memory settings as well as the provider's HTTP retries. They assert one provider request, send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff.
+Most tests that provoke a provider failure disable Durable retries in their in-memory settings as well as the provider's HTTP retries. Retry regressions enable Durable with short delays and assert request counts for structured terminal failures and transient recovery. Production disables provider/SDK retries inside a request; Durable owns the four-retry budget. Tests assert one provider request, send a real streamed failure through the server, publish it, and reload it after restart, without waiting through retry backoff.
 
 Workspace TMPDIR tests call the workspace bash tool in-process with a private inherited TMPDIR; the worker ACL test still crosses the real user boundary.
 
