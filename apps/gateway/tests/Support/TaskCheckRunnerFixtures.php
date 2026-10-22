@@ -165,6 +165,11 @@ function check_runner_local_result(string $checkout, TaskCheckProcess $process):
 
 function check_runner_wait_for_exit(TaskCheckProcess $process): void
 {
+    check_runner_wait_for_pid($process->pid);
+}
+
+function check_runner_wait_for_pid(int $pid): void
+{
     // A pidfd becomes readable on exit, including an unreaped detached child. No status-polling sleeps are needed.
     $wait = new Process(['/usr/bin/env', 'python3', '-c', <<<'PYTHON'
         import os, select, sys
@@ -176,6 +181,6 @@ function check_runner_wait_for_exit(TaskCheckProcess $process): void
             assert select.select([fd], [], [], 15)[0], 'The check did not finish.'
         finally:
             os.close(fd)
-        PYTHON, (string) $process->pid], env: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
+        PYTHON, (string) $pid], env: ['PATH' => StandardLibraryPython::path((string) getenv('PATH'))]);
     $wait->mustRun();
 }
