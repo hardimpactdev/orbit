@@ -579,7 +579,7 @@ describe('CheckoutProcesses', function (): void {
         }
     })->with(['finalize', 'remove']);
 
-    it('leaves the processes inside a development Instance running', function (string $name): void {
+    it('stops development Instance processes before deleting their checkout', function (string $name, string $operation): void {
         $sameNode = null;
         if ($name === 'group-name') {
             $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Separate workspace', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
@@ -597,23 +597,27 @@ describe('CheckoutProcesses', function (): void {
             TaskVm::query()->create(['group_id' => $sameNode->id, 'host_node_id' => $this->node->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'same-node-vm', 'wireguard_ip' => '10.44.0.132', 'state' => TaskVmState::Ready]);
         }
         $checkout = (string) $instance->checkout_path;
-        $kept = [
+        $stopped = [
             'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
         ];
 
         try {
-            orb178_remove_source($this->removal, $instance, true);
+            if ($operation === 'finalize') {
+                $this->removal->finalize(orb180_record_source($this->removal, $instance, true));
+            } else {
+                orb178_remove_source($this->removal, $instance, true);
+            }
 
             expect(file_exists($checkout))->toBeFalse();
-            foreach ($kept as $label => $pid) {
-                expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
+            foreach ($stopped as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeFalse("{$label} process {$pid} still runs");
             }
         } finally {
-            foreach ($kept as $pid) {
+            foreach ($stopped as $pid) {
                 orb178_run_allow_failure(['kill', '-KILL', (string) $pid]);
             }
         }
-    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999', 'task name with a group on another Node' => 'group-name', 'task name on the group\'s VM Node without an owner' => 'unowned']);
+    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999', 'task name with a group on another Node' => 'group-name', 'task name on the group\'s VM Node without an owner' => 'unowned'])->with(['finalize', 'remove']);
 });
 
 it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {

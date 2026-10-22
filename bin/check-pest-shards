@@ -27,7 +27,7 @@ def shard_count():
 
 
 def listed_classes(*options):
-    command = ['vendor/bin/pest', '--exclude-group=privileged', *options, '--list-tests', '--colors=never']
+    command = [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--exclude-group=privileged', *options, '--list-tests', '--colors=never']
     result = subprocess.run(command, capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise ValueError(f'Pest listing failed ({" ".join(command)}):\n{result.stdout}{result.stderr}')

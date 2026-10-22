@@ -225,7 +225,7 @@ jobs:
       # The Gateway shards run the Gateway suite.
       - name: Run full test suite
         if: matrix.project.directory != 'apps/gateway'
-        run: vendor/bin/pest --parallel --compact
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --compact
 
       - name: Identify immutable Ubuntu snapshot metadata
         id: ubuntu-snapshot
@@ -270,7 +270,7 @@ jobs:
         if: always() && matrix.project.directory == 'apps/gateway' && steps.gateway-no-sudo.outcome == 'success'
         env:
           PCRE_JIT: '0'
-        run: php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
+        run: ../../bin/pest-plain php -d pcre.jit="$PCRE_JIT" vendor/bin/pest tests/Feature/Logs/RedactionCasesTest.php --parallel --passthru-php="-d pcre.jit=$PCRE_JIT"
 
       # After every check of the project passes, stage the Pint and PHPStan caches that `composer check` wrote, for
       # the cache-ref publisher. Task workspaces import them; CI exports no test graph.
@@ -389,7 +389,7 @@ jobs:
 
       # Every shard reads the same committed tests/.pest/shards.json; no cache or runtime planner.
       - name: Run Gateway shard ${{ matrix.shard }}
-        run: vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --exclude-group=privileged --shard=${{ matrix.shard }}/${{ strategy.job-total }} --compact
 
   privileged:
     needs: changes
@@ -424,7 +424,7 @@ jobs:
       - name: Run privileged tests
         env:
           ORBIT_TEST_DOCKER: '1'
-        run: vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never
+        run: ../../bin/pest-plain vendor/bin/pest --parallel --group=privileged --fail-on-empty-test-suite --compact --colors=never
 
   # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
   remote-programs:

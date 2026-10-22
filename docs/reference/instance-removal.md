@@ -127,7 +127,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside a task workspace](#processes-inside-a-task-workspace), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside the removed Instance](#processes-inside-the-removed-instance), then delete the checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Delete the Instance record. |
 
@@ -143,18 +143,17 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 
 [PHP-FPM convergence](/reference/php-runtime#development-runtime) also never renders a pool for a missing directory and does not need PHP-FPM to start first, so it still repairs a Node whose source was deleted another way. Doctor reports such a pool as `role.php_pool_directory_missing`.
 
-### Processes inside a task workspace
+### Processes inside the removed Instance
 
-Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance that a task group [owns](/reference/tasks#workspace-ownership), on the Node of that group's live task VM. The name does not make a development Instance a task workspace.
+Agents and checks can leave processes behind in any Instance, such as a Playwright server that a browser test started. Removal stops checkout processes for development Instances and task workspaces alike. Deleting the source ends their useful lifetime; leaving them running retains deleted files and memory.
 
 Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
 
-The processes inside a tmux or screen session are normal processes. Removal stops those that work inside the task workspace.
+The processes inside a tmux or screen session are normal processes. Removal stops those that work inside the checkout. Move a terminal or daemon outside the checkout before removal if it must keep running.
 
 Removal leaves these processes running:
 
-- Every process of a development Instance, such as `default` or a named Instance. The managed user can be the operator's own account. Its daemons and terminals may work in such a checkout.
-- A tmux or screen server, even in a task workspace. It hosts sessions that can work elsewhere.
+- A tmux or screen server. It hosts sessions that can work elsewhere.
 - Processes of other users. Each account stops only its own processes.
 - Processes outside the checkout, including the processes of other Instances.
 - The Instance's own [Processes and Schedules](#processes-and-schedules). `runtime_cleanup` checks their ownership before it removes them.

@@ -33,7 +33,7 @@ it('renders real guidance with unusable inherited cache paths', function (string
         expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
         expect($process->getOutput())->toContain('passed')->not->toContain('No tests found');
         expect($files->get($fixture.'/unusable'))->toBe('not a directory');
-        expect(glob($fixture.'/orbit-guidance.*'))->toBe([]);
+        expect(glob($fixture.'/run-*'))->toBe([]);
     } finally {
         $files->deleteDirectory($fixture);
     }
@@ -51,6 +51,7 @@ set -euo pipefail
 [[ "$*" == '--configuration=phpunit.guidance.xml --compact --filter=example' ]]
 [[ -d "$VIEW_COMPILED_PATH" ]]
 [[ "$(stat -c %a "$VIEW_COMPILED_PATH")" == 700 ]]
+printf '%s\n' "$TMPDIR" "$VIEW_COMPILED_PATH" > "$FIXTURE_RECORD"
 printf 'compiled' > "$VIEW_COMPILED_PATH/view.php"
 exit "$FIXTURE_EXIT_CODE"
 BASH);
@@ -60,11 +61,16 @@ BASH);
         $process = new Process([$repository.'/bin/guidance-check', '--filter=example'], $fixture, [
             'TMPDIR' => $fixture.'/tmp',
             'FIXTURE_EXIT_CODE' => (string) $exitCode,
+            'FIXTURE_RECORD' => $fixture.'/paths',
         ]);
         $process->run();
 
         expect($process->getExitCode())->toBe($exitCode, $process->getOutput().$process->getErrorOutput());
-        expect(glob($fixture.'/tmp/*'))->toBe([]);
+        [$runtime, $views] = file($fixture.'/paths', FILE_IGNORE_NEW_LINES);
+        expect($runtime)->toStartWith($fixture.'/tmp/run-')
+            ->and($views)->toBe($runtime.'/views')
+            ->and(is_dir($runtime))->toBeFalse()
+            ->and(glob($fixture.'/tmp/*'))->toBe([]);
     } finally {
         $files->deleteDirectory($fixture);
     }

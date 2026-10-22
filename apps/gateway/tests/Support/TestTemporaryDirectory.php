@@ -26,6 +26,14 @@ final class TestTemporaryDirectory
 
     public static function bootstrap(): void
     {
+        $run = getenv('ORBIT_TEST_TMPDIR');
+
+        if (is_string($run) && $run !== '' && getenv('TMPDIR') === $run && is_dir($run)) {
+            self::use($run);
+
+            return;
+        }
+
         $configured = getenv('TMPDIR');
         $base = is_string($configured) && $configured !== '' ? $configured : '/tmp';
 
@@ -36,7 +44,8 @@ final class TestTemporaryDirectory
         }
 
         // Cross-user fixtures cannot traverse a role-private workspace TMPDIR ancestor.
-        if (preg_match('~/(?:orbit/tmp/(?:agent|check)-[0-9]+|orbit-check-[0-9]+-[^/]+)$~', $base) === 1) {
+        $privatePattern = trim(file_get_contents(__DIR__.'/test-private-tmpdir.regex'));
+        if (preg_match('~'.$privatePattern.'~', $base) === 1) {
             $base = '/tmp';
         }
 
