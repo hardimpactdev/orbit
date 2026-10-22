@@ -84,6 +84,8 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `database-create` accepts optional `locale` when creating a database on a PostgreSQL server: `C` or `C.UTF-8`. Send `slug`, `server`, and `locale` together. The API applies the same validation as the CLI; external registration, MySQL, and Valkey refuse `locale`. Without it, PostgreSQL uses the server image default.
 
+`tasks-update` and `tasks-subtask-update` accept a `status` for an external group. The API enforces the [allowed moves](/reference/tasks#tasks-and-subtasks); a refused move returns `tasks.status_move_refused`. Repeating the current status needs no key. `tasks-comment-create` records assistance and resolution comments. An external resolution clears assistance without sending a turn. `tasks-subtask-cancel` interrupts external work without starting a successor or settling its group.
+
 ### Operations
 
 `instance-deploy` and `instance-rollback` start an [operation](/reference/operations) and return at once. They never hold the request open and never stream:

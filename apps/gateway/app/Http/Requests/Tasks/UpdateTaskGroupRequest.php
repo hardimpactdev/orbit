@@ -6,23 +6,28 @@ namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\Task;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\In;
+use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
 final class UpdateTaskGroupRequest extends FormRequest
 {
-    /** @return array<string, list<string|In>> */
+    /** @return array<string, list<string|Enum>> */
     public function rules(): array
     {
+        $group = $this->route('group');
+        $external = $group instanceof Task && $group->groupOrchestration() === TaskOrchestration::External;
+
         return [
             'preview' => ['sometimes', 'boolean:strict'],
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
-            'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
+            'status' => ['sometimes', 'string', Rule::enum(TaskGroupStatus::class)->only($external ? TaskGroupStatus::cases() : [TaskGroupStatus::Backlog, TaskGroupStatus::Todo])],
         ];
     }
 

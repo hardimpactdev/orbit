@@ -30,6 +30,7 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
         private readonly ?int $position = null,
         private readonly ?array $deliverables = null,
         private readonly ?array $topology = null,
+        private readonly ?string $status = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -57,6 +58,7 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
                 'position' => $this->position,
                 'deliverables' => $this->deliverables,
                 'topology' => $this->topology,
+                'status' => $this->status,
             ],
             static fn (mixed $value): bool => $value !== null,
         );

@@ -110,6 +110,7 @@ use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskSettling;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskSetupFailure;
+use App\Domain\Tasks\TaskStatusMoves;
 use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskTickClock;
@@ -160,14 +161,13 @@ final class TaskOrchestrationEntryPoints
         TaskPublication::class => ['publishApprovedCommit', 'mergeWhenReady', 'checkReturningPullRequest'],
         TaskReviewOutcome::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'nudgeReviewer', 'settleImplementer', 'acceptReview'],
         TaskSessionActor::class => ['execute', 'relayAnswer', 'relayReviewBody', 'remindRubric', 'resumeInterruptedTurn'],
-        TaskSettling::class => ['tickPullRequest', 'cancelRunningSubtask', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
+        TaskSettling::class => ['tickPullRequest', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
         TaskSubtaskRunner::class => ['handleImplementerCompletion', 'prepareTurn', 'startTask', 'startFirstTask', 'markRunning', 'beginRunningTask', 'assignImplementer', 'tickSubtasks'],
-        CancelRunningSubtaskAction::class => ['execute'],
         RequestEndedPullRequestAssistanceAction::class => ['execute'],
         ResumeDeliverableCorrectionAction::class => ['reserve', 'execute'],
         RetryTaskBaselineAction::class => ['queue', 'recover'],
-        StoreTaskCommentAction::class => ['execute', 'retryPendingResolution'],
-        TaskScheduler::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'publishApprovedCommit', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'mergeWhenReady', 'checkReturningPullRequest', 'remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance', 'retryProviderFailure', 'resumePiServerRestart', 'nudgeReviewer', 'settleImplementer', 'startTask', 'cancelRunningSubtask', 'acceptReview', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
+        StoreTaskCommentAction::class => ['retryPendingResolution'],
+        TaskScheduler::class => ['handleReviewerOutcome', 'retryCommittedApproval', 'publishApprovedCommit', 'replaceFinalReviewWithFixup', 'stopAtFinalReviewCap', 'beginFinalReview', 'startFinalReview', 'mergeWhenReady', 'checkReturningPullRequest', 'remindOrAssist', 'recordCommunicationFailure', 'beginConsult', 'handleConsult', 'beginDirectionRelay', 'handleDirectionRelay', 'replayHeldDirectionReview', 'requestAssistance', 'retryProviderFailure', 'resumePiServerRestart', 'nudgeReviewer', 'settleImplementer', 'startTask', 'acceptReview', 'settle', 'queueBaselineRetryOnGreenTip', 'resumeStrandedSubtask', 'resumeWaitingSubtask'],
     ];
 
     /**
@@ -241,6 +241,14 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        TaskStatusMoves::class => [
+            'group' => 'Validates external board moves without performing task effects.',
+            'subtask' => 'Validates external board moves without performing task effects.',
+        ],
+        CancelRunningSubtaskAction::class => [
+            'execute' => 'External cancel interrupts work and records cancellation without advancing or settling; TaskExternalStateTest covers it.',
+        ],
+
         AllocateTaskVmAction::class => [
             'execute' => 'Reusable VM placement; engine claim admission is guarded; does not change a group claim or send a turn.',
         ],
@@ -520,6 +528,7 @@ final class TaskOrchestrationEntryPoints
             'deleted' => 'Records UI broadcast notifications.',
         ],
         TaskAssistance::class => [
+            'resolveExternalSubtask' => 'Clears external subtask assistance and reflects remaining requests without driving work or clearing independent group requests.',
             'sameRequest' => 'Records assistance or compares requests; does not send, check, or claim. Tick callers are filtered or guarded.',
             'clearResolvedParent' => 'Records assistance or compares requests; does not send, check, or claim. Tick callers are filtered or guarded.',
             'apply' => 'Records assistance or compares requests; does not send, check, or claim. Tick callers are filtered or guarded.',
@@ -717,6 +726,7 @@ final class TaskOrchestrationEntryPoints
             'reviewContext' => 'Builds review context without sending it.',
         ],
         TaskScheduler::class => [
+            'cancelRunningSubtask' => 'External cancel only stops and records work; tick cancellation retains its existing advancement.',
             'isTickFailureReason' => 'Forwards pure predicates, receipt formatting, or retry bookkeeping; effectful forwards are exercised separately.',
             'receiptItem' => 'Forwards pure predicates, receipt formatting, or retry bookkeeping; effectful forwards are exercised separately.',
             'receiptOutcome' => 'Forwards pure predicates, receipt formatting, or retry bookkeeping; effectful forwards are exercised separately.',
@@ -754,6 +764,7 @@ final class TaskOrchestrationEntryPoints
             'observe' => 'Reads agent observations.',
         ],
         TaskSettling::class => [
+            'cancelRunningSubtask' => 'External cancel only stops and records work; tick cancellation retains its existing advancement.',
             'retryDelaySeconds' => 'Reads predicates or records retry bookkeeping; does not send, start a check, or change a claim.',
             'extendBackoff' => 'Reads predicates or records retry bookkeeping; does not send, start a check, or change a claim.',
             'retryIsDue' => 'Reads predicates or records retry bookkeeping; does not send, start a check, or change a claim.',
@@ -908,6 +919,7 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, list<string>> */
     public const array Skips = [
+        StoreTaskCommentAction::class => ['execute'],
         FailTaskVmAction::class => ['execute', 'requestAssistance'],
         TaskScheduler::class => ['tick', 'claimNext', 'claimAvailable', 'releaseStaleReservations'],
         TaskClaimAdmission::class => ['claimNext', 'claimAvailable', 'releaseStaleReservations'],

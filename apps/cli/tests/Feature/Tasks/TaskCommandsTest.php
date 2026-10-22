@@ -112,7 +112,8 @@ describe('omitted and invalid input', function (): void {
         'create with a running status' => ['tasks:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--status' => 'running'], 'tasks.status_invalid'],
         'create with a missing subtasks file' => ['tasks:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--subtasks' => '/nonexistent/subtasks.json'], 'tasks.subtasks_invalid'],
         'update without a change' => ['tasks:update', ['group' => '1'], 'tasks.update_required'],
-        'update to a claimed status' => ['tasks:update', ['group' => '1', '--status' => 'running'], 'tasks.status_invalid'],
+        'update with an unknown status' => ['tasks:update', ['group' => '1', '--status' => 'unknown'], 'tasks.status_invalid'],
+        'subtask update with an unknown status' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--status' => 'unknown'], 'tasks.status_invalid'],
         'cancel without consent' => ['tasks:cancel', ['group' => '1'], 'input.confirmation_required'],
         'complete without consent' => ['tasks:complete', ['group' => '1'], 'input.confirmation_required'],
         'subtask create without brief' => ['tasks:subtask:create', ['group' => '1', 'title' => 'T'], 'tasks.brief_required'],
@@ -879,4 +880,19 @@ it('refuses an unknown orchestration mode before contacting the Gateway', functi
     expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => 'other', '--json' => true]))->toBe(1);
     expect(Artisan::output())->toContain('tasks.orchestration_invalid');
     $mock->assertNothingSent();
+});
+
+it('transports external board status updates without deciding lifecycle policy', function (): void {
+    $mock = MockClient::global([
+        ...gateway_fixture_mock('tasks/tasks-update/updated'),
+        ...gateway_fixture_mock('tasks/tasks-subtask-update/updated'),
+    ]);
+
+    expect(Artisan::call('tasks:update', ['group' => '13', '--status' => 'reviewing', '--json' => true]))->toBe(0);
+    expect(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--status' => 'completed', '--json' => true]))->toBe(0);
+
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskGroupRequest
+        && (string) $request->body() === '{"status":"reviewing"}');
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+        && (string) $request->body() === '{"status":"completed"}');
 });

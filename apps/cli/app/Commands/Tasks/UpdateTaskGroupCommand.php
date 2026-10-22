@@ -16,7 +16,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {group? : Numeric task group ID}
         {--title= : New title}
         {--brief= : New brief}
-        {--status= : backlog or todo}
+        {--status= : Board status; active moves require external orchestration}
         {--preview : Keep the sandbox running during review}
         {--no-preview : Allow the sandbox to park during review}
         {--json : Return machine-readable JSON}';
@@ -41,8 +41,8 @@ final class UpdateTaskGroupCommand extends TaskCommand
 
         $status = $this->option('status');
 
-        if ($status !== null && ! in_array($status, self::PLANNING_STATUSES, true)) {
-            return $this->renderGatewayFailure('tasks.status_invalid', 'Status must be one of '.implode(', ', self::PLANNING_STATUSES).'.');
+        if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
+            return $this->renderGatewayFailure('tasks.status_invalid', 'Status must be one of '.implode(', ', self::GROUP_STATUSES).'.');
         }
 
         $status = is_string($status) ? $status : null;
@@ -62,8 +62,9 @@ final class UpdateTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $eligible = $preview !== null && $title === null && $brief === null && $status === null
-            ? array_values(array_diff(self::GROUP_STATUSES, ['completed', 'failed', 'cancelled'])) : self::PLANNING_STATUSES;
+        $eligible = $title === null && $brief === null
+            ? ($status !== null ? self::GROUP_STATUSES : array_values(array_diff(self::GROUP_STATUSES, ['completed', 'failed', 'cancelled'])))
+            : self::PLANNING_STATUSES;
         $groupId ??= $this->selectGroup($connector, $eligible);
 
         if ($groupId === null) {
@@ -83,8 +84,8 @@ final class UpdateTaskGroupCommand extends TaskCommand
                     'brief' => $brief = $this->promptText('Brief', self::BRIEF_MAX, multiline: true, default: $current->brief),
                     default => $status = $this->promptChoice(
                         'Status',
-                        ['backlog' => 'backlog', 'todo' => 'todo'],
-                        in_array($current->status, self::PLANNING_STATUSES, true) ? $current->status : 'todo',
+                        array_combine($current->orchestration === 'external' ? self::GROUP_STATUSES : self::PLANNING_STATUSES, $current->orchestration === 'external' ? self::GROUP_STATUSES : self::PLANNING_STATUSES),
+                        $current->orchestration === 'external' || in_array($current->status, self::PLANNING_STATUSES, true) ? $current->status : 'todo',
                     ),
                 };
             }

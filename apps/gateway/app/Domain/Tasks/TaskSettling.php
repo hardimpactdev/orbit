@@ -376,7 +376,9 @@ final readonly class TaskSettling
      */
     public function cancelRunningSubtask(TaskScheduler $scheduler, Task $parent, Task $task, Closure $stop): Task
     {
-        TaskGroupGuard::requireTick($parent);
+        if ($parent->groupOrchestration() === TaskOrchestration::External) {
+            return $this->cancelExternalSubtask($parent, $task, $stop);
+        }
         $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
@@ -1293,6 +1295,30 @@ final readonly class TaskSettling
         }
 
         TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest);
+    }
+
+    /** @param Closure(Task): void $stop */
+    private function cancelExternalSubtask(Task $parent, Task $task, Closure $stop): Task
+    {
+        $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
+        $group = $parent->fresh() ?? $parent;
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)
+            || ! in_array($candidate->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true)) {
+            throw new ResourceOperationException('tasks.subtask_not_running', 'Only a todo, running, or reviewing subtask in an open group can be cancelled.', 409);
+        }
+        $stop($candidate);
+
+        return DB::transaction(function () use ($parent, $candidate): Task {
+            $group = Task::topLevel()->lockForUpdate()->findOrFail($parent->id);
+            $locked = Task::query()->where('parent_id', $group->id)->lockForUpdate()->findOrFail($candidate->id);
+            if ($locked->status !== $candidate->status || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+                throw new ResourceOperationException('tasks.subtask_not_running', 'The subtask or group changed while Orbit stopped it, so its new state stands.', 409);
+            }
+            TaskAssistance::resolveExternalSubtask($locked, $group);
+            $this->markSubtaskCancelled($locked);
+
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        });
     }
 
     private function markSubtaskCancelled(Task $task): ?string

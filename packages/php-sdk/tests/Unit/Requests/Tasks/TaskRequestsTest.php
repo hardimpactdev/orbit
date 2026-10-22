@@ -701,3 +701,9 @@ it('returns the external orchestration mode from the Gateway', function (): void
     $group = TaskGroupResponse::fromGatewayData($fixture['body']['data'], task_request_id());
     expect($group->orchestration)->toBe('external')->and($group->toArray()['orchestration'])->toBe('external');
 });
+
+it('preserves external board status inputs on partial updates', function (): void {
+    expect(new UpdateTaskGroupRequest(13, status: 'reviewing')->body()->all())->toBe('{"status":"reviewing"}');
+    expect(new UpdateSubtaskRequest(13, 57, status: 'completed')->body()->all())->toBe('{"status":"completed"}');
+    expect(new UpdateSubtaskRequest(13, 57, status: '')->body()->all())->toBe('{"status":""}');
+});

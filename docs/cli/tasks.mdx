@@ -137,7 +137,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 
 ## orbit tasks:update
 
-Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim the task.
+Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim a tick group. External groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
 orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--json]
@@ -147,7 +147,7 @@ orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--pr
 | --- | --- |
 | `--title=TEXT` | New title. |
 | `--brief=TEXT` | New brief. |
-| `--status=STATUS` | `backlog` or `todo`. |
+| `--status=STATUS` | `backlog` or `todo`; an external group also accepts its current status or an allowed active status move. |
 | `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
 | `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
 
@@ -155,7 +155,7 @@ orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--pr
 orbit tasks:update 13 --status=todo
 ```
 
-In a terminal, the task list shows `backlog` and `todo` tasks. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
+In a terminal, the task list includes active tasks for a status update. Title and brief selection still uses `backlog` and `todo`. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
 
 | Error code | Meaning |
 | --- | --- |
@@ -228,7 +228,7 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 Change a subtask's title, brief, position, or deliverables while its task is in `backlog`. In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` tasks, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and tasks in `completed`, `failed`, or `cancelled` are read-only.
 
 ```bash
-orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
+orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--topology=JSON] [--status=STATUS] [--json]
 ```
 
 | Option | Meaning |
@@ -236,6 +236,7 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 | `--title=TEXT` | New title. |
 | `--brief=TEXT` | New brief. |
 | `--position=N` | New position, starting at 1. |
+| `--status=STATUS` | External groups only: `todo` to `running`, `running` and `reviewing` in either direction, or either active status to `completed` or `failed`. Repeating the current status changes nothing. Other moves return `tasks.status_move_refused`. |
 | `--deliverables=FILE` | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables). It replaces the whole list. |
 | `--topology=JSON` | JSON array of the test nodes the subtask needs. `[]` removes the declaration. Only a subtask that has not started can change it. |
 
@@ -261,7 +262,9 @@ In a terminal, the task list shows only `backlog` tasks. The question names the 
 
 ## orbit tasks:subtask:cancel
 
-Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
+For an external group, cancel a `todo`, `running`, or `reviewing` subtask. Orbit interrupts active work and marks it `cancelled`, without starting another subtask or settling the group. Pass both IDs to cancel a reviewing subtask.
+
+For a tick group, cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
 
 ```bash
 orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
@@ -280,7 +283,7 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 
 ## orbit tasks:comment:create
 
-Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and records the request in Activity. A `resolution` comment clears the flag. It goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
+Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and records the request in Activity. A `resolution` comment clears the flag. For a tick group, it goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. For an external group, it clears assistance and sends nothing. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
 
 ```bash
 orbit tasks:comment:create [group] [subtask] [--type=TYPE] [--body=TEXT] [--author=NAME] [--agent-thread=ID] [--json]

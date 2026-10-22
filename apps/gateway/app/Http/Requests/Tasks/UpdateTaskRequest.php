@@ -6,8 +6,11 @@ namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\Task;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
@@ -16,6 +19,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\In;
+use Illuminate\Validation\Rules\ProhibitedIf;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
@@ -23,13 +27,17 @@ final class UpdateTaskRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
+    /** @return array<string, list<string|Enum|In|ProhibitedIf|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
     public function rules(): array
     {
+        $group = $this->route('group');
+        $external = $group instanceof Task && $group->groupOrchestration() === TaskOrchestration::External;
+
         return [
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
+            'status' => ['sometimes', Rule::prohibitedIf(! $external), 'string', Rule::enum(TaskStatus::class)],
             'topology' => ['sometimes', 'array', 'list', 'max:'.TaskTopology::maxNodes(), new TaskTopologyList],
             'topology.*' => ['required', 'string', 'max:64', 'regex:'.TaskTopology::EntryPattern],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
@@ -51,7 +59,7 @@ final class UpdateTaskRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables', 'topology']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables', 'topology', 'status']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -65,6 +73,7 @@ final class UpdateTaskRequest extends FormRequest
             title: is_string($this->validated('title')) ? $this->validated('title') : null,
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             position: is_int($position) ? $position : null,
+            status: is_string($this->validated('status')) ? TaskStatus::from($this->validated('status')) : null,
             topology: array_key_exists('topology', $this->validated()) ? TaskTopology::fromInput($this->validated('topology')) : null,
             deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
         );

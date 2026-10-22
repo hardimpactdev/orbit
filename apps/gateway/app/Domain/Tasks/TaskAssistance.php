@@ -40,6 +40,26 @@ final class TaskAssistance
         }
     }
 
+    /** Resolve external subtask assistance with both rows locked; keep independent group requests. */
+    public static function resolveExternalSubtask(Task $task, Task $group, ?TaskComment $source = null): void
+    {
+        $ownsGroupRequest = self::sameRequest($task, $group);
+        self::apply($task, source: $source);
+        if (! $ownsGroupRequest) {
+            return;
+        }
+        $pending = $group->tasks()->where('assistance_requested', true)->orderBy('position')->lockForUpdate()->first();
+        self::apply(
+            $group,
+            $pending?->assistance_kind,
+            $pending?->assistance_question,
+            $pending?->assistance_reason,
+            replaceFailure: true,
+            replaceDirection: true,
+            source: $source,
+        );
+    }
+
     /**
      * Records the request against the current database row. Returns false when that row must stay as it is.
      *
