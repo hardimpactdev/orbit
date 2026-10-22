@@ -36,13 +36,16 @@ final readonly class NodeRecipeProgram
             }
             $names = [...$names, ...$recipe->profile($role->role->value, $architecture)];
         }
+        if (is_array($node->settings['task_vms'] ?? null)) {
+            $names = [...$names, ...RecipeLoader::IncusPackages];
+        }
         $tools = [];
         foreach (array_unique($names) as $name) {
             $pin = $recipe->tools[$name] ?? throw new ResourceOperationException('node.recipe_pin_missing', "The recipe has no pin for role prerequisite [{$name}]. Nothing was changed.", 422);
             if ($pin->source !== 'ubuntu' && ! isset($pin->artifacts[$architecture])) {
                 throw new ResourceOperationException('node.recipe_artifact_missing', "The recipe has no {$architecture} artifact for [{$name}].", 422);
             }
-            $tools[$name] = $pin;
+            $tools[$name] = $pin->forArchitecture($architecture);
         }
         ksort($tools);
 
@@ -78,11 +81,19 @@ final readonly class NodeRecipeProgram
         }
 
         $actions = $report['_actions'] ?? [];
-        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links']) !== []) {
+        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources', 'retire_git_source', 'pin_git', 'retire_incus_source', 'pin_incus', 'remove_incus_agent', 'remove_nodejs_package', 'retire_node_source', 'retire_node_config', 'remove_corepack_links']) !== []) {
             throw new RuntimeException('Recipe inspection returned invalid planned actions.');
         }
 
         return ['tools' => $assessment, 'actions' => $actions];
+    }
+
+    /** @param array<string, ToolPin> $tools */
+    public function incusPreflight(Node $node, MachineRecipe $recipe, array $tools): void
+    {
+        if (isset($tools['incus'])) {
+            $this->run($node, $recipe, $tools, 'incus-preflight');
+        }
     }
 
     /**
@@ -207,6 +218,12 @@ final readonly class NodeRecipeProgram
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');
         }
+        foreach ($tools as $name => $pin) {
+            if (! is_array($data['tools'][$name] ?? null)) {
+                throw new RuntimeException('A selected recipe tool is invalid.');
+            }
+            $data['tools'][$name]['version'] = $pin->version;
+        }
         $payload = [
             'snapshot' => $recipe->snapshot,
             'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
@@ -226,6 +243,9 @@ final readonly class NodeRecipeProgram
             $diagnostic = json_decode($result->stdout, true);
             $failure = is_array($diagnostic) ? $diagnostic['failure'] ?? null : null;
             if (is_array($failure) && is_string($failure['stage'] ?? null) && preg_match($stagePattern, $failure['stage']) === 1) {
+                if ($failure['stage'] === 'recipe-stage:incus:running') {
+                    throw new ResourceOperationException('node.recipe_incus_busy', 'Incus changes require a drained host. '.new CommandActivityInputSanitizer()->redactText(is_string($failure['reason'] ?? null) ? $failure['reason'] : '').' Nothing was changed.', 409);
+                }
                 $detail = new CommandActivityInputSanitizer()->redactText(json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
                 throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at '.$failure['stage'].'. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
             }

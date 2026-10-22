@@ -42,7 +42,7 @@ it('installs Incus and runs the host baseline before opening its managed firewal
     $node = FleetFixtures::node('ci-only', [RoleName::CiRunner]);
     [$baseline, $ssh, $firewall] = ci_runner_baseline();
     $ssh->on('/ci-runners\.host$/', function () use ($ssh, $firewall): CommandResult {
-        expect($ssh->commands[0]->arguments)->toContain('incus')->not->toContain('docker.io', 'caddy');
+        expect($ssh->commands[0]->arguments)->toContain('incus', 'incus-base', 'incus-client')->not->toContain('docker.io', 'caddy');
         expect($firewall->commands)->toBe([]);
 
         expect(json_decode(explode("\0", $ssh->commands[1]->input)[1], true)['action'])->toBe('converge');

@@ -135,7 +135,7 @@ A self-hosted runner never installs packages in a job. The action only runs `bin
 
 #### Merge a PHP build change
 
-A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. With the maintainer's approval, an operator runs from the pull request branch:
+A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. For a nightly artifact PR, a red runner check holds the PR until an operator runs these updates from its branch:
 
 On Sabre, Beast, and Shark, run `tools/ci-runners/setup.sh container NAME` for each idle runner container.
 

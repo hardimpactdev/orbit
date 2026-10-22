@@ -474,7 +474,7 @@ it('observes CI host projection with the read-only program action', function (st
 
     expect($state->ciRunnerHostMatches)->toBe($matches)
         ->and($state->firewallProjectionMatches)->toBeTrue()
-        ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
+        ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus', 'incus-base', 'incus-client'])
         ->and($ssh->calls[1]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
         ->and($ssh->calls[3]['command']->arguments)->toContain('sudo', 'root', 'python3', '-I', 'ci-runners.host')
         ->and(json_decode(explode("\0", $ssh->calls[3]['command']->input)[1], true)['action'])->toBe('inspect');

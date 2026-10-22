@@ -19,5 +19,6 @@ final readonly class ArtifactPin
         public string $location,
         public string $algorithm,
         public string $digest,
+        public ?string $version = null,
     ) {}
 }
