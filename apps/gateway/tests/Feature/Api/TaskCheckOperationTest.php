@@ -7,6 +7,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -16,6 +18,7 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\AgentThread;
@@ -279,6 +282,193 @@ it('stops a waiting check on direct cancel', function (): void {
     expect($operation->refresh()->lock_key)->toBeNull();
     expect($group->refresh()->status->value)->toBe('running');
 });
+
+it('retains a lost start reply and recovers the real check result on a delayed read', function (int $exitCode): void {
+    $group = check_operation_group();
+    $runner = Mockery::mock(TaskCheckRunner::class);
+    $runner->shouldReceive('snapshot')->andReturn(new TaskWorkspaceSnapshot(str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('start')->once()->andThrow(new TaskCheckException('SSH connection lost after dispatch.'));
+    $runner->shouldReceive('recoverStart')->once()->withArgs(fn ($instance, string $runId): bool => $instance->id === $group->taskable_id && $runId === TaskWorkspaceLeaseRecord::query()->sole()->check_run_id)
+        ->andReturn(new TaskCheckProcess(4001, 'identity', str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('read')->once()->withArgs(fn ($instance, TaskCheckProcess $process): bool => $process->pid === 4001 && $process->runId === TaskWorkspaceLeaseRecord::query()->sole()->check_run_id)
+        ->andReturn(TaskCheckReading::finished($exitCode, str_repeat('a', 40), str_repeat('b', 40), [], 'Recovered check result.'));
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group, key: 'check.start-reply-lost');
+
+    app(OperationRunner::class)->run($operation->id);
+
+    $check = TaskCheck::query()->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->sole();
+    expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+    expect($operation->lock_key)->toBe('task_group:'.$group->id);
+    expect($operation->state['check_id'])->toBe($check->id);
+    expect($check->status)->toBe(TaskCheckStatus::Running);
+    expect($lease->status)->toBe('held');
+    expect($lease->check_id)->toBe($check->id);
+    expect($lease->owner)->toBe('operation:'.$operation->id);
+    expect($lease->pid)->toBe(0);
+    $this->travel(10)->seconds();
+
+    app(OperationRunner::class)->read($operation->id);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($operation->result['check_id'])->toBe($check->id);
+    expect($operation->result['outcome'])->toBe($exitCode === 0 ? 'passed' : 'failed');
+    expect($operation->result['output'])->toBe('Recovered check result.');
+    expect($operation->lock_key)->toBeNull();
+    expect($check->refresh()->status)->toBe($exitCode === 0 ? TaskCheckStatus::Passed : TaskCheckStatus::Failed);
+    expect($lease->refresh()->status)->toBe('released');
+})->with([0, 1]);
+
+it('stops a check whose start reply was lost and retains ownership until its stop is confirmed', function (bool $readFirst, string $unreachable): void {
+    $group = check_operation_group();
+    $runner = Mockery::mock(TaskCheckRunner::class);
+    $runner->shouldReceive('snapshot')->andReturn(new TaskWorkspaceSnapshot(str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('start')->once()->andThrow(new TaskCheckException('SSH connection lost after dispatch.'));
+    if ($unreachable === 'recovery') {
+        $runner->shouldReceive('recoverStart')->once()->ordered()->andThrow(new TaskCheckException('The Node is unreachable.'));
+    }
+    $runner->shouldReceive('recoverStart')->once()->ordered()->andReturn(new TaskCheckProcess(4001, 'identity', str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('read')->andReturn(TaskCheckReading::running(), FakeTaskCheckRunner::passed());
+    if ($unreachable === 'stop') {
+        $runner->shouldReceive('cancel')->once()->ordered()->andThrow(new TaskCheckException('The Node is unreachable.'));
+    }
+    $runner->shouldReceive('cancel')->once()->ordered()->withArgs(fn ($instance, TaskCheckProcess $process): bool => $process->pid === 4001)->andReturnNull();
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $check = TaskCheck::query()->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->sole();
+    if ($readFirst) {
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+    }
+
+    $response = $this->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+
+    if ($unreachable !== '') {
+        $response->assertStatus(502)->assertJsonPath('error.code', 'tasks.check_unreachable');
+        expect($operation->refresh()->cancel_requested_at)->not->toBeNull();
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($check->refresh()->status)->toBe(TaskCheckStatus::Running);
+        expect($lease->refresh()->status)->toBe('held');
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+    } else {
+        $response->assertOk()->assertJsonPath('data.status', 'cancelled');
+    }
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
+    expect($operation->lock_key)->toBeNull();
+    expect($check->refresh()->status)->toBe(TaskCheckStatus::Cancelled);
+    expect($lease->refresh()->status)->toBe('released');
+})->with([
+    'read then cancel' => [true, ''],
+    'cancel before read' => [false, ''],
+    'unconfirmed stop' => [false, 'stop'],
+    'unconfirmed recovery' => [false, 'recovery'],
+]);
+
+it('fails cleanly when the check start never reached the VM', function (bool $recover): void {
+    $group = check_operation_group();
+    $exception = new TaskCheckException('The check start was not dispatched.');
+    $exception->startNotDispatched = ! $recover;
+    $runner = Mockery::mock(TaskCheckRunner::class);
+    $runner->shouldReceive('snapshot')->andReturn(new TaskWorkspaceSnapshot(str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('start')->once()->andThrow($exception);
+    if ($recover) {
+        $runner->shouldReceive('recoverStart')->once()->andReturnNull();
+    } else {
+        $runner->shouldNotReceive('recoverStart');
+    }
+    $runner->shouldNotReceive('cancel');
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group);
+
+    app(OperationRunner::class)->run($operation->id);
+    if ($recover) {
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+    }
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed);
+    expect($operation->error_code)->toBe('tasks.check_unreachable');
+    expect($operation->lock_key)->toBeNull();
+    expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
+    if ($recover) {
+        expect(TaskCheck::query()->count())->toBe(0);
+    } else {
+        $check = TaskCheck::query()->findOrFail($operation->state['check_id']);
+        expect($check->status)->toBe(TaskCheckStatus::Cancelled);
+        expect($check->pid)->toBe(0);
+        expect($check->finished_at)->not->toBeNull();
+    }
+    $task = $group->tasks()->firstOrFail();
+    $this->call('POST', '/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id.'/check/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.check_not_running');
+
+    $nextRunner = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $nextRunner);
+    $next = check_operation_start($group);
+    app(OperationRunner::class)->run($next->id);
+
+    expect($next->refresh()->status)->toBe(OperationStatus::Waiting);
+    expect($next->state['check_id'])->not->toBe($operation->state['check_id']);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->check_id)->toBe($next->state['check_id']);
+    expect($nextRunner->starts)->toBe(1);
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($next->id);
+
+    expect($next->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($next->result['outcome'])->toBe('passed');
+    expect(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->count())->toBe(0);
+})->with(['before dispatch' => false, 'recovery fences an absent start' => true]);
+
+it('recovers a lost start reply before public check cancellation and keeps ownership on 502', function (string $unreachable): void {
+    $group = check_operation_group();
+    $task = $group->tasks()->firstOrFail();
+    $runner = Mockery::mock(TaskCheckRunner::class);
+    $runner->shouldReceive('snapshot')->andReturn(new TaskWorkspaceSnapshot(str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('start')->once()->andThrow(new TaskCheckException('SSH connection lost after dispatch.'));
+    if ($unreachable === 'recovery') {
+        $runner->shouldReceive('recoverStart')->once()->ordered()->andThrow(new TaskCheckException('The Node is unreachable.'));
+    }
+    $runner->shouldReceive('recoverStart')->once()->ordered()->andReturn(new TaskCheckProcess(4001, 'identity', str_repeat('a', 40), str_repeat('b', 40)));
+    $runner->shouldReceive('read')->andReturn(TaskCheckReading::running(), FakeTaskCheckRunner::passed());
+    if ($unreachable === 'stop') {
+        $runner->shouldReceive('cancel')->once()->ordered()->andThrow(new TaskCheckException('The Node is unreachable.'));
+    }
+    $runner->shouldReceive('cancel')->once()->ordered()->withArgs(fn ($instance, TaskCheckProcess $process): bool => $process->pid === 4001)->andReturnNull();
+    app()->instance(TaskCheckRunner::class, $runner);
+    $operation = check_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $check = TaskCheck::query()->sole();
+    $lease = TaskWorkspaceLeaseRecord::query()->sole();
+    $url = '/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id.'/check/cancel';
+
+    $response = $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+
+    if ($unreachable !== '') {
+        $response->assertStatus(502)->assertJsonPath('error.code', 'tasks.check_unreachable');
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($check->refresh()->status)->toBe(TaskCheckStatus::Running);
+        expect($lease->refresh()->status)->toBe('held');
+        $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()->assertJsonPath('data.status', 'cancelled');
+    } else {
+        $response->assertOk()->assertJsonPath('data.status', 'cancelled');
+    }
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($operation->result['outcome'])->toBe('failed');
+    expect($operation->lock_key)->toBeNull();
+    expect($check->refresh()->status)->toBe(TaskCheckStatus::Cancelled);
+    expect($lease->refresh()->status)->toBe('released');
+})->with(['', 'recovery', 'stop']);
 
 it('reconciles its recorded check after a terminal subtask update until the check finishes', function (string $status, int $exitCode): void {
     $group = check_operation_group();

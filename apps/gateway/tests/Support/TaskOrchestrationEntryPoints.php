@@ -874,6 +874,7 @@ final class TaskOrchestrationEntryPoints
         ],
         CancelTaskCheckAction::class => [
             'execute' => 'Stops a check during allowed group cancellation or completion.',
+            'recoverStart' => 'Recovers an existing external check before cancellation without dispatching new work.',
         ],
         CancelTaskGroupAction::class => [
             'execute' => 'Allowed tasks:cancel boundary.',
