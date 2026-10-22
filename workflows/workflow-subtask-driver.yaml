@@ -1,0 +1,29 @@
+id: db27d653-b57b-46ef-a11f-e1b0a29e6731
+name: subtask-driver
+description: >-
+  One tick of the reconcile loop over orbit-subtask-factory: each active work
+  item takes one short, guarded step. Run it every minute (a CLI loop now,
+  trigger.schedule under swamp serve in phase 3).
+tags: {}
+inputs:
+  properties:
+    maxSteps:
+      type: integer
+      default: 1
+      description: Guarded steps per work item per tick
+jobs:
+  - name: tick
+    steps:
+      - name: tick
+        task:
+          type: model_method
+          modelIdOrName: orbit-driver
+          methodName: tick
+          inputs:
+            maxSteps: ${{ inputs.maxSteps }}
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

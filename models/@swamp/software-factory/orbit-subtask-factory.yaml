@@ -1,0 +1,244 @@
+type: '@swamp/software-factory'
+typeVersion: 2026.06.24.1
+id: 5a8a64d4-b83b-437f-a73a-31d61b07bf22
+name: orbit-subtask-factory
+version: 1
+tags: {}
+# One Orbit subtask = one work item (an upgrade-plan subtask id).
+#   mechanical → handoff → (implement ↔ handoff) → review → approved
+#   review → implement on blocking findings; implement → consult → implement
+# Every stage's work is the method orbit-subtask.run; the driver
+# (orbit-driver.tick) calls it with idempotency key <workItem>.<stage>.c<cycle>.
+# Orbit's caps:
+#   consult cap 2           → consult.maxCycles 2; the 3rd consult parks for
+#                             approve gateId=cycle-override:consult (assistance)
+#   handoff reminders 3     → handoff.fail is live while the failure streak is
+#                             ≤ 3; the 4th consecutive failure only has
+#                             handoff.assist, which needs human approval
+#   max cycles              → implement 6, review 3, handoff 10 (safety nets);
+#                             a trip parks for cycle-override:<stage>
+globalArguments:
+  stages:
+    - id: mechanical
+      initial: true
+      description: composer update in the sub-project; no LLM
+      maxCycles: 1
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-subtask
+          methodName: run
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: mechanical
+        resultEvidence: mechanical-run
+      artifacts:
+        - name: mechanical-change
+          schema:
+            type: object
+            required: [subProject, lockfileChanged, packages]
+            properties:
+              subProject: { type: string }
+              commit: { type: string }
+              lockfileChanged: { type: boolean }
+              packages:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    name: { type: string }
+                    to: { type: string }
+      transitions:
+        - name: submit
+          to: handoff
+          gates:
+            - { type: artifact-exists, config: { artifact: mechanical-change } }
+            - { type: evidence-recorded, config: { name: mechanical-run, requireField: { status: succeeded } } }
+        - name: fail
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: mechanical-run, requireField: { status: failed } } }
+
+    - id: handoff
+      description: the sub-project's composer check + composer test on the worktree HEAD
+      maxCycles: 10
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-subtask
+          methodName: run
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: handoff
+        resultEvidence: handoff-run
+      artifacts:
+        - name: handoff-result
+          schema:
+            type: object
+            required: [status, exitCode, commit, consecutiveFailures]
+            properties:
+              status: { type: string, enum: [succeeded, failed] }
+              exitCode: { type: integer }
+              commit: { type: string }
+              diffstat: { type: string }
+              consecutiveFailures: { type: integer, minimum: 0 }
+              outputTail: { type: string }
+        - name: candidate
+          description: the tree that passed the handoff; the subject of review
+          schema:
+            type: object
+            required: [commit]
+            properties:
+              commit: { type: string, minLength: 7 }
+              diffstat: { type: string }
+      transitions:
+        - name: pass
+          to: review
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+        - name: fail
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: failed } } }
+            - type: cel
+              config:
+                expr: artifacts.handoff_result.consecutiveFailures <= 3
+                message: 4th consecutive failed handoff; take 'assist' (needs approval handoff-assistance)
+        - name: assist
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: failed } } }
+            - type: cel
+              config:
+                expr: artifacts.handoff_result.consecutiveFailures > 3
+                message: fewer than 4 consecutive failed handoffs; take 'fail'
+            - { type: human-approval, config: { id: handoff-assistance } }
+
+    - id: implement
+      description: one Codex turn with the failing output, open findings, or a consult answer
+      maxCycles: 6
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-subtask
+          methodName: run
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: implement
+            feedback: '${{ data.latest(self.name, "artifact-handoff-result") }}'
+            findings: '${{ data.latest(self.name, "artifact-code-review") }}'
+            consult: '${{ data.latest(self.name, "artifact-consult-answer") }}'
+        resultEvidence: implement-run
+      artifacts:
+        - name: change-summary
+          schema:
+            type: object
+            required: [outcome]
+            properties:
+              outcome: { type: string, enum: [done, blocked, error] }
+              commit: { type: string }
+              summary: { type: string }
+              question: { type: string }
+      transitions:
+        - name: submit
+          to: handoff
+          gates:
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: done } } }
+        - name: consult
+          to: consult
+          gates:
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: blocked } } }
+        - name: retry
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { outcome: error } } }
+
+    - id: consult
+      description: the reviewer answers the implementer's BLOCKED question
+      maxCycles: 2
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-subtask
+          methodName: run
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: consult
+            blocked: '${{ data.latest(self.name, "artifact-change-summary") }}'
+        resultEvidence: consult-run
+      artifacts:
+        - name: consult-answer
+          schema:
+            type: object
+            required: [question, answer, needsPerson]
+            properties:
+              question: { type: string }
+              answer: { type: string }
+              needsPerson: { type: boolean }
+      transitions:
+        - name: answered
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: consult-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: '!artifacts.consult_answer.needsPerson', message: the reviewer says a person must decide } }
+        - name: escalate
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: consult-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: artifacts.consult_answer.needsPerson, message: the reviewer answered } }
+            - { type: human-approval, config: { id: consult-escalation } }
+
+    - id: review
+      description: one read-only Claude review of the change; findings gate the exit
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-subtask
+          methodName: run
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: review
+            mechanical: '${{ data.latest(self.name, "artifact-mechanical-change") }}'
+            previous: '${{ data.latest(self.name, "artifact-code-review") }}'
+        resultEvidence: review-run
+      artifacts:
+        - name: code-review
+          kind: findings
+          reviews: candidate
+      transitions:
+        - name: accept
+          to: approved
+          gates:
+            - { type: artifact-fresh, config: { artifact: code-review, recordedThisCycle: true } }
+            - { type: findings-clear, config: { artifact: code-review, blocking: [critical, high] } }
+        - name: rework
+          to: implement
+          gates:
+            - { type: artifact-fresh, config: { artifact: code-review, recordedThisCycle: true } }
+            - type: cel
+              config:
+                expr: 'artifacts.code_review.findings.exists(f, f.resolved != true && f.severity in ["critical", "high"])'
+                message: no open critical or high findings
+        - name: retry
+          to: review
+          gates:
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: failed } } }
+
+    - id: approved
+      terminal: true
+    - id: cancelled
+      terminal: true
+
+  globalTransitions:
+    - name: abort
+      to: cancelled
+      gates:
+        - { type: human-approval, config: { id: abort-confirmation } }
+methods: {}
+checks:
+  require: [run-started, not-terminal, graph-valid, valid-transition, gates-satisfied, stage-executed, cycle-limits]
+reports:
+  require:
+    - { name: "@swamp/software-factory/work-item-summary", methods: [summary] }

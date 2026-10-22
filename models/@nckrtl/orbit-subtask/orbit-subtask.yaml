@@ -1,0 +1,12 @@
+type: '@nckrtl/orbit-subtask'
+typeVersion: 2026.10.22.1
+id: a7ee0323-d223-4824-b10d-6042a4c6524f
+name: orbit-subtask
+version: 1
+tags: {}
+globalArguments:
+  markersDir: /fast/apps/orbit-swamp-scratch/markers
+  runEffect: /fast/apps/orbit-swamp/bin/run-effect
+  planModel: orbit-deps
+  maxLaunches: 3
+methods: {}

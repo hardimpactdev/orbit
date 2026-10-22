@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# run-effect <marker-dir> <stage>
+# Runs one effect script for one idempotency key, detached from the swamp
+# process that launched it. The marker dir holds env (inputs), pid, log and,
+# when finished, result.json. A result.json that already exists means the key
+# is done: the effect never runs twice for one key.
+set -euo pipefail
+dir="$1"
+stage="$2"
+here="$(cd "$(dirname "$0")" && pwd)"
+[ -f "$dir/result.json" ] && exit 0
+# One job per key: a second launch while the first still runs exits at once.
+exec 9>"$dir/lock"
+flock -n 9 || exit 0
+[ -f "$dir/result.json" ] && exit 0
+
+set -a
+# shellcheck disable=SC1091
+. "$dir/env"
+set +a
+export RESULT="$dir/result.json" INPUTS="$dir/inputs.json"
+echo $$ > "$dir/pid"
+date -u +%FT%TZ >> "$dir/attempts"
+
+set +e
+"$here/effects/$stage.sh" >> "$dir/effect.log" 2>&1
+code=$?
+set -e
+if [ ! -f "$dir/result.json" ]; then
+  # The script died without a result; record a failure the driver can act on.
+  jq -n --argjson code "$code" --arg tail "$(tail -c 8000 "$dir/effect.log")" \
+    '{status:"failed", exitCode:$code, error:"effect exited without a result", outputTail:$tail}' > "$dir/result.json"
+fi
+rm -f "$dir/pid"

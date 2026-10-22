@@ -1,0 +1,9 @@
+type: '@nckrtl/orbit-driver'
+typeVersion: 2026.10.22.1
+id: ed4d1491-ed90-42a9-8454-fb29773afb48
+name: orbit-driver
+version: 1
+tags: {}
+globalArguments:
+  factory: orbit-subtask-factory
+methods: {}
