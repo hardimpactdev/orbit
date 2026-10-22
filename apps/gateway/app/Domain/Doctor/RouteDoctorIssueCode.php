@@ -6,9 +6,6 @@ namespace App\Domain\Doctor;
 
 enum RouteDoctorIssueCode: string implements DoctorIssueCode
 {
-    case PathProxyCollision = 'route.path_proxy_collision';
-    case PathProxyInspectionFailed = 'route.path_proxy_inspection_failed';
-    case PathProxyUpstreamInvalid = 'route.path_proxy_upstream_invalid';
     case WebSocketCollision = 'route.websocket_collision';
     case WebSocketInspectionFailed = 'route.websocket_inspection_failed';
     case LifecycleNotActive = 'route.lifecycle_not_active';

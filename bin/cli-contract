@@ -103,16 +103,21 @@ def main():
         print('No fixtures selected.')
         return
     files = {}
+    retired = 0
     for name in names:
-        if not (FIXTURES / f'{name}.json').is_file():
-            print(f'{name}: no fixture file (removed or misspelled); its tests must fail until they change.')
         users = sorted(path for path in TESTS.rglob('*.php') if f"'{name}'" in path.read_text(encoding='utf-8'))
+        if not (FIXTURES / f'{name}.json').is_file():
+            if arguments[:1] == ['--changed'] and not users:
+                print(f'{name}: fixture and CLI replay tests retired together.')
+                retired += 1
+                continue
+            print(f'{name}: no fixture file (removed or misspelled); its tests must fail until they change.')
         if not users:
             print(f'{name}: no CLI test replays this fixture.')
         for path in users:
             files.setdefault(path, []).append(name)
     if not files:
-        sys.exit(1)
+        sys.exit(0 if retired == len(names) else 1)
     for path, used in files.items():
         print(f'{path.relative_to(ROOT)} replays {", ".join(used)}')
     sys.exit(subprocess.call([str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', *[str(path.relative_to(ROOT / "apps/cli")) for path in files]], cwd=ROOT / 'apps/cli'))

@@ -125,7 +125,6 @@ use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
-use App\Domain\Instances\LaravelRouteInspector;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionInstanceProvisioner;
@@ -302,7 +301,6 @@ use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
-use App\Infrastructure\Instances\NativeLaravelRouteInspector;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
@@ -569,7 +567,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRouteInspector::class => NativeWebSocketRouteInspector::class,
-        LaravelRouteInspector::class => NativeLaravelRouteInspector::class,
         WebSocketRoutePublisher::class => NativeWebSocketRoutePublisher::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
     ];

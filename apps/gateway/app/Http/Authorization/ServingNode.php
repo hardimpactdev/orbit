@@ -16,7 +16,6 @@ enum ServingNode
     case CandidateClone;
     case InstanceTransfer;
     case EnvironmentInstanceOwning;
-    case PathProxyInstanceOwning;
     case ProcessOwning;
     case ScheduleOwning;
     case ScheduleHost;

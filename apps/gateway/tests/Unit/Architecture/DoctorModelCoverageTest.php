@@ -24,7 +24,6 @@ use App\Models\InstanceDependencyScanAttempt;
 use App\Models\InstanceDeployment;
 use App\Models\InstanceDeployStep;
 use App\Models\InstanceEnvironmentValue;
-use App\Models\InstancePathProxy;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -100,7 +99,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         TaskWorkspaceLeaseRecord::class,
         TaskWorkspaceOperation::class,
         InstanceEnvironmentValue::class,
-        InstancePathProxy::class,
         ToolManagerRecord::class,
         Setting::class,
         ProjectDocumentStorage::class,

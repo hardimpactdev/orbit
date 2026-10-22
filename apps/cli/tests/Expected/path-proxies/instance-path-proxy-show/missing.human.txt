@@ -1,9 +1,0 @@
-Loading path proxy...
-
-┌  Show path proxy
-│
-├  ● Loading path proxy
-│
-└  Operation failed.
-
-This Instance has no path proxy.

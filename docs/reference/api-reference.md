@@ -23,8 +23,6 @@ The Gateway rollback operation queues a code switch without a request body. Data
 
 The [Reverb app](/reference/websocket-apps) operations use the same attachment schema mapping as Database connections. Their Instance selector accepts a positive ID or an exact Route domain. App and attachment responses omit the secret. The app ID and public key stay in app responses.
 
-The [Instance path proxy](/reference/routes#publish-a-process-under-an-app-path) operations also accept an Instance ID or exact Route domain. PUT and GET return the publication fields; DELETE returns the removed Instance ID. The generator maps the controller actions to their explicit data classes.
-
 ## Same checkout, same file
 
 The contract is that `bin/docs-openapi` produces the same `docs/openapi.json` on every machine with the same checkout. The bytes match. The clock, the hostname, the locale, the absolute checkout path, directory order, `$ORBIT_HOME`, and which extensions a Gateway reports as enabled are not inputs to that contract.

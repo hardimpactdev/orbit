@@ -5,7 +5,7 @@
 # Input: {"checkout": path, "root": apps root, "user": managed user, "group": managed group,
 #   "layout": "checkout" or "worktree", "branch": expected branch or "", "inspect_content": bool,
 #   "unresolved": bool, "allow_absent": bool, "origin": the Project origin, "prepare_id": source preparation ID or ""}
-# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable, "prefixes": reserved top-level paths}; runs as the production user.
+# Input: with "inspection": "laravel_routes", takes {"home": production home, "application": directory under current, "php": selected PHP executable}; runs as the production user.
 # Result: routes_inspected: {"collision": bool}; failed: Laravel inspection failed without application output.
 # Result: inspected: base64 of "top", "common", "origin", "branch", "commit", "dirty" ("", "0", or "1"),
 #   "source_identity" ("<device>:<inode>" or "absent"), and "worktrees" (`git worktree list --porcelain -z`).
@@ -52,7 +52,7 @@ def inspect_laravel_routes(payload):
         if not isinstance(routes, list) or any(not isinstance(route, dict) or not isinstance(route.get('uri'), str) for route in routes):
             return 'failed', {}
         # Root fallback runs after explicit routes. Parameter constraints are unavailable, so match conservatively.
-        prefixes = {prefix.strip('/').lower() for prefix in payload['prefixes']}
+        prefixes = {'app', 'apps'}
         uris = [route['uri'].strip('/') for route in routes]
         patterns = [first_segment_pattern(uri.split('/')[0].lower())
                     for uri in uris if uri != '{fallbackPlaceholder}']
