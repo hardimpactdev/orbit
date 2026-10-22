@@ -21,6 +21,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\TaskVm;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Artisan;
@@ -51,9 +52,10 @@ final class RecipeVerification implements FleetNodeVerification
     }
 }
 
-function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null): ScriptedSshExecutor
+function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null, ?CommandResult $incusPreflight = null): ScriptedSshExecutor
 {
     $ssh = new ScriptedSshExecutor;
+    $ssh->on('/^sudo timeout .* python3 - incus-preflight$/', $incusPreflight ?? ScriptedSshExecutor::ok('{}'));
     $ssh->on('/^python3 - inspect$/', $inspection ?? static function (RemoteCommand $command): CommandResult {
         $payload = RecipeProgramPayload::read($command->input);
         $versions = [];
@@ -535,3 +537,81 @@ it('embeds and runs the account store publisher in recipe programs', function ()
     expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))
         ->toBe(['outcome' => 'inspected', 'data' => ['version' => null]]);
 });
+
+it('includes the exact native Incus package set only on configured task VM hosts', function (string $architecture, string $version): void {
+    $node = FleetFixtures::node('recipe-incus-host', [RoleName::Database]);
+    $node->update(['architecture' => $architecture, 'settings' => ['task_vms' => ['capacity' => 1]]]);
+    $recipe = new RecipeLoader()->load();
+
+    $tools = app(NodeRecipeProgram::class)->tools($node, $recipe);
+
+    foreach (RecipeLoader::IncusPackages as $name) {
+        expect($tools[$name]->version)->toBe($version);
+    }
+    $node->update(['settings' => []]);
+    expect(array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe)))->not->toContain('incus');
+})->with([
+    ['x86_64', '1:7.0.1-ubuntu26.04-202609250211'],
+    ['aarch64', '1:7.0.1-ubuntu26.04-202609250512'],
+]);
+
+function incusRecipeInspection(RemoteCommand $command, bool $phpChange = false): CommandResult
+{
+    $payload = RecipeProgramPayload::read($command->input);
+    $tools = [];
+    foreach ($payload['tools'] as $name => $pin) {
+        $changed = in_array($name, RecipeLoader::IncusPackages, true) || ($phpChange && $name === 'php8.5-cli');
+        $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
+    }
+
+    return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+}
+
+it('applies other pins automatically and records the held Incus pins without a full identity', function (): void {
+    $node = FleetFixtures::node('incus-automatic', [RoleName::AppDev]);
+    $node->update(['settings' => ['task_vms' => [], 'machine_recipe' => ['version' => 'previous']]]);
+    $ssh = recipeSsh(inspection: static fn (RemoteCommand $command): CommandResult => incusRecipeInspection($command, phpChange: true));
+    $php = new FakePhpBuildRunner(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
+    app()->instance(RemoteProgramRunner::class, $php);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $recipe = new RecipeLoader()->load();
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, automatic: true);
+
+    expect($result['changes']['changed_packages'])->toBe(['curl', 'php8.5-cli'])
+        ->and($node->refresh()->settings['machine_recipe'])->toHaveKey('partial_version', $recipe->identity)->not->toHaveKey('version')
+        ->and($node->settings['machine_recipe_incus_hold']['pins'])->toHaveKeys(RecipeLoader::IncusPackages);
+    expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply']);
+    expect(array_column($php->inputs[2]['versions']['8.5']['packages'], 'name'))->toContain('php8.5-cli');
+    foreach ($ssh->commands as $command) {
+        if (in_array('apply', $command->arguments, true)) {
+            expect(RecipeProgramPayload::read($command->input)['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
+        }
+    }
+});
+
+it('names active instances in other projects and preserves settings on explicit refusal', function (): void {
+    $node = FleetFixtures::node('incus-active');
+    $settings = ['task_vms' => [], 'machine_recipe' => ['version' => 'previous']];
+    $node->update(['settings' => $settings]);
+    $ssh = recipeSsh(inspection: incusRecipeInspection(...), incusPreflight: ScriptedSshExecutor::fail(stdout: json_encode([
+        'failure' => ['stage' => 'recipe-stage:incus:running', 'reason' => 'Drain active instances: orbit-ci/ci-shark-1 (container, Running), memory/normal (virtual-machine, Running)'],
+    ], JSON_THROW_ON_ERROR)));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'orbit-ci/ci-shark-1');
+
+    expect($node->refresh()->settings)->toBe($settings);
+    expect(collect($ssh->commands)->filter(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeEmpty();
+});
+
+it('refuses an Incus change while a task VM row can still resume or provision', function (string $state): void {
+    $node = FleetFixtures::node('incus-live-row');
+    $node->update(['settings' => ['task_vms' => []]]);
+    $vm = TaskVm::query()->create(['host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'live-test-vm', 'wireguard_ip' => '10.99.0.1', 'state' => $state]);
+    $ssh = recipeSsh(inspection: incusRecipeInspection(...));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, $vm->name.' ('.$state.')');
+    expect($ssh->lines())->toBe(['python3 - inspect']);
+})->with(['provisioning', 'ready', 'parked', 'destroying', 'failed']);

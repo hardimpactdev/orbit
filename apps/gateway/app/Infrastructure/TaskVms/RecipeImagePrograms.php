@@ -306,10 +306,11 @@ final readonly class RecipeImagePrograms
         }
         $tools = [];
         foreach ($names as $name) {
-            if (! array_key_exists($name, $data['tools'])) {
+            if (! is_array($data['tools'][$name] ?? null)) {
                 throw new RuntimeException('A selected recipe tool is missing.');
             }
             $tools[$name] = $data['tools'][$name];
+            $tools[$name]['version'] = $recipe->tools[$name]->forArchitecture($architecture)->version;
         }
 
         $versions = array_map(strval(...), array_keys($recipe->phpExtensions(array_keys($tools))));

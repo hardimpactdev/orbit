@@ -85,7 +85,7 @@ final readonly class ConvergeFleetRecipeAction
                     continue;
                 }
                 $verified = $node->settings['machine_recipe'] ?? null;
-                if (is_array($verified) && ($verified['version'] ?? null) === $recipe->identity) {
+                if (is_array($verified) && (($verified['version'] ?? null) === $recipe->identity || ($verified['partial_version'] ?? null) === $recipe->identity)) {
                     continue;
                 }
                 if ($this->builds->currentRecipe()->identity !== $recipe->identity) {
@@ -101,7 +101,7 @@ final readonly class ConvergeFleetRecipeAction
                 $progress['node_id'] = $node->id;
                 $record->forceFill(['fleet_convergence' => $progress])->save();
                 try {
-                    $result = $this->converge->execute($node, $recipe);
+                    $result = $this->converge->execute($node, $recipe, automatic: true);
                     $completed = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
                     $completed[$node->id] = ['name' => $node->name, 'changes' => $result['changes'], 'finished_at' => now()->toIso8601String()];
                     $progress['nodes'] = $completed;

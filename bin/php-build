@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""Install, verify, and bump the one PHP build that the machine software recipe pins. See ADR 0216.
+"""Install, verify the one PHP build that the machine software recipe pins. See ADR 0216.
 
   bin/php-build verify --profile PROFILE [--recipe PATH] [--version X.Y]
   sudo bin/php-build install --profile PROFILE [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
   bin/php-build mirror --directory DIR # download external pinned Debian files for the php-build-mirror release
   bin/php-build key [--all]            # digest of the pins, for a download cache key
   bin/php-build describe               # the upstream PHP releases the recipe pins
-  bin/php-build bump [--dry-run]       # move every Sury PHP pin to Sury's newest build
 
 `install` runs apps/gateway/resources/remote/php/install-build.py, the one installer that Nodes and images run too.
 `verify` exits 1 when the `php` on PATH is not the recipe build: its PHP_VERSION, its CLI modules, or a package version.
 """
 import argparse
-import gzip
 import hashlib
 import json
-import lzma
 import os
 from pathlib import Path
 import re
@@ -23,7 +20,6 @@ import runpy
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,9 +28,6 @@ REMOTE = ROOT / 'apps/gateway/resources/remote'
 artifact_candidates = runpy.run_path(str(REMOTE / 'lib/artifacts.py'))['artifact_candidates']
 # php.install-build keeps every pinned and repacked file here; they are the rollback.
 CACHE = Path('/var/cache/orbit/php-packages')
-SURY = 'https://packages.sury.org/php/'
-# The Sury signing key, pinned as in apps/gateway/app/Infrastructure/Nodes and docs/reference/node-provisioning.md.
-SURY_KEY_SHA256 = 'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c'
 CODENAMES = {'26.04': 'resolute'}
 COMPOSER_VERSION = '2.10.3'
 COMPOSER_SHA256 = '7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6'
@@ -176,8 +169,8 @@ def download(url, destination, digest, *, algorithm='sha256'):
                 raise BuildError(f'{url} redirected away from HTTPS.')
             partial.write_bytes(response.read())
     except OSError as error:
-        raise DownloadUnavailable(f'{url} cannot be downloaded ({error}). Sury may have published a newer build; '
-                         'run `bin/php-build bump`.') from error
+        raise DownloadUnavailable(f'{url} cannot be downloaded ({error}). The upstream may have published a newer build; '
+                         'run `bin/recipe-artifacts bump`.') from error
     if hashlib.new(algorithm, partial.read_bytes()).hexdigest() != digest:
         partial.unlink()
         raise BuildError(f'{url} does not match its recipe {algorithm} digest.')
@@ -283,155 +276,10 @@ def mirror(recipe, directory, published=()):
     print(f'{len(list(directory.glob("*.deb")))} files in {directory}')
 
 
-def fetch(url):
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return response.read()
-
-
-def signed_release(codename, work):
-    key = work / 'sury.gpg'
-    key.write_bytes(fetch(SURY + 'apt.gpg'))
-    if hashlib.sha256(key.read_bytes()).hexdigest() != SURY_KEY_SHA256:
-        raise BuildError('The Sury signing key does not match its pinned digest.')
-    release = work / 'InRelease'
-    release.write_bytes(fetch(f'{SURY}dists/{codename}/InRelease'))
-    result = subprocess.run(['gpgv', '--keyring', str(key), '--output', '-', str(release)], capture_output=True)
-    if result.returncode:
-        raise BuildError('The Sury InRelease signature does not verify: ' + result.stderr.decode(errors='replace'))
-    return result.stdout.decode()
-
-
-def release_hashes(text):
-    hashes, section = {}, False
-    for line in text.splitlines():
-        if not line.startswith(' '):
-            section = line.strip() == 'SHA256:'
-            continue
-        if section:
-            digest, _size, name = line.split()
-            hashes[name] = digest
-    return hashes
-
-
-def stanzas(text):
-    for block in text.split('\n\n'):
-        fields = {}
-        for line in block.splitlines():
-            if line and not line.startswith(' ') and ':' in line:
-                key, value = line.split(':', 1)
-                fields[key] = value.strip()
-        if fields.get('Package'):
-            yield fields
-
-
-def _order(character):
-    if character == '~':
-        return -1
-    if character.isalpha():
-        return ord(character)
-    return ord(character) + 256 if character else 0
-
-
-def _compare_part(left, right):
-    """Debian's comparison of an upstream version or revision: alternating non-digit and digit runs."""
-    while left or right:
-        left_text = re.match(r'[^0-9]*', left).group()
-        right_text = re.match(r'[^0-9]*', right).group()
-        for index in range(max(len(left_text), len(right_text))):
-            a = _order(left_text[index] if index < len(left_text) else '')
-            b = _order(right_text[index] if index < len(right_text) else '')
-            if a != b:
-                return -1 if a < b else 1
-        left, right = left[len(left_text):], right[len(right_text):]
-        left_number = re.match(r'[0-9]*', left).group()
-        right_number = re.match(r'[0-9]*', right).group()
-        if int(left_number or 0) != int(right_number or 0):
-            return -1 if int(left_number or 0) < int(right_number or 0) else 1
-        left, right = left[len(left_number):], right[len(right_number):]
-    return 0
-
-
-def compare_versions(left, right):
-    """dpkg --compare-versions, so the bump picks the same newest build as apt."""
-    def split(version):
-        epoch, _, rest = version.rpartition(':') if ':' in version else ('0', '', version)
-        upstream_part, _, revision = rest.rpartition('-') if '-' in rest else (rest, '', '0')
-        return int(epoch or 0), upstream_part, revision
-    left_epoch, left_upstream, left_revision = split(left)
-    right_epoch, right_upstream, right_revision = split(right)
-    if left_epoch != right_epoch:
-        return -1 if left_epoch < right_epoch else 1
-    return _compare_part(left_upstream, right_upstream) or _compare_part(left_revision, right_revision)
-
-
-def newer(left, right):
-    return compare_versions(left, right) > 0
-
-
-def index(codename, arch, hashes, work):
-    for suffix, decompress in (('.xz', lzma.decompress), ('.gz', gzip.decompress), ('', lambda data: data)):
-        name = f'main/binary-{arch}/Packages{suffix}'
-        if name in hashes:
-            data = fetch(f'{SURY}dists/{codename}/{name}')
-            if hashlib.sha256(data).hexdigest() != hashes[name]:
-                raise BuildError(f'{name} does not match the signed InRelease.')
-            return decompress(data).decode()
-    raise BuildError(f'Sury publishes no package index for {codename} {arch}.')
-
-
-def bump_recipe(recipe, indexes):
-    """Move every pin of every PHP set to the newest build in `indexes` (architecture to Packages text)."""
-    php = recipe['php']
-    names = sorted(set(php['shared']).union(*(set(v['packages']) for v in php['versions'].values())))
-    changes = []
-    for arch, text in indexes.items():
-        newest = {}
-        for fields in stanzas(text):
-            name = fields['Package']
-            if name in names and fields.get('Architecture') in (arch, 'all'):
-                if name not in newest or newer(fields['Version'], newest[name]['Version']):
-                    newest[name] = fields
-        for name in names:
-            if arch not in recipe['tools'][name]['artifacts']:
-                continue
-            if name not in newest:
-                raise BuildError(f'Sury has no {arch} package {name}.')
-            fields, tool = newest[name], recipe['tools'][name]
-            artifact = {'url': SURY + fields['Filename'], 'sha256': fields['SHA256']}
-            if tool['version'] != fields['Version'] or tool['artifacts'][arch] != artifact:
-                changes.append(f'{name} {arch}: {tool["version"]} -> {fields["Version"]}')
-                tool['version'] = fields['Version']
-                tool['artifacts'][arch] = artifact
-    for version, selected in php['versions'].items():
-        common = recipe['tools'][f'php{version}-common']['version']
-        for name in selected['packages']:
-            pinned = recipe['tools'][name]['version']
-            if pinned.startswith(version + '.') and pinned != common:
-                raise BuildError(f'Sury publishes {name} {pinned} beside php{version}-common {common}. '
-                                 'It is between builds; run the bump again later.')
-    return changes
-
-
-def bump(path, dry_run):
-    recipe = load(path)
-    codename = CODENAMES[recipe['ubuntu']['release']]
-    with tempfile.TemporaryDirectory(prefix='orbit-php-bump-') as directory:
-        hashes = release_hashes(signed_release(codename, Path(directory)))
-        architectures = sorted({arch for name in recipe['php']['shared'] for arch in recipe['tools'][name]['artifacts']})
-        indexes = {arch: index(codename, arch, hashes, Path(directory)) for arch in architectures}
-    changes = bump_recipe(recipe, indexes)
-    for change in changes:
-        print(change)
-    if not changes:
-        print('The recipe pins Sury\'s newest PHP build.')
-    elif not dry_run:
-        Path(path).write_text(json.dumps(recipe, indent=4) + '\n')
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('verify', 'install', 'key', 'describe', 'bump', 'mirror'):
+    for name in ('verify', 'install', 'key', 'describe', 'mirror'):
         command = commands.add_parser(name)
         command.add_argument('--recipe', default=str(RECIPE))
         if name in ('verify', 'install', 'key'):
@@ -446,7 +294,6 @@ def main(argv=None):
     commands.choices['mirror'].add_argument('--published', help='File listing release asset names, one per line')
     commands.choices['install'].add_argument('--no-composer', action='store_true')
     commands.choices['key'].add_argument('--all', action='store_true')
-    commands.choices['bump'].add_argument('--dry-run', action='store_true')
     arguments = parser.parse_args(argv)
     try:
         recipe = load(arguments.recipe)
@@ -461,8 +308,6 @@ def main(argv=None):
             print(pins_digest(recipe, architecture(), versions))
         elif arguments.command == 'describe':
             print(', '.join(f'PHP {upstream(recipe["tools"][f"php{v}-common"]["version"])}' for v in recipe['php']['versions']))
-        else:
-            bump(arguments.recipe, arguments.dry_run)
     except BuildError as error:
         print(f'php-build: {error}', file=sys.stderr)
         return 1

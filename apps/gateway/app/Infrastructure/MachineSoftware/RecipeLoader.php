@@ -13,6 +13,8 @@ use stdClass;
 /** A closed data contract, deliberately independent of enrollment and image building. */
 final readonly class RecipeLoader
 {
+    public const array IncusPackages = ['incus', 'incus-base', 'incus-client'];
+
     /** @return array<string, string> */
     public static function catalog(): array
     {
@@ -20,13 +22,13 @@ final readonly class RecipeLoader
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
             'acl', 'attr', 'composer', 'containerd', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev', 'logrotate',
-            'incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base', 'btrfs-progs', 'nftables',
+            'dnsmasq-base', 'btrfs-progs', 'nftables',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
             'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach (['git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
+        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
@@ -117,7 +119,9 @@ final readonly class RecipeLoader
                 $artifact = $this->object($rawArtifact, $field);
                 $algorithm = isset($artifact->sha256) ? 'sha256' : 'sha512';
                 $locationKey = $source === 'internal' ? 'filename' : 'url';
-                $this->object($artifact, $field, [$locationKey, $algorithm]);
+                $this->object($artifact, $field, [$locationKey, $algorithm, ...(isset($artifact->version) ? ['version'] : [])]);
+                $artifactVersion = isset($artifact->version) ? $this->text($artifact->version, "{$field}.version") : null;
+                $this->require($artifactVersion === null || preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $artifactVersion) === 1, "{$field}.version: expected an exact version.");
                 $this->require($source !== 'internal' || $algorithm === 'sha256', "{$field}: internal pins require sha256.");
                 $digest = $this->text($artifact->{$algorithm}, "{$field}.{$algorithm}");
                 $length = $algorithm === 'sha256' ? 64 : 128;
@@ -128,9 +132,9 @@ final readonly class RecipeLoader
                 } else {
                     $url = parse_url($location);
                     $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['pass']) && ! isset($url['fragment']), "{$field}.url: expected an HTTPS release URL.");
-                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $version) ?? $version) : $version, '~').'(?=$|[/_]|-(?:linux|x86_64|aarch64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
+                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $artifactVersion ?? $version) ?? $version) : ($artifactVersion ?? $version), '~').'(?=$|[/_]|-(?:linux|x86_64|aarch64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
                 }
-                $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest);
+                $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest, $artifactVersion);
             }
             $lock = $name === 'vp' ? $this->text($pin->lock_sha256, 'tools.vp.lock_sha256') : null;
             $this->require($lock === null || preg_match('/\A[0-9a-f]{64}\z/', $lock) === 1, 'tools.vp.lock_sha256: expected a SHA-256 digest.');
@@ -141,6 +145,7 @@ final readonly class RecipeLoader
         $this->require(($tools[$phpSets['rollback']] ?? null)?->source === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $common = $this->references($root->common, 'common', $tools, $php, $phpSets['rollback']);
         $this->gitBuild($tools, $common, $ubuntu->release, $gitPackages);
+        $this->incusBuild($tools, $ubuntu->release);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
@@ -153,6 +158,7 @@ final readonly class RecipeLoader
         $usedPhp = [];
         foreach ([...get_object_vars($roles), 'base' => $root->base] as $role => $raw) {
             $extra = $this->references($raw, "profiles.{$role}", $tools, $php, $phpSets['rollback']);
+            $this->require(! in_array('incus', $extra, true) || array_diff(self::IncusPackages, $extra) === [], "profiles.{$role}: the complete Incus package set is required.");
             $this->require(array_intersect($common, $extra) === [], "profiles.{$role}: repeats a common tool.");
             foreach ($this->strings($raw, "profiles.{$role}") as $entry) {
                 if (str_starts_with($entry, 'php:')) {
@@ -264,6 +270,23 @@ final readonly class RecipeLoader
         }
 
         return $builds;
+    }
+
+    /** @param array<string, ToolPin> $tools */
+    private function incusBuild(array $tools, string $release): void
+    {
+        $version = $tools['incus']->version;
+        $this->require(preg_match('/^7\.0\.[0-9]+$/D', $version) === 1, 'incus: expected a Zabbly 7.0 LTS build for this Ubuntu release.');
+        foreach (self::IncusPackages as $name) {
+            $this->require($tools[$name]->version === $version, 'incus: all packages must pin the same build.');
+            foreach ($tools[$name]->artifacts as $architecture => $artifact) {
+                $build = $artifact->version ?? '';
+                $this->require(preg_match('/^1:'.preg_quote($version, '/').'-ubuntu'.preg_quote($release, '/').'-[0-9]+$/D', $build) === 1, "tools.{$name}: expected an exact architecture package version.");
+                $this->require($build === $tools['incus']->artifacts[$architecture]->version, 'incus: architecture packages must pin the same build.');
+                $expected = 'https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/'.$name.'_'.substr($build, 2).'_'.$architecture.'.deb';
+                $this->require($artifact->algorithm === 'sha256' && $artifact->location === $expected, "tools.{$name}: expected a SHA-256-pinned Zabbly LTS Debian artifact.");
+            }
+        }
     }
 
     /**

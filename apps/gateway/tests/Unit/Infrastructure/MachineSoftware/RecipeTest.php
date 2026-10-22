@@ -66,6 +66,26 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
+    it('selects the exact architecture build of the complete Incus LTS set', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (RecipeLoader::IncusPackages as $name) {
+            expect($recipe->profile('base'))->toContain($name);
+            expect($recipe->tools[$name]->forArchitecture('amd64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250211');
+            expect($recipe->tools[$name]->forArchitecture('arm64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250512');
+        }
+    });
+
+    it('refuses mismatched or untrusted Incus artifacts', function (string $field, string $value): void {
+        $document = machine_recipe_document();
+        $document['tools']['incus-client']['artifacts']['arm64'][$field] = $value;
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class);
+    })->with([
+        ['version', '1:7.0.1-ubuntu26.04-202607310543'],
+        ['url', 'https://untrusted.example/incus-client_7.0.1-ubuntu26.04-202609250512_arm64.deb'],
+    ]);
+
     it('owns one git-core Git build in every profile and architecture', function (): void {
         $recipe = new RecipeLoader()->load();
 
@@ -218,9 +238,9 @@ describe('machine recipe structure and identity', function (): void {
         $development = [...$production, ...$php];
         // The nested Incus packages of the topology seed (ADR 0222), pinned in the recipe document itself.
         $document = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
-        $topology = ['incus', 'qemu-system-x86', 'ovmf', 'qemu-system-modules-spice', 'qemu-utils', 'virtiofsd', 'dnsmasq-base', 'btrfs-progs', 'nftables'];
+        $topology = [...RecipeLoader::IncusPackages, 'dnsmasq-base', 'btrfs-progs', 'nftables'];
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
-            ->and($document['tools']['incus']['version'])->toBe('6.0.5-8');
+            ->and($document['tools']['incus']['version'])->toBe('7.0.1');
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
@@ -230,7 +250,7 @@ describe('machine recipe structure and identity', function (): void {
             'app-prod' => [...$production, ...$php85],
             'app-dev' => $development,
             'base' => $base,
-            'ci-runner' => [...$common, 'incus', 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -238,7 +258,7 @@ describe('machine recipe structure and identity', function (): void {
             sort($expected, SORT_STRING);
             expect($recipe->profile($role))->toBe($expected);
         }
-        foreach ($imagePackages as $package) {
+        foreach (array_diff($imagePackages, RecipeLoader::IncusPackages) as $package) {
             expect($recipe->tools[$package]->source)->toBe('ubuntu')
                 ->and($recipe->tools[$package]->package)->toBe($package);
             foreach (array_keys($recipe->profiles) as $role) {
@@ -713,4 +733,17 @@ describe('machine recipe command', function (): void {
         $this->artisan('orbit:machine-recipe', ['--role' => 'operator', '--validate' => true])
             ->expectsOutputToContain('unavailable fixture snapshot')->assertFailed();
     });
+});
+
+it('accepts a native artifact version for any artifact package and rejects a channel', function (): void {
+    $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    foreach ($document['tools']['git']['artifacts'] as &$artifact) {
+        $artifact['version'] = $document['tools']['git']['version'];
+    }
+    unset($artifact);
+    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+
+    expect($recipe->tools['git']->forArchitecture('amd64')->version)->toBe($document['tools']['git']['version']);
+    $document['tools']['git']['artifacts']['amd64']['version'] = 'stable';
+    expect(fn () => new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)))->toThrow(InvalidArgumentException::class, 'expected an exact version');
 });

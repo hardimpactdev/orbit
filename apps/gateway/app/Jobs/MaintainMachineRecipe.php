@@ -7,7 +7,7 @@ namespace App\Jobs;
 use App\Actions\Fleet\ConvergeFleetRecipeAction;
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
-use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
+use App\Actions\Fleet\OpenRecipeArtifactsPullRequestAction;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\NightlyRecipePendingDeployment;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
@@ -41,7 +41,7 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
         return $this->snapshot ? 'snapshot-pr' : 'fleet';
     }
 
-    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet, MergeNightlyRecipePullRequestsAction $merge, OpenPhpBuildPullRequestAction $php): void
+    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet, MergeNightlyRecipePullRequestsAction $merge, OpenRecipeArtifactsPullRequestAction $artifacts): void
     {
         if ($serving->read()['state'] !== FleetServingRelease::Adopted || $serving->supersedes()) {
             return;
@@ -54,7 +54,7 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
             }
             try {
                 Log::info('Nightly recipe snapshot PR.', ['url' => $pullRequest->execute()]);
-                Log::info('Nightly PHP build PR.', ['url' => $php->execute()]);
+                Log::info('Nightly recipe artifact PR.', ['url' => $artifacts->execute()]);
                 Cache::put($key, true, $date->copy()->endOfDay());
             } catch (NightlyRecipePendingDeployment $wait) {
                 Log::info($wait->getMessage());

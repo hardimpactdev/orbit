@@ -29,6 +29,7 @@ NODE_USR = Path('/usr')
 DPKG_LOG = Path('/var/log/dpkg.log')
 UBUNTU_KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
 MAX_SNAPSHOT_LOOKUPS = 3
+INCUS_PACKAGES = ('incus', 'incus-base', 'incus-client')
 
 
 class RecipeFailure(Exception):
@@ -326,13 +327,17 @@ def assess(tools, versions=None, options=None, snapshots=None, git_names=()):
         reason = ''
         if name in git_names and pin['source'] == 'artifact' and installed is not None and installed != pin['version']:
             try:
-                if not git_owned(name, installed, git_names) and not ubuntu_origin(name, installed, options, snapshots):
+                if not artifact_owned(name, installed, git_names, 'git') and not ubuntu_origin(name, installed, options, snapshots):
                     status = 'unsupported_newer'
             except RecipeInterrupted:
                 raise
             except RecipeFailure as error:
                 status = 'unsupported_newer'
                 reason = ':' + str(error)
+        if name in INCUS_PACKAGES and pin['source'] == 'artifact' and installed is not None and installed != pin['version']:
+            names = {key: value for key, value in tools.items() if key in INCUS_PACKAGES}
+            if (not artifact_owned(name, installed, names, 'incus') and not ubuntu_origin(name, installed, options, snapshots)) or run(['dpkg', '--compare-versions', installed, 'gt', pin['version']], required=False).returncode == 0:
+                status = 'unsupported_newer'
         if pin['source'] == 'ubuntu' and installed is not None and installed != pin['version']:
             comparison = run(['dpkg', '--compare-versions', installed, 'gt', pin['version']], required=False)
             if comparison.returncode == 0:
@@ -437,9 +442,9 @@ def repair_ubuntu_sources(architecture):
     return True
 
 
-def git_owned(name, version, names):
+def artifact_owned(name, version, names, owner):
     """Only root's receipt of a verified recipe install can carry ownership across a later pin bump."""
-    path = APT_ETC / 'orbit-git.json'
+    path = APT_ETC / ('orbit-' + owner + '.json')
     if path.is_symlink() or not path.is_file() or path.stat().st_uid != 0 or path.stat().st_mode & 0o022:
         return False
     try:
@@ -454,13 +459,12 @@ def git_owned(name, version, names):
     return receipt[name] == version and len(set(receipt.values())) == 1
 
 
-def record_git(payload, versions):
-    tools = git_packages(payload)
+def record_artifact_receipt(tools, versions, owner):
     if not tools:
         return
     if any(versions.get(name) != pin['version'] for name, pin in tools.items()):
-        raise RecipeFailure('inventory:git')
-    publish(APT_ETC / 'orbit-git.json', json.dumps({name: pin['version'] for name, pin in tools.items()}, sort_keys=True).encode())
+        raise RecipeFailure('inventory:' + owner)
+    publish(APT_ETC / ('orbit-' + owner + '.json'), json.dumps({name: pin['version'] for name, pin in tools.items()}, sort_keys=True).encode())
 
 
 def provider_sources(pattern, allowed_uris, suite_pattern, components, owner):
@@ -607,7 +611,7 @@ def consolidate_node(tools, *, apply=False):
     return actions
 
 
-def git_preferences(tools):
+def artifact_preferences(tools):
     return ''.join(f'Package: {name}\nPin: version {tools[name]["version"]}\nPin-Priority: 1001\n\n'
                    f'Package: {name}\nPin: version *\nPin-Priority: -1\n\n' for name in tools).encode()
 
@@ -620,7 +624,7 @@ def configure_git(payload, *, apply=False):
     preference = APT_ETC / 'preferences.d/orbit-git'
     if preference.is_symlink():
         raise RecipeFailure('apt-source', detail=f'Git preference [{preference}] is a symlink; refusing to replace it.')
-    expected = git_preferences(tools)
+    expected = artifact_preferences(tools)
     pin_changed = not preference.is_file() or preference.read_bytes() != expected
     actions = (['retire_git_source'] if changes else []) + (['pin_git'] if pin_changed else [])
     if apply:
@@ -641,12 +645,104 @@ def retire_sources(changes, owner):
 def pin_git(payload):
     tools = git_packages(payload)
     if tools:
-        publish(APT_ETC / 'preferences.d/orbit-git', git_preferences(tools))
+        publish(APT_ETC / 'preferences.d/orbit-git', artifact_preferences(tools))
+
+
+def incus_packages(payload):
+    return {name: payload['tools'][name] for name in INCUS_PACKAGES if name in payload['tools'] and payload['tools'][name]['source'] == 'artifact'}
+
+
+def configure_incus(payload, *, apply=False):
+    tools = incus_packages(payload)
+    if not tools:
+        return []
+    if set(tools) != set(INCUS_PACKAGES):
+        raise RecipeFailure('incus:incomplete')
+    changes = provider_sources(r'pkgs\.zabbly\.com/incus', {'https://pkgs.zabbly.com/incus/lts-7.0'},
+                               'resolute', ['main'], 'incus')
+    preference = APT_ETC / 'preferences.d/orbit-incus'
+    if preference.is_symlink():
+        raise RecipeFailure('apt-source', detail='Incus preference is a symlink.')
+    actions = (['retire_incus_source'] if changes else []) + (['remove_incus_agent'] if 'incus-agent' in packages() else [])
+    if not preference.is_file() or preference.read_bytes() != artifact_preferences(tools):
+        actions.append('pin_incus')
+    if apply:
+        retire_sources(changes, 'incus')
+    return actions
+
+
+def pin_incus(payload):
+    tools = incus_packages(payload)
+    if tools:
+        publish(APT_ETC / 'preferences.d/orbit-incus', artifact_preferences(tools))
+
+
+def configure_incus_firmware(payload, root=Path('/')):
+    """Host-only aliases until upstream firmware selection and AppArmor agree on old NVRAM names."""
+    if not incus_packages(payload):
+        return
+    firmware = root / 'opt/incus/share/qemu'
+    # Existing VM NVRAM records its original filename. Incus matches that name before
+    # choosing firmware, but Zabbly's AppArmor rules only allow the bundled directory.
+    aliases = ({'OVMF_CODE_4M.ms.fd': 'OVMF_CODE.4MB.fd',
+                'OVMF_CODE_4M.secboot.fd': 'OVMF_CODE.4MB.fd',
+                'OVMF_CODE_4M.fd': 'OVMF_CODE.4MB.fd',
+                'OVMF_VARS_4M.ms.fd': 'OVMF_VARS.4MB.ms.fd',
+                'OVMF_VARS_4M.fd': 'OVMF_VARS.4MB.fd',
+                'OVMF_VARS_4M.secboot.fd': 'OVMF_VARS.4MB.ms.fd'} if payload['architecture'] == 'amd64' else
+               {'AAVMF_CODE.fd': 'OVMF_CODE.4MB.fd', 'AAVMF_VARS.fd': 'OVMF_VARS.4MB.fd',
+                'AAVMF_CODE.ms.fd': 'OVMF_CODE.4MB.fd', 'AAVMF_VARS.ms.fd': 'OVMF_VARS.4MB.ms.fd'})
+    for name, target in aliases.items():
+        path = firmware / name
+        if path.is_symlink() and os.readlink(path) == target:
+            continue
+        if path.exists() or path.is_symlink() or not (firmware / target).is_file():
+            raise RecipeFailure('incus:firmware')
+        path.symlink_to(target)
+
+
+def remove_incus_agent(payload):
+    if incus_packages(payload) and 'incus-agent' in packages():
+        run(['dpkg', '--remove', 'incus-agent'])
+
+
+def incus_change(payload, versions):
+    tools = incus_packages(payload)
+    return bool(tools) and (any(versions.get(name) != pin['version'] for name, pin in tools.items())
+                            or bool(configure_incus(payload)) or 'incus-agent' in packages())
+
+
+def incus_preflight(payload):
+    """Refuse an Incus change while any project has a non-stopped instance."""
+    tools = incus_packages(payload)
+    if not tools:
+        return
+    installed = packages()
+    if not incus_change(payload, installed):
+        return
+    if not {'incus', 'incus-base'} & installed.keys():
+        return
+    result = run(['incus', 'list', '--all-projects', '--format=json'])
+    try:
+        instances = json.loads(result.stdout)
+        if not isinstance(instances, list):
+            raise ValueError('Expected an instance list')
+        active = []
+        for instance in instances:
+            if (not isinstance(instance, dict) or not all(isinstance(instance.get(key), str)
+                    and instance[key] for key in ('project', 'name', 'type', 'status'))):
+                raise ValueError('Invalid instance')
+            if instance['status'] != 'Stopped':
+                active.append(instance['project'] + '/' + instance['name'] + ' (' + instance['type'] + ', ' + instance['status'] + ')')
+    except (ValueError, TypeError) as error:
+        raise RecipeFailure('incus:inventory', detail=str(error)) from error
+    if active:
+        raise RecipeFailure('incus:running', detail='Drain active instances: ' + ', '.join(sorted(active)))
 
 
 def plan(payload):
     check_git_siblings(payload)
-    actions = configure_git(payload) + consolidate_node(payload['tools'])
+    actions = configure_git(payload) + configure_incus(payload) + consolidate_node(payload['tools'])
     if ubuntu_sources_repair() is None:
         report = assess(payload['tools'], git_names=git_packages(payload))
     else:
@@ -1123,8 +1219,10 @@ def apply(payload):
 def apply_recipe(payload, snapshots):
     stage = 'preflight'
     try:
+        incus_preflight(payload)
         tools = payload['tools']
         configure_git(payload)
+        configure_incus(payload)
         policy = POLICY
         if policy.exists() or policy.is_symlink():
             raise RecipeFailure()
@@ -1162,6 +1260,7 @@ def apply_recipe(payload, snapshots):
                     raise RecipeFailure()
             stage = 'apt-source'
             configure_git(payload, apply=True)
+            configure_incus(payload, apply=True)
             ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items()
                       if pin['source'] == 'ubuntu' and assessment[name]['changed']]
             apt_options = snapshot_options(payload, work) if ubuntu or debs else None
@@ -1169,6 +1268,7 @@ def apply_recipe(payload, snapshots):
             if apt_options is not None:
                 package_command(['apt-get', 'update', *apt_options], [])
             environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
+            incus_preflight(payload)
             # This is temporary restart suppression, not a package/configuration rollback.
             publish(policy, b'#!/bin/sh\nexit 101\n', 0o755)
             try:
@@ -1177,12 +1277,15 @@ def apply_recipe(payload, snapshots):
                                      '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *ubuntu], ubuntu, env=environment)
                 if debs:
                     install_exact_debs(debs, tools, packages(), apt_options, environment)
+                remove_incus_agent(payload)
+                configure_incus_firmware(payload)
                 if ubuntu or debs:
                     package_command(['apt-get', 'check'], ubuntu + [Path(deb).stem for deb in debs], env=environment)
                     audit_packages(environment)
             finally:
                 policy.unlink()
             pin_git(payload)
+            pin_incus(payload)
             stage = 'tools'
             install_javascript(tools, downloads, work, account, payload.get('vp_lock')) if js else None
             stage = 'inventory'
@@ -1222,7 +1325,8 @@ def apply_recipe(payload, snapshots):
                                           and state.get('Result') == 'success'):
                         continue
                     raise RecipeFailure(result=result)
-            record_git(payload, after_versions)
+            record_artifact_receipt(git_packages(payload), after_versions, 'git')
+            record_artifact_receipt(incus_packages(payload), after_versions, 'incus')
             return {'changed_packages': changed, 'restarted_services': restarted,
                     'changed_tools': sorted(name for name in tools if versions[name] != after_versions[name]),
                     'newer_than_recipe': newer_packages(after_assessment), 'healthy': True}
@@ -1247,7 +1351,11 @@ def main():
         stage = 'inventory'
         if 'docker-ce' in packages():
             raise RecipeFailure('docker-provider:docker-ce')
-        result = plan(payload) if mode == 'inspect' else apply(payload)
+        if mode == 'incus-preflight':
+            incus_preflight(payload)
+            result = {}
+        else:
+            result = plan(payload) if mode == 'inspect' else apply(payload)
         print(json.dumps(result))
         return 0
     except Exception as error:

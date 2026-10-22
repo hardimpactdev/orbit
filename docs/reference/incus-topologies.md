@@ -342,7 +342,7 @@ A group's topology runs inside the group's own task VM, so the VM edge stays the
 
 The inner Incus uses a btrfs pool on the clone: a `dir` pool copies every disk in full, and ZFS on a ZFS volume caches twice. Every clone carries the seed's btrfs UUID, which is safe, because each VM sees one clone and the host never mounts a seed.
 
-The isolation rules live in their own nftables table at a priority before the filter table, because the harness inserts its own forward rules at the top of the iptables `FORWARD` chain for each topology network.
+The isolation rules live in their own nftables table at a priority before the filter table, because Incus uses nftables (including 6.0.5) and the harness also adds forwarding rules through Ubuntu’s iptables-nft backend. The earlier hook applies before both filter chains.
 
 ### An isolated operator for web work
 

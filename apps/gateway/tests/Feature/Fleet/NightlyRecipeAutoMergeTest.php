@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\NightlyRecipeContents;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -43,7 +44,7 @@ function nightlyMergeEvidence(): array
     ];
 }
 
-function nightlyMergeHttp(array $evidence, array $overrides = []): RecordingReleaseAlertNotifier
+function nightlyMergeHttp(array $evidence, array $overrides = [], bool $repeat = false): RecordingReleaseAlertNotifier
 {
     app()->instance(SnapshotAvailability::class, new FakeUbuntuSnapshot);
     FleetFixtures::inPlace();
@@ -58,7 +59,7 @@ function nightlyMergeHttp(array $evidence, array $overrides = []): RecordingRele
         $base.'/installation' => Http::response(['id' => 33]),
         'https://api.github.com/app/installations/33/access_tokens' => Http::response(['token' => 'ghs_nightly_merge']),
         $base.'/pulls?*' => Http::response([$evidence['pr']]),
-        $base.'/pulls/99' => Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
+        $base.'/pulls/99' => $repeat ? Http::response($evidence['pr']) : Http::sequence()->push($evidence['pr'])->push($evidence['final'])->whenEmpty(Http::response($evidence['pr'])),
         $base.'/pulls/99/commits?*' => Http::response($evidence['commits']),
         $base.'/pulls/99/files?*' => Http::response($evidence['files']),
         $base.'/commits/'.$evidence['pr']['head']['sha'].'/check-runs?*' => Http::response(['total_count' => count($evidence['runs']), 'check_runs' => $evidence['runs']]),
@@ -569,3 +570,145 @@ it('alerts separately for a retry then evidence rejection then retirement failur
     expect($alerts->alerts[1]->summary)->toContain('Recipe contents differ');
     expect($alerts->alerts[0]->summary)->toContain('retrying in 300 seconds');
 });
+
+function nightlyArtifactEvidence(string $provider = 'incus'): array
+{
+    $evidence = nightlyMergeEvidence();
+    $document = json_decode($evidence['before'], true, flags: JSON_THROW_ON_ERROR);
+    if (in_array($provider, ['incus', 'both'], true)) {
+        foreach (RecipeLoader::IncusPackages as $name) {
+            $pin = &$document['tools'][$name];
+            $next = preg_replace_callback('/[0-9]+$/', static fn (array $match): string => (string) ((int) $match[0] + 1), $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace($pin['version'], $next, $artifact['url']);
+                $artifact['version'] = str_replace($pin['version'], $next, $artifact['version']);
+                $artifact['sha256'] = str_repeat('d', 64);
+            }
+            unset($artifact);
+            $pin['version'] = $next;
+            unset($pin);
+        }
+    }
+    if (in_array($provider, ['sury', 'both'], true)) {
+        $current = new RecipeLoader()->load()->php('8.5')->phpVersion;
+        $next = preg_replace_callback('/[0-9]+$/', static fn (array $match): string => (string) ((int) $match[0] + 1), $current);
+        foreach ($document['tools'] as &$pin) {
+            if ($pin['source'] !== 'artifact' || ! str_starts_with($pin['version'], $current.'-')) {
+                continue;
+            }
+            $pin['version'] = str_replace($current.'-', $next.'-', $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace($current.'-', $next.'-', $artifact['url']);
+                $artifact['sha256'] = str_repeat('d', 64);
+            }
+            unset($artifact);
+        }
+        unset($pin);
+    }
+    $evidence['after'] = json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+    $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.new RecipeArtifactsBump()->fingerprint($evidence['after']);
+    $evidence['pr']['additions'] = $evidence['pr']['deletions'] = 20;
+    $evidence['final'] = $evidence['pr'];
+    $evidence['files'][0]['additions'] = $evidence['files'][0]['deletions'] = 20;
+    $evidence['files'][0]['changes'] = 40;
+
+    return $evidence;
+}
+
+function authenticatedArtifactBump(string $updated): void
+{
+    app()->instance(RecipeArtifactsBump::class, new class($updated) extends RecipeArtifactsBump
+    {
+        public function __construct(private readonly string $updated) {}
+
+        public function indexes(string $recipe): string
+        {
+            return $this->updated;
+        }
+    });
+}
+
+it('merges signed Sury and Incus updates under one authenticated artifact policy', function (string $provider): void {
+    $evidence = nightlyArtifactEvidence($provider);
+    $alerts = nightlyMergeHttp($evidence);
+    authenticatedArtifactBump($evidence['after']);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') && $request['sha'] === str_repeat('b', 40));
+    expect($alerts->alerts)->toBe([]);
+})->with(['incus', 'sury', 'both']);
+
+it('blocks artifact PRs with edits outside signed pins or mismatching authenticated results', function (string $case): void {
+    $evidence = nightlyArtifactEvidence();
+    $authenticated = $evidence['after'];
+    $document = json_decode($evidence['after'], true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'snapshot' => $document['ubuntu']['snapshot'] = '20261020T000000Z',
+        'role' => $document['roles']['operator'][] = 'rust',
+        'git' => $document['tools']['git']['artifacts']['amd64']['sha256'] = str_repeat('e', 64),
+        'wrong branch' => $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.str_repeat('0', 12),
+        'unsigned commit' => $evidence['commits'][0]['commit']['verification']['verified'] = false,
+        'human author' => $evidence['pr']['user']['login'] = 'nick',
+        'extra commit' => $evidence['commits'][] = $evidence['commits'][0],
+        'extra file' => $evidence['files'][] = $evidence['files'][0],
+        'changed head' => $evidence['final']['head']['sha'] = str_repeat('c', 40),
+    };
+    if (in_array($case, ['snapshot', 'role', 'git'], true)) {
+        $evidence['after'] = json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+        $evidence['pr']['head']['ref'] = 'nightly/artifacts-'.new RecipeArtifactsBump()->fingerprint($evidence['after']);
+        $evidence['final'] = $evidence['pr'];
+    }
+    $alerts = nightlyMergeHttp($evidence);
+    authenticatedArtifactBump($authenticated);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($alerts->alerts)->toHaveCount(1);
+})->with(['snapshot', 'role', 'git', 'wrong branch', 'unsigned commit', 'human author', 'extra commit', 'extra file', 'changed head']);
+
+it('closes a superseded authenticated artifact PR even when runner checks are red', function (): void {
+    $evidence = nightlyArtifactEvidence();
+    $evidence['runs'][0]['conclusion'] = 'failure';
+    $alerts = nightlyMergeHttp($evidence, repeat: true);
+    authenticatedArtifactBump($evidence['before']);
+
+    app(MergeNightlyRecipePullRequestsAction::class)->execute();
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH' && $request['state'] === 'closed');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge'));
+    expect($alerts->alerts)->toBe([]);
+});
+
+it('reuses index proof and cools down failed proofs for one hour', function (bool $fail): void {
+    $evidence = nightlyArtifactEvidence();
+    $evidence['runs'][0]['conclusion'] = 'failure';
+    nightlyMergeHttp($evidence, repeat: true);
+    $updater = new class($evidence['after'], $fail) extends RecipeArtifactsBump
+    {
+        public int $calls = 0;
+
+        public function __construct(private readonly string $updated, private readonly bool $fail) {}
+
+        public function indexes(string $recipe): string
+        {
+            $this->calls++;
+            if ($this->fail) {
+                throw new RuntimeException('Upstream is between builds.');
+            }
+
+            return $this->updated;
+        }
+    };
+    app()->instance(RecipeArtifactsBump::class, $updater);
+    $action = app(MergeNightlyRecipePullRequestsAction::class);
+
+    $action->execute();
+    $action->execute();
+    expect($updater->calls)->toBe(1);
+    $this->travel(61)->minutes();
+    $action->execute();
+    expect($updater->calls)->toBe(2);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/merge') || $request->method() === 'PATCH');
+})->with([false, true]);

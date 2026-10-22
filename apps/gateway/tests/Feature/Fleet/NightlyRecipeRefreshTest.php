@@ -6,7 +6,7 @@ use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Actions\Fleet\RefreshNightlyRecipePullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
-use App\Infrastructure\MachineSoftware\PhpBuildBump;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -239,7 +239,7 @@ it('opens tonight’s replacement without prematurely closing an older unsuperse
     $evidence = nightlyRefreshEvidence();
     $this->travelTo(nightlyRefreshDate()->modify('+1 day')->setTimezone(new DateTimeZone('Europe/Amsterdam'))->setTime(3, 0));
     nightlyRefreshHttp($evidence);
-    app()->instance(PhpBuildBump::class, new class extends PhpBuildBump
+    app()->instance(RecipeArtifactsBump::class, new class extends RecipeArtifactsBump
     {
         public bool $called = false;
 
@@ -260,7 +260,7 @@ it('opens tonight’s replacement without prematurely closing an older unsuperse
     Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls') && $request['head'] === $branch);
     expect(collect(Http::recorded())->filter(fn (array $pair): bool => $pair[0]->method() === 'POST' && str_ends_with($pair[0]->url(), '/pulls')))->toHaveCount(1);
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/graphql') && str_starts_with($request['query'], 'mutation'));
-    expect(app(PhpBuildBump::class)->called)->toBeTrue();
+    expect(app(RecipeArtifactsBump::class)->called)->toBeTrue();
 });
 
 it('keeps the PHP build pass running after recovery errors or failed comments', function (string $case): void {
@@ -276,7 +276,7 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
     nightlyRefreshHttp($evidence);
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
-    app()->instance(PhpBuildBump::class, new class extends PhpBuildBump
+    app()->instance(RecipeArtifactsBump::class, new class extends RecipeArtifactsBump
     {
         public bool $called = false;
 
@@ -292,7 +292,7 @@ it('keeps the PHP build pass running after recovery errors or failed comments', 
 
     app()->call([new MaintainMachineRecipe(snapshot: true), 'handle']);
 
-    expect(app(PhpBuildBump::class)->called)->toBeTrue();
+    expect(app(RecipeArtifactsBump::class)->called)->toBeTrue();
     expect($alerts->alerts)->toHaveCount($case === 'comment' ? 0 : 1);
 })->with(['list', 'update', 'comment']);
 

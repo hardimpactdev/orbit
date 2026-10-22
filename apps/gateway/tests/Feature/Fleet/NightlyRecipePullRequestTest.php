@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Fleet\NightlyRecipeContents;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
-use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
+use App\Actions\Fleet\OpenRecipeArtifactsPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
-use App\Infrastructure\MachineSoftware\PhpBuildBump;
+use App\Infrastructure\MachineSoftware\RecipeArtifactsBump;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Jobs\MaintainMachineRecipe;
@@ -151,7 +151,7 @@ it('notifies through release alerts when the nightly job fails without including
         ->and($alerts->alerts[0]->incident->fault)->toBe('job_failed');
 });
 
-it('opens one reviewed PR that moves every Sury PHP pin together and reuses it on later nights', function (): void {
+it('opens one artifact PR that moves the complete authenticated sets and reuses it on later nights', function (): void {
     $this->travelTo(nightlyRecipeDate()->setTime(1, 0));
     $file = nightlyRecipeFile();
     $content = base64_decode($file['content']);
@@ -176,8 +176,8 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
     foreach ($recipe->php as $version => $build) {
         $releases[] = 'PHP '.($version === $recipe->ciPhp ? $next : $build->phpVersion);
     }
-    $title = 'Bump the PHP build to '.implode(', ', $releases);
-    app()->instance(PhpBuildBump::class, new class($bumped) extends PhpBuildBump
+    $title = 'Bump the recipe artifacts (Sury PHP and Incus LTS)';
+    app()->instance(RecipeArtifactsBump::class, new class($bumped) extends RecipeArtifactsBump
     {
         public function __construct(private readonly string $bumped) {}
 
@@ -188,14 +188,14 @@ it('opens one reviewed PR that moves every Sury PHP pin together and reuses it o
     });
     nightlyRecipeGitHub($file);
 
-    $url = app(OpenPhpBuildPullRequestAction::class)->execute();
+    $url = app(OpenRecipeArtifactsPullRequestAction::class)->execute();
 
     expect($url)->toBe('https://github.com/hardimpactdev/orbit/pull/99');
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
-        && str_starts_with($request['branch'], OpenPhpBuildPullRequestAction::BranchPrefix)
+        && str_starts_with($request['branch'], OpenRecipeArtifactsPullRequestAction::BranchPrefix)
         && base64_decode($request['content']) === $bumped);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
-        && str_starts_with($request['head'], 'nightly/php-build-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
+        && str_starts_with($request['head'], 'nightly/artifacts-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
         && $request['title'] === $title);
 });
 
@@ -214,7 +214,7 @@ it('opens no PHP build PR when main pins the newest Sury build, and refuses a pa
     unset($artifact, $pin);
     $partial = json_encode($document, JSON_THROW_ON_ERROR);
     foreach ([$content => null, $partial => InvalidArgumentException::class] as $result => $error) {
-        app()->instance(PhpBuildBump::class, new class($result) extends PhpBuildBump
+        app()->instance(RecipeArtifactsBump::class, new class($result) extends RecipeArtifactsBump
         {
             public function __construct(private readonly string $result) {}
 
@@ -224,7 +224,7 @@ it('opens no PHP build PR when main pins the newest Sury build, and refuses a pa
             }
         });
         nightlyRecipeGitHub($file);
-        $open = fn () => app(OpenPhpBuildPullRequestAction::class)->execute();
+        $open = fn () => app(OpenRecipeArtifactsPullRequestAction::class)->execute();
         $error === null ? expect($open())->toBeNull() : expect($open)->toThrow($error);
     }
 
@@ -237,7 +237,7 @@ it('waits without alerting for main recipe definitions and catches up on the sam
     FleetFixtures::adopt(FleetFixtures::Commit);
     $alerts = new RecordingReleaseAlertNotifier;
     app()->instance(ReleaseAlertNotifier::class, $alerts);
-    $bump = new class extends PhpBuildBump
+    $bump = new class extends RecipeArtifactsBump
     {
         public int $calls = 0;
 
@@ -250,7 +250,7 @@ it('waits without alerting for main recipe definitions and catches up on the sam
             return $recipe;
         }
     };
-    app()->instance(PhpBuildBump::class, $bump);
+    app()->instance(RecipeArtifactsBump::class, $bump);
     $ahead = nightlyRecipeFile();
     $document = json_decode(base64_decode($ahead['content']), true, flags: JSON_THROW_ON_ERROR);
     $document['tools']['not-yet-deployed'] = ['source' => 'ubuntu', 'package' => 'future', 'version' => '1'];

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\ConvergeFleetRecipeAction;
+use App\Actions\Fleet\ConvergeNodeRecipeAction;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
@@ -425,4 +426,57 @@ it('starts an unvisited rollout when a same-generation cold image replaces a fai
         ->and($record->refresh()->fleet_convergence['status'])->toBe('ready')
         ->and($record->fleet_convergence['nodes'])->toHaveKey($record->host_node_id)
         ->and($replacement->refresh()->fleet_convergence)->toBeNull();
+});
+
+it('converges non-Incus pins and alerts once per held version across fleet generations', function (): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    $node = $record->hostNode;
+    $node->update(['settings' => ['task_vms' => []]]);
+    $ssh = new ScriptedSshExecutor;
+    $ssh->on('/^python3 - inspect$/', static function (RemoteCommand $command): CommandResult {
+        $payload = RecipeProgramPayload::read($command->input);
+        $tools = [];
+        foreach ($payload['tools'] as $name => $pin) {
+            $changed = in_array($name, ['incus', 'php8.5-cli'], true);
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $changed ? 'previous-build' : $pin['version'], 'changed' => $changed, 'status' => $changed ? 'different' : 'current'];
+        }
+
+        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+    });
+    $ssh->on('/^sudo timeout .* python3 - apply$/', ScriptedSshExecutor::ok('{"healthy":true}'));
+    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    $php = new FakePhpBuildRunner(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
+    app()->instance(RemoteProgramRunner::class, $php);
+
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($record->refresh()->fleet_convergence)->toHaveKey('nodes.'.$node->id.'.changes');
+    expect($record->refresh()->fleet_convergence['nodes'][$node->id]['changes'])->toMatchArray(['healthy' => true, 'changed_packages' => ['php8.5-cli']]);
+    expect(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply']);
+    expect(array_column($php->inputs[2]['versions']['8.5']['packages'], 'name'))->toContain('php8.5-cli');
+    expect($doctor->visited)->toBe([$node->id]);
+    expect($node->refresh()->settings['machine_recipe'])->toHaveKey('partial_version', $record->recipe_identity)->not->toHaveKey('version');
+    expect($node->settings['machine_recipe_incus_hold']['pins'])->toHaveKeys(RecipeLoader::IncusPackages);
+    $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
+    expect(RecipeProgramPayload::read($apply->input)['tools'])->toHaveKey('curl')->not->toHaveKeys(RecipeLoader::IncusPackages);
+    app(ConvergeFleetRecipeAction::class)->execute();
+    expect($doctor->visited)->toBe([$node->id, $other->host_node_id]);
+    expect($alerts->alerts)->toHaveCount(1);
+    expect($alerts->alerts[0]->summary)->toContain($node->name, 'Drain', 'explicit node:converge-recipe', 'Other recipe changes continue');
+
+    $action = app(ConvergeNodeRecipeAction::class);
+    $recipe = new RecipeLoader()->load();
+    $action->execute($node, $recipe, automatic: true);
+    expect($alerts->alerts)->toHaveCount(1);
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
+    foreach (RecipeLoader::IncusPackages as $name) {
+        foreach ($document['tools'][$name]['artifacts'] as &$artifact) {
+            $artifact['version'] = str_replace('2026', '2027', $artifact['version']);
+            $artifact['url'] = str_replace('2026', '2027', $artifact['url']);
+        }
+        unset($artifact);
+    }
+    $action->execute($node, new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR)), automatic: true);
+    expect($alerts->alerts)->toHaveCount(2);
 });

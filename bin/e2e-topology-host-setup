@@ -59,7 +59,7 @@ fi
 step 'isolation'
 install -d -m 0755 /etc/orbit-e2e
 # Its own table, at a priority before the filter table: the harness inserts its own forward rules at the
-# top of the iptables FORWARD chain for each topology network, so rules there would move behind them.
+# filter hook for each topology network. Incus uses nftables (including 6.0.5); the harness also adds forwarding rules through Ubuntu's iptables-nft backend.
 cat >/etc/orbit-e2e/isolation.nft <<NFT
 table inet orbit-e2e-isolation
 delete table inet orbit-e2e-isolation
