@@ -178,12 +178,14 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
+        $locale = $this->option('locale');
+
         $connection = $this->sendWithProgress(
             $connector,
             new CreateDatabaseConnectionRequest(
                 slug: $slug,
                 server: $server,
-                locale: $this->stringOption('locale'),
+                locale: is_string($locale) ? $locale : null,
                 instanceId: $instanceId,
                 database: $databaseIndex,
                 patterns: $this->aclOptions('pattern'),

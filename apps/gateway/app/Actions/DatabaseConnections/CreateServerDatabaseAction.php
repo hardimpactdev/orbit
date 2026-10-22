@@ -205,6 +205,9 @@ final readonly class CreateServerDatabaseAction
 
         $testDatabase = $this->names->testDatabase($database);
         $credentials = $this->credentials($server, $database, $instance);
+
+        $this->assertNamesFree($server, $database, $testDatabase, $credentials);
+
         try {
             $connection = DB::transaction(function () use (
                 $slug,

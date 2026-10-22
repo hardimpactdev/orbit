@@ -82,7 +82,6 @@ The Gateway answers `validation.failed` when a mysql, pgsql, or redis record inc
 
 Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
 
-
 With `database:create --server=<pgsql-server>`, `--locale=C.UTF-8` or `--locale=C` selects the builtin PostgreSQL locale provider with UTF8 encoding and template0. The response records `locale`. Omit it to inherit the image default. The option is refused for other drivers and registration.
 
 ## orbit database:list

@@ -703,3 +703,13 @@ it('refuses a locale without a server before contacting the Gateway', function (
     [$exit, $output] = database_cli_display('database:create', ['slug' => 'app', '--locale' => 'C.UTF-8', '--json' => true]);
     expect($exit)->toBe(1)->and($output)->toContain('database.server_required')->and($mockClient->getLastPendingRequest())->toBeNull();
 });
+
+it('preserves an explicitly empty locale for Gateway validation', function (): void {
+    $mockClient = MockClient::global([CreateDatabaseConnectionRequest::class => MockResponse::make([
+        'error' => ['code' => 'validation.failed', 'message' => 'Invalid locale.'],
+        'meta' => ['request_id' => database_cli_request_id()],
+    ], 422)]);
+    $this->artisan('database:create', ['slug' => 'mealou', '--server' => 'services-postgres', '--locale' => '', '--json' => true])
+        ->expectsOutputToContain('validation.failed')->assertExitCode(1);
+    expect($mockClient->getLastRequest()?->body()->all()['locale'])->toBe('');
+});

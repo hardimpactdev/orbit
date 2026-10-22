@@ -40,6 +40,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -1098,3 +1099,34 @@ final class DatabaseCloneRemovalFakes implements DevelopmentInstanceSourceFinali
 
     public function cleanupRuntime(InstanceRemovalMember $member): void {}
 }
+
+it('refuses cloning over an unrecorded MySQL database or user before destructive SQL', function (string $query, string $name): void {
+    $server = database_clone_server($this->node);
+    database_clone_source($this->default, [
+        'driver' => 'mysql', 'database_server_id' => $server->id, 'host' => '10.44.0.3', 'port' => 3306,
+        'database' => 'acme_default', 'username' => 'acme_default', 'password' => 'default-secret',
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'feature-x',
+        'checkout_path' => '/srv/orbit/apps/acme/feature-x', 'status' => InstanceState::Active,
+    ]);
+    InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'APP_ENV', 'env_value' => 'testing']);
+    $plan = app(InstanceDatabaseClonePlanner::class)->plan($this->project, 'feature-x');
+    $this->admin->rows = [$query => [$name]];
+
+    expect(fn () => app(CloneInstanceDatabaseAction::class)->execute($instance, $plan))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.database_clone_failed');
+            $cause = $exception->getPrevious();
+            expect($cause)->toBeInstanceOf(ResourceOperationException::class)
+                ->and($cause->errorCode)->toBe('database.name_conflict');
+        });
+    expect($this->admin->sql())->not->toContain('DROP DATABASE')
+        ->and($this->admin->sql())->not->toContain('CREATE USER')
+        ->and($this->admin->sql())->not->toContain('ALTER USER')
+        ->and($this->admin->copies)->toBe([])
+        ->and(DatabaseConnection::query()->where('slug', 'acme-feature-x')->exists())->toBeFalse();
+})->with([
+    'database' => ['SCHEMA_NAME =', 'acme_feature_x'],
+    'user' => ['FROM mysql.user', 'acme_feature_x'],
+]);

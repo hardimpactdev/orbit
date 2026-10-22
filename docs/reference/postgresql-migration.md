@@ -67,7 +67,7 @@ Check free disk for a dump, restored database and rollback copy. Test backups in
 
 Use port 5434 after confirming it is free, and the slug for the database whose move Nick approved.
 
-Mealou requires the builtin `C.UTF-8` locale. Create its canonical database with `database:create mealou-food-catalog --server=services-postgres --locale=C.UTF-8` before restore. Orbit renders `TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8'` and records `locale` on the connection. Verify `pg_database.datlocprovider = 'b'` and `datlocale = 'C.UTF-8'` before copying data and after restore. Do not restore into a database with the image's libc default. For each other database, inventory its source provider and locale and choose the matching supported builtin locale or stop for a separate migration decision.
+Mealou requires the builtin `C.UTF-8` locale. Create its canonical database with `database:create mealou-food-catalog --server=services-postgres --locale=C.UTF-8` before restore. Orbit renders `TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8'` and records `locale` on the connection. Verify `pg_database.datlocprovider = 'b'` and `datlocale = 'C.UTF-8'` before copying data and after restore. Do not restore into a database with the image's libc default.
 
 The supported choices are builtin `C.UTF-8` and `C`; omission inherits the image default. Inventory ICU or libc source locales and stop for a separate migration decision if they cannot use one of these choices. Locale is fixed when the target database is created.
 
