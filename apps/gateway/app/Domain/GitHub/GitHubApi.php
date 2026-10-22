@@ -156,7 +156,7 @@ interface GitHubApi
 
     /**
      * GitHub's numeric id of the repository, following GitHub's redirect from a renamed or transferred
-     * repository. Null when the repository does not exist or the token cannot see it.
+     * repository. Null when the repository does not exist or the token cannot see it. A rate limit throws.
      *
      * @throws GitHubApiException
      */

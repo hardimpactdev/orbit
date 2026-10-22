@@ -378,7 +378,8 @@ final readonly class HttpGitHubApi implements GitHubApi
     public function repositoryId(#[SensitiveParameter] string $token, GitHubRepository $repository): ?int
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository)));
-        if (in_array($response->status(), [403, 404], true)) {
+        // A rate limit also answers 403; it is a failure, not a hidden repository.
+        if ($response->status() === 404 || ($response->status() === 403 && $response->header('x-ratelimit-remaining') !== '0')) {
             return null;
         }
         $id = $response->json('id');

@@ -1200,7 +1200,7 @@ The list can contain more than one pull request. Orbit watches the first open pu
 
 When `pr_url` names a pull request in another repository, for example after GitHub transferred the repository and the Project's `repository_url` changed, Orbit cannot read it. Orbit then looks at the branch even when no subtask is open.
 
-A number and a branch name do not prove a move. So Orbit also reads both repositories from GitHub, which follows its redirect from a transferred repository. Orbit sets `pr_url` only when both reads return the same repository ID and the list has a pull request with the same number as `pr_url`. GitHub keeps the number on a transfer. With no open subtask, this look writes only `pr_url`. Another number, another repository, or a failed read leaves `pr_url` as it is.
+A number and a branch name do not prove a move. So Orbit also reads both repositories from GitHub, which follows its redirect from a transferred repository. Orbit sets `pr_url` only when both reads return the same repository ID and the list has a pull request with the same number as `pr_url`. GitHub keeps the number on a transfer. With no open subtask, this look writes only `pr_url`. Another number, another repository, or a failed read leaves `pr_url` as it is. Orbit keeps the answer of both reads for an hour.
 
 `pr_url` remains the pull request Orbit opens on the last subtask. That approval still requires the pull request description, and Jev still checks `brief_coverage`. Cancel treats a `settling` or `waiting_for_review` task with `pr_url` as published. `watched_pr_url` does not change those rules.
 

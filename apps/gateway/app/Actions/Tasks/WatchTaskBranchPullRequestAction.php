@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use SensitiveParameter;
 use Throwable;
 
 final readonly class WatchTaskBranchPullRequestAction
@@ -38,9 +39,8 @@ final readonly class WatchTaskBranchPullRequestAction
             if (! Cache::add('tasks:branch-pull-request:'.$group->id, true, 60)) {
                 return;
             }
-            $pullRequests = $this->github->pullRequestsByHead(
-                $this->access->cachedReadToken($repository), $repository, TaskRemoteBranch::for($group),
-            );
+            $token = $this->access->cachedReadToken($repository);
+            $pullRequests = $this->github->pullRequestsByHead($token, $repository, TaskRemoteBranch::for($group));
         } catch (Throwable) {
             return;
         }
@@ -61,7 +61,7 @@ final readonly class WatchTaskBranchPullRequestAction
         $followed = null;
         if ($moved !== null) {
             foreach ($pullRequests as $pullRequest) {
-                if ($pullRequest->number === $moved[1] && $this->sameRepository($repository, $moved[0])) {
+                if ($pullRequest->number === $moved[1] && $this->sameRepository($token, $repository, $moved[0])) {
                     $followed = $pullRequest->url;
                     $attributes['pr_url'] = $followed;
                     break;
@@ -96,16 +96,25 @@ final readonly class WatchTaskBranchPullRequestAction
         return $previous === null ? null : [$previous, (int) $matches[2]];
     }
 
-    /** Whether GitHub resolves the old repository, through its transfer redirect, to the Project repository. */
-    private function sameRepository(GitHubRepository $repository, GitHubRepository $previous): bool
+    /**
+     * Whether GitHub resolves the old repository, through its transfer redirect, to the Project repository.
+     * An answer is kept for an hour, so a move that cannot be proved does not cost two reads every minute.
+     */
+    private function sameRepository(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubRepository $previous): bool
     {
+        $key = 'tasks:repository-move:'.strtolower($previous->owner.'/'.$previous->name.'>'.$repository->owner.'/'.$repository->name);
+        $known = Cache::get($key);
+        if (is_bool($known)) {
+            return $known;
+        }
         try {
-            $token = $this->access->cachedReadToken($repository);
             $id = $this->github->repositoryId($token, $repository);
-
-            return $id !== null && $this->github->repositoryId($token, $previous) === $id;
+            $same = $id !== null && $this->github->repositoryId($token, $previous) === $id;
         } catch (Throwable) {
             return false;
         }
+        Cache::put($key, $same, 3600);
+
+        return $same;
     }
 }
