@@ -1276,19 +1276,20 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Access grant",
+                "Deliverable",
                 "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
+                "Pi server",
                 "Project",
                 "Role",
                 "Route",
                 "Subtask",
                 "Task",
                 "Task workspace",
-                "Tool"
+                "Tool",
+                "Turn receipt"
             ],
             "governing_adrs": [
                 "0209",
