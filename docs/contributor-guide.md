@@ -165,7 +165,9 @@ Cover the SDK retry's default clock with one short test that uses real time. Inj
 
 The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
 
-CLI and Docs tests have a stock PHPUnit limit of two seconds per test. An over-limit test fails the suite. Fix unnecessary work rather than adding retries, sleeps, skips, or longer deadlines. The same limit applies to every test size; see the [CI reference](/reference/implementation-loop#ci) for the enforcement configuration. There is no whole-suite or CI-step duration gate.
+CLI, Docs, and unsized Gateway tests have a stock PHPUnit limit of two seconds per test. An over-limit test fails the suite. Fix unnecessary work rather than adding retries, sleeps, skips, or longer deadlines. CLI and Docs apply the same limit to every test size, without exceptions. There is no whole-suite or CI-step duration gate.
+
+Gateway permits a reviewed exception only when real elapsed time is the behaviour under test and a controllable clock or transport would lose that proof. Put only the approved cases in a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Use stock `timeoutForLargeTests`, not custom timeout or sizing machinery; keep unrelated tests unsized. The [Gateway test time-limit reference](/reference/implementation-loop#gateway-test-time-limits) lists the approved exceptions and enforcement settings.
 
 CLI feature tests build fresh applications, configuration, containers, and command objects. Isolation regressions check that mutations do not survive a refresh and compare the complete command registry, including aliases, visibility and input definitions, with an independent subprocess. Use real subprocesses for proofs that depend on a cold boot or the process environment. CI does not add a private bytecode cache.
 
