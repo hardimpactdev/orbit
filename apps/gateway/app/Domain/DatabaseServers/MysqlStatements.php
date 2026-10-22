@@ -83,6 +83,10 @@ final readonly class MysqlStatements
             SELECT DISTINCT blocker FROM (
                 SELECT DB AS blocker FROM information_schema.PROCESSLIST WHERE DB IN ({$names}) AND ID <> CONNECTION_ID()
                 UNION ALL
+                SELECT locks.OBJECT_SCHEMA FROM performance_schema.metadata_locks locks
+                LEFT JOIN performance_schema.threads threads ON threads.THREAD_ID = locks.OWNER_THREAD_ID
+                WHERE locks.OBJECT_SCHEMA IN ({$names}) AND (threads.PROCESSLIST_ID IS NULL OR threads.PROCESSLIST_ID <> CONNECTION_ID())
+                UNION ALL
                 SELECT TABLE_SCHEMA FROM information_schema.VIEWS WHERE DEFINER IN ({$definers}) AND TABLE_SCHEMA NOT IN ({$names})
                 UNION ALL
                 SELECT ROUTINE_SCHEMA FROM information_schema.ROUTINES WHERE DEFINER IN ({$definers}) AND ROUTINE_SCHEMA NOT IN ({$names})

@@ -891,6 +891,16 @@ describe('MySQL removal against a real server', function () use ($mysqlRemovalCo
                 ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
             $assertIntact();
             $session = null;
+            $mysql('CREATE TABLE app_test_test_2.locked_table (id int);');
+            $session = new PDO('mysql:host=127.0.0.1;port='.substr($port, strrpos($port, ':') + 1), 'root');
+            $session->beginTransaction();
+            $session->query('SELECT * FROM app_test_test_2.locked_table')->fetchAll();
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
+            $assertIntact();
+            $session->rollBack();
+            $session = null;
             $mysql("CREATE DEFINER = 'dlf_feature_x'@'%' VIEW outside.dependent AS SELECT * FROM outside.source;");
 
             $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
