@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
+# Validates an agent release before it is published (ADR 0225): the tag is `agent-v<full commit SHA>`, the
+# delivery manifest names that commit and is the build of the tested head, the commit is an ancestor of that
+# head and the last commit there that changed apps/agent, and no release with the tag exists yet.
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-    echo "Usage: $0 <tag> <repository>" >&2
+if [[ $# -ne 4 ]]; then
+    echo "Usage: $0 <tag> <repository> <manifest> <tested head SHA>" >&2
     exit 2
 fi
 
-tag="$1"
-repository="$2"
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-version="${tag#agent-v}"
+tag=$1
+repository=$2
+manifest=$3
+head=$4
+commit=${tag#agent-v}
 
-if [[ "$tag" != "agent-v$version" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+if [[ "$tag" != "agent-v$commit" || ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
     echo "Invalid agent release tag: $tag" >&2
     exit 1
 fi
 
-manifest_version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' "$script_dir/../Cargo.toml" | head -n 1)"
-if [[ -z "$manifest_version" || "$version" != "$manifest_version" ]]; then
-    echo "Tag version $version does not match apps/agent/Cargo.toml version ${manifest_version:-<missing>}" >&2
+if [[ "$(jq -r .commit "$manifest")" != "$commit" ]]; then
+    echo "The delivery manifest names $(jq -r .commit "$manifest"), not $commit" >&2
+    exit 1
+fi
+
+if ! git merge-base --is-ancestor "$commit" "$head"; then
+    echo "$commit is not an ancestor of the tested head $head" >&2
+    exit 1
+fi
+
+last=$(git log -1 --format=%H "$head" -- apps/agent)
+if [[ "$last" != "$commit" ]]; then
+    echo "The last commit that changed apps/agent at $head is $last, not $commit" >&2
     exit 1
 fi
 
@@ -27,4 +41,4 @@ if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Validated new release $tag for orbit-agent $manifest_version"
+echo "Validated new release $tag"

@@ -908,7 +908,7 @@
     },
     {
       "source": "/decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
-      "destination": "/reference/node-agent#the-agent-only-observes"
+      "destination": "/reference/node-agent#typed-commands-over-ssh"
     },
     {
       "source": "/decisions/0130-publish-agent-binaries-as-github-releases",

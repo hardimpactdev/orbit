@@ -12,7 +12,8 @@ The [Node agent reference](../../docs/reference/node-agent.md) covers what it ob
 - `src/logs`: live log streams.
 - `tests/`: fixtures for log parsing and redaction.
 - `scripts/node-agent-viewer.ts`: joins a Node's presence channel and prints what its agent sends.
-- `scripts/check-release-tag.sh`: checks that a release tag matches `Cargo.toml`.
+- `scripts/build-delivery`: builds the delivery a Gateway pins: the static binaries, `SHA256SUMS`, and `manifest.json`.
+- `scripts/check-release-tag.sh`: checks that an `agent-v<commit>` release publishes the tested delivery of that commit.
 
 ## Checks
 

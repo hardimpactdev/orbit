@@ -204,9 +204,9 @@ The agent step runs only on a **managed Node**: a Linux host whose `/etc/systemd
 | It differs or is missing, and the command does not run as root | `skipped`, reason `root_required` |
 | It differs or is missing, and the command runs as root | Replaced and restarted: `updated` |
 
-The replacement confirms the pin against the agent release's `SHA256SUMS`, as for the CLI. It keeps the current binary as `orbit-agent.orbit-previous`. It then downloads a candidate, checks its SHA-256, sets owner `root:root` and mode `0755`, and renames it over the binary. A mismatch fails with `agent.checksum_mismatch` and changes nothing.
+The agent release is tagged `agent-v<commit>`, with the delivery commit that the desired fleet state names. The replacement confirms the pin against that release's `SHA256SUMS`, as for the CLI. It downloads the asset, such as `orbit-agent-linux-x86_64`, to a private candidate beside the binary and checks its SHA-256. A mismatch fails with `agent.checksum_mismatch` and changes nothing.
 
-After `systemctl restart orbit-agent.service`, the agent must stay `active` for 5 seconds without systemd restarting it: `NRestarts` must not change. When the restart fails or the agent does not stay up, the command moves the kept binary back, restarts the agent, and fails with `agent.restart_failed` or `agent.unhealthy`. The message says whether the previous agent runs again. The agent's configuration, certificate, secret, and unit stay with the Gateway's agent converge.
+Then the candidate's own [`agent.install`](/reference/node-agent#install-on-mismatch) replaces the binary under the update lock and restarts the observer. The observer must stay active for 5 seconds; otherwise the installer restores the kept binary and the step fails with `agent.health_check_failed`. An installer refusal fails the step with its own code and message, and an installer that prints no result fails with `agent.install_failed`. The agent's configuration, certificate, secret, and unit stay with the Gateway's agent converge.
 
 When the agent step fails, the CLI step does not run. It reports `skipped` with reason `previous_step_failed`.
 

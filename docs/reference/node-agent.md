@@ -1,22 +1,26 @@
 ---
 title: "Node agent"
-description: "What orbit-agent observes on a managed Node, how it connects and authenticates, how the Gateway installs it and keeps a view of its reports, and how Doctor checks it."
+description: "What orbit-agent observes on a managed Node, how the Gateway runs typed commands through it, how it connects and authenticates, how the Gateway delivers and installs it, and how Doctor checks it."
 covers:
   - apps/agent/**
   - apps/gateway/app/{Infrastructure,Domain}/AgentView/**
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
+  - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
   - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - .github/workflows/orbit-agent-release.yml
-  - tools/{check_agent_release,test_check_agent_release}.py
 ---
 
 # Node agent
 
-`orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
+`orbit-agent` is a small Rust program on every managed Linux Node. It runs in two modes.
 
-The agent service observes and listens on no port, and it does not accept remote execution requests.
+The **observer** is a long-running service. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live. The Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
+
+**Command mode** runs one named Node action, such as `agent.install`, and exits. The Gateway starts it over SSH, or as a local process on its own Node. See [Commands](#commands).
+
+The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
 ## Where it runs
 
@@ -123,6 +127,82 @@ The agent redacts each line with the Gateway's secret patterns before it sends i
 | Journal | One `journalctl` per stream. The agent keeps at most 512 KiB of one printed line and makes at most 256 KiB of lines from one entry. |
 
 The agent drops a line that exceeds a rate and reports the count in its next event. It sends log events on a second presence channel, `presence-node-logs.{id}`, as member `agent.{id}`. Only the agent and the Gateway's subscriber join it. [Realtime events](/reference/events#log-channels) defines the events.
+
+## Commands
+
+The Gateway runs every Node action through one runner, `AgentCommandRunner`. It sends a command name and typed input, never program source ([ADR 0225](/decisions/0225-make-node-changes-through-agent-commands)).
+
+```text
+[sudo -n] /usr/local/bin/orbit-agent command <name>
+```
+
+Standard input carries one JSON envelope. Standard output carries one JSON result. Redacted logs go to standard error.
+
+| Envelope field | Meaning |
+| --- | --- |
+| `agent_sha256` | The SHA-256 of the binary that the Gateway pins for this Node |
+| `deadline_ms` | The time left for the call. The command's own bound applies too |
+| `input` | The command's typed input. Unknown fields refuse with `agent.invalid_input` |
+
+The result is `{"ok": true, "data": {...}}` or `{"ok": false, "error": {"code": ..., "message": ..., "details": {...}}}`. A valid result exits 0, a refusal included.
+
+### The frozen check
+
+The process that executes a command first checks the SHA-256 of its own executable against `agent_sha256`. It does this before it looks up the name or parses the input. On a mismatch it answers `agent.version_mismatch` with the expected and observed digests. The envelope field, this check, and that answer never change between versions. So every command-mode agent answers a newer Gateway in a way the Gateway can act on.
+
+### Privilege and supervision
+
+Each command declares one privilege per platform. The runner reads it from the contract, never from caller input. The command checks its effective identity before any change.
+
+| Privilege | Linux | macOS |
+| --- | --- | --- |
+| `account` | The managed account | The enrolled account |
+| `owner` | Starts as root through `sudo -n`, and drops to the recorded owner before project code | The enrolled account |
+| `root` | `sudo -n` | Refused with `agent.privilege_unsupported` |
+
+A read runs in the started process and takes no lock. On Linux, a mutation runs in its own transient service, `orbit-command-<name>-<random>`, with `KillMode=control-group` and `RuntimeMaxSec` set to its bound. Its control group holds every child, so a daemon or `setsid` child stops with the command. The supervised process checks its own executable again. It takes an exclusive `flock` on its target under `/run/lock/orbit`, then on each shared resource in sorted order, then on the update lock when it needs it. Lock files are close-on-exec, so project code never inherits one.
+
+### The contract
+
+Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. Its fake runner for PHP tests refuses any command or error code that the file does not declare. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
+
+These errors can come from any command:
+
+| Code | Meaning |
+| --- | --- |
+| `agent.version_mismatch` | The binary is not the pinned one. The runner installs the pin |
+| `agent.envelope_invalid` | The envelope is not one JSON object with a valid digest, deadline, and input |
+| `agent.unknown_command` | The pinned binary has no command with that name |
+| `agent.invalid_input` | The input does not match the command |
+| `agent.identity_mismatch` | The command does not run as its privilege requires |
+| `agent.privilege_unsupported`, `agent.platform_unsupported` | The command does not run on this platform |
+| `agent.deadline_exceeded` | The command did not finish before its deadline |
+| `agent.supervisor_failed` | A mutation's service ended without a result |
+
+A transport loss, a missing result, a malformed result, a timeout, and an undeclared error code are runner failures: `agent.runner_failed` with a `kind`. A lost result never proves that no change happened, so the runner sends a mutation once.
+
+### Transports
+
+The runner picks the transport from the Node. Both carry the same arguments, envelope, and result.
+
+| Node | Transport |
+| --- | --- |
+| A managed Node | SSH to its WireGuard address, as its enrolled account, with its pinned host key |
+| The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
+
+SSH stays the repair path. When an agent cannot start or answer, `orbit node:converge` reaches the Node over SSH and installs the pin.
+
+### Install on mismatch
+
+A Gateway release is the only step that updates agents. When a command answers `agent.version_mismatch`, the runner:
+
+1. copies the pinned binary from the [delivery](#delivery) to a new private path on the Node, `/var/tmp/orbit-agent-candidate-<random>`, with `install -m 0700 /dev/stdin`;
+2. runs that candidate's own `agent.install`, which waits for the update lock at most 120 seconds or the call's remaining deadline;
+3. sends the command once more, with the deadline that is left.
+
+A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. Any other failed installation records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node.
+
+`agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It records no recipe identity.
 
 ## How it connects
 
@@ -275,9 +355,28 @@ The subscriber pushes the CPU and memory of every Process to browsers, so no bro
 
 The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` on that Node's log channel, and queues them in order. A publish run drops lines unless the stream is open for that Node. It redacts each line again, also with the stored environment values of the Instance or Process, and publishes `log.lines` in parts under 10,000 bytes. A failed run puts its events back in front of the queue and retries after 2 seconds. [Live logs](/reference/live-logs#limits) lists the Gateway's queue limits and the end reasons.
 
+## Delivery
+
+Each Gateway release pins one agent build: the delivery of the last commit that changed `apps/agent`. CI builds it from that exact source and writes `manifest.json`:
+
+```json
+{
+  "commit": "<full commit SHA>",
+  "version": "0.5.0",
+  "artifacts": {
+    "linux-x86_64": {"sha256": "<sha256>", "path": "orbit-agent-linux-x86_64", "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v<commit>/orbit-agent-linux-x86_64"},
+    "linux-aarch64": {"sha256": "<sha256>", "path": "orbit-agent-linux-aarch64", "url": "..."}
+  }
+}
+```
+
+The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
+
+Convergence, Doctor's binary check, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
+
 ## Install and upgrade
 
-The Gateway pins a released agent version and its architecture checksums. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The agent converge writes these files on a Linux Node:
 
 | Item | Path or value |
 | --- | --- |
@@ -287,9 +386,9 @@ The Gateway pins a released agent version and its architecture checksums. It sto
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
 | Agent secret | `/etc/orbit/agent/secret` |
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
-| Download | `https://github.com/hardimpactdev/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
+| Kept binary | `/usr/local/bin/orbit-agent.previous`, the binary before the last replacement |
 
-The Node downloads the asset to a candidate file, checks the checksum, and moves it into place. A mismatch deletes the candidate and fails with `agent.checksum_mismatch`. When the installed binary already matches, the download is skipped. The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed.
+The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate, before it holds the update lock for the files below. It then writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. A failed installation fails the converge with `agent.install_failed`, and a passing one clears the Node's recorded failed pin.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
@@ -312,17 +411,17 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) then runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
+To upgrade the fleet, merge the agent change and release the Gateway. Every Node then gets the new pin on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) also runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It downloads the pinned asset, checks it against the release's `SHA256SUMS`, and runs that candidate's own `agent.install`.
 
-The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release updates that Node's agent with the same steps.
+The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release installs that Node's pin through the local transport.
 
-The converge holds `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, from the secret check through the agent restart. So it never swaps or restarts the agent while a self-update replaces it or watches its health.
+`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge holds the same lock from the secret check through the agent restart. So no two of them swap or restart the agent at the same time.
 
 The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
 
-`self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another version. The agent still only observes.
+`self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another binary.
 
-The agent sends its version with each channel authorization. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `self-update`, and the catch-up visits a Node whose agent reports another version.
+The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `self-update`, and the catch-up visits a Node whose agent reports another version.
 
 ## Failures
 
@@ -379,59 +478,58 @@ Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal 
 
 ## Releases
 
-The Gateway pins agent `0.4.4`, which includes reconnect recovery after a reset, server close, missing pong, or blocked write. Complete the agent release, Gateway release, and fleet rollout before updating Reverb, so every agent can reconnect when the server restarts. Verify the Gateway Node separately because the fleet rollout excludes it.
+Agent releases are automatic. A push to `main` builds the [delivery](#delivery) in CI from that exact source and uploads it as the `agent-delivery` artifact. After main's required checks pass, the Orbit Agent Release workflow downloads that artifact. It tags the delivery's commit `agent-v<commit>`, and publishes the same binaries with `SHA256SUMS` and a manifest that names their release URLs. It never rebuilds.
 
-A tag named `agent-v{version}` releases the agent. Tags are created by hand; merging an agent version bump does not publish a release or update the Gateway recipe. The version must equal the one in `apps/agent/Cargo.toml`.
+`apps/agent/scripts/check-release-tag.sh` refuses these releases:
 
-The release workflow runs on `ubuntu-26.04`. Its build job validates the tag and builds both static musl binaries with a read-only token. A separate publish job downloads the binaries and checksums from that run and alone gets `contents: write`; it never checks out source or runs a binary. It publishes the assets as a GitHub release of that tag. Create the tag with the GitHub CLI on a reviewed commit that is already on GitHub:
+- a tag that is not `agent-v<full commit SHA>`
+- a manifest that names another commit
+- a commit that is not the last change to `apps/agent` at the tested head
+- a release that already exists
 
-```bash
-gh api repos/hardimpactdev/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
-```
+To publish the artifact of an earlier CI run again, run the workflow with `workflow_dispatch` and that run's `run_id`.
 
 | Asset | Contents |
 | --- | --- |
-| `orbit-agent-{version}-linux-x86_64` | Static binary for `x86_64` Nodes |
-| `orbit-agent-{version}-linux-aarch64` | Static binary for `aarch64` Nodes |
+| `orbit-agent-linux-x86_64` | Static binary for `x86_64` Nodes |
+| `orbit-agent-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `SHA256SUMS` | The checksums of both binaries |
+| `manifest.json` | The delivery manifest with release URLs |
 
-The workflow refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
+Only the release App can create an `agent-v*` tag. A tag ruleset restricts creation, update, and deletion, and the App's credentials live only in the protected `agent-release` environment. Task agents and maintainers have no bypass.
 
-Before merging an agent version bump, wait for its Rust tests and both static builds to pass, have the agent changes reviewed, and create the tag at that reviewed commit. Wait for the release workflow to publish all three assets. Then update `tools.orbit-agent` in `apps/gateway/resources/machine-software/recipe.json`: the version, both architecture URLs, and both SHA-256 digests from `SHA256SUMS`.
-
-Update `NodeAgentFootprint::Version` and replace its single release manifest with the current digests; remove the old manifests. Provisioning and the desired fleet state read that pin, and the Gateway recipe tests check that both pins agree. Download both binaries and verify their digests, then run `php artisan orbit:machine-recipe --validate` from `apps/gateway`. Validation needs the Ubuntu archive keyring and the internal `pi` artifact in `ORBIT_HOME/sandbox-artifacts` (or the directory passed with `--artifact-directory`). Include the pin updates in the version bump pull request and have its final diff reviewed before merging. If review changes the published agent code, release a new version; never move a published tag.
-
-Regenerate the Gateway's recorded desired fleet state fixtures and the CLI expectations that replay them. Update the CLI's self-update fixture downloads and the SDK's pinned-digest assertion to the new release. Update the version, release tag, and rejected prior-tag URL in `tools/test_check_agent_release.py`, then run `python3 -m unittest discover -s tools -p test_check_agent_release.py` after completing the pins. [Gateway response fixtures](/reference/gateway-response-fixtures) describes the shared fixture workflow.
-
-Every CI run checks that the Cargo version matches the recipe pin and a published stable release with both binaries and `SHA256SUMS`. It checks both recipe URLs and compares their SHA-256 pins with the published checksum file. Run `python3 tools/check_agent_release.py` from the repository root with Python 3.11 or newer and an authenticated GitHub CLI to check this delivery step locally. A version bump stays red until its release and recipe pin are complete.
+A Gateway release that needs new agent code waits for that agent release. A Gateway change that leaves `apps/agent` unchanged keeps the existing delivery.
 
 ## Limits
 
 The agent has these limits.
 
 - The agent reports presence, Process state, and task checkout Git state, and tails logs only for live log streams.
+- The observer reports state, and commands change it.
 - One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` run over SSH.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
-- The agent supports Linux on `x86_64` and `aarch64` only. There is no macOS agent.
+- The delivery holds Linux builds for `x86_64` and `aarch64`. The observer runs only on Linux. Command mode builds and tests on macOS arm64, but no macOS build is delivered yet.
 - The agent cannot trigger `orbit self-update`. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs it over SSH.
 
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
 
-### The agent only observes
+### Typed commands over SSH
 
-An agent that also runs commands would be a second way to change a Node, with its own authorization, listener, and recovery, while SSH would still be needed when the agent breaks. So the agent listens on no port, runs nothing on anyone's behalf, and SSH stays the only way to change a Node. Its only child process, read-only `journalctl` with fixed arguments, reads logs and changes nothing; [Live logs](/reference/live-logs#the-agent-runs-no-program-that-changes-the-node) explains why. A compromised Gateway gains no new way into a Node, and a compromised Node can only report false state about itself.
+Scripts that the Gateway assembles and sends on every call have hidden contracts: positional arguments, exit codes, and text that PHP parses. CI cannot test them alone, and they need an interpreter on every Node. A named command with typed input and output has one implementation and one contract, tested in Rust where the logic runs. So the Gateway sends a name and data, never source.
 
-The same boundary keeps updates out of the agent. An agent that pulls and applies updates would make a compromised Gateway, Reverb secret, or release key a root code-execution path to every Node. It would need offline signing and a privileged updater first, and it would still not cover Macs, which have no agent. So the Gateway runs [`orbit self-update`](/reference/self-update) on each Node over SSH. A self-update that an agent signal triggers stays possible, but it needs its own decision, with signed manifests and a narrow privileged trigger.
+SSH stays the transport. It authenticates the Gateway with a pinned host key and the enrolled account. It also reaches a Node whose agent is broken, so the Gateway can always repair it. An agent that listened on the network would add a root-capable endpoint that every user on every Node could reach. So the observer still listens on no port, and command mode starts only when SSH or the Gateway starts it. The binary is not setuid: a Node user who runs it gets only that user's permissions.
+
+A Gateway release delivers new agent code, as it delivered scripts before. Install on mismatch reaches an offline Node, a Node that the rollout missed, and a VM from an older image on their first command. No separate agent update step exists.
 
 ### Rust
 
 The agent runs on every Node, so memory matters. A Rust agent uses about 5 MB. PHP or Bun would use about 20 times more. Rust also has mature libraries for systemd D-Bus and the Docker socket.
 
-### Pinned GitHub release assets
+### One pinned delivery
 
-A workflow artifact needs a GitHub login and expires. A release asset of the public repository has a permanent URL that any Node can fetch. Building on each Node would put a Rust toolchain on production hosts. Copying the binary from the Gateway would make the Gateway store and serve binaries. Resolving the latest release at install time would let an unreviewed release reach Nodes. So the Gateway pins the version and checksums in code.
+A workflow artifact needs a GitHub login and expires, so the release publishes the tested artifact as release assets with permanent URLs. Building on each Node would put a Rust toolchain on production hosts. Resolving the latest release at install time would let an unreviewed build reach Nodes. So each Gateway release pins the exact digests of one delivery, the build of the last commit that changed the agent, and every reader takes the pin from it.
 
 ### The view in a file cache
 

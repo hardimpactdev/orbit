@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Builds the agent delivery that a Gateway pins (ADR 0225): one static binary per Linux platform, their
+# SHA256SUMS, and manifest.json with the source commit, the Cargo version, and each artifact's SHA-256.
+#
+# Usage: scripts/build-delivery OUT_DIR [--commit SHA] [--url-base URL] [--target TRIPLE ...]
+#
+#   --commit    The source commit the manifest names. Defaults to the last commit that changed apps/agent.
+#   --url-base  Adds a release URL to each artifact, such as
+#               https://github.com/hardimpactdev/orbit/releases/download/agent-v<commit>.
+#   --target    A Rust target to build; repeat for more. Defaults to x86_64 and aarch64 musl.
+#               An installed `cross` builds every target; without it, cargo needs that target's C toolchain.
+set -euo pipefail
+
+usage() { sed -n '2,12p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || usage
+out=$1; shift
+commit=
+url_base=
+targets=()
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --commit) commit=${2:?}; shift 2 ;;
+        --url-base) url_base=${2%/}; shift 2 ;;
+        --target) targets+=("${2:?}"); shift 2 ;;
+        *) usage ;;
+    esac
+done
+[[ ${#targets[@]} -gt 0 ]] || targets=(x86_64-unknown-linux-musl aarch64-unknown-linux-musl)
+
+agent=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$agent"
+[[ -n $commit ]] || commit=$(git log -1 --format=%H -- .)
+[[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo "build-delivery: invalid commit '$commit'" >&2; exit 1; }
+version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)
+
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+artifacts='{}'
+: > "$out/SHA256SUMS"
+for target in "${targets[@]}"; do
+    case $target in
+        x86_64-*linux*) key=linux-x86_64 ;;
+        aarch64-*linux*) key=linux-aarch64 ;;
+        *) echo "build-delivery: unsupported target $target" >&2; exit 1 ;;
+    esac
+    if command -v cross >/dev/null; then
+        cross build --locked --release --target "$target"
+    else
+        cargo build --locked --release --target "$target"
+    fi
+    name="orbit-agent-$key"
+    install -m 0755 "target/$target/release/orbit-agent" "$out/$name"
+    sha=$(sha256sum "$out/$name" | cut -d ' ' -f 1)
+    printf '%s  %s\n' "$sha" "$name" >> "$out/SHA256SUMS"
+    artifacts=$(jq -c --arg key "$key" --arg sha "$sha" --arg name "$name" --arg base "$url_base" \
+        '. + {($key): ({sha256: $sha, path: $name} + (if $base == "" then {} else {url: ($base + "/" + $name)} end))}' <<<"$artifacts")
+done
+
+jq -n --arg commit "$commit" --arg version "$version" --argjson artifacts "$artifacts" \
+    '{commit: $commit, version: $version, artifacts: $artifacts}' > "$out/manifest.json"
+echo "build-delivery: wrote $out/manifest.json for $commit ($version)"

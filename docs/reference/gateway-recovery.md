@@ -396,18 +396,18 @@ When any step fails, the handoff still starts the scheduler unit, so the schedul
 
 The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine, so the scheduler phase updates that Node's `orbit-agent` itself. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
 
-The update runs one script through local `sudo`, never over SSH to itself. The script holds `/run/lock/orbit-self-update.lock`, the lock that `orbit self-update` and the agent converge hold, and waits up to 120 seconds for it. It does nothing when the unit at `/etc/systemd/system/orbit-agent.service` lacks the `# Managed by Orbit: agent` marker, or when the binary already matches the pinned SHA-256.
+The update installs the release's pin through the agent's own installer, as a local process, never over SSH to itself. It stages the pinned binary under `ORBIT_HOME/agent-candidates` and runs that candidate's [`agent.install`](/reference/node-agent#install-on-mismatch). The installer holds `/run/lock/orbit-self-update.lock` and waits up to 120 seconds for it. It does nothing when the binary already matches the pin.
 
-Otherwise it takes the converge's steps: it downloads a candidate, checks the SHA-256, sets `root:root` and mode `0755`, and renames the candidate into place. Only then does it restart `orbit-agent.service`. The agent must stay active without a restart for 5 seconds, the health window of `orbit self-update`. When the restart fails or the agent does not stay up, the script restores the previous binary from `/usr/local/bin/orbit-agent.orbit-previous` and restarts it. Each restart has a 60-second limit.
+Otherwise it replaces the binary. When the observer unit exists, it restarts the observer and requires it to stay active for 5 seconds. A failed health check restores the kept binary. The Gateway Node needs the binary for command mode, so the update runs also when the Node has no observer unit.
 
-The handoff result records the update as `gateway_agent`. It has an `outcome` and the pinned `version`:
+The handoff result records the update as `gateway_agent`. It has an `outcome` and the pinned `version`, as the observer reports it:
 
 | Outcome | When |
 | --- | --- |
 | `unchanged` | The binary already matched the pin. The agent did not restart |
-| `updated` | The pinned binary replaced the old one and stayed up. `previous_sha256` names the old binary, or is null when there was none |
-| `skipped` | `reason` is `not_installed` when the Node has no Orbit agent unit, or `platform` when the Node does not run Linux |
-| `failed` | `error_code` and `message` say why: `agent.binary_download_failed`, `agent.checksum_mismatch`, `agent.install_failed`, `agent.restart_failed`, `agent.unhealthy`, `agent.architecture_unsupported`, or `node.update_busy` |
+| `updated` | The pinned binary replaced the old one, and the observer stayed up |
+| `skipped` | `reason` is `platform` when the Node does not run Linux |
+| `failed` | `error_code` and `message` say why: the installer's code, such as `agent.health_check_failed`, `agent.update_busy`, or `agent.replace_failed`, or `agent.install_failed` when no valid result arrived |
 
 A failed update never fails or switches back the release. The release stays `verified`, and the record raises one [`release_gateway_agent_failed` alert](#release-alerts), stored as `gateway_agent.alert`. Doctor keeps reporting `node.agent_binary_mismatch` for the Gateway Node until a later release updates the agent. To retry sooner, run the scheduler phase of the handoff again by hand, as described above. Do not run `orbit self-update` on the Gateway machine, because it also replaces the Gateway's CLI.
 
@@ -1059,7 +1059,7 @@ Each of these needs its own decision:
 - `orbit self-update` that applies the rendered footprint on the Node, so the Gateway stops pushing configuration over SSH;
 - automatic updates on operator Macs;
 - a macOS Node agent;
-- a self-update that an agent signal triggers instead of SSH ([The agent only observes](/reference/node-agent#the-agent-only-observes)).
+- a self-update that an agent signal triggers instead of SSH ([Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh)).
 
 ## Why it works this way
 

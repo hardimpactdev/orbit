@@ -665,6 +665,8 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+          # The delivery names the last commit that changed the agent's sources.
+          fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -682,26 +684,42 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run tests
         run: cargo test --locked
-      - name: Build static x86_64 binary
-        run: cross build --locked --release --target x86_64-unknown-linux-musl
-      - name: Build static aarch64 binary
-        run: cross build --locked --release --target aarch64-unknown-linux-musl
+      # The delivery of this exact source: both static Linux binaries, SHA256SUMS, and manifest.json (ADR 0225).
+      # The release workflow publishes this artifact once main's required checks pass; it never rebuilds.
+      - name: Build the agent delivery
+        run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery"
+      - name: Upload the agent delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-delivery
+          path: ${{ runner.temp }}/agent-delivery
+          if-no-files-found: error
+          retention-days: 30
 
-      # Keep this after the builds so a version bump can prove its binaries before tagging.
-      # Shared recipe and delivery tooling select this job through bin/ci-changes.
-      - name: Install Python test tools
-        working-directory: .
-        run: |
-          python3 -m venv "$RUNNER_TEMP/agent-tests"
-          "$RUNNER_TEMP/agent-tests/bin/pip" install --quiet -r apps/gateway/tests/Programs/requirements.txt
-          echo "$RUNNER_TEMP/agent-tests/bin" >> "$GITHUB_PATH"
-      - name: Check agent release delivery
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          pytest -n auto --dist=load -q tools/test_check_agent_release.py
-          python3 tools/check_agent_release.py
+  agent-macos:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).agent
+    name: Rust agent on macOS
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Restore Rust caches
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/agent
+      - name: Build
+        run: cargo build --locked
+      - name: Test command mode
+        run: cargo test --locked --lib command
 
   desktop:
     needs: changes
@@ -788,7 +806,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, desktop]
+    needs: [changes, project, gateway-shards, privileged, remote-programs, api-reference, web, pi-server, agent, agent-macos, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every selected project to pass

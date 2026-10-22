@@ -31,7 +31,7 @@ A better pattern already exists. `resources/tasks/check` and `resources/instance
 
 The Docker provider migration follows this decision as `docker.migrate` under `resources/remote/docker/`. It declares a timeout and the `planned`, `prepared`, `reported` and `failed` outcomes. `SshProgramRunner` sends its input on stdin. Preparation runs in a transient unit so an SSH disconnect cannot interrupt dpkg. Recipe convergence and migration share the apt and source-retirement code in `resources/remote/lib/recipe.py`; the migration does not assemble its own scripts in PHP.
 
-The [Node agent](/reference/node-agent#the-agent-only-observes) only observes. SSH stays the only way to change a Node. A planned agent runner must fit the same contract.
+At the time of this decision the [Node agent](/reference/node-agent#typed-commands-over-ssh) only observed. ADR 0225 moves Node changes to its command mode, over SSH.
 
 ## Decision
 

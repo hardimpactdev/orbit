@@ -209,9 +209,9 @@ Every browser with Gateway access joins `presence-node.{id}`, so log lines never
 
 A `log-streams.changed` event carries no data. It only prompts the agent to fetch its list over HTTPS. So a forged or lost event cannot start a read, and the agent never acts on the content of a channel message.
 
-### The agent runs no program that changes the Node
+### The observer runs no program that changes the Node
 
-The agent is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. `journalctl` changes nothing on the Node, and the Gateway already runs it over SSH for one-shot reads. So the live stream and the one-shot read share one command and one output, and their lines match on every systemd version.
+The observer is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. Changes to a Node run in the agent's [command mode](/reference/node-agent#commands), which only SSH or the Gateway starts. `journalctl` changes nothing on the Node, and the Gateway already runs it over SSH for one-shot reads. So the live stream and the one-shot read share one command and one output, and their lines match on every systemd version.
 
 Reading the journal through `libsystemd` is not possible, because the agent is a static musl binary and cannot load it. An earlier agent read the journal files with its own reader. It was rejected, because it had to follow the file format, its compression, and file rotation, and it still printed some rare entries differently from `journalctl`. The agent reads Instance log files itself and never starts `tail`.
 

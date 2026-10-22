@@ -2544,7 +2544,9 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0225"
+            ]
         },
         {
             "path": "docs/reference/node-provisioning.md",
