@@ -39,9 +39,15 @@ final readonly class CompleteTaskGroupAction
     public function execute(Task $group, bool $finishWhenRemovalFails = true): Task
     {
         $this->requireExtension->execute();
-        app(TaskOperations::class)->cancelOpen($group);
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);
+
+        if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
+            $this->authorizeEndedPullRequest($group);
+        } elseif ($group->status !== TaskGroupStatus::Completed && ! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            throw $this->notReady();
+        }
+        app(TaskOperations::class)->cancelOpen($group);
 
         if ($group->status === TaskGroupStatus::Completed) {
             $this->removeOrFinish($group, $finishWhenRemovalFails);
@@ -50,16 +56,11 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
-            $this->authorizeEndedPullRequest($group);
             $this->completeOpenSubtasks($group);
 
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        }
-
-        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            throw $this->notReady();
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {

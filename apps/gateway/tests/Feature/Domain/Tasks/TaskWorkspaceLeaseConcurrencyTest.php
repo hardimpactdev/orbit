@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
@@ -183,6 +184,7 @@ function lease_concurrency_read($socket): array
 
 it('refuses a real cancellation request while another process records group completion', function (): void {
     tick_bind_defaults();
+    app(TaskExtensionState::class)->enable();
     $group = tick_group();
     $directory = sys_get_temp_dir().'/orbit-action-contention-'.bin2hex(random_bytes(8));
     app()->instance(TaskExecutionLock::class, new NativeTaskExecutionLock($directory));

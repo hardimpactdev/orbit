@@ -379,6 +379,26 @@ describe('tasks.provision', function (): void {
         expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
     });
 
+    it('keeps provisioning after a premature completion is refused', function (): void {
+        $group = provision_operation_group();
+        TaskVmSettingsBuilder::bind();
+        $operation = provision_operation_start($group);
+        app(OperationRunner::class)->run($operation->id);
+        $reservedAt = $group->refresh()->reserved_at;
+
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/complete')->assertConflict()->assertJsonPath('error.code', 'tasks.not_settling');
+
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        expect($operation->cancel_requested_at)->toBeNull();
+        expect($operation->lock_key)->toBe('task_group:'.$group->id);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved);
+        expect($group->reserved_at)->toEqual($reservedAt);
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Waiting);
+        expect($operation->next_read_at)->toEqual(now()->addSeconds(10));
+    });
+
     it('leaves an open provision untouched when group cancellation is disabled', function (): void {
         $group = provision_operation_group();
         TaskVmSettingsBuilder::bind();
