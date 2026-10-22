@@ -236,6 +236,8 @@ On a Valkey server, the Gateway connects to the Node's WireGuard address and the
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
+Before preflight, the active Gateway locks every server in the removal set in server-ID order. It holds these process-owned file locks through all checks, drops, admission restoration, and record deletion. An overlapping removal returns `database.server_in_use` (409) before it checks or restores any database. A crashed Gateway process releases its locks immediately, so retry can recover the durable PostgreSQL fence.
+
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
 PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
@@ -301,7 +303,7 @@ The server commands return these codes.
 | `database.server_slug_conflict` | 409 | Another server has the slug. |
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
-| `database.server_in_use` | 409 | A connection still points to the server, an ACL change is running, or closing would lock out a client. |
+| `database.server_in_use` | 409 | A connection still points to the server, another database removal or ACL change is running, or closing would lock out a client. |
 | `database.server_connection_managed` | 409 | A change would replace a managed PostgreSQL or Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
@@ -384,6 +386,8 @@ PostgreSQL has no database prefix grant. Giving an Instance `CREATEDB` would let
 
 ### Check the whole database set before removal
 
-Database removal follows Orbit’s existing refusal rule for connected clients. `DROP DATABASE ... WITH (FORCE)` was rejected because it would disconnect clients without a separate choice and still fails on logical replication slots, subscriptions, and prepared transactions. Preflight checks every planned database and every role being removed before destructive SQL runs. A durable admission fence closes the worker-start race between that check and the drops. The server stores the journal beside its catalog so the snapshot and fence share one PostgreSQL transaction. A Gateway-only snapshot would create another crash window between the two systems.
+Database removal follows Orbit’s existing refusal rule for connected clients. `DROP DATABASE ... WITH (FORCE)` was rejected because it would disconnect clients without a separate choice and still fails on logical replication slots, subscriptions, and prepared transactions. Preflight checks every planned database and every role being removed before destructive SQL runs. The Gateway holds locks on every server until the removal ends. This prevents another removal from restoring its fences between server batches.
+
+A durable admission fence closes the worker-start race between that check and the drops. The server stores the journal beside its catalog so the snapshot and fence share one PostgreSQL transaction. A Gateway-only snapshot would create another crash window between the two systems.
 
 PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure failure still requires a retry. Avoid changing server dependencies through another admin connection during removal. Missing databases and users count as removed on retry.

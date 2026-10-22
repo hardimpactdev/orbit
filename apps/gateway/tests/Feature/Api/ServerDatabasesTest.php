@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
+use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
@@ -814,6 +815,70 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
             $this->assertDatabaseCount('database_connections', 0);
         });
     });
+
+    it('coordinates overlapping PostgreSQL removals across the complete two-server set', function (bool $contenderFirst): void {
+        postgres_statements_server(function (Closure $first, string $firstDirectory) use ($contenderFirst): void {
+            postgres_statements_server(function (Closure $second, string $secondDirectory) use ($first, $contenderFirst): void {
+                $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+                $other = $this->server->replicate()->fill(['slug' => 'second-server', 'process_id' => null, 'port' => 5433]);
+                $other->save();
+                $hook = null;
+                $commands = [];
+                $admin = Mockery::mock(DatabaseServerAdmin::class);
+                $admin->shouldReceive('execute')->andReturnUsing(function (DatabaseServer $server, string $sql) use ($first, $second, &$hook, &$commands): array {
+                    $commands[] = $sql;
+                    $output = ($server->id === $this->server->id ? $first : $second)($sql);
+                    $hook?->__invoke($server, $sql, $output);
+
+                    return $output === '' ? [] : explode("\n", $output);
+                });
+                app()->instance(DatabaseServerAdmin::class, $admin);
+                foreach (['app' => $this->server, 'other' => $other] as $slug => $server) {
+                    $this->postJson('/api/v1/database-connections', ['slug' => $slug, 'server' => $server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])->assertCreated();
+                }
+                DatabaseConnectionTarget::query()->delete();
+                $connection = DatabaseConnection::query()->where('slug', 'other')->firstOrFail();
+                $session = $contenderFirst ? new PDO('pgsql:host='.$secondDirectory.';dbname=other_test_test_2', 'orbit_test') : null;
+                $snapshot = "SELECT datname, datallowconn, datconnlimit FROM pg_database WHERE datname LIKE 'app%' OR datname LIKE 'other%' ORDER BY datname;";
+                $before = [$first($snapshot), $second($snapshot)];
+                $overlapped = false;
+                $commands = [];
+                $hook = function (DatabaseServer $server, string $sql, string $output) use ($contenderFirst, $other, $connection, $first, $second, $secondDirectory, &$hook, &$session, &$overlapped): void {
+                    if ($contenderFirst && $server->id === $other->id && str_starts_with($sql, 'SELECT DISTINCT blocker')) {
+                        expect($output)->toBe('other_test_test_2');
+                        $hook = null;
+                        $session = null;
+                        expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
+                            ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.server_in_use'));
+                        $overlapped = true;
+                    } elseif (! $contenderFirst && $server->id === $this->server->id && str_contains($sql, 'DROP DATABASE')) {
+                        $hook = null;
+                        expect($first("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+                        expect(fn () => app(DropServerDatabaseAction::class)->execute($connection))
+                            ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.server_in_use'));
+                        expect(fn () => new PDO('pgsql:host='.$secondDirectory.';dbname=other_test_test_2', 'orbit_test'))->toThrow(PDOException::class);
+                        expect($second("SELECT count(*) FROM pg_database WHERE datname LIKE 'other%';"))->toBe('4');
+                        $this->assertDatabaseCount('database_connections', 2);
+                        $overlapped = true;
+                    }
+                };
+                if ($contenderFirst) {
+                    expect(fn () => app(DropServerDatabaseAction::class)->execute($connection))
+                        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.in_use'));
+                    expect([$first($snapshot), $second($snapshot)])->toBe($before);
+                    expect(implode("\n", $commands))->not->toContain('DROP DATABASE');
+                    $this->assertDatabaseCount('database_connections', 2);
+                }
+
+                app(DropOwnedDatabasesAction::class)->execute($this->instance->id);
+
+                expect($overlapped)->toBeTrue();
+                expect([$first($snapshot), $second($snapshot)])->toBe(['', '']);
+                $this->assertDatabaseCount('database_connections', 0);
+                expect($second('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
+            });
+        });
+    })->with([true, false]);
 
     it('fences late PostgreSQL worker admission and restores exact settings on refusal', function (): void {
         postgres_statements_server(function (Closure $psql, string $directory): void {

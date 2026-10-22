@@ -178,7 +178,9 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 `runtime_cleanup` first checks all owned server databases as one removal set, before dropping any of them. The [database removal checks](/reference/database-servers#remove-a-database) return `database.in_use` (409) if a client or dependency blocks removal; databases, users, attachments, and connection records stay. Even `--force` does not disconnect database clients or remove dependencies outside the owned set.
 
-It fences every planned PostgreSQL database before the final blocker check and restores admission on refusal through the same recoverable journal. After this check, it drops all planned databases and test databases on each [Database server](/reference/database-servers) before their unshared users, then deletes their records and attachments. It also removes owned SQLite files. A database the Instance only has attached stays, and only the attachment goes. A failed drop keeps the member in `runtime_cleanup`, and a retry drops again. A database that is already gone counts as done.
+The Gateway holds a lock on every server in the set through record deletion; an overlapping removal returns `database.server_in_use` (409) before changing anything. It fences every planned PostgreSQL database before the final blocker check and restores admission on refusal through the same recoverable journal.
+
+After this check, it drops all planned databases and test databases on each [Database server](/reference/database-servers) before their unshared users, then deletes their records and attachments. It also removes owned SQLite files. A database the Instance only has attached stays, and only the attachment goes. A failed drop keeps the member in `runtime_cleanup`, and a retry drops again. A database that is already gone counts as done.
 
 ### Transfer history
 

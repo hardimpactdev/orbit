@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseConnections;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
@@ -33,6 +34,7 @@ final readonly class DropServerDatabaseAction
         private MysqlStatements $statements,
         private ValkeyServerAdmin $valkey,
         private PostgresTestDatabases $postgresTests,
+        private DatabaseRemovalLock $removalLock,
     ) {}
 
     /** Keep the record removal inside the ACL lock when the caller removes the connection too. */
@@ -62,6 +64,21 @@ final readonly class DropServerDatabaseAction
      * @param  Closure(DatabaseConnection): mixed  $afterDrop
      */
     public function executeMany(array $connections, Closure $afterDrop): void
+    {
+        $serverIds = [];
+        foreach ($connections as $connection) {
+            if ($connection->server instanceof DatabaseServer && $connection->server->driver !== DatabaseDriver::Redis) {
+                $serverIds[] = $connection->server->id;
+            }
+        }
+        $this->removalLock->run($serverIds, fn () => $this->dropMany($connections, $afterDrop));
+    }
+
+    /**
+     * @param  list<DatabaseConnection>  $connections
+     * @param  Closure(DatabaseConnection): mixed  $afterDrop
+     */
+    private function dropMany(array $connections, Closure $afterDrop): void
     {
         $ids = array_map(static fn (DatabaseConnection $connection): int => $connection->id, $connections);
         $plans = [];
