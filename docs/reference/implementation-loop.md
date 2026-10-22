@@ -151,7 +151,7 @@ The [Feature delivery merge gate](#full-suites-gate-merges) defines the required
 
 Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
-CLI and Docs limit each test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
+CLI and Docs limit each local test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
 
 The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
 
@@ -610,7 +610,9 @@ Gateway uses stock Pest time-balanced shards to keep every full run short, on ma
 
 ### Gateway test time limits
 
-Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. The default is two seconds locally. The Gateway shard and privileged CI steps pass `--default-time-limit=5` through their existing Pest commands, giving unsized tests five seconds in CI. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
+Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="2"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. The default is two seconds locally. Tests remain unsized except for reviewed cases whose real deadline or kernel age is the behaviour under test.
+
+Every direct Pest invocation in `ci.yml` passes stock `--default-time-limit=5`, including project full suites, the PCRE JIT-disabled redaction run, Gateway shards, and privileged tests. `composer check` also runs Pest through `guidance:check`. Its shared launcher adds the same stock flag when `CI=true`; local guidance runs keep their existing arguments and configuration. Unsized tests therefore get five seconds in CI without changing local limits.
 
 CI permits five seconds because CPU contention slows work on shared hosts. Aborts at two seconds across changing tests, including pure renderers, are not evidence that those tests need rewriting. Investigate any failure that remains at five seconds as a real bug. There is no suite-time target, CI-step timing gate, or headroom requirement. Do not add per-test CI budgets or timing machinery.
 
