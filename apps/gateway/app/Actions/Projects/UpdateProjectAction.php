@@ -459,13 +459,22 @@ final readonly class UpdateProjectAction
     private function wakeRestoredTaskVms(array $origins): void
     {
         $ids = array_values(array_filter(array_map(static fn (array $row): ?int => $row['instance_id'] ?? null, $origins)));
-        $parked = Instance::query()->whereKey($ids)->get()
-            ->map(static fn (Instance $instance): ?TaskVm => TaskVm::forNode($instance->node_id))
-            ->filter(static fn (?TaskVm $vm): bool => $vm instanceof TaskVm && ! app(WakeTaskVmAction::class)->forVm($vm));
-        if ($parked->isNotEmpty()) {
+        $this->refuseParkedTaskVms(array_filter(Instance::query()->whereKey($ids)->get()
+            ->map(static fn (Instance $instance): ?TaskVm => TaskVm::forNode($instance->node_id))->all()));
+    }
+
+    /**
+     * Starts every parked task VM resuming, then refuses once, so a single retry can run.
+     *
+     * @param  array<TaskVm>  $vms
+     */
+    private function refuseParkedTaskVms(array $vms): void
+    {
+        $parked = array_values(array_filter($vms, static fn (TaskVm $vm): bool => ! app(WakeTaskVmAction::class)->forVm($vm)));
+        if ($parked !== []) {
             throw new ResourceOperationException(
                 errorCode: 'project.task_vm_parked',
-                message: 'Task VM ['.$parked->map(static fn (TaskVm $vm): string => $vm->name)->implode(', ').'] is parked. Orbit is resuming it. Retry the update when it is ready.',
+                message: 'Task VM ['.implode(', ', array_map(static fn (TaskVm $vm): string => $vm->name, $parked)).'] is parked. Orbit is resuming it. Retry the update when it is ready.',
                 status: 409,
             );
         }
@@ -483,15 +492,7 @@ final readonly class UpdateProjectAction
         if ($vms === []) {
             return;
         }
-        // Every parked VM starts resuming before the one refusal, so a single retry can run.
-        $parked = array_values(array_filter($vms, static fn (TaskVm $vm): bool => ! app(WakeTaskVmAction::class)->forVm($vm)));
-        if ($parked !== []) {
-            throw new ResourceOperationException(
-                errorCode: 'project.task_vm_parked',
-                message: 'Task VM ['.implode(', ', array_map(static fn (TaskVm $vm): string => $vm->name, $parked)).'] is parked. Orbit is resuming it. Retry the update when it is ready.',
-                status: 409,
-            );
-        }
+        $this->refuseParkedTaskVms($vms);
         // A requested default branch is already verified there.
         if ($requestedDefaultBranch === null) {
             $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
