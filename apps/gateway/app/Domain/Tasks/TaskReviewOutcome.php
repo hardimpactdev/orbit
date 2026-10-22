@@ -348,7 +348,7 @@ final readonly class TaskReviewOutcome
     /**
      * ADR 0203: a final review requested changes. On an incoming pull request whose head it reviewed, Orbit posts
      * the findings as a `REQUEST_CHANGES` review first. Then, in one transaction, it completes the final review and
-     * starts a fixup subtask with the findings. The fourth set of findings in one window asks for assistance.
+     * starts a fixup subtask with the findings. The third set of findings in one window asks for assistance.
      */
     private function applyFinalReviewFindings(TaskScheduler $scheduler, Task $group, Task $task, TaskComment $receipt): void
     {
@@ -396,15 +396,23 @@ final readonly class TaskReviewOutcome
                 return null;
             }
             $lockedGroup->loadMissing('project');
+            $tasks = $this->runner->lockedTasks($lockedGroup);
             $fixup = Task::query()->create([
                 'parent_id' => $lockedGroup->id,
-                'position' => TaskFinalReview::nextPosition($this->runner->lockedTasks($lockedGroup)),
+                'position' => TaskFinalReview::nextPosition($tasks),
                 'title' => $title,
                 'brief' => $brief,
                 'deliverables' => TaskFinalReview::fixupDeliverables(),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
             ]);
+            $next = $this->runner->lowestTodo($tasks);
+            if ($next instanceof Task) {
+                $ids = $this->runner->orderedTasks($tasks)->map(static fn (Task $sibling): int => $sibling->id)->values()->all();
+                array_splice($ids, $next->position - 1, 0, [$fixup->id]);
+                TaskPositions::assign($lockedGroup, $ids);
+                $fixup->refresh();
+            }
             TaskQuestions::answerPending($locked, $receipt);
             $locked->update([
                 'status' => TaskStatus::Completed,
@@ -489,9 +497,33 @@ final readonly class TaskReviewOutcome
         app(TaskWorkspaceLease::class)->run($group, 'verdict', 'final-review:'.$task->id, fn () => $this->startFinalReviewWithLease($scheduler, $group, $task, $alreadyFetched), taskId: $task->id);
     }
 
+    /** A final review appended before an operator added work waits until that work ends. */
+    private function deferFinalReview(Task $group, Task $task): bool
+    {
+        return DB::transaction(function () use ($group, $task): bool {
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            $tasks = $this->runner->lockedTasks($lockedGroup);
+            $locked = $tasks->firstWhere('id', $task->id);
+            if (! $locked instanceof Task || $locked->status !== TaskStatus::Running
+                || ! $tasks->contains(static fn (Task $sibling): bool => $sibling->id !== $task->id && $sibling->status === TaskStatus::Todo)) {
+                return false;
+            }
+
+            $ids = $this->runner->orderedTasks($tasks)->where('id', '!=', $task->id)
+                ->map(static fn (Task $sibling): int => $sibling->id)->values()->all();
+            $ids[] = $task->id;
+            TaskPositions::assign($lockedGroup, array_values($ids));
+            $locked->refresh()->update(['status' => TaskStatus::Todo, 'started_at' => null, 'brief' => TaskFinalReview::brief($lockedGroup)]);
+            $lockedGroup->update(['status' => TaskGroupStatus::Running]);
+
+            return true;
+        });
+    }
+
     private function startFinalReviewWithLease(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
+        if ($task->status !== TaskStatus::Running || $this->deferFinalReview($group, $task)
+            || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
         try {
@@ -524,7 +556,8 @@ final readonly class TaskReviewOutcome
         $started = DB::transaction(function () use ($task, $base): bool {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($locked->parent_id);
-            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Running) {
+            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Running
+                || $this->deferFinalReview($lockedGroup, $locked)) {
                 return false;
             }
             $locked->update(['status' => TaskStatus::Reviewing, 'subtask_start_commit' => $base, 'communication_failures' => 0]);
@@ -923,8 +956,12 @@ final readonly class TaskReviewOutcome
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->runner->recordSubtaskStart($next);
-            $this->runner->assignImplementer($scheduler, $next);
+            if ($next->isFinalReview()) {
+                $this->runner->beginRunningTask($scheduler, $next);
+            } else {
+                $this->runner->recordSubtaskStart($next);
+                $this->runner->assignImplementer($scheduler, $next);
+            }
         }
 
         if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
