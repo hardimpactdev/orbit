@@ -8,14 +8,15 @@ use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 
 /**
- * Adds a user to a database on a MySQL Database server. A read-only user gets SELECT, any other user
- * all privileges. Running it again sets the password and replaces the privileges. On a Valkey
+ * Adds or updates a SQL login and replaces its grants. Replication users get reader grants.
+ * On a Valkey
  * server each user is a connection of its own, so `database:create --server` adds it instead.
  */
 final readonly class CreateDatabaseUserAction
@@ -32,6 +33,10 @@ final readonly class CreateDatabaseUserAction
     ): DatabaseUser {
         $server = $connection->server;
 
+        if ($data->replication && ($connection->driver !== DatabaseDriver::Pgsql || ($server instanceof DatabaseServer && $server->driver !== DatabaseDriver::Pgsql))) {
+            throw new ResourceOperationException('database.driver_unsupported', 'Replication users require a PostgreSQL Database server.', 422);
+        }
+
         if ($server instanceof DatabaseServer && $server->driver === DatabaseDriver::Redis) {
             throw new ResourceOperationException(
                 errorCode: 'database.driver_unsupported',
@@ -46,6 +51,10 @@ final readonly class CreateDatabaseUserAction
                 message: "Database connection [{$connection->slug}] is not on a Database server.",
                 status: 422,
             );
+        }
+
+        if ($data->replication && $this->admin->execute($server, "SHOW wal_level;\n") !== ['logical']) {
+            throw new ResourceOperationException('database.wal_level_not_logical', 'Replication users require wal_level=logical on the PostgreSQL server.', 422);
         }
 
         $ownsConnection = DatabaseConnection::query()
@@ -66,10 +75,14 @@ final readonly class CreateDatabaseUserAction
             && $this->admin->execute($server, $this->statements->forDriver($server->driver)->userNamed($data->username)) !== []) {
             throw new ResourceOperationException('database.name_conflict', 'That PostgreSQL role already exists outside this connection.', 409);
         }
+        $statements = $this->statements->forDriver($server->driver);
+        $readOnly = $data->readOnly || $data->replication;
+        $ensureUser = $statements instanceof PostgresStatements
+            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication)
+            : $statements->ensureUser($data->username, $data->password);
         $this->admin->execute(
             $server,
-            $this->statements->forDriver($server->driver)->ensureUser($data->username, $data->password)
-                .$this->statements->forDriver($server->driver)->replaceGrant($connection->database, $data->username, $data->readOnly, $connection->username),
+            $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username),
         );
 
         return DatabaseUser::query()->updateOrCreate(
@@ -79,7 +92,8 @@ final readonly class CreateDatabaseUserAction
             ],
             [
                 'password' => $data->password,
-                'privileges' => $this->statements->forDriver($server->driver)->privilegeText($connection->database, $data->readOnly),
+                'privileges' => $statements->privilegeText($connection->database, $readOnly),
+                'replication' => $data->replication,
                 'created_by' => $createdBy,
             ],
         );

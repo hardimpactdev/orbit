@@ -1,0 +1,20 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest",
+    "route": "POST /api/v1/database-connections/{database_connection}/users",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 5,
+            "database_connection_id": 3,
+            "username": "sync_reader",
+            "privileges": "CONNECT, USAGE, SELECT ON \"catalog\"",
+            "created_by": "gateway",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "replication": true
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

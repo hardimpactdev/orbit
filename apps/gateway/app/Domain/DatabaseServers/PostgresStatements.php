@@ -10,10 +10,11 @@ use SensitiveParameter;
 /** PostgreSQL SQL and psql commands. Passwords reach the server only as SCRAM verifiers. */
 final readonly class PostgresStatements
 {
-    public function ensureUser(string $username, #[SensitiveParameter] string $password): string
+    public function ensureUser(string $username, #[SensitiveParameter] string $password, bool $replication = false): string
     {
         $name = $this->identifier($username);
         $literal = $this->literal($username);
+        $attribute = $replication ? 'REPLICATION' : 'NOREPLICATION';
         if ($password === '' || preg_match('/[^\x20-\x7e]/', $password) === 1) {
             throw new ResourceOperationException('validation.failed', 'A PostgreSQL password must contain printable ASCII characters.', 422);
         }
@@ -25,7 +26,7 @@ final readonly class PostgresStatements
         $verifier = 'SCRAM-SHA-256$4096:'.base64_encode($salt).'$'.base64_encode($storedKey).':'.base64_encode($serverKey);
 
         return "DO \$orbit\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = {$literal}) THEN CREATE ROLE {$name} LOGIN; END IF; END \$orbit\$;\n"
-            ."ALTER ROLE {$name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD ".$this->literal($verifier).";\n";
+            ."ALTER ROLE {$name} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE {$attribute} PASSWORD ".$this->literal($verifier).";\n";
     }
 
     public function createDatabase(string $database, ?string $locale = null): string
@@ -90,6 +91,13 @@ final readonly class PostgresStatements
         $this->identifier($username);
 
         return 'SELECT rolname FROM pg_roles WHERE rolname = '.$this->literal($username).";\n";
+    }
+
+    public function replicationAttribute(string $username): string
+    {
+        $this->identifier($username);
+
+        return 'SELECT rolreplication::text FROM pg_roles WHERE rolname = '.$this->literal($username).";\n";
     }
 
     public function privilegeText(string $database, bool $readOnly = false, ?string $prefix = null): string

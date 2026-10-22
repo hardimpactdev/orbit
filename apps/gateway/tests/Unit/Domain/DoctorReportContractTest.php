@@ -358,6 +358,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'database_connection.inspection_failed',
         ],
         'database_server' => [
+            'database_server.replication_mismatch',
             'database_server.publication_mismatch',
             'database_server.login_failed',
             'database_server.initialization_secret_present',

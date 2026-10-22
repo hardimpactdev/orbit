@@ -36,7 +36,8 @@ use Tests\Support\ProcessesApiFakeRuntimeManager;
 it('records the database server and database user responses', function (): void {
     $this->travelTo(Carbon::parse('2026-01-01T00:00:00Z'));
     app()->instance(ProcessRuntimeManager::class, new ProcessesApiFakeRuntimeManager);
-    app()->instance(DatabaseServerAdmin::class, new FakeDatabaseServerAdmin);
+    $sqlAdmin = new FakeDatabaseServerAdmin;
+    app()->instance(DatabaseServerAdmin::class, $sqlAdmin);
     app()->instance(InstanceOperationPreflight::class, new DatabaseServerFixtureEnvironment);
     app()->instance(InstanceEnvironmentReader::class, new DatabaseServerFixtureEnvironment);
     app()->instance(InstanceEnvironmentWriter::class, new DatabaseServerFixtureEnvironment);
@@ -159,6 +160,22 @@ it('records the database server and database user responses', function (): void 
         'database-servers/database-server-close/default',
         CloseDatabaseServerRequest::class,
         'POST /api/v1/database-servers/{database_server}/close',
+    );
+
+    $this->postJson('/api/v1/database-servers', ['slug' => 'beast-pg', 'node_id' => $dbNode->id, 'driver' => 'pgsql'])->assertCreated();
+    $this->postJson('/api/v1/database-connections', ['slug' => 'catalog', 'server' => 'beast-pg'])->assertCreated();
+    $sqlAdmin->rows['SHOW wal_level'] = ['logical'];
+    record_fixture(
+        $this->postJson('/api/v1/database-connections/catalog/users', ['username' => 'sync_reader', 'password' => 'fixture-sync-secret', 'replication' => true])->assertCreated(),
+        'database-connections/database-user-create/replication',
+        CreateDatabaseUserRequest::class,
+        'POST /api/v1/database-connections/{database_connection}/users',
+    );
+    record_fixture(
+        $this->getJson('/api/v1/database-connections/catalog/users')->assertOk(),
+        'database-connections/database-user-list/replication',
+        ListDatabaseUsersRequest::class,
+        'GET /api/v1/database-connections/{database_connection}/users',
     );
 
 });

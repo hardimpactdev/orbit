@@ -21,6 +21,7 @@ final class StoreDatabaseUserRequest extends FormRequest
             'username' => ['required', 'string', 'max:32', 'regex:'.MysqlStatements::USERNAME_PATTERN],
             'password' => ['required', 'string', 'max:1024', 'not_regex:/[\x00\r\n]/'],
             'read_only' => ['sometimes', 'boolean:strict'],
+            'replication' => ['sometimes', 'boolean:strict'],
         ];
     }
 
@@ -28,7 +29,7 @@ final class StoreDatabaseUserRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['username', 'password', 'read_only']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['username', 'password', 'read_only', 'replication']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -42,6 +43,7 @@ final class StoreDatabaseUserRequest extends FormRequest
             username: ValidatedData::string($validated['username'] ?? null),
             password: ValidatedData::string($validated['password'] ?? null),
             readOnly: ($validated['read_only'] ?? false) === true,
+            replication: ($validated['replication'] ?? false) === true,
         );
     }
 }

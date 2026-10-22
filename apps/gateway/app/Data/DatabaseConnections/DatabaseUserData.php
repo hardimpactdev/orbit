@@ -20,11 +20,13 @@ final class DatabaseUserData extends Data
         public string $privileges,
         public ?string $createdBy,
         public string $createdAt,
+        public bool $replication = false,
     ) {}
 
     public static function fromModel(DatabaseUser $user): self
     {
         return new self(
+            replication: $user->replication,
             id: $user->id,
             databaseConnectionId: $user->database_connection_id,
             username: $user->username,

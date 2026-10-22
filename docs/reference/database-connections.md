@@ -47,11 +47,13 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | `PATCH` | `/api/v1/database-connections/{slug}` | Change the given fields. A `node_id` of null removes the Node link. |
 | `DELETE` | `/api/v1/database-connections/{slug}` | Delete the record. `database.connection_attached` (409) while an Instance still uses it. A database on a server is dropped with its record, and an ACL user on a Valkey server is deleted. |
 | `GET` | `/api/v1/database-connections/{slug}/users` | List the users that Orbit created for the connection. |
-| `POST` | `/api/v1/database-connections/{slug}/users` | Add a user through the connection's [server](/reference/database-servers#add-a-user). |
+| `POST` | `/api/v1/database-connections/{slug}/users` | Add or update a user through the connection's [server](/reference/database-servers#add-a-user). |
 | `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement. |
 | `GET` | `/api/v1/database-connections/{slug}/tables` | List the tables. |
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | List the columns of one table. |
+
+User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). Create and list return the recorded `replication` attribute without passwords. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 

@@ -763,7 +763,7 @@ export interface paths {
         put?: never;
         /**
          * Add a database user
-         * @description Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.
+         * @description Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants read access; otherwise MySQL grants all database privileges and PostgreSQL grants data-write access. `replication` (default false) grants PostgreSQL LOGIN REPLICATION with read-only access and owner defaults for future public tables. It requires live wal_level=logical (`database.wal_level_not_logical` otherwise); other drivers return `database.driver_unsupported`. Omitting replication on a repeat removes the attribute. App migrations own publications. User inspection returns the recorded replication boolean. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.
          */
         post: operations["database-user-create"];
         delete?: never;
@@ -4284,6 +4284,7 @@ export interface components {
             privileges?: string;
             created_by?: string | null;
             created_at?: string;
+            replication?: boolean;
         };
         DatabaseServer: {
             id?: number;
@@ -8167,6 +8168,8 @@ export interface operations {
                     password: string;
                     /** @description Grant only SELECT on the database */
                     read_only?: boolean;
+                    /** @description PostgreSQL LOGIN REPLICATION with read-only grants; requires wal_level=logical */
+                    replication?: boolean;
                 };
             };
         };

@@ -649,6 +649,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'username' => null,
                 'password' => null,
                 'read-only' => false,
+                'replication' => false,
                 'json' => false,
             ],
         ],

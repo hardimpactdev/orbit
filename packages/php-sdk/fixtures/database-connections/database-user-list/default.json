@@ -11,7 +11,8 @@
                 "username": "dlf_main",
                 "privileges": "ALL PRIVILEGES ON `dlf_leden`.*, `dlf\\_leden\\_test%`.*",
                 "created_by": "gateway",
-                "created_at": "2026-01-01T00:00:00+00:00"
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "replication": false
             },
             {
                 "id": 2,
@@ -19,7 +20,8 @@
                 "username": "reporting",
                 "privileges": "SELECT ON `dlf_leden`.*",
                 "created_by": "gateway",
-                "created_at": "2026-01-01T00:00:00+00:00"
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "replication": false
             }
         ],
         "meta": {

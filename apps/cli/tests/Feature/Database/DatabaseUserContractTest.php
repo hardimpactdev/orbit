@@ -36,4 +36,11 @@ describe('database user contract', function (): void {
         run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'dlf-leden'], 'database-connections/database-user-list/default.human.txt', 0);
         run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'dlf-leden', '--json' => true], 'database-connections/database-user-list/default.json', 0);
     });
+
+    it('renders a PostgreSQL replication user from recorded create and list responses', function (): void {
+        run_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--password' => 'fixture-secret', '--replication' => true], 'database-connections/database-user-create/replication.human.txt', 0);
+        run_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--password' => 'fixture-secret', '--replication' => true, '--json' => true], 'database-connections/database-user-create/replication.json', 0);
+        run_contract('database-connections/database-user-list/replication', 'database:user:list', ['slug' => 'catalog'], 'database-connections/database-user-list/replication.human.txt', 0);
+        run_contract('database-connections/database-user-list/replication', 'database:user:list', ['slug' => 'catalog', '--json' => true], 'database-connections/database-user-list/replication.json', 0);
+    });
 });
