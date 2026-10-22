@@ -135,7 +135,7 @@ final readonly class NodeFirewallRuleCatalog
                 continue;
             }
 
-            $rules[] = $this->rule($comment, (string) $port, $this->wireguardIp($node), 'docker0');
+            $rules[] = $this->rule($comment, (string) $port, $this->wireguardIp($node), 'docker0', replacePort: true);
         }
 
         return $rules;
@@ -442,6 +442,7 @@ final readonly class NodeFirewallRuleCatalog
         string $port,
         ?string $destination = null,
         ?string $interface = null,
+        bool $replacePort = false,
     ): UfwManagedRule {
         $destination ??= 'any';
         $on = $interface === null ? [] : ['on', $interface];
@@ -474,6 +475,7 @@ final readonly class NodeFirewallRuleCatalog
                 'comment',
                 $comment,
             ],
+            replacePort: $replacePort,
         );
     }
 

@@ -10,5 +10,6 @@ final readonly class UfwManagedRule
     public function __construct(
         public UfwRuleShape $shape,
         public array $arguments,
+        public bool $replacePort = false,
     ) {}
 }

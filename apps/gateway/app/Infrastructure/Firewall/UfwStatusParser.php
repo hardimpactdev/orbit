@@ -134,6 +134,39 @@ final class UfwStatusParser
     }
 
     /**
+     * The catalog mutable-port declaration and exact Orbit comment authorize a prior single-port shape.
+     * All other shape and family checks remain those used by exact ownership.
+     */
+    public function replaceablePort(string $output, UfwManagedRule $desired): bool
+    {
+        $expected = $desired->shape;
+
+        if (! $desired->replacePort || ! str_starts_with($expected->comment, 'orbit:') || ! ctype_digit($expected->port)) {
+            return false;
+        }
+
+        $observed = $this->ownedRuleShapes($output, $expected->comment);
+
+        if ($observed === []) {
+            return false;
+        }
+
+        $port = $observed[0]->port;
+
+        if (! ctype_digit($port) || (int) $port < 1 || (int) $port > 65535) {
+            return false;
+        }
+
+        $previous = new UfwRuleShape(
+            $expected->comment, $expected->action, $expected->direction, $expected->source,
+            $expected->destination, $port, $expected->protocol, $expected->inInterface,
+            $expected->outInterface, $expected->family,
+        );
+
+        return $this->ownership($output, $previous) === UfwRuleOwnership::Exact;
+    }
+
+    /**
      * Returns the source address of the one rule that carries `$expected`'s comment and differs from it
      * only in its IPv4 host source, or null when the rule is missing, exact, or drifts in any other way.
      */
