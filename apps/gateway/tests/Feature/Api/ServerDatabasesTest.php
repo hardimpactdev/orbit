@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -814,6 +815,106 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
         });
     });
 
+    it('fences late PostgreSQL worker admission and restores exact settings on refusal', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            $session = null;
+            $checks = 0;
+            $connectionRefused = false;
+            server_database_live_postgres($this, $psql, afterCommand: function (string $sql, string $output) use ($directory, &$session, &$checks, &$connectionRefused): void {
+                if (str_starts_with($sql, 'SELECT DISTINCT blocker') && ++$checks === 1) {
+                    expect($output)->toBe('');
+                    $session = new PDO('pgsql:host='.$directory.';dbname=app_test_test_2', 'orbit_test');
+                }
+                if (str_contains($sql, 'INSERT INTO orbit_admin.database_removal_fences')) {
+                    try {
+                        new PDO('pgsql:host='.$directory.';dbname=app_test_test_2', 'orbit_test');
+                    } catch (PDOException) {
+                        $connectionRefused = true;
+                    }
+                }
+            });
+            $psql('ALTER DATABASE app ALLOW_CONNECTIONS false CONNECTION LIMIT 7; ALTER DATABASE app_test CONNECTION LIMIT 3; ALTER DATABASE app_test_test_1 ALLOW_CONNECTIONS false CONNECTION LIMIT 0;');
+            $before = server_database_admission($psql);
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
+
+            expect($connectionRefused)->toBeTrue();
+            expect(server_database_admission($psql))->toBe($before);
+            expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
+            server_database_assert_pool_present($psql);
+            $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            $session = null;
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+            $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        });
+    });
+
+    it('keeps PostgreSQL admission closed between the final check and drops', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            $checks = 0;
+            $attempted = false;
+            server_database_live_postgres($this, $psql, afterCommand: function (string $sql, string $output) use ($directory, &$checks, &$attempted): void {
+                if (str_starts_with($sql, 'SELECT DISTINCT blocker') && ++$checks === 2) {
+                    expect($output)->toBe('');
+                    $attempted = true;
+                    expect(fn () => new PDO('pgsql:host='.$directory.';dbname=app_test_test_2', 'orbit_test'))->toThrow(PDOException::class);
+                }
+            });
+
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+            expect($attempted)->toBeTrue();
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+            expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
+            $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        });
+    });
+
+    it('recovers a committed PostgreSQL fence after a crash by finishing or restoring on refusal', function (bool $busy): void {
+        postgres_statements_server(function (Closure $psql, string $directory) use ($busy): void {
+            server_database_live_postgres($this, $psql);
+            $psql('ALTER DATABASE app ALLOW_CONNECTIONS false CONNECTION LIMIT 7; ALTER DATABASE app_test CONNECTION LIMIT 3;');
+            $before = server_database_admission($psql);
+            $session = $busy ? new PDO('pgsql:host='.$directory.';dbname=app_test_test_2', 'orbit_test') : null;
+            $statements = new PostgresStatements;
+            $psql($statements->fenceDatabases(['app', 'app_test', 'app_test_test_1', 'app_test_test_2']));
+            expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('4');
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%' AND datallowconn;"))->toBe('0');
+
+            if ($busy) {
+                $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
+                    ->assertJsonPath('error.code', 'database.in_use');
+                expect(server_database_admission($psql))->toBe($before);
+                expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
+                server_database_assert_pool_present($psql);
+                $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+                $session = null;
+            }
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+            expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+            expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
+            $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+        });
+    })->with([false, true]);
+
+    it('rolls back an uncommitted PostgreSQL fence when the admin session exits', function (): void {
+        postgres_statements_server(function (Closure $psql): void {
+            server_database_live_postgres($this, $psql);
+            $before = server_database_admission($psql);
+            $statements = new PostgresStatements;
+            $psql(str_replace('COMMIT;', "\\quit\n", $statements->fenceDatabases(['app', 'app_test', 'app_test_test_1', 'app_test_test_2'])));
+
+            expect(server_database_admission($psql))->toBe($before);
+            expect($psql("SELECT to_regclass('orbit_admin.database_removal_fences') IS NULL;"))->toBe('t');
+            $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+        });
+    });
+
     it('finishes a real PostgreSQL removal after an injected halfway failure', function (): void {
         postgres_statements_server(function (Closure $psql): void {
             server_database_live_postgres($this, $psql, failHalfway: true);
@@ -835,17 +936,18 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
 });
 
 /** Run the real SQL against a disposable PostgreSQL server instead of SSH. */
-function server_database_live_postgres(TestCase $test, Closure $psql, bool $failHalfway = false): void
+function server_database_live_postgres(TestCase $test, Closure $psql, bool $failHalfway = false, ?Closure $afterCommand = null): void
 {
     $test->server->update(['driver' => 'pgsql', 'tag' => '18']);
     $admin = Mockery::mock(DatabaseServerAdmin::class);
-    $admin->shouldReceive('execute')->andReturnUsing(static function (DatabaseServer $server, string $sql) use ($psql, &$failHalfway): array {
+    $admin->shouldReceive('execute')->andReturnUsing(static function (DatabaseServer $server, string $sql) use ($psql, &$failHalfway, $afterCommand): array {
         if ($failHalfway && str_contains($sql, 'DROP DATABASE')) {
             $failHalfway = false;
             $psql('DROP DATABASE IF EXISTS "app"; DROP DATABASE IF EXISTS "app_test";');
             throw new ResourceOperationException('database.server_command_failed', 'Simulated transport failure.', 502);
         }
         $output = $psql($sql);
+        $afterCommand?->__invoke($sql, $output);
 
         return $output === '' ? [] : explode("\n", $output);
     });
@@ -930,3 +1032,8 @@ describe('MySQL removal against a real server', function () use ($mysqlRemovalCo
         }
     });
 })->group('privileged');
+
+function server_database_admission(Closure $psql): string
+{
+    return $psql("SELECT datname || ':' || datallowconn::text || ':' || datconnlimit FROM pg_database WHERE datname IN ('app', 'app_test', 'app_test_test_1', 'app_test_test_2') ORDER BY datname;");
+}
