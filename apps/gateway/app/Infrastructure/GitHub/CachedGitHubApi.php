@@ -114,6 +114,11 @@ final readonly class CachedGitHubApi implements GitHubApi
         $this->github->deleteBranch($token, $repository, $branch);
     }
 
+    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $title, string $body): void
+    {
+        $this->github->updatePullRequest($token, $repository, $number, $title, $body);
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest
     {
         return $this->github->openPullRequest($token, $repository, $draft);

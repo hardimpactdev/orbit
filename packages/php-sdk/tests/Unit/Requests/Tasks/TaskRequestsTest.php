@@ -19,6 +19,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
@@ -52,6 +53,7 @@ describe('task transport', function (): void {
         'create' => [new CreateTaskGroupRequest(1, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups'],
         'show' => [new ShowTaskGroupRequest(13), Method::GET, '/api/v1/task-groups/13'],
         'update' => [new UpdateTaskGroupRequest(13), Method::PATCH, '/api/v1/task-groups/13'],
+        'publish' => [new PublishTaskGroupRequest(13, 17), Method::POST, '/api/v1/task-groups/13/publish'],
         'cancel' => [new CancelTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/cancel'],
         'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
         'turn' => [new TurnTaskGroupRequest(13, 14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/task-groups/13/turn'],

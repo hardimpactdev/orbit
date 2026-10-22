@@ -293,6 +293,15 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->reviewReader->comments($token, $repository, $number, $reviewId);
     }
 
+    public function updatePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $title, string $body): void
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->patch($this->repositoryPath($repository).'/pulls/'.$number, ['title' => $title, 'body' => $body]));
+        if (! $response->successful()) {
+            throw $response->serverError() ? GitHubApiException::unavailable() : GitHubApiException::refused();
+        }
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest
     {
         $path = $this->repositoryPath($repository).'/pulls';

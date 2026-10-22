@@ -9496,6 +9496,67 @@
       }
     },
     {
+      "name": "tasks-publish",
+      "extension": "tasks",
+      "title": "Publish a checked Task group commit",
+      "description": "Starts tasks.publish on the Gateway with check and optional pull_request (title and body), returning HTTP 202. Requires an open external group and a workspace. Refuses tasks.commit_not_checked (422) and tasks.head_moved (409). Waits for VM resume and PublishTaskVmCommit, without polling the VM. Pushes task-{id} without force; identical tips skip the push. Failures include tasks.not_fast_forward, tasks.workflows_permission, tasks.push_failed, and tasks.publish_failed. Looks for an open pull request before opening or updating it, runs no brief coverage, and requests no reviewers. Returns branch, commit, pull_request_number, and pull_request_url. Cancels a queued push before start; after start cancellation waits for the job to end. Group ending returns operation.target_busy until it ends. Supports Idempotency-Key. See /reference/tasks#publish-an-external-group.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/publish",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "check": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Passed handoff check ID"
+          },
+          "pull_request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "title",
+              "body"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "check"
+        ]
+      }
+    },
+    {
       "name": "tasks-question-close",
       "extension": "tasks",
       "title": "Close a task question",

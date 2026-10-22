@@ -8,6 +8,7 @@ use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -96,6 +97,25 @@ describe('operation requests', function (): void {
         expect($new->headers()->get('Idempotency-Key'))->toBeNull();
         $mock->assertSentCount(1);
     });
+
+    it('transports a publish check and optional pull request with an idempotency key', function (bool $pull): void {
+        $input = $pull ? ['title' => 'Exact title', 'body' => "Exact body\n"] : null;
+        $request = new PublishTaskGroupRequest(17, 31, $input, 'task.publish.c1');
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => $pull ? 12 : null, 'pull_request_url' => $pull ? 'https://github.com/acme/shop/pull/12' : null];
+        $mock = new MockClient([$request::class => MockResponse::make(['data' => operation_payload(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => $result]), 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 202)]);
+
+        $response = operation_connector($mock)->send($request)->dto();
+
+        expect($request->getMethod())->toBe(Method::POST);
+        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/publish');
+        expect($request->body()->all())->toBe($pull ? ['check' => 31, 'pull_request' => $input] : ['check' => 31]);
+        expect($request->headers()->get('Idempotency-Key'))->toBe('task.publish.c1');
+        expect(new PublishTaskGroupRequest(17, 31)->headers()->get('Idempotency-Key'))->toBeNull();
+        expect($response)->toBeInstanceOf(OperationResponse::class);
+        expect($response->result)->toBe($result);
+        expect($response->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a846');
+        $mock->assertSentCount(1);
+    })->with([false, true]);
 
     it('starts task provision without a body and preserves the key and typed operation result', function (): void {
         $request = new ProvisionTaskGroupRequest(17, 'task.provision.c1');

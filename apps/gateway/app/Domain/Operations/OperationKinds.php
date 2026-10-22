@@ -8,6 +8,7 @@ use App\Domain\Instances\Deployment\InstanceDeployOperation;
 use App\Domain\Instances\Deployment\InstanceRollbackOperation;
 use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskProvisionOperation;
+use App\Domain\Tasks\TaskPublishOperation;
 use App\Domain\Tasks\TaskTurnOperation;
 use Illuminate\Contracts\Container\Container;
 use LogicException;
@@ -25,6 +26,8 @@ final readonly class OperationKinds
 
     public const string InstanceRollback = 'instance.rollback';
 
+    public const string TasksPublish = 'tasks.publish';
+
     public const string TasksCheck = 'tasks.check';
 
     public const string TasksProvision = 'tasks.provision';
@@ -41,6 +44,7 @@ final readonly class OperationKinds
     private const array Kinds = [
         self::InstanceDeploy => InstanceDeployOperation::class,
         self::InstanceRollback => InstanceRollbackOperation::class,
+        self::TasksPublish => TaskPublishOperation::class,
         self::TasksCheck => TaskCheckOperation::class,
         self::TasksProvision => TaskProvisionOperation::class,
         self::TasksTurn => TaskTurnOperation::class,

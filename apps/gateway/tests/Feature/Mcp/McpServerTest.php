@@ -309,6 +309,26 @@ describe('POST /mcp', function (): void {
         $this->assertDatabaseCount('jobs', 1);
     })->with(['/mcp', '/mcp/search']);
 
+    it('starts and replays task publish through its generated MCP tool', function (string $endpoint): void {
+        enable_operation_queue();
+        tick_bind_defaults();
+        app(TaskExtensionState::class)->enable();
+        $group = tick_group();
+        Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
+        $check = $group->tasks()->firstOrFail()->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
+        $arguments = ['group' => $group->id, 'check' => $check->id, 'Idempotency-Key' => 'mcp.publish.c1'];
+
+        $first = mcp_tool($this, $endpoint, 'tasks-publish', $arguments);
+        $second = mcp_tool($this, $endpoint, 'tasks-publish', $arguments);
+
+        expect($first['operation']['kind'])->toBe('tasks.publish');
+        expect($first['operation']['input'])->toBe(['check' => $check->id, 'pull_request' => null]);
+        expect($first['poll']['tool'])->toBe('operation-show');
+        expect($second['operation']['id'])->toBe($first['operation']['id']);
+        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('jobs', 1);
+    })->with(['/mcp', '/mcp/search']);
+
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();

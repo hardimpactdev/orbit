@@ -12,6 +12,8 @@ final class OperationStepLabels
     {
         $labels = match ($name) {
             'workspace_ready' => ['Ready workspace', 'Waiting for workspace', 'Workspace ready'],
+            'push' => ['Push checked commit', 'Pushing checked commit', 'Pushed checked commit'],
+            'pull_request' => ['Publish pull request', 'Publishing pull request', 'Published pull request'],
             'check' => ['Run task check', 'Running task check', 'Ran task check'],
             'commit' => ['Record checked tree', 'Recording checked tree', 'Recorded checked tree'],
             'turn_workspace' => ['Prepare workspace', 'Preparing workspace', 'Prepared workspace'],

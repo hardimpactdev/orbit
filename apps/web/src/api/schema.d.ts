@@ -3653,6 +3653,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a checked Task group commit
+         * @description Starts tasks.publish on the Gateway with check and optional pull_request (title and body), returning HTTP 202. Requires an open external group and a workspace. Refuses tasks.commit_not_checked (422) and tasks.head_moved (409). Waits for VM resume and PublishTaskVmCommit, without polling the VM. Pushes task-{id} without force; identical tips skip the push. Failures include tasks.not_fast_forward, tasks.workflows_permission, tasks.push_failed, and tasks.publish_failed. Looks for an open pull request before opening or updating it, runs no brief coverage, and requests no reviewers. Returns branch, commit, pull_request_number, and pull_request_url. Cancels a queued push before start; after start cancellation waits for the job to end. Group ending returns operation.target_busy until it ends. Supports Idempotency-Key. See /reference/tasks#publish-an-external-group.
+         */
+        post: operations["tasks-publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks": {
         parameters: {
             query?: never;
@@ -19881,6 +19901,91 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-publish": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Passed handoff check ID */
+                    check: number;
+                    pull_request?: {
+                        title: string;
+                        body: string;
+                    };
+                };
             };
         };
         responses: {

@@ -27,6 +27,7 @@ use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -89,6 +90,7 @@ use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskProvisionOperation;
 use App\Domain\Tasks\TaskPublication;
+use App\Domain\Tasks\TaskPublishOperation;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -225,6 +227,7 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
         TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
         StartTaskTurnAction::class => ['execute' => 'tasks.turn explicitly admits an external group through shared TaskOperations.'],
@@ -261,6 +264,15 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
+        TaskPublishOperation::class => [
+            'requireCheck' => 'Requires the passed handoff commit of this group and unchanged HEAD.',
+            'run' => 'Publishes without advancing the external lifecycle.',
+            'waitingStep' => 'Supplies the publish waiting hooks.',
+            'read' => 'Reads the existing publish job record after queueing the approval push.',
+            'stop' => 'Invalidates an unstarted job or waits for a started push to finish.',
+            'abandon' => 'Removes queued workspace ownership without retries.',
+        ],
         StartTaskCheckAction::class => ['execute' => 'Explicit external check start through shared admission.'],
         TaskCheckOperation::class => [
             'requireCheck' => 'Validates the workspace, current subtask, and baseline eligibility.',

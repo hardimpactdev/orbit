@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -513,4 +514,54 @@ it('follows a turn operation and renders its final receipt in JSON', function ()
     $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskGroupRequest
         && $request->headers()->get('Idempotency-Key') === 'turn.c1'
         && json_decode((string) $request->body(), true) === ['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
+});
+
+describe('tasks:publish', function (): void {
+    beforeEach(function (): void {
+        MockClient::global(gateway_fixture_mock());
+        app(GatewayExtensionState::class)->discover();
+        MockClient::destroyGlobal();
+    });
+
+    it('follows a waiting publish and renders the published branch and pull request', function (bool $json, bool $pull): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => $pull ? 12 : null, 'pull_request_url' => $pull ? 'https://github.com/acme/shop/pull/12' : null];
+        $mock = cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'push'], [cli_step('push', 2, 'waiting', 4)]),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result], [cli_step('push', 2, 'succeeded', 7)]),
+        ], $seen, PublishTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('tasks:publish', ['group' => '17', '--check' => '31', ...($pull ? ['--title' => 'Title', '--body' => 'Body'] : []), '--idempotency-key' => 'group.publish.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+
+        $output = Artisan::output();
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
+        } else {
+            expect($output)->toContain('Publish task group [17]', 'Pushed checked commit', 'Branch: task-17', 'Commit: '.str_repeat('a', 40));
+            if ($pull) {
+                expect($output)->toContain('Pull request: https://github.com/acme/shop/pull/12');
+            }
+        }
+        $mock->assertSentCount(1, PublishTaskGroupRequest::class);
+        $pending = $mock->findResponseByRequest(PublishTaskGroupRequest::class)->getPendingRequest();
+        expect($pending->body()->all())->toBe($pull ? ['check' => 31, 'pull_request' => ['title' => 'Title', 'body' => 'Body']] : ['check' => 31]);
+        expect($pending->headers()->get('Idempotency-Key'))->toBe('group.publish.c1');
+    })->with([false, true])->with([false, true]);
+
+    it('refuses missing, invalid, or incomplete publish inputs before Gateway access', function (array $arguments, string $code): void {
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('tasks:publish', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
+
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([
+        [[], 'tasks.group_required'],
+        [['group' => 'bad'], 'tasks.group_invalid'],
+        [['group' => '17'], 'tasks.check_required'],
+        [['group' => '17', '--check' => 'bad'], 'tasks.check_invalid'],
+        [['group' => '17', '--check' => '31', '--title' => 'Title'], 'tasks.pull_request_invalid'],
+        [['group' => '17', '--check' => '31', '--body' => 'Body'], 'tasks.pull_request_invalid'],
+    ]);
 });

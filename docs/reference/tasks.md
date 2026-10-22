@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
-  - "apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php"
+  - "apps/gateway/database/migrations/2026_12_{03_000000_allow_cold_recipe_image_rebuilds,31_000000_add_task_vm_publish_error_code}.php"
 ---
 
 # Tasks
@@ -135,6 +135,22 @@ After a reviewer turn, Orbit records the checkout difference, resets to the chec
 A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash-loop park or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
 
 Direct operation cancellation interrupts the held subtask turn and confirms that its lease ended. Subtask cancellation first cancels its turn operation, including receipt collection and the reviewer reset, before recording the subtask as cancelled. A cancel received during send waits for the same confirmed stop. An unconfirmed interrupt returns HTTP 502 `tasks.subtask_interrupt_failed` after recording the cancel request. The operation stays `waiting`, retains its target, and retries the stop on the next delayed read.
+
+#### Publish an external group
+
+`tasks:publish <group> --check=<id> [--title=… --body=…]` starts `tasks.publish` through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body } }`. Supply title and body together. It uses the [shared task-operation rules](#provision-an-external-group), requires a workspace (`409 tasks.no_workspace`), and accepts `--idempotency-key` and `--json`. The PHP SDK and generated MCP tool expose the same inputs.
+
+The check must be a passed handoff check belonging to a subtask of this group, with its recorded commit. Otherwise admission returns `422 tasks.commit_not_checked`. HEAD must still be that commit (`409 tasks.head_moved`). A parked VM queues its resume first; HEAD is checked after readiness as well as at admission when the VM is ready.
+
+The operation reuses the approval push: `PublishTaskVmCommit` imports the checked commit into the Gateway mirror and pushes it to `task-{id}`. A delayed operation read claims `waiting` as `running`, then reads the job record; it never polls the VM.
+
+A divergent remote branch fails with `tasks.not_fast_forward`. An identical remote tip succeeds without a push. A refusal for missing `Workflows: write` fails with `tasks.workflows_permission`. Other push failures use `tasks.push_failed`. The Gateway never forces a push, sends a GitHub token to the VM, or retries a failed effect. A new operation with a new key queues one new attempt after a recorded failure; replaying the old key returns its failure.
+
+Without `pull_request`, the operation only pushes. With it, the operation first looks for an open pull request for the branch, updates its title and body when found, or opens one against the Project's default branch. A resumed step repeats that lookup before opening, so it cannot open a second pull request. It runs no brief coverage and requests no reviewers. It stores `pr_url` and the watched pull request fields, so the existing tick watch follows it. The tick records its merge or close without settling or completing the group.
+
+The result is `{ branch, commit, pull_request_number, pull_request_url }`, with null pull request fields for a push alone. Publication changes no board status or settle metrics.
+
+Cancelling before the publish job starts invalidates its queued record, so a late job does nothing, and ends the operation `cancelled`. After the job starts, cancellation stays requested and the operation stays `waiting`, holding the group until the job records success or failure. It then ends `cancelled` and opens no pull request. A direct cancel returns the waiting record. Group cancel and complete return `409 operation.target_busy` until that push ends; retry them afterward. A cancel cannot undo a push or a pull request step that already ran.
 
 ### Task lifecycle
 
@@ -1761,6 +1777,12 @@ The base run is the exception that remains. It copies only installed `vendor` an
 New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
 ## Why it works this way
+
+### Publish uses the checked commit and the approval push
+
+A raw commit would bypass the handoff check. Taking its check ID binds publication to the evidence and the commit recorded together. Reusing the approval push keeps GitHub authority on the Gateway and avoids a second transfer path. The operation holds the group while the queued job runs, so another effect cannot reuse its workspace. An open-pull-request lookup makes a repeated step safe. The orchestrator owns review gates and board states, so publication adds no brief coverage, reviewer request, or settling decision.
+
+A push that started can reach GitHub even after its client stops. Keeping the operation held until its job ends prevents a cancel from claiming that publication stopped. Before start, invalidating the queued record is enough to stop a late job without deleting shared queue data.
 
 These reasons explain the design. Check them before you propose a change.
 
