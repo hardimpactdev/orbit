@@ -59,11 +59,13 @@ final readonly class WatchTaskBranchPullRequestAction
         // GitHub keeps the number when it transfers a repository. The task branch has a pull request
         // with that number here, so it is the same pull request.
         $followed = null;
-        foreach ($pullRequests as $pullRequest) {
-            if ($moved !== null && $pullRequest->number === $moved) {
-                $followed = $pullRequest->url;
-                $attributes['pr_url'] = $followed;
-                break;
+        if ($moved !== null) {
+            foreach ($pullRequests as $pullRequest) {
+                if ($pullRequest->number === $moved) {
+                    $followed = $pullRequest->url;
+                    $attributes['pr_url'] = $followed;
+                    break;
+                }
             }
         }
         if ($attributes === []) {

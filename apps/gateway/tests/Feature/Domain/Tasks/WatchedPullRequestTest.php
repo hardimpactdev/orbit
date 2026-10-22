@@ -216,3 +216,23 @@ it('follows a repository move to the same pull request number on the task branch
     'another number' => ['todo', [branch_watch_row(43)], null],
     'no pull request' => ['completed', [], null],
 ]);
+
+it('keeps a moved pr_url and throttles the look when the branch list is unreadable', function (): void {
+    $this->freezeTime();
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    $group = branch_watch_group(status: 'settling', subtaskStatus: 'completed');
+    $group->update(['pr_url' => 'https://github.com/old-owner/orbit/pull/42']);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([], 502),
+    ]);
+
+    app(WatchTaskBranchPullRequestAction::class)->execute($group);
+    $this->travel(59)->seconds();
+    app(WatchTaskBranchPullRequestAction::class)->execute($group);
+
+    expect($group->fresh())->pr_url->toBe('https://github.com/old-owner/orbit/pull/42')->watched_pr_url->toBeNull();
+    Http::assertSentCount(3);
+});
