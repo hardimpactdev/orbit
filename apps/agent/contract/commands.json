@@ -587,6 +587,26 @@
       ]
     },
     {
+      "name": "instances.inspect-clone-candidate",
+      "summary": "Check that a clone candidate's source is clean and its repository holds its commit.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.clone_candidate_release_missing",
+        "instances.clone_candidate_source_invalid",
+        "instances.clone_candidate_release_changed",
+        "instances.clone_candidate_branch_invalid",
+        "instances.clone_candidate_dirty",
+        "instances.clone_candidate_repository_unavailable",
+        "instances.clone_candidate_commit_unavailable",
+        "instances.clone_target_branch_missing"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

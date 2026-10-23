@@ -2,79 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Illuminate\Support\Facades\File;
-use Symfony\Component\Process\Process;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
-pest()->group('privileged');
-
-describe('TaskGitHardening', function (): void {
-    it('suppresses fsmonitor through sudo and inside candidate submodules', function (): void {
-        $root = sys_get_temp_dir().'/orbit-clone-monitor-'.bin2hex(random_bytes(6));
-        $checkout = $root.'/checkout';
-        $child = $root.'/child';
-        $git = static fn (string $path, array $args): string => (new Process(['git', '-C', $path, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
-        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
-        (new Process(['git', 'init', '-q', '-b', 'main', $child]))->mustRun();
-        file_put_contents($child.'/readme', 'child');
-        $git($child, ['add', '.']);
-        $git($child, ['commit', '-qm', 'child']);
-        $git($checkout, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', $child, 'nested']);
-        $git($checkout, ['commit', '-qm', 'parent']);
-        (new Process(['git', 'clone', '-q', '--bare', $checkout, $root.'/origin.git']))->mustRun();
-        $candidate = orb198_clone_candidate();
-        $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
-        $candidate->update(['checkout_path' => $checkout]);
-        $candidate->project->update(['repository_url' => $root.'/origin.git']);
-
-        try {
-            foreach ([$checkout, $checkout.'/nested'] as $index => $path) {
-                $monitor = $checkout.'/.git/monitor-'.$index;
-                $marker = $checkout.'/.git/monitor-ran-'.$index;
-                file_put_contents($monitor, "#!/bin/sh\nprintf ran >> '$marker'\n");
-                chmod($monitor, 0755);
-                $git($path, ['config', 'core.fsmonitor', $monitor]);
-                $git($path, ['status', '--porcelain']);
-                expect(file_exists($marker))->toBeTrue();
-                unlink($marker);
-            }
-            // The parent control can also trigger the child. Clear every control marker before inspection.
-            foreach (glob($checkout.'/.git/monitor-ran-*') ?: [] as $marker) {
-                unlink($marker);
-            }
-            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main');
-
-            expect($source->basePath)->toBe($checkout)
-                ->and(glob($checkout.'/.git/monitor-ran-*'))->toBe([]);
-        } finally {
-            File::deleteDirectory($root);
-        }
-    });
-});
-
-it('returns bound development source evidence from a valid inspection receipt', function (): void {
+it('returns bound development source evidence from the agent inspection', function (): void {
     $candidate = orb198_clone_candidate();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("OK\t/srv/orbit/apps/acme\t".str_repeat('a', 40)."\n"),
-    ]);
+    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('a', 40)]);
 
-    $source = orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'release');
+    $source = orb198_clone_candidate_inspector($agents)->inspect($candidate, 'release');
 
     expect($source->instanceId)->toBe($candidate->id)
         ->and($source->environment)->toBe('development')
@@ -83,274 +27,127 @@ it('returns bound development source evidence from a valid inspection receipt', 
         ->and($source->branch)->toBe('main')
         ->and($source->commit)->toBe(str_repeat('a', 40))
         ->and($source->node->is($candidate->node))->toBeTrue();
-
-    expect($ssh->connections)->toHaveCount(1)
-        ->and($ssh->connections[0]->host)->toBe('10.44.0.20')
-        ->and($ssh->connections[0]->user)->toBe('orbit')
-        ->and($ssh->connections[0]->identityFile)->toBe('/tmp/orbit-clone-test-key')
-        ->and($ssh->connections[0]->knownHostsFile)->toBe('/tmp/orbit-clone-known-hosts')
-        ->and($ssh->connections[0]->commandTimeout)->toBe(120.0);
-
-    expect($ssh->commands)->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments)->toBe([
-            'bash',
-            '-seu',
-            '--',
-            'development',
-            '/srv/orbit/apps/acme',
-            'orbit',
-            'ssh://git@example.test/acme.git',
-            'main',
-            'release',
-            '/srv/orbit/apps/acme',
-        ])
-        ->and($ssh->commands[0]->input)->toContain(
-            'status --porcelain=v1 --untracked-files=all --ignore-submodules=none',
-            'elif [ "$environment" = development ]',
-            'submodule status --recursive',
-            'submodule foreach --recursive --quiet',
-            "'+refs/heads/*:refs/remotes/origin/*'",
-            'cat-file -e "$commit^{commit}" 2>/dev/null',
-            'show-ref --verify --quiet',
-        );
+    $input = $agents->calls[0]['input'];
+    expect($input['git_read'])->toBeInstanceOf(GitReadEnvironment::class);
+    unset($input['git_read']);
+    expect($input)->toBe([
+        'environment' => 'development',
+        'base' => '/srv/orbit/apps/acme',
+        'user' => 'orbit',
+        'repository' => 'ssh://git@example.test/acme.git',
+        'configured_branch' => 'main',
+        'target_branch' => 'release',
+        'expected_source' => '/srv/orbit/apps/acme',
+    ]);
 });
 
 it('uses the production runtime identity and configured deployment branch for the selected release', function (): void {
     $candidate = orb198_clone_candidate('production');
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result(
-            "OK\t/home/orbit-app-1/releases/20260912010101-one\t".str_repeat('b', 64)."\n",
-        ),
-    ]);
+    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/20260912010101-one', 'commit' => str_repeat('b', 64)]);
 
-    $source = orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'target-release');
+    $source = orb198_clone_candidate_inspector($agents)->inspect($candidate, 'target-release');
 
     expect($source->environment)->toBe('production')
         ->and($source->basePath)->toBe('/home/orbit-app-1/releases/20260912010101-one')
         ->and($source->executionUser)->toBe('orbit-app-1')
         ->and($source->branch)->toBe('production-release')
-        ->and($source->commit)->toBe(str_repeat('b', 64));
-
-    expect($ssh->commands[0]->arguments)->toBe([
-        'bash',
-        '-seu',
-        '--',
-        'production',
-        '/home/orbit-app-1',
-        'orbit-app-1',
-        'ssh://git@example.test/acme.git',
-        'production-release',
-        'target-release',
-        '/home/orbit-app-1/releases/20260912010101-one',
-    ]);
+        ->and($source->commit)->toBe(str_repeat('b', 64))
+        ->and($agents->calls[0]['input'])->toMatchArray([
+            'environment' => 'production',
+            'base' => '/home/orbit-app-1',
+            'user' => 'orbit-app-1',
+            'configured_branch' => 'production-release',
+            'target_branch' => 'target-release',
+            'expected_source' => '/home/orbit-app-1/releases/20260912010101-one',
+        ]);
 });
 
-it('refuses every dirty candidate classification', function (string $dirtyState): void {
+it('maps each agent refusal to its clone error', function (string $refusal, string $errorCode): void {
     $candidate = orb198_clone_candidate();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("REFUSED\tinstance.clone_candidate_dirty\n"),
-    ]);
+    $agents = new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', $refusal);
 
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception) use ($dirtyState): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_dirty')
-                ->and($exception->getMessage())->toBe('The candidate is not eligible for cloning.')
-                ->and($dirtyState)->toBeString();
-        });
-})->with([
-    'staged changes' => 'staged',
-    'unstaged changes' => 'unstaged',
-    'nonignored untracked files' => 'untracked',
-    'changed submodule worktree' => 'submodule',
-]);
-
-it('reports repository and selected branch failures without changing their error codes', function (string $errorCode): void {
-    $candidate = orb198_clone_candidate();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("REFUSED\t{$errorCode}\n"),
-    ]);
-
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'release'))
+    expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
         ->toThrow(function (ResourceOperationException $exception) use ($errorCode): void {
             expect($exception->errorCode)->toBe($errorCode)
+                ->and($exception->status)->toBe(409)
                 ->and($exception->getMessage())->toBe('The candidate is not eligible for cloning.');
         });
 })->with([
-    'repository unavailable' => 'instance.clone_candidate_repository_unavailable',
-    'candidate commit unavailable' => 'instance.clone_candidate_commit_unavailable',
-    'target branch missing' => 'instance.clone_target_branch_missing',
-    'configured branch changed' => 'instance.clone_candidate_branch_invalid',
+    ['instances.clone_candidate_dirty', 'instance.clone_candidate_dirty'],
+    ['instances.clone_candidate_release_missing', 'instance.clone_candidate_release_missing'],
+    ['instances.clone_candidate_release_changed', 'instance.clone_candidate_release_changed'],
+    ['instances.clone_candidate_source_invalid', 'instance.clone_candidate_source_invalid'],
+    ['instances.clone_candidate_branch_invalid', 'instance.clone_candidate_branch_invalid'],
+    ['instances.clone_candidate_commit_unavailable', 'instance.clone_candidate_commit_unavailable'],
+    ['instances.clone_target_branch_missing', 'instance.clone_target_branch_missing'],
 ]);
 
-it('redacts URL credentials and token-shaped words from stderr', function (): void {
+it('redacts URL credentials and token-shaped words from the fetch stderr', function (): void {
     $candidate = orb198_clone_candidate();
     $token = 'ghp_'.str_repeat('a', 36);
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result('', exitCode: 128, stderr: "fatal: unable to access 'https://nick:{$token}@example.test/acme.git/'\nbearer ".str_repeat('Q', 48)."\n"),
+    $agents = new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', 'instances.clone_candidate_repository_unavailable', [
+        'stderr' => "fatal: unable to access 'https://nick:{$token}@example.test/acme.git/'\nbearer ".str_repeat('Q', 48),
     ]);
 
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
+    expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
         ->toThrow(function (ResourceOperationException $exception) use ($token): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_unavailable')
+            expect($exception->errorCode)->toBe('instance.clone_candidate_repository_unavailable')
                 ->and($exception->details['stderr'])->toBe("fatal: unable to access 'https://[REDACTED]@example.test/acme.git/'\nbearer [REDACTED]")
                 ->and($exception->getMessage())->not->toContain($token)
                 ->and($exception->getMessage())->not->toContain('nick:');
         });
 });
 
-it('reads a refusal before stderr and keeps the stderr', function (): void {
-    $candidate = orb198_clone_candidate();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("REFUSED\tinstance.clone_candidate_dirty\n", stderr: "warning: could not open directory 'cache/': Permission denied\n"),
-    ]);
-
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_dirty')
-                ->and($exception->getMessage())->toBe("The candidate is not eligible for cloning. warning: could not open directory 'cache/': Permission denied")
-                ->and($exception->details)->toBe(['stderr' => "warning: could not open directory 'cache/': Permission denied"]);
-        });
-});
-
-it('refuses unsuccessful truncated stderr and thrown SSH inspections as unavailable', function (
-    Orb198CloneCandidateSshExecutor $ssh,
-): void {
+it('refuses another refusal, a transport failure, or a malformed answer as unavailable', function (Closure $agents, int $status): void {
     $candidate = orb198_clone_candidate();
 
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_unavailable');
-        });
-})->with([
-    'nonzero exit' => fn (): Orb198CloneCandidateSshExecutor => new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result('', exitCode: 1),
-    ]),
-    'stderr' => fn (): Orb198CloneCandidateSshExecutor => new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result('', stderr: "unexpected\n"),
-    ]),
-    'truncated' => fn (): Orb198CloneCandidateSshExecutor => new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result('', truncated: true),
-    ]),
-    'transport exception' => fn (): Orb198CloneCandidateSshExecutor => new Orb198CloneCandidateSshExecutor(
-        exception: new RuntimeException('SSH unavailable.'),
-    ),
-]);
-
-it('refuses malformed successful inspection receipts', function (string $receipt): void {
-    $candidate = orb198_clone_candidate();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result($receipt),
-    ]);
-
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception): void {
+    expect(fn () => orb198_clone_candidate_inspector($agents())->inspect($candidate, 'main'))
+        ->toThrow(function (ResourceOperationException $exception) use ($status): void {
             expect($exception->errorCode)->toBe('instance.clone_candidate_unavailable')
-                ->and($exception->getMessage())->toBe('The candidate inspection was invalid.');
+                ->and($exception->status)->toBe($status);
         });
 })->with([
-    'empty' => '',
-    'unknown receipt' => "UNKNOWN\t/srv/orbit/apps/acme\t".str_repeat('a', 40)."\n",
-    'missing source' => "OK\t\t".str_repeat('a', 40)."\n",
-    'short commit' => "OK\t/srv/orbit/apps/acme\tabcd\n",
-    'uppercase commit' => "OK\t/srv/orbit/apps/acme\t".str_repeat('A', 40)."\n",
-    'extra member' => "OK\t/srv/orbit/apps/acme\t".str_repeat('a', 40)."\textra\n",
-    'refusal without code' => "REFUSED\t\n",
+    'another refusal' => [fn () => new FakeAgentCommandRunner()->refuse('instances.inspect-clone-candidate', 'agent.deadline_exceeded'), 409],
+    'transport failure' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', fn () => throw new RuntimeException('SSH unavailable.')), 502],
+    'short commit' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => 'abcd']), 409],
+    'uppercase commit' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/srv/orbit/apps/acme', 'commit' => str_repeat('A', 40)]), 409],
+    'missing source' => [fn () => new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['commit' => str_repeat('a', 40)]), 409],
 ]);
 
-it('refuses a production receipt that is not the recorded selected release', function (): void {
+it('refuses a production answer that is not the recorded selected release', function (): void {
     $candidate = orb198_clone_candidate('production');
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result(
-            "OK\t/home/orbit-app-1/releases/different\t".str_repeat('c', 40)."\n",
-        ),
-    ]);
+    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-clone-candidate', ['source' => '/home/orbit-app-1/releases/different', 'commit' => str_repeat('c', 40)]);
 
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_source_invalid');
-        });
+    expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.clone_candidate_source_invalid'));
 });
 
-it('refuses invalid local candidate and Node identities before SSH', function (Closure $mutate): void {
-    $candidate = orb198_clone_candidate();
+it('refuses invalid candidate and Node identities before it asks the agent', function (string $environment, Closure $mutate): void {
+    $candidate = orb198_clone_candidate($environment);
     $mutate($candidate);
     $candidate->save();
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("OK\t/srv/orbit/apps/acme\t".str_repeat('d', 40)."\n"),
-    ]);
+    $agents = new FakeAgentCommandRunner;
 
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
+    expect(fn () => orb198_clone_candidate_inspector($agents)->inspect($candidate, 'main'))
         ->toThrow(ResourceOperationException::class)
-        ->and($ssh->commands)->toBeEmpty();
+        ->and($agents->calls)->toBeEmpty();
 })->with([
-    'candidate inactive' => function (Instance $candidate): void {
-        $candidate->status = InstanceState::SourceResolved;
-    },
-    'candidate lifecycle incomplete' => function (Instance $candidate): void {
-        $candidate->provisioning_step = 'source-resolved';
-    },
-    'Node inactive' => function (Instance $candidate): void {
-        $candidate->node->update(['status' => LifecycleStatus::Failed]);
-    },
-    'Node platform unsupported' => function (Instance $candidate): void {
-        $candidate->node->update(['platform' => 'darwin']);
-    },
-    'Node address missing' => function (Instance $candidate): void {
-        $candidate->node->update(['wireguard_ip' => null]);
-    },
-    'runtime user invalid' => function (Instance $candidate): void {
-        $candidate->node->update(['user' => 'Invalid User']);
-    },
-    'configured branch missing' => function (Instance $candidate): void {
-        $candidate->branch = null;
-    },
-    'source path relative' => function (Instance $candidate): void {
-        $candidate->checkout_path = 'relative/source';
-    },
-]);
-
-it('refuses an invalid production transport user before SSH', function (): void {
-    $candidate = orb198_clone_candidate('production');
-    $candidate->node->update(['user' => 'Invalid User']);
-    $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result(
-            "OK\t/home/orbit-app-1/releases/20260912010101-one\t".str_repeat('e', 40)."\n",
-        ),
-    ]);
-
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_source_invalid');
-        })
-        ->and($ssh->commands)->toBeEmpty();
-});
-
-it('refuses production candidates without complete selected release identity', function (Closure $mutate): void {
-    $candidate = orb198_clone_candidate('production');
-    $mutate($candidate);
-    $candidate->save();
-    $ssh = new Orb198CloneCandidateSshExecutor;
-
-    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
-        ->toThrow(ResourceOperationException::class)
-        ->and($ssh->commands)->toBeEmpty();
-})->with([
-    'release layout missing' => function (Instance $candidate): void {
-        $candidate->checkout_path = '/home/orbit-app-1';
-    },
-    'production home missing' => function (Instance $candidate): void {
-        $candidate->production_home = null;
-    },
-    'production runtime user missing' => function (Instance $candidate): void {
-        $candidate->production_user = null;
-    },
-    'production runtime user invalid' => function (Instance $candidate): void {
-        $candidate->production_user = 'Invalid User';
-    },
-    'configured branch missing' => function (Instance $candidate): void {
+    'candidate inactive' => ['development', fn (Instance $candidate) => $candidate->status = InstanceState::SourceResolved],
+    'candidate lifecycle incomplete' => ['development', fn (Instance $candidate) => $candidate->provisioning_step = 'source-resolved'],
+    'Node inactive' => ['development', fn (Instance $candidate) => $candidate->node->update(['status' => LifecycleStatus::Failed])],
+    'Node platform unsupported' => ['development', fn (Instance $candidate) => $candidate->node->update(['platform' => 'darwin'])],
+    'Node address missing' => ['development', fn (Instance $candidate) => $candidate->node->update(['wireguard_ip' => null])],
+    'runtime user invalid' => ['development', fn (Instance $candidate) => $candidate->node->update(['user' => 'Invalid User'])],
+    'configured branch missing' => ['development', fn (Instance $candidate) => $candidate->branch = null],
+    'source path relative' => ['development', fn (Instance $candidate) => $candidate->checkout_path = 'relative/source'],
+    'release layout missing' => ['production', fn (Instance $candidate) => $candidate->checkout_path = '/home/orbit-app-1'],
+    'production home missing' => ['production', fn (Instance $candidate) => $candidate->production_home = null],
+    'production runtime user missing' => ['production', fn (Instance $candidate) => $candidate->production_user = null],
+    'production runtime user invalid' => ['production', fn (Instance $candidate) => $candidate->production_user = 'Invalid User'],
+    'production branch missing' => ['production', function (Instance $candidate): void {
         $candidate->branch = null;
         $candidate->deployment_branch = null;
-    },
+    }],
 ]);
 
 function orb198_clone_candidate(string $environment = 'development'): Instance
@@ -396,96 +193,7 @@ function orb198_clone_candidate(string $environment = 'development'): Instance
     ]);
 }
 
-/** @return array{string, string, Instance} A clean local candidate whose clean filter records its user. */
-function orb198_clean_local_candidate(): array
+function orb198_clone_candidate_inspector(FakeAgentCommandRunner $agents): RemoteInstanceCloneCandidateInspector
 {
-    $root = sys_get_temp_dir().'/orbit-clone-runtime-'.bin2hex(random_bytes(6));
-    $checkout = $root.'/checkout';
-    (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
-    file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
-    file_put_contents($checkout.'/readme', 'clean');
-    (new Process(['git', '-C', $checkout, 'add', '.']))->mustRun();
-    (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'parent']))->mustRun();
-    (new Process(['git', 'clone', '-q', '--bare', $checkout, $root.'/origin.git']))->mustRun();
-    (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
-    // Make the index stale so status runs the clean filter.
-    touch($checkout.'/readme', time() + 5);
-    $candidate = orb198_clone_candidate();
-    $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
-    $candidate->update(['checkout_path' => $checkout]);
-    $candidate->project->update(['repository_url' => $root.'/origin.git']);
-
-    return [$root, $checkout, $candidate];
-}
-
-function orb198_clone_candidate_inspector(
-    SshExecutor $ssh,
-): RemoteInstanceCloneCandidateInspector {
-    return new RemoteInstanceCloneCandidateInspector(
-        $ssh,
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-clone-test-key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 test';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/orbit-clone-known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-        app(RepositoryReadAccess::class),
-    );
-}
-
-function orb198_clone_candidate_result(
-    string $stdout,
-    int $exitCode = 0,
-    string $stderr = '',
-    bool $truncated = false,
-): CommandResult {
-    return new CommandResult($exitCode, $stdout, $stderr, 1, $truncated);
-}
-
-final class Orb198CloneCandidateSshExecutor implements SshExecutor
-{
-    /** @var list<SshConnection> */
-    public array $connections = [];
-
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @param list<CommandResult> $results */
-    public function __construct(
-        private array $results = [],
-        private ?Throwable $exception = null,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->connections[] = $connection;
-        $this->commands[] = $command;
-
-        if ($this->exception instanceof Throwable) {
-            throw $this->exception;
-        }
-
-        $result = array_shift($this->results);
-
-        if (! $result instanceof CommandResult) {
-            throw new RuntimeException('No clone candidate inspection result was queued.');
-        }
-
-        return $result;
-    }
+    return new RemoteInstanceCloneCandidateInspector($agents, app(RepositoryReadAccess::class));
 }

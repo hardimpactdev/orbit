@@ -11,22 +11,20 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
-use App\Infrastructure\GitHub\GitReadScript;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
 
+/**
+ * Checks a clone candidate's source on its Node through the agent's `instances.inspect-clone-candidate`
+ * (docs/reference/instance-cloning.md).
+ */
 final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCloneCandidateInspector
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private RepositoryReadAccess $access,
     ) {}
 
@@ -42,128 +40,30 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         $candidate->refresh()->loadMissing(['project', 'node']);
         $node = $candidate->node;
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
-        $sshUser = $node->user;
 
-        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), <<<'BASH'
-                        environment=$1
-                        base=$2
-                        runtime_user=$3
-                        repository=$4
-                        configured_branch=$5
-                        target_branch=$6
-                        expected_source=$7
-
-                        refuse() {
-                            printf 'REFUSED\t%s\n' "$1"
-                            exit 0
-                        }
-
-                        run_as_runtime() {
-                            if [ "${1:-}" = git ]; then
-                                shift
-                                sudo -n -u "$runtime_user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"
-                            else
-                                sudo -n -u "$runtime_user" -H -- "$@"
-                            fi
-                        }
-                        run_source_git() {
-                            run_as_runtime git -C "$source" "$@"
-                        }
-
-                        case "$environment" in
-                            development)
-                                source=$base
-                                ;;
-                            production)
-                                current="$base/current"
-                                run_as_runtime test -L "$current" || refuse instance.clone_candidate_release_missing
-                                source=$(run_as_runtime realpath -e -- "$current") \
-                                    || refuse instance.clone_candidate_release_missing
-                                case "$source" in
-                                    "$base"/releases/*) ;;
-                                    *) refuse instance.clone_candidate_source_invalid ;;
-                                esac
-                                ;;
-                            *) refuse instance.clone_candidate_environment_invalid ;;
-                        esac
-
-                        test "$source" = "$expected_source" \
-                            || refuse instance.clone_candidate_release_changed
-
-                        run_as_runtime test -d "$source" || refuse instance.clone_candidate_source_invalid
-                        run_as_runtime test ! -L "$source" || refuse instance.clone_candidate_source_invalid
-                        top=$(run_as_runtime git -C "$source" rev-parse --show-toplevel 2>/dev/null) \
-                            || refuse instance.clone_candidate_source_invalid
-                        source_real=$(run_as_runtime realpath -e -- "$source") \
-                            || refuse instance.clone_candidate_source_invalid
-                        test "$top" = "$source_real" || refuse instance.clone_candidate_source_invalid
-                        if actual_branch=$(run_as_runtime git -C "$source" symbolic-ref --quiet --short HEAD 2>/dev/null); then
-                            test "$actual_branch" = "$configured_branch" \
-                                || refuse instance.clone_candidate_branch_invalid
-                        elif [ "$environment" = development ]; then
-                            refuse instance.clone_candidate_branch_invalid
-                        fi
-                        commit=$(run_as_runtime git -C "$source" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) \
-                            || refuse instance.clone_candidate_source_invalid
-                        case "$commit" in
-                            [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
-                            *) refuse instance.clone_candidate_source_invalid ;;
-                        esac
-                        content_status=$(run_source_git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) \
-                            || refuse instance.clone_candidate_dirty
-                        test -z "$content_status" || refuse instance.clone_candidate_dirty
-                        submodules=$(run_source_git submodule status --recursive 2>/dev/null) \
-                            || refuse instance.clone_candidate_dirty
-                        if printf '%s\n' "$submodules" | grep -Eq '^[+-U]'; then
-                            refuse instance.clone_candidate_dirty
-                        fi
-                        run_source_git submodule foreach --recursive --quiet \
-                            'status=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$PWD" status --porcelain=v1 --untracked-files=all --ignore-submodules=none) && test -z "$status"' \
-                            >/dev/null 2>&1 || refuse instance.clone_candidate_dirty
-
-                        scratch=$(run_as_runtime mktemp -d) || refuse instance.clone_candidate_repository_unavailable
-                        cleanup() { run_as_runtime rm -rf -- "$scratch"; }
-                        trap cleanup EXIT
-                        run_as_runtime git init --quiet --bare "$scratch/repository.git" \
-                            || refuse instance.clone_candidate_repository_unavailable
-                        git_read sudo -n $git_read_sudo -u "$runtime_user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
-                            "$repository" '+refs/heads/*:refs/remotes/origin/*' \
-                            || refuse instance.clone_candidate_repository_unavailable
-                        run_as_runtime git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null \
-                            || refuse instance.clone_candidate_commit_unavailable
-                        run_as_runtime git --git-dir="$scratch/repository.git" show-ref --verify --quiet \
-                            "refs/remotes/origin/$target_branch" \
-                            || refuse instance.clone_target_branch_missing
-
-                        printf 'OK\t%s\t%s\n' "$source_real" "$commit"
-                        BASH);
         try {
-            $result = $this->ssh->execute(
-                new SshConnection(
-                    host: (string) $node->wireguard_ip,
-                    user: $sshUser,
-                    port: 22,
-                    identityFile: $this->keys->privateKeyPath(),
-                    knownHostsFile: $this->knownHosts->path(),
-                    commandTimeout: 120.0,
-                ),
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $candidate->defaultAppEnv(),
-                        $basePath,
-                        $executionUser,
-                        $candidate->project->repository_url,
-                        $configuredBranch,
-                        $targetBranch,
-                        $expectedSource,
-                    ],
-                    input: $script->input,
-                    protectedInput: $script->protectedInput,
-                ),
-            );
+            $result = $this->agents->run($node, 'instances.inspect-clone-candidate', [
+                'environment' => $candidate->defaultAppEnv(),
+                'base' => $basePath,
+                'user' => $executionUser,
+                'repository' => $candidate->project->repository_url,
+                'configured_branch' => $configuredBranch,
+                'target_branch' => $targetBranch,
+                'expected_source' => $expectedSource,
+                'git_read' => $this->access->for($candidate->project->repository_url, $candidate->project->source_access),
+            ]);
+        } catch (AgentCommandRefused $refusal) {
+            $stderr = is_string($refusal->details['stderr'] ?? null) ? self::redacted($refusal->details['stderr']) : '';
+
+            if (str_starts_with($refusal->errorCode, 'instances.clone_')) {
+                throw $this->conflict(
+                    'instance.'.substr($refusal->errorCode, strlen('instances.')),
+                    'The candidate is not eligible for cloning.'.$this->stderrSuffix($stderr),
+                    $stderr,
+                );
+            }
+
+            throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate source could not be inspected.');
         } catch (Throwable $exception) {
             throw new ResourceOperationException(
                 errorCode: 'instance.clone_candidate_unavailable',
@@ -173,31 +73,14 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
             );
         }
 
-        $parts = explode("\t", trim($result->stdout));
-        $stderr = self::redacted($result->stderr);
+        $source = $result['source'] ?? null;
+        $commit = $result['commit'] ?? null;
 
-        if (! $result->truncated && count($parts) === 2 && $parts[0] === 'REFUSED' && preg_match('/\Ainstance\.clone_[a-z_]+\z/D', $parts[1]) === 1) {
-            throw $this->conflict(
-                $parts[1],
-                'The candidate is not eligible for cloning.'.$this->stderrSuffix($stderr),
-                $stderr,
-            );
-        }
-
-        if (! $result->succeeded() || $stderr !== '' || $result->truncated) {
-            throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate source could not be inspected.'.$this->stderrSuffix($stderr), $stderr);
-        }
-
-        if (
-            count($parts) !== 3
-            || $parts[0] !== 'OK'
-            || $parts[1] === ''
-            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $parts[2]) !== 1
-        ) {
+        if (! is_string($source) || ! is_string($commit) || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate inspection was invalid.');
         }
 
-        if ($parts[1] !== $expectedSource) {
+        if ($source !== $expectedSource) {
             throw $this->conflict(
                 'instance.clone_candidate_source_invalid',
                 'The candidate selected source changed during inspection.',
@@ -207,10 +90,10 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         return new CloneCandidateSource(
             instanceId: $candidate->id,
             environment: $candidate->defaultAppEnv(),
-            basePath: $parts[1],
+            basePath: $source,
             executionUser: $executionUser,
             branch: $configuredBranch,
-            commit: $parts[2],
+            commit: $commit,
             node: $node,
         );
     }
@@ -227,13 +110,6 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
             || $node->wireguard_ip === ''
         ) {
             throw $this->conflict('instance.clone_candidate_inactive', 'The candidate is not active.');
-        }
-
-        if (preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
-            throw $this->conflict(
-                'instance.clone_candidate_source_invalid',
-                'The candidate source identity is invalid.',
-            );
         }
 
         if ($candidate->placedOnAppDev()) {

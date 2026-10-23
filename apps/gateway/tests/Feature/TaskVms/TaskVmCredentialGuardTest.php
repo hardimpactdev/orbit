@@ -174,7 +174,6 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     $access = $only('/\b(?:RepositoryPullRequestAccess|RepositoryReadAccess|GitReadEnvironment)\b/');
     expect(array_values(array_intersect($remote, $access)))->toBe([
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
-        'app/Infrastructure/Instances/RemoteInstanceCloneCandidateInspector.php',
         'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
