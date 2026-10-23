@@ -1248,7 +1248,8 @@ pub struct Removed {
     pub removed: bool,
 }
 
-/// Stops and removes the service and its generated files, and keeps the operator's `local.conf`.
+/// Stops and removes the service and its generated files. Retains `local.conf` and its ownership identity so a
+/// retry can recreate this runtime without adopting unowned tuning.
 pub fn remove(input: &RemoveInput, host: &Host) -> Result<Removed, RuntimeError> {
     let runtime = Runtime::new(host, &input.user, &input.version, &input.marker)?;
     if !exists(&runtime.marker) {
@@ -1268,6 +1269,10 @@ pub fn remove(input: &RemoveInput, host: &Host) -> Result<Removed, RuntimeError>
         "the runtime marker is this Instance's",
     )?;
 
+    let removed = exists(&runtime.generated)
+        || exists(&runtime.unit)
+        || exists(&runtime.socket)
+        || host.active(&runtime.service);
     if !host.systemctl(&["disable", "--now", &runtime.service]) {
         check(!exists(&runtime.unit), "the service stops")?;
         host.quiet(&["stop", &runtime.service]);
@@ -1315,12 +1320,11 @@ pub fn remove(input: &RemoveInput, host: &Host) -> Result<Removed, RuntimeError>
             "local.conf is a regular file",
         )?;
     }
-    remove_file(&runtime.marker)?;
     check(
         is_real_directory(&runtime.directory),
         "the runtime directory remains",
     )?;
-    Ok(Removed { removed: true })
+    Ok(Removed { removed })
 }
 
 pub struct RemoveRuntime;

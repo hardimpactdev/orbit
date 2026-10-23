@@ -508,7 +508,10 @@ fn removes_the_service_and_its_files_and_keeps_local_tuning() {
 
     let runtime = fixture.runtime();
     assert!(!runtime.join("generated").exists());
-    assert!(!runtime.join("orbit.identity").exists());
+    assert_eq!(
+        fs::read_to_string(runtime.join("orbit.identity")).unwrap(),
+        fixture.marker()
+    );
     assert!(!runtime.join(APPLIED).exists());
     assert!(runtime.join("local.conf").exists());
     assert!(!fixture.host.units.join(service(&fixture)).exists());
@@ -521,6 +524,20 @@ fn removes_the_service_and_its_files_and_keeps_local_tuning() {
         remove(&input, &fixture.host),
         Ok(Removed { removed: false })
     );
+
+    let tuning = fs::read(runtime.join("local.conf")).unwrap();
+    let mut foreign = fixture.input(Mode::Converge, false);
+    foreign.marker = "foreign runtime\n".into();
+    assert_eq!(
+        converge(&foreign, &fixture.host),
+        Err(invalid("the runtime marker is this Instance's"))
+    );
+    assert!(!runtime.join("generated").exists());
+    assert_eq!(fs::read(runtime.join("local.conf")).unwrap(), tuning);
+
+    converge(&fixture.input(Mode::Converge, false), &fixture.host).unwrap();
+    assert_eq!(fs::read(runtime.join("local.conf")).unwrap(), tuning);
+    assert!(fixture.host.active(&service(&fixture)));
 }
 
 #[test]
