@@ -1,0 +1,13 @@
+type: '@nckrtl/orbit-gateway'
+typeVersion: 2026.10.23.1
+id: f5fa45d6-6307-48b6-a094-9aae8f79febc
+name: orbit-gateway
+version: 1
+tags: {}
+# The Gateway client for externally orchestrated task groups (ADR 0229).
+# Beast authenticates by its WireGuard address; only the Orbit root CA is needed.
+globalArguments:
+  gatewayUrl: https://gateway.orbit
+  caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+  timeoutSeconds: 60
+methods: {}
