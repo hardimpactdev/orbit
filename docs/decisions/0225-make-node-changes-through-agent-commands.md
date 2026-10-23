@@ -73,7 +73,7 @@ Read-only commands take no target or resource lock. Doctor checks, logs, queue r
 
 Locks always follow one order: target, resource names in sorted order, then update. A resumed step uses the same keys. Different targets can run together when they share no resource. Nested actions are Rust calls under the held locks, not another invocation that takes them again.
 
-Lock descriptors use close-on-exec. Project code cannot inherit or retain them. On Linux, each mutation runs in a transient systemd service with `KillMode=control-group` and a runtime bound. Its supervisor holds the locks. A daemon or `setsid` child stays in that cgroup. A successor must wait for the previous service to be empty before changing the target.
+Each account's locks live in its own directory under root-owned `/run/orbit-agent/locks`, which the root process that starts the mutation prepares. No other account can hold or replace them. Lock descriptors use close-on-exec. Project code cannot inherit or retain them. On Linux, each mutation runs in a transient systemd service with `KillMode=control-group` and a runtime bound. Its supervisor holds the locks. A daemon or `setsid` child stays in that cgroup. A successor must wait for the previous service to be empty before changing the target.
 
 On `SIGHUP`, `SIGTERM`, a broken output pipe, or its deadline, the supervisor stops all children and waits before releasing its locks. A Linux supervisor that dies also ends its service and children. A command that remains alive after SSH drops remains bounded by its own deadline. macOS uses a user process group; after a lost mutation result, its operation fails for inspection rather than resuming automatically. A lost result never proves that no change occurred.
 
@@ -127,7 +127,7 @@ This installation replaces only the binary. On Linux it restarts the observer wi
 
 Concurrent commands can meet the same mismatch. The installer takes the exclusive update lock. When the installed digest already matches the candidate, it returns without replacing anything. The installer restarts every long-lived agent process after it replaces the binary, so none keeps an old executable open.
 
-A failed installation returns its own error. The Gateway records the failed pin on the Node. Until `orbit node:converge` installs a pin there, every command for that Node refuses at once with `agent.install_failed`, without staging the binary again.
+A failed installation returns its own error. When `agent.install` refuses, the Gateway records the failed pin on the Node. A lost connection or a timeout records nothing, because it proves nothing about the pin. Until `orbit node:converge` installs a pin there, every command for that Node refuses at once with `agent.install_failed`, without staging the binary again.
 
 So an offline Node, a Node that rollout missed, and a VM from an older image catch up on their first command. Commands already running finish from their open binary. Rollback selects another release's pin, and the same rule installs it. There is one active contract per Gateway release, with no compatibility branch or script fallback.
 

@@ -43,12 +43,13 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
     };
     let _locks = if C::MUTATES {
         match C::target(&input) {
-            Some(target) => match super::lock::acquire_all(
-                &super::lock::lock_directory(),
-                &target,
-                C::RESOURCES,
-                context.deadline(),
-            ) {
+            Some(target) => match super::lock::lock_directory()
+                .map_err(|reason| {
+                    super::lock::LockError::Io(super::lock::LOCK_ROOT_LINUX.into(), reason)
+                })
+                .and_then(|directory| {
+                    super::lock::acquire_all(&directory, &target, C::RESOURCES, context.deadline())
+                }) {
                 Ok(held) => held,
                 Err(super::lock::LockError::Busy(path)) => {
                     return Outcome::refused(

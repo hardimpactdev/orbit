@@ -32,6 +32,7 @@ pub fn arguments(
     budget: Duration,
     unit: &str,
     user: Option<&str>,
+    locks: &Path,
 ) -> Vec<String> {
     let mut arguments = vec![
         "--quiet".into(),
@@ -43,6 +44,7 @@ pub fn arguments(
         "--property=KillMode=control-group".into(),
         format!("--property=RuntimeMaxSec={}", budget.as_secs() + 1),
         format!("--setenv={SUPERVISED_ENV}=1"),
+        format!("--setenv={}={}", super::lock::LOCK_DIR_ENV, locks.display()),
     ];
     // systemd sets HOME, USER, and the user's groups for a service that runs as a named user.
     if let Some(user) = user {
@@ -64,10 +66,11 @@ pub fn launch(
     envelope: &[u8],
     budget: Duration,
     user: Option<&str>,
+    locks: &Path,
 ) -> Outcome {
     let unit = unit_name(command);
     let child = Command::new("/usr/bin/systemd-run")
-        .args(arguments(executable, command, budget, &unit, user))
+        .args(arguments(executable, command, budget, &unit, user, locks))
         .env_clear()
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .stdin(Stdio::piped())
@@ -140,10 +143,13 @@ mod tests {
             Duration::from_secs(90),
             "orbit-command-x",
             None,
+            Path::new("/run/orbit-agent/locks/0"),
         );
         assert!(arguments.contains(&"--property=KillMode=control-group".to_string()));
         assert!(arguments.contains(&"--property=RuntimeMaxSec=91".to_string()));
         assert!(arguments.contains(&format!("--setenv={SUPERVISED_ENV}=1")));
+        assert!(arguments
+            .contains(&"--setenv=ORBIT_AGENT_LOCK_DIR=/run/orbit-agent/locks/0".to_string()));
         assert_eq!(
             arguments[arguments.len() - 3..],
             [
@@ -162,6 +168,7 @@ mod tests {
             Duration::from_secs(9),
             "u",
             Some("orbit"),
+            Path::new("/run/orbit-agent/locks/1000"),
         );
         assert!(arguments.contains(&"--uid=orbit".to_string()));
         assert!(

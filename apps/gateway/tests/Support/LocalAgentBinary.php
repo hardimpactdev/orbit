@@ -61,9 +61,20 @@ final class LocalAgentBinary
         return [self::path(), 'command', $arguments[2]];
     }
 
-    /** The environment of a local command: supervised, with the given variables. @param array<string, string> $environment */
-    public static function environment(array $environment = []): array
+    /**
+     * The environment of a local command: supervised, with a private lock directory under `$sandbox`, as the root
+     * process that starts a mutation on a Node prepares one.
+     *
+     * @param  array<string, string>  $environment
+     * @return array<string, string>
+     */
+    public static function environment(string $sandbox, array $environment = []): array
     {
-        return [...$environment, 'ORBIT_AGENT_SUPERVISED' => '1'];
+        $locks = $sandbox.'/agent-locks';
+        if (! is_dir($locks)) {
+            mkdir($locks, 0o700, true);
+        }
+
+        return [...$environment, 'ORBIT_AGENT_SUPERVISED' => '1', 'ORBIT_AGENT_LOCK_DIR' => $locks];
     }
 }

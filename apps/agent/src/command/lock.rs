@@ -9,24 +9,66 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The directory of target and resource locks on Linux. It is not `/run/lock/orbit`, which root-only scripts own.
-pub const LOCK_DIR: &str = "/run/lock/orbit-agent";
+/// The parent of the per-account lock directories on Linux. Only root writes `/run`, so no account can create or
+/// replace it.
+pub const LOCK_ROOT_LINUX: &str = "/run/orbit-agent/locks";
+/// The variable through which the starting root process gives a supervised mutation its lock directory.
+pub const LOCK_DIR_ENV: &str = "ORBIT_AGENT_LOCK_DIR";
 /// The lock that installation, CLI replacement, and final recipe verification hold.
 pub const UPDATE_LOCK_LINUX: &str = "/run/lock/orbit-self-update.lock";
 
-/// The lock directory of this platform. On Linux it is shared by root and the managed account, so it is created
-/// world-writable with the sticky bit, like `/run/lock` itself: anyone may add a lock file, none may remove another's.
-pub fn lock_directory() -> PathBuf {
-    if cfg!(target_os = "linux") {
-        let directory = PathBuf::from(LOCK_DIR);
-        if !directory.is_dir() && std::fs::create_dir(&directory).is_ok() {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o1777));
-        }
-        directory
-    } else {
-        PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".orbit/locks")
+/// Creates the lock directory of one account under `root`: `<root>/<uid>`, owned by that account with mode 0700, so no
+/// other account can hold, replace, or link one of its locks. The root process that starts a Linux mutation calls it.
+pub fn prepare(root: &Path, uid: u32, gid: u32) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o755)
+        .create(root)?;
+    let directory = root.join(uid.to_string());
+    match std::fs::DirBuilder::new().mode(0o700).create(&directory) {
+        Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => return Err(error),
+        _ => {}
     }
+    rustix::fs::chown(
+        &directory,
+        Some(rustix::fs::Uid::from_raw(uid)),
+        Some(rustix::fs::Gid::from_raw(gid)),
+    )?;
+    Ok(directory)
+}
+
+/// The lock directory of this process. On Linux it comes from the starting root process through `LOCK_DIR_ENV`, and
+/// it must be a real directory that this account owns with no access for others. On macOS it is the account's own.
+pub fn lock_directory() -> Result<PathBuf, String> {
+    if !cfg!(target_os = "linux") {
+        let directory =
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".orbit/locks");
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        return Ok(directory);
+    }
+    let directory = std::env::var_os(LOCK_DIR_ENV)
+        .map(PathBuf::from)
+        .ok_or("no lock directory was prepared for this command")?;
+    private_to_this_account(&directory)?;
+    Ok(directory)
+}
+
+fn private_to_this_account(directory: &Path) -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let metadata = std::fs::symlink_metadata(directory).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() {
+        return Err(format!("{} is not a directory", directory.display()));
+    }
+    if metadata.uid() != super::identity::effective_uid()
+        || metadata.permissions().mode() & 0o077 != 0
+    {
+        return Err(format!(
+            "{} is not private to this account",
+            directory.display()
+        ));
+    }
+    Ok(())
 }
 
 /// A held lock; dropping it releases the lock.
@@ -49,12 +91,12 @@ pub fn acquire(path: &Path, deadline: Instant) -> Result<Held, LockError> {
         std::fs::create_dir_all(parent)
             .map_err(|error| LockError::Io(parent.into(), error.to_string()))?;
     }
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(path)
-        .map_err(|error| LockError::Io(path.into(), error.to_string()))?;
+    let file = std::os::unix::fs::OpenOptionsExt::custom_flags(
+        OpenOptions::new().create(true).truncate(false).write(true),
+        libc::O_NOFOLLOW,
+    )
+    .open(path)
+    .map_err(|error| LockError::Io(path.into(), error.to_string()))?;
     loop {
         match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
             Ok(()) => {
@@ -158,6 +200,39 @@ mod tests {
             })
             .collect();
         assert_eq!(names, ["instance_3.lock", "apt.lock", "caddy.lock"]);
+    }
+
+    #[test]
+    fn a_prepared_directory_is_private_to_its_account_and_others_are_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temporary().join("locks");
+        let uid = super::super::identity::effective_uid();
+        let directory = prepare(&root, uid, unsafe { libc::getegid() }).unwrap();
+        assert_eq!(directory, root.join(uid.to_string()));
+        assert!(private_to_this_account(&directory).is_ok());
+        // Preparing again keeps the same directory.
+        assert_eq!(
+            prepare(&root, uid, unsafe { libc::getegid() }).unwrap(),
+            directory
+        );
+
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(private_to_this_account(&directory).is_err());
+        let link = root.join("link");
+        std::os::unix::fs::symlink(&directory, &link).unwrap();
+        assert!(private_to_this_account(&link).is_err());
+    }
+
+    #[test]
+    fn a_lock_file_that_is_a_link_is_refused() {
+        let directory = temporary();
+        let path = path_for(&directory, "target");
+        std::os::unix::fs::symlink(directory.join("elsewhere"), &path).unwrap();
+        assert!(matches!(
+            acquire(&path, Instant::now()),
+            Err(LockError::Io(..))
+        ));
+        assert!(!directory.join("elsewhere").exists());
     }
 
     #[test]

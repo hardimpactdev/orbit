@@ -44,6 +44,26 @@ pub fn effective_uid() -> u32 {
     rustix::process::geteuid().as_raw()
 }
 
+/// The uid, gid, and home of a user.
+pub fn account(user: &str) -> Result<(u32, u32, String), String> {
+    let name =
+        std::ffi::CString::new(user).map_err(|_| "the user name holds a NUL byte".to_string())?;
+    // SAFETY: getpwnam returns a pointer into static storage or null; its fields are copied at once.
+    unsafe {
+        let entry = libc::getpwnam(name.as_ptr());
+        if entry.is_null() {
+            return Err(format!("the user {user} does not exist"));
+        }
+        Ok((
+            (*entry).pw_uid,
+            (*entry).pw_gid,
+            std::ffi::CStr::from_ptr((*entry).pw_dir)
+                .to_string_lossy()
+                .into_owned(),
+        ))
+    }
+}
+
 /// Makes a child process run as `user`, with that user's groups, before project-controlled code starts. A process
 /// that already runs as `user` keeps its identity; root drops to it; any other identity refuses. It never runs a child
 /// as root.
@@ -51,20 +71,7 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
     use std::os::unix::process::CommandExt;
     let name =
         std::ffi::CString::new(user).map_err(|_| "the user name holds a NUL byte".to_string())?;
-    // SAFETY: getpwnam returns a pointer into static storage or null; its fields are copied at once.
-    let (uid, gid, home) = unsafe {
-        let entry = libc::getpwnam(name.as_ptr());
-        if entry.is_null() {
-            return Err(format!("the user {user} does not exist"));
-        }
-        (
-            (*entry).pw_uid,
-            (*entry).pw_gid,
-            std::ffi::CStr::from_ptr((*entry).pw_dir)
-                .to_string_lossy()
-                .into_owned(),
-        )
-    };
+    let (uid, gid, home) = account(user)?;
     if uid == 0 {
         return Err(format!("{user} is root; project code never runs as root"));
     }

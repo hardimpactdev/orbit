@@ -87,12 +87,9 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
             $input = ['candidate' => $candidate, 'sha256' => $pin, ...($held === null ? [] : ['held_update_lock' => $held])];
             $outcome = $this->send($transport, $spec, $pin, $input, microtime(true) + $remaining, $candidate);
         } catch (AgentRunnerFailure $failure) {
-            $this->recordFailedPin($node, $pin);
-
+            // No answer proves the pin cannot install, so the next command tries again.
             throw $failure;
         } catch (Throwable $exception) {
-            $this->recordFailedPin($node, $pin);
-
             throw new AgentRunnerFailure(self::Install, AgentRunnerFailure::Transport, "The pinned agent could not be staged on Node [{$node->name}].", ['reason' => $exception->getMessage()]);
         }
 

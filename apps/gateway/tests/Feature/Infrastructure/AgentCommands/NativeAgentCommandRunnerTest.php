@@ -242,17 +242,19 @@ it('does not record a failed pin when another installation holds the update lock
     expect($node->fresh()?->agent_failed_pin)->toBeNull();
 });
 
-it('records a failed pin when the candidate cannot be staged', function (): void {
+// Only a refusal from agent.install proves the pin cannot install; a lost connection or a failed copy may pass next time.
+it('records no failed pin when the candidate cannot be staged or the installer gives no answer', function (string $failure): void {
     $node = agentRunnerNode();
-    $transport = new class([agentRefusal('agent.version_mismatch')]) extends ScriptedAgentTransport
-    {
-        public function stage(string $localFile): string
+    $transport = $failure === 'staging'
+        ? new class([agentRefusal('agent.version_mismatch')]) extends ScriptedAgentTransport
         {
-            throw new RuntimeException('disk full');
+            public function stage(string $localFile): string
+            {
+                throw new RuntimeException('disk full');
+            }
         }
-    };
+        : new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), new CommandResult(255, '', 'Connection closed', 1, false)]);
 
-    expect(fn () => agentRunner($transport)->run($node, 'agent.status'))
-        ->toThrow(fn (AgentRunnerFailure $failure): bool => $failure->details === ['reason' => 'disk full']);
-    expect($node->fresh()?->agent_failed_pin)->not->toBeNull();
-});
+    expect(fn () => agentRunner($transport)->run($node, 'agent.status'))->toThrow(AgentRunnerFailure::class);
+    expect($node->fresh()?->agent_failed_pin)->toBeNull();
+})->with(['staging', 'connection']);

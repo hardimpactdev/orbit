@@ -191,7 +191,25 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
             },
             Privilege::Owner | Privilege::Root => None,
         };
-        return supervise::launch(&host.executable, name, envelope, budget, user);
+        let owner = match user {
+            Some(user) => super::identity::account(user).map(|(uid, gid, _)| (uid, gid)),
+            None => Ok((0, 0)),
+        };
+        let locks = owner.and_then(|(uid, gid)| {
+            super::lock::prepare(std::path::Path::new(super::lock::LOCK_ROOT_LINUX), uid, gid)
+                .map_err(|error| error.to_string())
+        });
+        let locks = match locks {
+            Ok(locks) => locks,
+            Err(reason) => {
+                return Outcome::refused(
+                    "agent.lock_unavailable",
+                    "The lock directory of this command cannot be prepared.",
+                    json!({"lock": super::lock::LOCK_ROOT_LINUX, "reason": reason}),
+                )
+            }
+        };
+        return supervise::launch(&host.executable, name, envelope, budget, user, &locks);
     }
 
     if !privilege.accepts(host.platform, host.euid) {

@@ -3794,7 +3794,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             }
         }
 
-        $process = new Process($arguments, null, LocalAgentBinary::environment([
+        $process = new Process($arguments, null, LocalAgentBinary::environment(dirname($this->localOrigin), [
             ...$this->environment,
             'GIT_CONFIG_COUNT' => '1',
             'GIT_CONFIG_KEY_0' => "url.{$this->localOrigin}.insteadOf",
