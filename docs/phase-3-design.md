@@ -1,225 +1,253 @@
-# Phase 3 design: Swamp on the Orbit Gateway
+# Phase 3: current design and next slice
 
-Status: Nick chose option B, built as B1 then B2 (2026-10-22). The Orbit side is ADR 0229 in hardimpactdev/orbit#1455 (docs only); it supersedes the operation list below where they differ.
+Status: design proposal for independent parent review, 2026-10-23. This document
+supersedes the earlier B1/B2 options. It authorizes no implementation or rollout.
 
-## Settled
+## Current contract
 
-- Swamp keeps the state machine (`orbit-subtasks`); the Gateway performs every
-  side effect and owns exactly-once per idempotency key.
-- Orbit runs agent turns on the Pi driver. Swamp never runs an agent itself.
-- GitHub pushes and pull requests are Orbit's job (its GitHub App). Swamp
-  never touches GitHub.
-- `swamp serve` is the orchestrator, on the Team plan with a collective token
-  and `SWAMP_SIGNIN_TOKEN`.
+Nick chose Swamp as the lifecycle owner. The Gateway owns effects and exactly-once
+operation starts. Tasks keeps the board, assistance, records, and agent sessions.
+Every workspace step runs in the group's one task VM. Subtasks share its checkout
+in order. Swamp never runs Pi, commands, Git pushes, or merges itself.
 
-## What the Gateway offers today
+Sources inspected:
 
-Source: Orbit docs and `docs/openapi.json` at `8bd95343a`.
+- Orbit main `4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7`, fetched 2026-10-23:
+  [ADR 0229](https://github.com/hardimpactdev/orbit/blob/4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7/docs/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations.md),
+  [Tasks](https://github.com/hardimpactdev/orbit/blob/4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7/docs/reference/tasks.md),
+  and [compute drivers](https://github.com/hardimpactdev/orbit/blob/4c7f73a821ae6ced158bf17abbf9d8b88c34b7b7/docs/reference/compute-drivers.md).
+- orbit-swamp main `baffd7b7b34d5add915486fece60434b9ac98aa4`, through PRs
+  [1](https://github.com/nckrtl/orbit-swamp/pull/1),
+  [2](https://github.com/nckrtl/orbit-swamp/pull/2),
+  [3](https://github.com/nckrtl/orbit-swamp/pull/3), and
+  [4](https://github.com/nckrtl/orbit-swamp/pull/4).
+- Recall's Swamp topic and current decisions, read on 2026-10-23. Recorded group
+  outcomes below come from Recall and the thread handoff. This slice made no live
+  Gateway reads or mutations; GitHub merge metadata was independently rechecked.
+- The installed Swamp architecture guide and software-factory authoring guide:
+  keep the official factory, its declared stages/gates, short driver ticks, and
+  behavior methods for Gateway effects. No new orchestration framework is needed.
 
-| Effect | Today | Gap |
+The four built operation kinds are `tasks.provision`, `tasks.check`, `tasks.turn`,
+and `tasks.publish`. Starts accept `Idempotency-Key`; a replay returns the original
+operation, changed input conflicts, and keyed operations are never pruned. The
+operation owns the group and workspace lease while waiting; delayed reads release
+the worker, not the target. Durable owns retries and restart recovery *within* a
+Pi turn. Swamp owns decisions between turns. Model credentials stay in the task VM
+per group; GitHub App credentials stay on the Gateway.
+
+`orbit-groups` maps one work item to `tg-<group>`. Its current path is
+`provision → baseline → implement → handoff → review → publish → published → completed`,
+with rework and next-subtask loops. Driver keys are `<workItem>.<stage>.c<cycle>`;
+Gateway keys add `.s<subtask>` for child stages. A resumed entry reuses the stored
+request and key. A new authorized attempt uses a new cycle. `published` waits for
+a human merge and then calls synchronous `tasks:complete`.
+
+The old proposals for development-Instance workspaces, generic command operations,
+Pi on app-dev Instances, and a separate key-issue route are superseded. Deterministic
+command-only work still needs its own ADR 0225 command contract; it is not added here.
+
+## Evidence and the retirement gate
+
+| Evidence | What it proves | What it does not prove |
 | --- | --- | --- |
-| Workspace per work item | `POST /instances`, `POST /instances/{id}/setup`, `DELETE /instances/{id}`. Synchronous; a retry with the same name resumes. | Branch only, no base commit. Setup runs inside one request (570 s limit). Task-VM workspaces exist only through a task-group claim. |
-| Run a command (`composer update`, `check`, `test`) | Not found. Schedules give only success/error; task checks run only inside a group. | New async run-command operation. |
-| Sub-project dependency update | `POST /instances/{id}/dependencies/update`, repository root only. | A `directory` input, async. |
-| Pi agent turn | Only inside a task group (one subtask at a time), driven by `tasks:tick`: VM, baseline, implementer, handoff check, reviewer, push, PR. | No standalone turn. The caller cannot set the prompt or model. |
-| Model key per run | Keys exist per task VM and die with the VM. | No issue or revoke route. |
-| Branch / PR handoff | The Gateway pushes `task-{id}` (or `task-{id}-handoff`) itself and opens the PR on approval. | No "publish this workspace commit" route. |
-| Assistance | Task comments `assistance_requested` / `resolution`, task questions. | Only for task subtasks. |
-| Notifications | Reverb `task_group.created/updated` on the private `orbit` channel. | No outbound webhooks. |
-| Idempotency keys | Only the websocket-app routes accept `Idempotency-Key`. | All effectful routes above. |
+| Recorded group 2046; [website#7](https://github.com/nckrtl/website/pull/7), merged 2026-10-23 09:21:05 UTC at `32f41b94f97df27fb2ef81bc4b282226b1a8c918`; work item completed afterward | Swamp → live Gateway → task VM, ordinary feature work through a human merge | Review-and-merge Projects, topology subtasks, interruption recovery |
+| Recorded group 2049; [website#8](https://github.com/nckrtl/website/pull/8), merged 12:07:19 UTC at `f200b245a8a8f5c71c7a12c7ca232ad85dd13412`; group completed and VM removed | A second external group, stored pre-approvals, publication/merge observation, cleanup | Automatic merge authority or worker/orchestrator kill proof |
+| Phase 2 scratch SIGKILL/recover/resume results in the earlier spike and README | Local idempotent effects and factory recovery; caps and loops are expressible | Gateway worker recovery during a live waiting effect |
+| PRs 1–4 and their fake-Gateway routing checks | Client, driver, retry routes, parked assistance on open children, era-aware evidence, stale-error fix | A live interruption receipt or supported exceptional Project modes |
+| Serve restart after #4, recorded in the handoff | Service loads the merged source and serves HTTP | Recovery of an operation interrupted while doing work |
 
-Two accepted ADRs constrain any outside orchestrator:
+ADR 0229 step 3 is **not satisfied**. Before retirement, a separately authorized
+proof must retain one group's operation IDs, keys, check ID/commit/tree, turn send
+key/receipt, PR and cleanup result while (1) killing the Gateway worker during a
+waiting check and (2) killing the orchestrator during an in-flight stage. Recover
+and resume must return the same effect/result, with no second check, turn, commit,
+push, or PR. Record terminal ownership evidence and completion, not only HTTP
+health or passing unit tests. A Pi restart test alone does not cover either kill.
+This design slice runs none of these experiments and starts no group.
 
-- **ADR 0223**: one Gateway gate per handoff. The full suite runs in CI on the
-  pushed handoff commit, and CI `Required checks` is the only integration gate.
-- **ADR 0224**: `tasks:tick` is the only place that starts an actor or sends a
-  turn. Requests only record intent and wake the tick. An outside caller
-  cannot be a second sender or holder for a group.
+## First slice: group assistance after the children end
 
-## Two ways to do phase 3
+Implement the [small group-comment contract](group-assistance-contract.md) first.
+It closes an observed gap without changing execution, merge policy, or topology.
+Swamp can park at `publish-retry` or `republish` after every child ends, but today
+has no board request it can later resolve. Do not reopen an ended child to carry it.
 
-### A. Swamp above Orbit tasks (outer loop)
+The implementation sequence, after parent approval, is:
 
-One factory work item maps to one Orbit task group with one subtask.
-Swamp plans, fans out, gates approvals and records the outcome. Orbit runs the
-inner loop it already has: VM, baseline, implementer, handoff, review, push, PR.
+1. Orbit docs/ADR amendment and Gateway group-comment API, CLI/MCP parity, using
+   existing assistance types, Activity, broadcasts, and access rules.
+2. Independent review and normal Orbit release, with focused contract checks.
+3. A separate orbit-swamp change to use the route only when no open child exists.
+   Keep open-child assistance unchanged. Read recorded resolutions as input; a
+   comment never silently grants a Swamp human-approval gate.
 
-- The factory shrinks to `plan → create group → wait → outcome`. Swamp
-  creates the group in `todo` with deliverables (`fails_on_base` command
-  deliverables for the sub-project's check), reads `GET /task-groups/{id}` on
-  each tick or on Reverb notices, and records evidence from its status.
-- Assistance stays in Orbit (task comments). Swamp's human gates cover only
-  the plan approval (majors) and the final outcome.
-- Gateway change: small, possibly none. Useful additions: an `Idempotency-Key`
-  on `POST /task-groups`, and an external reference field on a group so Swamp
-  can find its group after a crash.
-- What it answers: Swamp can plan and coordinate many Orbit tasks. It does
-  **not** replace the hand-rolled orchestration inside Orbit tasks, which is
-  what the spike set out to test.
+Acceptance and rollback are in the contract. This slice removes no tick class,
+changes no orchestration mode, starts no new group, and requires no new operation
+kind, queue, daemon, or schema for assistance ownership.
 
-### B. Swamp replaces the inner loop (primitives)
+## Amendment A: review-and-merge Projects
 
-The Gateway exposes primitives, and Swamp's stage workflows call them in place
-of local git, Composer and agents. To respect ADR 0224, every primitive is an
-operation the Gateway queues and its own worker or tick executes. Swamp records
-intent and polls; it never sends a turn itself.
+Current create refuses these external groups with `422 tasks.orchestration_unsupported`.
+Removing that guard alone would bypass Project 46's policy. The amendment must
+preserve the existing Tasks contract, including the incoming-PR path, before the
+tick engine can retire. The first implementation can cover Orbit-created branches
+and retain the incoming path on the tick until its own slice is ready.
 
-New Gateway operations (each async, `202` + `operation-show`, each with an
-`Idempotency-Key`):
+Proposed lifecycle for Orbit-created work:
 
-1. `POST /instances` with `base_commit` (or `start_ref`), and async setup.
-2. `POST /instances/{id}/runs` {command, directory, timeout}: exit code, a
-   redacted 16 KiB output tail, cancel. This replaces `@nckrtl/composer`.
-3. `dependencies/update` with a `directory`, for one sub-project.
-4. `POST /instances/{id}/agent-turns` {role, prompt, model?}: one Pi turn in
-   the workspace, read with a transcript cursor, cancel. Queued for the tick
-   or worker, so the tick stays the only sender. Today Pi runs only on task
-   VMs, so this needs a decision: Pi on app-dev Instances, or the workspace is
-   a task VM.
-5. A per-run AI Router key bound to the turn (issued and revoked by the
-   Gateway; Swamp never sees it).
-6. `POST /instances/{id}/publish` {commit, branch, pr?}: push through the App
-   and open or update the PR.
-7. Assistance and status outside task groups, or Swamp's own human gates only
-   (`approve` through the serve API), with the Gateway mirroring them read-only.
-8. Notifications: Reverb events for these operations (no webhooks needed if
-   serve can subscribe; otherwise a signed webhook to `swamp serve`).
+1. Run ordinary subtasks with the existing handoff and review loop. A passing
+   handoff commits the checked tree. When the Project uses handoff CI, extend
+   `tasks.check` to reuse `TaskHandoffCi`'s effect/read path: push only
+   `task-<id>-handoff`, poll its check, and return evidence. Its reminders and
+   retry decisions move to Swamp. This branch never becomes the PR head.
+2. Append a real `type: final_review` subtask, with no implementer, after approved
+   work. Review the whole branch from its merge base with the fetched default
+   branch. A fixup re-review covers the delta and unresolved findings. No extra
+   Project check or merge of main is introduced solely for final review.
+3. Extend the reviewer-turn contract for a final-review child to name the passed
+   group handoff check of the candidate commit. Today `TaskTurnOperation::reviewCheck`
+   accepts only a check belonging to the acting child; a synthetic final review
+   has none. Validate the group, candidate HEAD/tree, and provenance explicitly;
+   keep ordinary reviewers bound to their own child's check and preserve reset.
+4. Add a narrow keyed `tasks:review:record` effect (proposed kind
+   `tasks.review.record`) to validate the final-review turn receipt against its
+   checked candidate and write the existing `task_reviewed_commits` ledger.
+   An approval must be unaltered by reviewer edits, satisfy `final-review`, and
+   match the recorded HEAD/tree. The caller cannot assert an arbitrary reviewed
+   SHA. For the first PR retain the required PR fields and brief coverage.
+   Completing the child and choosing the next stage remain Swamp decisions.
+5. Extend `tasks.publish` to require that final-review record as well as the passed
+   check for a review-and-merge Project. Push only that exact reviewed head,
+   never force; reuse the existing publisher, mirror, and PR lookup. Ordinary
+   subtask approval must publish nothing. Reviewer reset/difference evidence
+   cannot be treated as an approval of a modified tree.
+6. Swamp requests a narrow keyed `tasks:merge` effect (proposed kind `tasks.merge`)
+   with the expected PR head. Gateway revalidates current Project policy, the
+   reviewed ledger, no open work or assistance, default base, mergeability, the
+   exact head's `pull_request` merge-check runs from `github-actions`, and a
+   complete trusted-review read with no effective changes request on any head.
+   Reuse `TaskPublication::mergeWhenReady`'s safety predicates and the App merger;
+   extract the effect from its scheduler callbacks. Return `waiting`, `refused`,
+   or `merged` evidence. Replays reconcile the PR; they never merge a newer head.
+   GitHub receives the expected SHA and uses a merge commit. Swamp decides a
+   subsequent read/attempt or assistance; the Gateway never chooses a fixup.
+7. Complete only after the merge is observed. Completion/cleanup stays Orbit's
+   effect. Making synchronous completion an operation is a separate small
+   follow-up, not a reason to redesign these stages.
 
-Swamp side: the five stage workflows keep their shape. `@nckrtl/composer`,
-`@swamp/git` and `@swamp/agent-runner` steps become one `@nckrtl/orbit-gateway`
-behavior (`create_workspace`, `run`, `agent_turn`, `publish`, `remove`), each
-call keyed `<workItem>.<stage>.c<cycle>`. The guards and the driver stay. The
-local scratch worktrees and the CLIProxyAPI stopgap go away.
+On findings, Swamp creates `Address final review` as a new child, runs the normal
+implement/check/review loop, then requests a fresh final review. Preserve two
+final-review fixups per window; the third finding set parks for assistance.
+Only completion of an appended operator subtask opens a new window. This is
+separate from implement/review caps and the settling fixup limits.
 
-What it answers: whether Swamp can run Orbit's task loop. Cost: eight Gateway
-operations, plus the Pi-on-Instance decision, through Orbit's normal PR flow.
-It also makes two orchestrators of the same loop until one is retired.
+Required API deltas beyond the two proposed effects: permit an orchestrator to
+append a typed final-review/fixup child; make that append replay-safe using its
+source receipt/candidate identity under the group lock; expose the child's type,
+reviewed-commit ledger, current PR head/base, check state, and complete/incomplete
+review observations. Existing append accepts no `type` and always appends `todo`.
+It must not accidentally start an implementer for final review. The amendment must
+specify these fields before implementation; they are not supported today.
 
-## Layers with Pi Durable
+Incoming PRs require the remaining existing semantics: eligible listed author,
+same repository, non-draft, default base, non-task branch, and one review group per
+PR; baseline/setup before adopting its current head; read-only final review;
+App `APPROVE`/`REQUEST_CHANGES` on the exact incoming head; no self-review on
+App-created PRs. A moved author head needs a fresh review or a normal merge fixup,
+never a force push. Incoming detection can retain its bounded GitHub read, but
+creating/scheduling review work must have one owner. External groups cannot simply
+be fed to `WatchIncomingPullRequestsAction` unchanged.
 
-A parallel spike (`hardimpactdev/orbit-pi-durable`, thread "How Swamp Fits
-Into Orbit and Pi") tests `@earendil-works/pi-durable`: one agent
-conversation that survives crashes (atomic commit log, `requestId` dedup,
-stored retry sleeps, crash-loop parking) and `pi-env` (tools run in the VM over
-SSH, model credentials stay on the host). It is the layer below Swamp, not a
-second orchestrator:
+Conflict, CI, and trusted-feedback fixup *decisions and caps* move from
+`TaskSettling` to factory stages. Keep its source/review identities and reviewed
+commit checks. Preserve current no-implicit-main-merge policy. Do not retire
+settling until those ordinary paths and incoming PRs are covered.
 
-| Layer | Owns | Replaces in Orbit |
-| --- | --- | --- |
-| Swamp (`orbit-subtasks`) | Subtask lifecycle: stages, gates, budgets, approvals, journal | `tasks:tick` state machine, caps, assistance flow |
-| Gateway primitives | Every effect, exactly-once per key | Task-specific workspace, check and push paths |
-| Pi Durable (+ `pi-env`) | One agent turn, crash-proof | Send keys, restart re-orient (2 resumes), provider retry 1/2/4/8 min, `pi-server` store |
+The proposed stages are `final-review → record-review → publish → merge → completed`,
+with `final-review → fixup → handoff → review → final-review` on findings. Each
+new effect uses the existing stored-request/stage/cycle key rule and returns
+structured evidence; a pending merge never holds a driver call open. A finished merge attempt with outcome `waiting` or `refused` is not authority to
+retry another head. Reads and writes retain the existing one-minute GitHub bounds.
 
-- Swamp's key `<workItem>.<stage>.c<cycle>` is the Gateway operation key and
-  Pi Durable's `requestId`.
-- With `pi-env`, the model key never enters the workspace, so operation 5
-  (per-run model key) may shrink to "the Gateway's Pi host holds the key".
-- Pi Durable's own task graph is not used for the lifecycle; one orchestrator.
-- Caveat: Pi Durable is experimental (API changes without notice; 17 versions
-  in a month) and needs Pi 1.4 (`apps/pi-server` is on 1.2).
+Acceptance: unreviewed ordinary approval cannot reach the PR; final-review findings
+produce at most two automatic fixups; a moved head invalidates approval; a missing,
+failed, push-only, foreign-App, or wrong-head check never authorizes merge; incomplete
+reviews never authorize merge; replay records/publishes/merges the same candidate.
+Initially enable only a newly created, explicitly authorized external group after
+the amendment lands. Existing groups keep their immutable mode. Roll back by
+stopping admission of these new external groups; finish or cancel them through
+their current owner. Never hand an active external group back to the tick.
 
-B1 does not depend on Pi Durable. B2's agent-turn operation should be built on
-it if its spike holds.
+## Amendment B: topology subtasks
 
-## Aligned with the Pi Durable thread (2026-10-22)
+Current create and append refuse declared topologies on external groups. Keep the
+refusal until preparation, evidence, stop, and cleanup have operation contracts.
+Reuse `TaskTopology`, `TaskTopologyAdmission`, `TaskVmTopologyAdmission`,
+`TaskVmTopologyUnit`, and `TaskVmTopologyEvidenceReader`; no Swamp shell harness.
 
-- Pi on Durable runs inside the task VM behind pi-server's current HTTP API
-  (option A). The send key of `POST /sessions/{id}/messages` becomes Durable's
-  `requestId`, so the Swamp key passes through unchanged. A repeat returns
-  `duplicate: true`.
-- Durable dedupes only within one VM's storage. Across a lost VM, the
-  Gateway's keyed, never-pruned operation is the guard.
-- The step 3 amendment must state three changes:
-  1. A pi-server restart no longer fails the turn; Durable resumes it. Drop
-     the Gateway's restart-resume path (2 resumes, re-orient), or it sends a
-     duplicate turn. Durable's crash-loop parking (5 restarts) surfaces as
-     failed, then assistance.
-  2. Provider retry happens in one place: Durable, set to Orbit's budget,
-     instead of the Gateway's 1/2/4/8-minute retry.
-  3. Checks stay orchestrator operations (`instance.run`). The model did not
-     rerun an interrupted check in the Pi spike.
-- Both threads stop running agents on the host: everything task-specific
-  stays in the VM.
-- Decided (Nick, 2026-10-22): every step runs in the group's task VM. ADR
-  0229 was amended on #1455 (fd9aa1e5e): four operations on externally
-  orchestrated groups (`tasks.provision`, `tasks.check`, `tasks.turn`,
-  `tasks.publish`) wrap code Tasks already has. The dev-Instance operations
-  in the table above are dropped.
+- Provision sizes from the union of non-cancelled child declarations, at most two
+  test nodes. Keep the per-host cloned seed and nested Nodes inside the one task
+  VM (ADR 0222). An appended declaration must fit that VM; no implicit resize.
+- Baseline/setup precedes preparation. Add a waiting preparation step to
+  `tasks.turn` before a prepared implementer or reviewer turn. It starts or reads
+  the existing `orbit-task-topology-<run>` unit under the group's operation/lease.
+  Persist its run before dispatch. Do not create a separate topology orchestrator
+  or put preparation into the model's prompt.
+- Reuse ready topology only when its union covers the child and its run matches
+  the VM boot. A park/resume or stale boot needs preparation again. Consults and
+  direction continuations follow the admitted turn's existing semantics; they do
+  not trigger unrelated reacquisition.
+- Map preparation-in-progress to operation `waiting`, not a blocked turn or a
+  held worker. Return proven-terminal failed preparation as evidence to Swamp,
+  which parks for assistance and chooses a new attempt. Preserve the harness's bounded local
+  acquire retry; do not add a second Gateway lifecycle retry loop.
+- Keep the topology-path gate in the handoff effect. Compare the group's own
+  diff with the current merge base, including merge resolutions. Unreadable diff
+  or required topology with no declaration fails closed.
+- Return counted topology evidence with reviewer results: declared node, run/boot,
+  time, label, command, exit code, and bounded output/reference. Preserve today's
+  counting window and one counted record per declared node. Missing evidence is
+  not approval. The existing gate is cooperative evidence, not tamper protection.
+- Cancellation must stop/reconcile the exact preparation unit and prove its
+  process lifetime ended before releasing ownership or starting another one.
+  Unreachable/uncertain work remains fenced; normal group cancellation keeps
+  the existing retained-workspace/removal-assistance path. VM destruction owns
+  nested topology cleanup. Swamp never destroys guests itself.
 
-## ADR 0229 follow-ups (from the first live run, 2026-10-23)
+Acceptance: one union on one correctly sized VM; no turn starts before ready; a
+replayed waiting operation reads the same unit; stale boot is not mistaken for
+ready; missing node evidence or topology-required paths cannot approve; stop and
+cleanup retain ownership until proven safe. Rollback stops new topology external
+groups and keeps in-flight groups with their original owner. No fallback sender.
+These are future implementation checks, not results from this docs-only slice.
 
-Found while Swamp drove Orbit group 2046 (nckrtl/website#7) end to end:
+## Retirement order and decisions for the parent
 
-1. A Gateway route to raise and resolve group-level assistance after all
-   subtasks have ended (needed for the publish-retry and republish gates). The
-   comment route needs a child task and clears the group only when that child
-   owns the request.
-2. A failed check is an operation that succeeded with `outcome: failed`; the
-   board shows a parked external group only through the orchestrator's own
-   assistance comment.
-3. The check output is a short redacted tail, so in a long run the root cause
-   can fall out of it.
-4. No API shows which pi-server artifact new task VMs get
-   (`ORBIT_TASK_VMS_PI_ARTIFACT_PATH` / `_SHA256`).
-5. The orchestrator re-derives the current subtask from the Gateway's own rule
-   (lowest open position).
-6. A merge is seen only by polling `watched_pr_state`.
-7. `tasks:complete` is a synchronous request that tears down the workspace and
-   task VM before it answers. In the second run (group 2049) the client's first
-   call timed out after 60 s while the Gateway went on to complete the group;
-   the next tick only saw the result in the group status. Unlike the four
-   operations it takes no `Idempotency-Key` and returns no operation to read.
-   Make completion an operation, or answer before the teardown.
-8. A release-age gate exception is invisible to the orchestrator. In group 2049
-   the implementer said it used the project's documented exception for
-   vite-plus 1.4.0 (released that day), but nothing in the repo or the receipt
-   shows how. A turn receipt or the check should record any exception it used.
+The [class inventory](tick-engine-inventory.md) distinguishes delete candidates
+from shared effects and safety. Do not delete whole mixed classes because an
+external group no longer calls their tick entry point.
 
-Closed in orbit-swamp #3: pre-approved gates without a live turn, board
-assistance at subtask gates, and the driver ignoring evidence from before a
-reset. Settled: the last approval in an external group needs no `--pr-*`
-flags.
+Recommended order: group assistance → review-and-merge amendment and own-branch
+implementation → topology amendment → incoming/settling parity → authorized
+worker/orchestrator interruption proof → remove the mode and tick lifecycle.
+Keep ordinary external work available while later modes remain refused.
 
-## Recommendation
+The parent must decide the first implementation's scope and approve the later
+amendments. In particular:
 
-Do **B** (chosen), in two steps:
+- Accept the narrow post-child assistance contract, or require group comments
+  during open-child work too? This design recommends the narrow contract first.
+- Accept own-branch review-and-merge before incoming PRs? Incoming work remains
+  on the tick until covered; full retirement waits for both.
+- Approve the review-record and merge effects, and settle typed-child append
+  identity and incoming-work ownership in the Orbit amendment before coding.
+- Choose the authorized interruption-proof group/window and eventual production
+  Swamp host/storage/licence operation. Neither proof run is repeated here.
 
-1. **B1, no agents** (operations 1, 2, 3, 6 and idempotency keys): rerun
-   php-sdk and gateway with mechanical, handoff and publish on the Gateway.
-   Review becomes a human gate in B1, so no agent primitive is needed yet.
-   This proves Gateway-side exactly-once, the kill and recover tests against
-   the Gateway, and serve.
-2. **B2, agents** (operations 4 and 5): implement, consult and review as Pi
-   turns, backed by Pi Durable with `requestId` = the Swamp key, after the
-   Pi-on-Instance decision and the Pi Durable spike.
-
-If the answer Nick wants is only "can Swamp coordinate Orbit tasks", **A** is
-enough and needs almost no Orbit change.
-
-## Keys (B)
-
-- **Swamp:** a collective token and `SWAMP_SIGNIN_TOKEN` for serve; Swamp
-  vault for serve's own secrets.
-- **Swamp → Gateway:** WireGuard identity of the serve Node plus a node access
-  grant to the app-dev Node (today's model); no API token.
-- **Gateway → Swamp** (only if webhooks): a serve token with grants for
-  `subtasks-driver` run and `approve`, and a webhook signing secret.
-- **Per agent turn:** an AI Router key issued and revoked by the Gateway.
-- **GitHub:** Orbit's App, inside the Gateway only.
-
-## Where serve runs
-
-Beast for the spike, as a user systemd unit with `~/.config/swamp/env.sh`, a
-1-minute `trigger.schedule` on `subtasks-driver`, and `--auto-resume`. A Node
-for production is a later decision.
-
-## Open decisions for Nick
-
-1. ~~A or B?~~ B.
-2. ~~B1 first?~~ Yes, then B2.
-3. For B2: Pi on app-dev Instances, or agent turns only in task VMs (with
-   `pi-env`, tools could run in either while keys stay on the host)?
-4. Gateway → Swamp notification: Reverb subscription, or a signed webhook to
-   serve?
-5. How the B1 Gateway work is run: Orbit docs/ADR first, then implementation
-   PRs, through Orbit's usual flow.
+One-minute polling, Swamp's 100-call limit (driver budget 90), and synchronous
+completion's observed 60-second client timeout remain operational limits.
+Notifications, longer check output, artifact-pin visibility, release-age exception
+receipts, and async completion remain follow-ups. None requires a new framework
+or expands this first slice. No merge, deployment, or phase transition follows
+this design PR without the parent's independent review and decision.

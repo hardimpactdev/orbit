@@ -125,6 +125,11 @@ swamp model method run orbit-subtasks summary --input workItem=bump-packages-php
 
 ## Phase 3: external Orbit task groups (ADR 0229)
 
+The [current design and next slice](docs/phase-3-design.md) separates completed
+live proof from pending amendments and interruption proof. The proposed first
+slice is [group assistance](docs/group-assistance-contract.md); the
+[tick inventory](docs/tick-engine-inventory.md) marks retained effects and safety.
+
 Swamp drives an Orbit task group with `orchestration: external` only through
 Gateway operations. Orbit runs every effect in the group's task VM; Swamp
 decides the next step. Swamp never merges.
@@ -174,7 +179,7 @@ decides the next step. Swamp never merges.
   (`publish-retry`, `republish`) raises nothing: on an ended subtask Orbit
   raises an independent group request that no resolution clears. This is a
   known limitation until the Gateway has a route to raise and resolve a
-  group-level request; see "ADR 0229 follow-ups" in `docs/phase-3-design.md`.
+  group-level request; see the [proposed contract](docs/group-assistance-contract.md).
 - swamp caps one execution at 100 cross-behavior calls. A tick stops starting
   steps at `maxCallsPerTick` (90) and the next tick starts with the work items
   it deferred. Evidence from before a `reset` never counts as the current
