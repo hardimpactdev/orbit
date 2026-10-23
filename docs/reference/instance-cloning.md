@@ -94,7 +94,12 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 `sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything.
 
-The [Node agent](/reference/node-agent#commands) does the work on each Node as root: `instances.prepare-sqlite-seed` takes the snapshot as the candidate's user, and `instances.install-sqlite-seed` installs it as a new file, never over an existing database. Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
+The [Node agent](/reference/node-agent#commands) does the work on each Node as root:
+
+- `instances.prepare-sqlite-seed` takes the snapshot as the candidate's user.
+- `instances.install-sqlite-seed` installs it as a new file, never over an existing database.
+
+Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
 
 Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
 
