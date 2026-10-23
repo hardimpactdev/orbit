@@ -46,8 +46,7 @@ describe('the Gateway view of Node agents', function (): void {
         $view = app(AgentStateView::class)->node(7);
 
         expect($view->status(ProcessRuntime::Systemd, 'orbit-process-1-web'))->toBe('inactive')
-            ->and($view->status(ProcessRuntime::Docker, 'orbit-process-2-cache'))->toBe('exited')
-            ->and($view->lists(ProcessRuntime::Docker, 'orbit-process-2-cache'))->toBeFalse();
+            ->and($view->status(ProcessRuntime::Docker, 'orbit-process-2-cache'))->toBe('exited');
     });
 
     it('does not answer for Docker while the agent reports Docker absent', function (): void {
@@ -71,7 +70,6 @@ describe('the Gateway view of Node agents', function (): void {
         expect($processes->status($web))->toBe('active')
             ->and($processes->isStopped($web))->toBeFalse()
             ->and($processes->isStopped($cache))->toBeTrue()
-            ->and($processes->lists($web))->toBeTrue()
             ->and($processes->statuses(Process::query()->get()))->toBe([
                 $web->id => 'active',
                 $cache->id => 'exited',
@@ -86,7 +84,6 @@ describe('the Gateway view of Node agents', function (): void {
         $processes = app(AgentProcessView::class);
 
         expect($processes->status($web))->toBeNull()
-            ->and($processes->lists($web))->toBeNull()
             ->and($processes->isStopped($web))->toBeNull()
             ->and($processes->statuses(Process::query()->get()))->toBe([]);
     });

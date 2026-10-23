@@ -60,16 +60,6 @@ final readonly class AgentNodeView
             ?? ($runtime === ProcessRuntime::Systemd ? 'inactive' : 'exited');
     }
 
-    /** Whether the agent lists this exact unit or container, or null when the view cannot answer. */
-    public function lists(ProcessRuntime $runtime, string $name): ?bool
-    {
-        if (! $this->answers($runtime)) {
-            return null;
-        }
-
-        return isset($this->units[$runtime->value.':'.$name]);
-    }
-
     /**
      * The Git state the agent last reported for a task checkout, or null when the view is not fresh
      * or the agent does not report that Instance (ADR 0151).

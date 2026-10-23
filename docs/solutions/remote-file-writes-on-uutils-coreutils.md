@@ -4,7 +4,7 @@ description: "Why writing a remote file from standard input with install fails o
 covers:
   - apps/gateway/app/Infrastructure/Metrics/{MetricsSshExecutor,MetricsExporterSshExecutor}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeAgentSshExecutor.php
-  - apps/gateway/app/Infrastructure/Processes/RemoteProcessRuntimeManager.php
+  - apps/agent/src/commands/processes.rs
 ---
 
 # Remote file writes on uutils coreutils
@@ -27,9 +27,9 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. Metrics SSH publishers, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to `/etc/orbit/systemd-candidates`, verifies the candidate with `systemd-analyze`, and then moves it into place. Metrics exporter SSH lifecycle operations now delegate file publication to the shared publisher.
+Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. Metrics SSH publishers, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. The agent's `processes.stage-unit` writes each Process unit to `/etc/orbit/systemd-candidates` and verifies it with `systemd-analyze`; `processes.activate-unit` then renames it into place. Metrics exporter SSH lifecycle operations now delegate file publication to the shared publisher.
 
-Before staging a systemd candidate, `RemoteProcessRuntimeManager` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
+Before staging a systemd candidate, `processes.stage-unit` reads the existing unit and checks its Process ownership marker. If its content matches a recorded successful activation, or belongs to a legacy Process with no pending activation, and its active or inactive state matches the desired state, convergence returns without writing a candidate, reloading systemd, or restarting the Process. Changed unit content still follows the candidate-and-verify sequence; an unchanged specification does not justify skipping recovery of an incomplete update.
 
 ## Limits
 
@@ -37,4 +37,4 @@ The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and r
 
 ## Verification
 
-Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`; `apps/gateway/tests/Feature/Infrastructure/Processes/RemoteProcessRuntimeManagerTest.php` checks candidate verification and atomic publication of systemd units, and checks that repeated convergence of an unchanged running or stopped Process writes no candidate and issues no restart.
+Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`; the `processes` tests in `apps/agent` check candidate verification and atomic publication of systemd units, and `apps/gateway/tests/Feature/Infrastructure/Processes/RemoteProcessRuntimeManagerTest.php` checks that repeated convergence of an unchanged running or stopped Process publishes nothing and issues no restart.
