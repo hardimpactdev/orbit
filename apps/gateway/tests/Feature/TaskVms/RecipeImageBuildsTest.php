@@ -153,7 +153,9 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     $incus = recipeImageTransport($node);
     $host = app(TaskVmSettings::class)->hosts[0];
     $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'recipe-builder');
-    app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), 'base', 'packages');
+    $recipe = new RecipeLoader()->load();
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
+    app(RecipeImagePrograms::class)->apply($shell, $recipe, 'base', 'packages');
     $call = collect($incus->guest)->first(fn ($call): bool => $call->argv[0] === 'install' && is_string($call->input) && str_contains($call->input, 'sys.exit(image_main())'));
     expect(strlen($call->input))->toBeGreaterThan(131072);
 
@@ -163,9 +165,13 @@ it('carries the complete base recipe over stdin without exceeding native argumen
     $process->mustRun();
     $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
     expect($payload['vp_lock'])->toBe(file_get_contents(resource_path('machine-software/vite-plus-package-lock.json')))
-        ->and($payload['php']['input']['mode'])->toBe('apply');
-    foreach (['incus', 'incus-base', 'incus-client'] as $name) {
-        expect($payload['tools'][$name]['version'])->toBe('1:7.0.1-ubuntu26.04-202609250211');
+        ->and($payload['php']['input']['mode'])->toBe('apply')
+        ->and($payload['architecture'])->toBe('amd64')
+        ->and($payload['snapshot'])->toBe($document['ubuntu']['snapshot'])
+        ->and(array_keys($payload['tools']))->toEqualCanonicalizing($recipe->profile('base', 'amd64'));
+    foreach (RecipeLoader::IncusPackages as $name) {
+        expect($payload['tools'][$name]['version'])->toBe($document['tools'][$name]['artifacts']['amd64']['version'])
+            ->and($payload['tools'][$name]['artifacts'])->toBe($document['tools'][$name]['artifacts']);
     }
 });
 
