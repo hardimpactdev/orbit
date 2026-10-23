@@ -85,6 +85,19 @@
       ]
     },
     {
+      "name": "nodes.os-release",
+      "summary": "Read the operating system ID and codename of the Node.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "nodes.os_release_unreadable"
+      ]
+    },
+    {
       "name": "instances.inspect-source",
       "summary": "Read the evidence of a development source before its removal.",
       "mutates": false,

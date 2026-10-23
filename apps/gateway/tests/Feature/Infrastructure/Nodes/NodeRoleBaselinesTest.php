@@ -42,7 +42,6 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
-use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgram;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -90,6 +89,7 @@ use App\Models\Process;
 use App\Models\WebSocketRuntime;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
@@ -227,11 +227,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
         $owner,
     );
@@ -638,11 +634,7 @@ it('converges database beside router without rewriting routing or node processes
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
         new NodeRoleBaselineClusterRouterOperationLock($events),
         database_role_baseline($events),
@@ -867,11 +859,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
@@ -936,11 +924,7 @@ it('installs Caddy for an Ingress-only Node, and on removal builds the Node and 
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         ingress: ingress_role_baseline($events),
     );
 
@@ -986,11 +970,7 @@ it('dispatches removeUnreachable to the matching baseline and skips fleet reconc
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
     [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, 'unreachable-app-dev');
@@ -1028,11 +1008,7 @@ it('republishes private DNS when the dispatcher sheds an unreachable gateway rol
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
     [$gatewayNode, $gatewayAssignment] = role_baseline_models(RoleName::Gateway, 'unreachable-gateway');
@@ -1065,11 +1041,7 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
     [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, 'unreachable-vpn');
@@ -1102,11 +1074,7 @@ it('checks the remote operating system before every role convergence', function 
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
         analytics: analytics_role_baseline(),
@@ -1181,30 +1149,11 @@ it('stops baseline convergence when the remote operating system guard fails', fu
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            new class($events) implements SshExecutor
-            {
-                /** @param list<string> $events */
-                public function __construct(
-                    private array &$events,
-                ) {}
+        new NodeRoleOperatingSystemGuard((new FakeAgentCommandRunner)->answer('nodes.os-release', static function () use (&$events): array {
+            $events[] = 'guard:app-dev';
 
-                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-                {
-                    $this->events[] = 'guard:app-dev';
-
-                    return new CommandResult(
-                        1,
-                        '',
-                        UbuntuRelease::unsupportedText(),
-                        1,
-                        false,
-                    );
-                }
-            },
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+            return ['id' => 'ubuntu', 'codename' => 'unsupported'];
+        })),
     );
 
     expect(fn () => $dispatcher->converge($node, $assignment))
@@ -1213,32 +1162,22 @@ it('stops baseline convergence when the remote operating system guard fails', fu
 });
 
 /** @param list<string> $events */
-function baseline_guard_ssh(array &$events): SshExecutor
+/** @param list<string> $events */
+function baseline_guard_agents(array &$events): FakeAgentCommandRunner
 {
-    return new class($events) implements SshExecutor
-    {
-        /** @param list<string> $events */
-        public function __construct(
-            private array &$events,
-        ) {}
+    return (new FakeAgentCommandRunner)->answer('nodes.os-release', static function (array $input, Node $node) use (&$events): array {
+        $role = match ($node->wireguard_ip) {
+            '10.44.0.2' => 'gateway',
+            '10.44.0.3' => 'vpn',
+            '10.44.0.4' => 'app-dev',
+            '10.44.0.5' => 'app-prod',
+            '10.44.0.7' => 'database',
+            default => 'unknown',
+        };
+        $events[] = "guard:{$role}";
 
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $role = $command->arguments[0] === 'bash'
-                ? match ($connection->host) {
-                    '10.44.0.2' => 'gateway',
-                    '10.44.0.3' => 'vpn',
-                    '10.44.0.4' => 'app-dev',
-                    '10.44.0.5' => 'app-prod',
-                    '10.44.0.7' => 'database',
-                    default => 'unknown',
-                }
-            : 'unknown';
-            $this->events[] = "guard:{$role}";
-
-            return new CommandResult(0, "ID=ubuntu\nVERSION_CODENAME=resolute\n", '', 1, false);
-        }
-    };
+        return ['id' => 'ubuntu', 'codename' => 'resolute'];
+    });
 }
 
 /** @return array{Node, NodeRole} */
@@ -1725,11 +1664,7 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
             Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
-        new NodeRoleOperatingSystemGuard(
-            baseline_guard_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
-        ),
+        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         metricsDeferral: $deferral,
     );
 
