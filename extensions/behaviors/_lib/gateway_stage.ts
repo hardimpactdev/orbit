@@ -390,11 +390,11 @@ async function withGroupOutcome(job: Job, http: Http): Promise<Job> {
 async function merged(job: Job, http: Http): Promise<Job> {
   const g = await readGroup(http, job.group);
   const state = g.watched_pr_state ?? null;
-  if (g.status === "completed") return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
+  if (g.status === "completed") return { ...job, state: "succeeded", lastError: null, evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (state === "merged") {
     const r = await http("POST", `/api/v1/task-groups/${job.group}/complete`);
     if (r.status !== 200) return { ...job, lastError: `completing group: ${errorCode(r)}` };
-    return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
+    return { ...job, state: "succeeded", lastError: null, evidence: { status: "succeeded", runId: job.key, completed: true } };
   }
   if (state === "closed") return { ...job, state: "failed", evidence: { status: "failed", runId: job.key, error: "pull request closed without merge" } };
   return { ...job, operationStatus: `pull request ${state ?? "not observed yet"}` };

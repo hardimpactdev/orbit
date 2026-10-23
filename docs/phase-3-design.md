@@ -164,6 +164,16 @@ Found while Swamp drove Orbit group 2046 (nckrtl/website#7) end to end:
 5. The orchestrator re-derives the current subtask from the Gateway's own rule
    (lowest open position).
 6. A merge is seen only by polling `watched_pr_state`.
+7. `tasks:complete` is a synchronous request that tears down the workspace and
+   task VM before it answers. In the second run (group 2049) the client's first
+   call timed out after 60 s while the Gateway went on to complete the group;
+   the next tick only saw the result in the group status. Unlike the four
+   operations it takes no `Idempotency-Key` and returns no operation to read.
+   Make completion an operation, or answer before the teardown.
+8. A release-age gate exception is invisible to the orchestrator. In group 2049
+   the implementer said it used the project's documented exception for
+   vite-plus 1.4.0 (released that day), but nothing in the repo or the receipt
+   shows how. A turn receipt or the check should record any exception it used.
 
 Closed in orbit-swamp #3: pre-approved gates without a live turn, board
 assistance at subtask gates, and the driver ignoring evidence from before a

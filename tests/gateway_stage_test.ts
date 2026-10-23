@@ -435,3 +435,41 @@ Deno.test("known limitation: a gate reached after every subtask ended raises no 
   assertEquals(posts, []);
   assertEquals(rec!.subtask, null);
 });
+
+Deno.test("merged clears the error of a retried complete once the group is completed", async () => {
+  const gw = fakeGateway({ groupStatus: "running", watched: "merged" });
+  let completed = false;
+  let timeouts = 1;
+  // The first complete call times out on the client while the Gateway goes on to complete the group.
+  const http: Http = async (method, path, body, key) => {
+    if (method === "POST" && path.endsWith("/complete")) {
+      completed = true;
+      if (timeouts-- > 0) return { status: 0, body: { error: { code: "transport", message: "curl: (28) Operation timed out" } } };
+      return { status: 200, body: { data: {} } };
+    }
+    const r = await gw.http(method, path, body, key);
+    if (method === "GET" && completed && r.body?.data) (r.body.data as Record<string, unknown>).status = "completed";
+    return r;
+  };
+  const h = harness();
+  const first = await runStage(args("merged"), h.deps(http));
+  assertEquals(first.state, "running");
+  assertStringIncludes(first.lastError!, "timed out");
+  const second = await runStage(args("merged"), h.deps(http));
+  assertEquals(second.state, "succeeded");
+  assertEquals(second.lastError, null);
+
+  // A complete call that succeeds after an earlier failed one clears that error too.
+  const flaky = fakeGateway({ groupStatus: "running", watched: "merged" });
+  let fail = true;
+  const http2: Http = (method, path, body, key) => {
+    if (method === "POST" && path.endsWith("/complete") && fail) {
+      fail = false;
+      return Promise.resolve({ status: 503, body: { error: { code: "http.503" } } });
+    }
+    return flaky.http(method, path, body, key);
+  };
+  const h2 = harness();
+  assertStringIncludes((await runStage(args("merged"), h2.deps(http2))).lastError!, "503");
+  assertEquals((await runStage(args("merged"), h2.deps(http2))).lastError, null);
+});
