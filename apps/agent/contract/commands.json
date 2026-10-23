@@ -44,6 +44,34 @@
       ]
     },
     {
+      "name": "agent.configure",
+      "summary": "Write the agent's secret, configuration, CA, and unit, and restart it when they change.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "agent.update_busy",
+        "agent.configure_failed"
+      ]
+    },
+    {
+      "name": "agent.remove",
+      "summary": "Stop the observer and remove the agent's binary, unit, and files.",
+      "mutates": true,
+      "timeout_seconds": 420,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "agent.update_busy",
+        "agent.configure_failed"
+      ]
+    },
+    {
       "name": "instances.inspect-source",
       "summary": "Read the evidence of a development source before its removal.",
       "mutates": false,

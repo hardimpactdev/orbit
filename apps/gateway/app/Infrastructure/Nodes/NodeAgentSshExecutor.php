@@ -15,17 +15,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Shared\StoredValue;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
-use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -40,31 +32,11 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      */
     private const int LockSeconds = 420;
 
-    /** How long the agent download may take to connect, and in total, so one step stays inside the lock term. */
-    /** Closes each named checkout's regular `.env` to other users, and names every checkout it could not close on stderr. */
-    public const string CloseEnvironmentsScript = <<<'BASH'
-        failed=0
-        for checkout in "$@"; do
-          [ -d "$checkout" ] && [ ! -L "$checkout" ] || continue
-          [ "$(realpath -e -- "$checkout")" = "$checkout" ] || continue
-          if ! find "$checkout" -maxdepth 1 -name .env -type f -exec chmod o-rwx {} + 2>/dev/null; then
-            printf '%s\n' "$checkout" >&2
-            failed=1
-          fi
-        done
-        exit "$failed"
-        BASH;
-
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
         private LeafCertificateSigner $certificates,
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
-        /** The Node's update lock, which `orbit self-update` also holds. */
-        private NodeUpdateLock $updateLock,
         private AgentCommandRunner $agents,
         private ?NodeLocks $locks = null,
         /** How long a converge waits for another converge of the same Node agent. */
@@ -110,47 +82,25 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     }
 
     /**
-     * Removes the world bits from the `.env` of every Instance checkout in the Instance root, so the
-     * agent, like every other local user, cannot read it. Best effort: a failure logs a warning with
-     * the checkouts it could not close and does not fail the converge.
+     * Every Instance checkout in the Instance root. The agent removes the world bits from their `.env`,
+     * so it, like every other local user, cannot read them.
+     *
+     * @return list<string>
      */
-    private function closeInstanceEnvironments(Node $node, ?string $root): void
+    private function checkouts(Node $node, ?string $root): array
     {
-        if ($root === null) {
-            return;
+        if ($root === null || ! $node->exists) {
+            return [];
         }
 
-        $checkouts = Instance::query()
+        return array_values(Instance::query()
             ->where('node_id', $node->getKey())
             ->orderBy('id')
             ->with(['project', 'node.roles'])
             ->get()
             ->map(static fn (Instance $instance): string => $instance->applicationDirectory())
             ->filter(static fn (string $path): bool => str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
-            ->values()
-            ->all();
-
-        if ($checkouts === []) {
-            return;
-        }
-
-        try {
-            $result = $this->raw($node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', ...$checkouts],
-                input: self::CloseEnvironmentsScript,
-            ));
-        } catch (Throwable $exception) {
-            Log::warning('The agent converge could not close Instance environments.', ['node_id' => $node->getKey(), 'error' => $exception->getMessage()]);
-
-            return;
-        }
-
-        if (! $result->succeeded()) {
-            Log::warning('The agent converge could not close Instance environments.', [
-                'node_id' => $node->getKey(),
-                'checkouts' => array_values(array_filter(explode("\n", trim($result->stderr)), static fn (string $line): bool => $line !== '')),
-            ]);
-        }
+            ->all());
     }
 
     public function converge(Node $node): void
@@ -222,58 +172,45 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     }
 
     /**
-     * Installs the agent and its files, then switches the Gateway's secret record (ADR 0155). The
-     * new hash is stored only after the agent has restarted from its secret file. Every earlier failure
-     * leaves the record unchanged, so the running agent keeps its accepted secret and Doctor reports
-     * `mismatch`; the next converge writes a new secret and restarts the agent.
+     * Installs the agent, then has it write its files and switches the Gateway's secret record (ADR 0155).
+     * `agent.configure` keeps the secret while it matches the record and otherwise writes a new one, and
+     * answers only its hash once the agent restarted from it. Every earlier failure leaves the record
+     * unchanged, so the running agent keeps its accepted secret and Doctor reports `mismatch`; the next
+     * converge writes a new secret and restarts the agent. The agent holds the update lock that
+     * `orbit self-update` holds, so a self-update never swaps or restarts the agent meanwhile.
      *
      * Before each step that changes the Node or the record, the converge renews its lock and stops
      * when the lock has expired, whether or not another converge has taken it since.
      */
     private function convergeLocked(NodeLock $lock, Node $node, ?string $root, string $configuration, string $certificate, string $unit): void
     {
-        // Only root may enter the directory: `install` writes a candidate with its default mode before it
-        // applies the final one, so the directory keeps the secret's candidate from other users (ADR 0155).
-        $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent']), 'agent.install_failed');
         $this->holdLock($lock);
 
-        // The binary goes first, through the agent's own installer (ADR 0225). It takes the update lock itself,
-        // so it runs before the section below holds that lock.
         try {
             $binaryChanged = $this->agents->install($node);
+            $this->holdLock($lock);
+            $stored = $node->exists ? Node::query()->whereKey($node->getKey())->value('agent_secret_hash') : $node->agent_secret_hash;
+            $configured = $this->agents->run($node, 'agent.configure', [
+                'secret_hash' => is_string($stored) && preg_match('/\A[0-9a-f]{64}\z/D', $stored) === 1 ? $stored : null,
+                'configuration' => $configuration,
+                'certificate' => $certificate,
+                'unit' => $unit,
+                'checkouts' => $this->checkouts($node, $root),
+                'binary_changed' => $binaryChanged,
+            ]);
         } catch (AgentCommandRefused $exception) {
-            $cause = $exception->details['cause'] ?? $exception->errorCode;
+            $cause = $exception->details['cause'] ?? $exception->details['step'] ?? $exception->errorCode;
             throw new ResourceOperationException('agent.install_failed', $exception->getMessage().' Cause: '.(is_string($cause) ? $cause : $exception->errorCode).'.', 502, $exception);
         } catch (AgentRunnerFailure $exception) {
             throw new ResourceOperationException('agent.install_failed', $exception->getMessage().' Cause: '.$exception->kind.'.', 502, $exception);
         }
-        $this->holdLock($lock);
 
-        // From the secret through the restart, the converge holds the Node's update lock, so `orbit self-update`
-        // never swaps the agent or watches its health while this converge changes or restarts it.
-        $hash = $this->updateLock->run($node, function () use ($lock, $node, $binaryChanged, $root, $configuration, $certificate, $unit): AgentSecretHash {
-            $this->holdLock($lock);
-            $hash = $this->convergeSecret($node);
-            $changed = $hash->written || $binaryChanged;
-            $this->holdLock($lock);
-            $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
-            $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
-            $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
-            $this->closeInstanceEnvironments($node, $root);
-
-            $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), 'agent.install_failed');
-
-            $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'enable', '--now', NodeAgentFootprint::Service]), 'agent.install_failed');
-
-            if ($changed) {
-                $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]), 'agent.install_failed');
-            }
-
-            return $hash;
-        });
+        if (($configured['unclosed'] ?? []) !== []) {
+            Log::warning('The agent converge could not close Instance environments.', ['node_id' => $node->getKey(), 'checkouts' => $configured['unclosed']]);
+        }
 
         $this->holdLock($lock);
-        $this->recordSecret($node, $hash->value);
+        $this->recordSecret($node, StoredValue::string($configured['secret_hash'] ?? null));
     }
 
     /**
@@ -285,32 +222,6 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         if (! $lock->refresh()) {
             throw new ResourceOperationException('agent.converge_lock_lost', 'The Node agent converge lock expired before it could be renewed.', 409);
         }
-    }
-
-    /**
-     * Keeps the Node's agent secret while its file matches the stored hash, and otherwise writes a new
-     * one through standard input (ADR 0155). The secret never enters argv, and the Gateway never reads
-     * it back. Returns the hash to store; the caller stores it once the agent restarted from the file.
-     */
-    private function convergeSecret(Node $node): AgentSecretHash
-    {
-        $stored = $node->exists
-            ? Node::query()->whereKey($node->getKey())->value('agent_secret_hash')
-            : $node->agent_secret_hash;
-        $valid = is_string($stored) && preg_match('/\A[0-9a-f]{64}\z/D', $stored) === 1;
-
-        if ($valid) {
-            $installed = $this->raw($node, new RemoteCommand(['sudo', 'sha256sum', '--', NodeAgentFootprint::SecretPath]));
-
-            if ($installed->succeeded() && hash_equals($stored, $this->checksum($installed->stdout))) {
-                return new AgentSecretHash($stored, written: false);
-            }
-        }
-
-        $secret = bin2hex(random_bytes(32));
-        $this->writeFile($node, NodeAgentFootprint::SecretPath, $secret, 0600);
-
-        return new AgentSecretHash(hash('sha256', $secret), written: true);
     }
 
     private function recordSecret(Node $node, string $hash): void
@@ -329,56 +240,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             return;
         }
 
-        $failure = null;
-
         try {
-            $unit = $this->raw($node, new RemoteCommand(['sudo', 'test', '-f', NodeAgentFootprint::UnitPath]));
-
-            if ($unit->succeeded()) {
-                $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'stop', NodeAgentFootprint::Service]), $failure);
-                $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'disable', NodeAgentFootprint::Service]), $failure);
-            } elseif ($unit->exitCode !== 1) {
-                $failure = new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502);
-            }
+            $this->agents->run($node, 'agent.remove');
         } catch (Throwable $exception) {
-            $failure = $exception;
-        }
-
-        $this->attemptRemovalCommand($node, new RemoteCommand([
-            'sudo', 'rm', '-f', '--',
-            NodeAgentFootprint::UnitPath,
-            NodeAgentFootprint::BinaryPath,
-        ]), $failure);
-        $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'rm', '-rf', '--', '/etc/orbit/agent']), $failure);
-        $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), $failure);
-        $this->resetFailedUnit($node);
-
-        if ($failure instanceof Throwable) {
-            throw new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502, $failure);
-        }
-    }
-
-    /**
-     * Clears the failed-unit record that systemd keeps after a crashed agent's unit file is removed.
-     * The command fails for a unit that is not failed or no longer loaded, so its outcome is ignored.
-     */
-    private function resetFailedUnit(Node $node): void
-    {
-        try {
-            $this->raw($node, new RemoteCommand(['sudo', 'systemctl', 'reset-failed', NodeAgentFootprint::Service]));
-        } catch (Throwable) {
-            return;
-        }
-    }
-
-    private function attemptRemovalCommand(Node $node, RemoteCommand $command, ?Throwable &$failure): void
-    {
-        try {
-            if (! $this->raw($node, $command)->succeeded()) {
-                $failure ??= new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502);
-            }
-        } catch (Throwable $exception) {
-            $failure ??= $exception;
+            throw new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502, $exception);
         }
     }
 
@@ -402,82 +267,5 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         }
 
         return null;
-    }
-
-    private function publishFile(Node $node, string $path, string $contents, int $mode): bool
-    {
-        if ($this->readFile($node, $path) === $contents) {
-            return false;
-        }
-
-        $this->writeFile($node, $path, $contents, $mode);
-
-        return true;
-    }
-
-    /** Writes a root-owned candidate from standard input with its final mode, then moves it into place. */
-    private function writeFile(Node $node, string $path, string $contents, int $mode): void
-    {
-        $candidate = $path.NodeAgentFootprint::CandidateSuffix;
-        $this->run($node, new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]), 'agent.install_failed');
-        $this->run($node, new RemoteCommand(
-            ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', sprintf('%04o', $mode), '/dev/stdin', $candidate],
-            protectedInput: ProtectedInput::fromString($contents),
-        ), 'agent.install_failed');
-        $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, $path]), 'agent.install_failed');
-    }
-
-    private function readFile(Node $node, string $path): ?string
-    {
-        $exists = $this->raw($node, new RemoteCommand(['sudo', 'test', '-f', $path]));
-
-        if ($exists->exitCode === 1) {
-            return null;
-        }
-
-        if (! $exists->succeeded()) {
-            throw new ResourceOperationException('agent.install_failed', 'The Node agent files could not be inspected.', 502);
-        }
-
-        $contents = $this->raw($node, new RemoteCommand(['sudo', 'cat', '--', $path]));
-
-        if (! $contents->succeeded()) {
-            throw new ResourceOperationException('agent.install_failed', 'The Node agent files could not be inspected.', 502);
-        }
-
-        return $contents->stdout;
-    }
-
-    private function checksum(string $output): string
-    {
-        return preg_split('/\s+/', trim($output), 2)[0] ?? '';
-    }
-
-    private function run(Node $node, RemoteCommand $command, string $errorCode): CommandResult
-    {
-        $result = $this->raw($node, $command);
-
-        if (! $result->succeeded()) {
-            throw new ResourceOperationException($errorCode, 'The Node agent could not be installed or converged.', 502);
-        }
-
-        return $result;
-    }
-
-    private function raw(Node $node, RemoteCommand $command): CommandResult
-    {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            throw new ResourceOperationException('agent.install_failed', 'The Node has no managed SSH address.', 409);
-        }
-
-        $connection = new SshConnection(
-            host: $node->wireguard_ip,
-            user: $node->user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
-
-        return $this->ssh->execute($connection, $command);
     }
 }

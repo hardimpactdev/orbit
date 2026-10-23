@@ -16,6 +16,7 @@ use App\Domain\Fleet\NodeCliConvergence;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
@@ -89,12 +90,12 @@ describe('fleet container wiring', function (): void {
             ->and(fleetWired(app(GatewayWebConverger::class), 'fleet'))->toBeInstanceOf(NativeFleetConvergeUnits::class);
     });
 
-    it('takes the update lock in the agent converge and installs the CLI in provisioning', function (): void {
+    it('configures the agent through its runner and installs the CLI in provisioning', function (): void {
         // The test suite binds a fake agent runtime; the production binding names this class.
         $agent = app(NodeAgentSshExecutor::class);
 
         expect($agent)->toBeInstanceOf(NodeAgentSshExecutor::class)
-            ->and(fleetWired($agent, 'updateLock'))->toBeInstanceOf(NodeUpdateLock::class)
+            ->and(fleetWired($agent, 'agents'))->toBeInstanceOf(AgentCommandRunner::class)
             ->and(fleetWired(app(NodeCliConvergence::class), 'cli'))->toBeInstanceOf(SshNodeCliInstaller::class);
     });
 });

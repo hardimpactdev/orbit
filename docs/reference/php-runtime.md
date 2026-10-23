@@ -7,7 +7,6 @@ covers:
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
-  - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
   - apps/agent/src/commands/php_runtime.rs
 ---
 

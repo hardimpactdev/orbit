@@ -145,7 +145,7 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 Each binary changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. The agent's own `agent.install` takes it for the agent, and the command takes it for the CLI. A held lock would make the installer wait for the command that started it. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
 
-- the [agent converge](/reference/node-agent#install-and-upgrade), from its secret check through the agent restart;
+- the [agent converge](/reference/node-agent#install-and-upgrade), whose `agent.configure` holds it from the secret check through the agent restart;
 - the [fleet rollout](/reference/gateway-recovery#one-node), for its CLI install and footprint steps;
 - a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
 

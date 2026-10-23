@@ -2,6 +2,7 @@
 
 pub mod accounts;
 pub mod agent;
+pub mod agent_footprint;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
@@ -69,6 +70,8 @@ pub fn all() -> Vec<Entry> {
     vec![
         entry::<agent::Status>(),
         entry::<agent::Install>(),
+        entry::<agent_footprint::ConfigureAgent>(),
+        entry::<agent_footprint::RemoveAgent>(),
         entry::<instances::InspectSource>(),
         entry::<instances::RemoveSource>(),
         entry::<instances::PrepareRemoval>(),

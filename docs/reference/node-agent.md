@@ -396,7 +396,9 @@ The agent converge writes these files on a Linux Node:
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Kept binary | `/usr/local/bin/orbit-agent.previous`, the binary before the last replacement |
 
-The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate. It then writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. A failed installation fails the converge with `agent.install_failed`, and a passing one clears the Node's recorded failed pin.
+The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate. It then runs `agent.configure`, which writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. The Gateway sends the secret hash it recorded. The agent keeps a secret file that matches it and otherwise writes a new one, and answers only the new hash. The Gateway stores that hash after the restart.
+
+A failed installation or configuration fails the converge with `agent.install_failed`, and a passing installation clears the Node's recorded failed pin. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
@@ -410,7 +412,7 @@ The Instance root is the Node's [apps root](/reference/node-settings#derive-the-
 
 The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after registration or transfer, and on each agent converge. Agent converge independently closes environment permissions for the Instances under the Node's apps root; it does not rely on registration or transfer having run.
 
-For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. A converge that cannot close a `.env` logs a warning and continues.
+For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. The Gateway sends the checkout list to `agent.configure`. A `.env` the agent cannot close is named in its answer, and the converge logs a warning and continues.
 
 The Gateway converges the agent at these points.
 
@@ -423,9 +425,7 @@ To upgrade the fleet, merge the agent change and release the Gateway. Every Node
 
 The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release installs that Node's pin through the local transport.
 
-`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge's agent step holds the same lock from the secret check through the agent restart, after the installation. So no two of them swap or restart the agent at the same time.
-
-The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
+`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 
 `self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another binary.
 
