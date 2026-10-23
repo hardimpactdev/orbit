@@ -1,758 +1,4 @@
 {
-  "commands": [
-    {
-      "errors": [
-        "agent.digest_unreadable"
-      ],
-      "mutates": false,
-      "name": "agent.status",
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "summary": "Report the running agent binary and its observer.",
-      "timeout_seconds": 10
-    },
-    {
-      "errors": [
-        "agent.candidate_invalid",
-        "agent.candidate_missing",
-        "agent.candidate_digest_mismatch",
-        "agent.update_busy",
-        "agent.replace_failed",
-        "agent.health_check_failed"
-      ],
-      "mutates": true,
-      "name": "agent.install",
-      "privilege": {
-        "linux": "root",
-        "macos": "account"
-      },
-      "summary": "Install a staged, pinned agent binary and restart the observer on it.",
-      "timeout_seconds": 180
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Read the evidence of a development source before its removal.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.remove-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Check an active development checkout again and delete it.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-source-removal",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Record the removal journal of a development source.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.finalize-source-removal",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Quarantine a recorded development source, write its receipt, and delete it.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": false,
-      "name": "instances.read-removal-receipt",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Report how much of a receipt-backed source removal is left.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.clean-removal-receipt",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Delete what is left of a receipt-backed source removal.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.read-source-removal-state",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Report the state of a recorded source removal and release its empty parent.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.ownership_mismatch",
-        "instances.layout_mismatch",
-        "instances.origin_mismatch",
-        "instances.branch_mismatch",
-        "instances.worktrees_mismatch",
-        "instances.unsafe_content",
-        "instances.source_changed",
-        "instances.removal_refused",
-        "instances.source_step_failed"
-      ],
-      "mutates": false,
-      "name": "instances.check-publication",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Check whether the origin publishes a commit.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.path_mismatch",
-        "instances.laravel_routes_unreadable"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-laravel-routes",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Read whether a production release's Laravel routes claim the Reverb paths.",
-      "timeout_seconds": 60
-    },
-    {
-      "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-development-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-development-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.source_invalid",
-        "instances.source_busy",
-        "instances.git_failed"
-      ],
-      "mutates": true,
-      "name": "instances.resolve-development-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Fetch a development Instance's origin and check out its branch.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-registration-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
-      "timeout_seconds": 60
-    },
-    {
-      "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
-      ],
-      "mutates": true,
-      "name": "instances.relocate-registration-source",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.registration_invalid",
-        "instances.git_failed"
-      ],
-      "mutates": true,
-      "name": "instances.laravel-registration-receipt",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
-      "timeout_seconds": 30
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-release",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Clone a new production release of a branch and link its environment and shared paths.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.activate-release",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-release",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check and read the selected production release, or a named retained one.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.list-releases",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "List the production releases that pass their checks, and the selected one.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.prune-releases",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Remove production releases beyond the retained count that no process uses.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-repository-binding",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Read the repository URL that each production marker and release records.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.rebind-repository",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-served-web-roots",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Link the environment and grant Caddy each Route web root in a production Instance's selected release.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.check-served-web-roots",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check that a production Instance's selected release can serve each Route web root.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.deploy_step_invalid",
-        "instances.deploy_step_start_failed"
-      ],
-      "mutates": true,
-      "name": "instances.run-deploy-step",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Run a production deploy step as the Instance user and publish its output live.",
-      "timeout_seconds": 3600
-    },
-    {
-      "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.resolve-development-target",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.checkout-development-default",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Check out a commit on a development default's branch in place.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.development_checkout_invalid",
-        "instances.checkout_dirty",
-        "instances.branch_diverged",
-        "instances.commit_not_on_branch",
-        "instances.lifecycle_busy",
-        "instances.development_step_failed"
-      ],
-      "mutates": true,
-      "name": "instances.run-development-step",
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "summary": "Run a development deploy step in a development default's checkout, live.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-production-user",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Create a production Instance's system account and private home, or check them.",
-      "timeout_seconds": 60
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.prepare-production-source",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Clone a production Instance's repository into its initial release and record the source markers.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.resolve-production-source",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check out a branch in a production Instance's initial release and link its environment.",
-      "timeout_seconds": 900
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.inspect-production-profile",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Read a production checkout's Composer metadata, refusing files the user does not own.",
-      "timeout_seconds": 60
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.grant-production-caddy-access",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Deny Caddy a production home except a path to the selected web root.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": false,
-      "name": "instances.validate-release-layout",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check a production home, its releases, and the release that current selects.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.clear-current-release",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Check a production home and remove its current link.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.remove-production-home",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Remove a production Instance's home, system account, and source state.",
-      "timeout_seconds": 600
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.write-directory-url",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Write APP_URL into the stable .env of a production Instance's served application directory.",
-      "timeout_seconds": 60
-    },
-    {
-      "errors": [
-        "instances.release_invalid",
-        "instances.commit_not_on_branch",
-        "instances.release_step_failed",
-        "instances.release_missing"
-      ],
-      "mutates": true,
-      "name": "instances.refresh-config-cache",
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "summary": "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
-      ],
-      "mutates": true,
-      "name": "php.converge-production-runtime",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Publish a production Instance's dedicated PHP-FPM service, or only a monitoring change of its pool.",
-      "timeout_seconds": 300
-    },
-    {
-      "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
-      ],
-      "mutates": true,
-      "name": "php.remove-production-runtime",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Stop and remove a production Instance's dedicated PHP-FPM service, keeping its local tuning.",
-      "timeout_seconds": 120
-    },
-    {
-      "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
-      ],
-      "mutates": false,
-      "name": "php.inspect-production-pool",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Read a production Instance's generated PHP-FPM pool and its fingerprint.",
-      "timeout_seconds": 30
-    },
-    {
-      "errors": [
-        "php.runtime_invalid",
-        "php.cache_socket_unavailable",
-        "php.cache_association_invalid",
-        "php.cache_reset_rejected",
-        "php.cache_reset_pending",
-        "php.cache_protocol_failed"
-      ],
-      "mutates": true,
-      "name": "php.refresh-production-cache",
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "summary": "Reset OPcache in a production Instance's own PHP-FPM workers and confirm it.",
-      "timeout_seconds": 60
-    }
-  ],
   "common_errors": [
     "agent.version_mismatch",
     "agent.envelope_invalid",
@@ -764,5 +10,811 @@
     "agent.supervisor_failed",
     "agent.target_busy",
     "agent.lock_unavailable"
+  ],
+  "commands": [
+    {
+      "name": "agent.status",
+      "summary": "Report the running agent binary and its observer.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "agent.digest_unreadable"
+      ]
+    },
+    {
+      "name": "agent.install",
+      "summary": "Install a staged, pinned agent binary and restart the observer on it.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": [
+        "agent.candidate_invalid",
+        "agent.candidate_missing",
+        "agent.candidate_digest_mismatch",
+        "agent.update_busy",
+        "agent.replace_failed",
+        "agent.health_check_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-source",
+      "summary": "Read the evidence of a development source before its removal.",
+      "mutates": false,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.remove-source",
+      "summary": "Check an active development checkout again and delete it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-source-removal",
+      "summary": "Record the removal journal of a development source.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.finalize-source-removal",
+      "summary": "Quarantine a recorded development source, write its receipt, and delete it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.read-removal-receipt",
+      "summary": "Report how much of a receipt-backed source removal is left.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.clean-removal-receipt",
+      "summary": "Delete what is left of a receipt-backed source removal.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.read-source-removal-state",
+      "summary": "Report the state of a recorded source removal and release its empty parent.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.check-publication",
+      "summary": "Check whether the origin publishes a commit.",
+      "mutates": false,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.ownership_mismatch",
+        "instances.layout_mismatch",
+        "instances.origin_mismatch",
+        "instances.branch_mismatch",
+        "instances.worktrees_mismatch",
+        "instances.unsafe_content",
+        "instances.source_changed",
+        "instances.removal_refused",
+        "instances.source_step_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-laravel-routes",
+      "summary": "Read whether a production release's Laravel routes claim the Reverb paths.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.path_mismatch",
+        "instances.laravel_routes_unreadable"
+      ]
+    },
+    {
+      "name": "instances.prepare-development-source",
+      "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-development-source",
+      "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.resolve-development-source",
+      "summary": "Fetch a development Instance's origin and check out its branch.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.inspect-registration-source",
+      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.relocate-registration-source",
+      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.laravel-registration-receipt",
+      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-release",
+      "summary": "Clone a new production release of a branch and link its environment and shared paths.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.activate-release",
+      "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-release",
+      "summary": "Check and read the selected production release, or a named retained one.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.list-releases",
+      "summary": "List the production releases that pass their checks, and the selected one.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prune-releases",
+      "summary": "Remove production releases beyond the retained count that no process uses.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-repository-binding",
+      "summary": "Read the repository URL that each production marker and release records.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.rebind-repository",
+      "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prepare-served-web-roots",
+      "summary": "Link the environment and grant Caddy each Route web root in a production Instance's selected release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.check-served-web-roots",
+      "summary": "Check that a production Instance's selected release can serve each Route web root.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.run-deploy-step",
+      "summary": "Run a production deploy step as the Instance user and publish its output live.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.deploy_step_invalid",
+        "instances.deploy_step_start_failed"
+      ]
+    },
+    {
+      "name": "instances.read-dependency-files",
+      "summary": "Read the dependency manifests and lockfiles of a development checkout.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.read-release-dependency-files",
+      "summary": "Read the dependency manifests and lockfiles of a production home's current release.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.probe-dependency-update",
+      "summary": "Check whether one package ecosystem of a directory is ready for an update.",
+      "mutates": false,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.update-dependencies",
+      "summary": "Update one package ecosystem of a development checkout within its constraints.",
+      "mutates": true,
+      "timeout_seconds": 630,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.dependency_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.resolve-development-target",
+      "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.checkout-development-default",
+      "summary": "Check out a commit on a development default's branch in place.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.run-development-step",
+      "summary": "Run a development deploy step in a development default's checkout, live.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
+      "name": "instances.prepare-production-user",
+      "summary": "Create a production Instance's system account and private home, or check them.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.prepare-production-source",
+      "summary": "Clone a production Instance's repository into its initial release and record the source markers.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.resolve-production-source",
+      "summary": "Check out a branch in a production Instance's initial release and link its environment.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.inspect-production-profile",
+      "summary": "Read a production checkout's Composer metadata, refusing files the user does not own.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.grant-production-caddy-access",
+      "summary": "Deny Caddy a production home except a path to the selected web root.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.validate-release-layout",
+      "summary": "Check a production home, its releases, and the release that current selects.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.clear-current-release",
+      "summary": "Check a production home and remove its current link.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.remove-production-home",
+      "summary": "Remove a production Instance's home, system account, and source state.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.write-directory-url",
+      "summary": "Write APP_URL into the stable .env of a production Instance's served application directory.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.refresh-config-cache",
+      "summary": "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "php.converge-production-runtime",
+      "summary": "Publish a production Instance's dedicated PHP-FPM service, or only a monitoring change of its pool.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.remove-production-runtime",
+      "summary": "Stop and remove a production Instance's dedicated PHP-FPM service, keeping its local tuning.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.inspect-production-pool",
+      "summary": "Read a production Instance's generated PHP-FPM pool and its fingerprint.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    },
+    {
+      "name": "php.refresh-production-cache",
+      "summary": "Reset OPcache in a production Instance's own PHP-FPM workers and confirm it.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ]
+    }
   ]
 }

@@ -9,7 +9,6 @@ use App\Domain\Instances\Dependencies\DependencyCollectionException;
 use App\Domain\Instances\Dependencies\DependencyEcosystem;
 use App\Domain\Instances\Dependencies\DependencyInput;
 use App\Domain\Instances\Dependencies\DependencySource;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 use JsonException;
 use stdClass;
 
@@ -27,7 +26,7 @@ final readonly class SelectDependencyInputAction
     {
         $names = $ecosystem === DependencyEcosystem::Composer
             ? ['composer.json', 'composer.lock']
-            : array_values(array_diff(DependencyFilesProgram::FILES, ['composer.json', 'composer.lock']));
+            : array_values(array_diff(CollectInstanceDependencyFilesAction::FILES, ['composer.json', 'composer.lock']));
         foreach ($names as $name) {
             if (isset($files->errors[$name])) {
                 throw new DependencyCollectionException($files->errors[$name], $name.' failed dependency file collection');

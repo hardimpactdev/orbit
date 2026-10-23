@@ -2,34 +2,30 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\ReadInstanceDependencyScanAction;
 use App\Actions\Instances\Dependencies\ScanInstanceDependenciesAction;
 use App\Data\Instances\Dependencies\DependencyInventoryData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Dependencies\DependencyInventoryState;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceDependencyScanAttempt;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-
-use function Pest\Laravel\mock;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\LocalAgentBinary;
 
 function dependency_scan_instance(): Instance
 {
     $project = Project::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
-    $node = Node::query()->create(['name' => 'dependency-scan', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    $node = Node::query()->create(['name' => 'dependency-scan', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($node, false);
 
     return $project->instances()->create([
@@ -41,7 +37,7 @@ function dependency_scan_instance(): Instance
 /** @return array<string, mixed> */
 function dependency_scan_receipt(string $manager = 'npm'): array
 {
-    $files = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+    $files = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
     $inputs = [
         'composer.json' => 'Composer/composer2-manifest.json', 'composer.lock' => 'Composer/composer2-lock.json',
         ...match ($manager) {
@@ -60,28 +56,18 @@ function dependency_scan_receipt(string $manager = 'npm'): array
 
 function dependency_scan_remote(Closure $response): void
 {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function () use ($response): CommandResult {
-        return new CommandResult(0, json_encode($response(), JSON_THROW_ON_ERROR), '', 1, false);
-    });
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+        ->answer('instances.read-dependency-files', fn (): array => $response())
+        ->answer('instances.read-release-dependency-files', fn (): array => $response()));
 }
 
-/** Run the pinned collector locally instead of opening an SSH connection. */
+/** Read a local checkout with the agent built from this checkout, instead of a Node's. */
 function dependency_scan_local_source(Instance $instance): string
 {
     $path = sys_get_temp_dir().'/orbit-monorepo-scan-'.Str::uuid();
     mkdir($path, 0700);
     $instance->update(['checkout_path' => $path]);
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, $command): CommandResult {
-        $process = new Process($command->arguments);
-        $process->setInput($command->input);
-        $process->mustRun();
-
-        return new CommandResult(0, $process->getOutput(), $process->getErrorOutput(), 1, false);
-    });
+    app()->instance(AgentCommandRunner::class, LocalAgentBinary::localRunner($path.'.agent'));
 
     return $path;
 }
@@ -287,7 +273,7 @@ describe('coordinated instance dependency scans', function (): void {
         dependency_scan_remote(function () use (&$calls, $receipt): array {
             $calls++;
             if ($calls === 3) {
-                $receipt['files'] = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+                $receipt['files'] = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
             }
 
             return $receipt;
@@ -306,7 +292,7 @@ describe('coordinated instance dependency scans', function (): void {
     it('replaces a changed lock version without retaining old usage', function (): void {
         $instance = dependency_scan_instance();
         $receipt = dependency_scan_receipt();
-        $receipt['files'] = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+        $receipt['files'] = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
         $manifest = '{"dependencies":{"widget":"*"}}';
         $receipt['files']['package.json'] = ['content' => base64_encode($manifest), 'hash' => hash('sha256', $manifest), 'error' => null];
         $version = '1.0.0';
@@ -418,7 +404,7 @@ describe('coordinated instance dependency scans', function (): void {
         } else {
             $instance->update(['status' => 'reserved']);
         }
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
 
@@ -617,7 +603,7 @@ describe('coordinated instance dependency scans', function (): void {
             $time += $wait / 1_000_000;
         });
         app()->instance(InstanceEnvironmentOperationLock::class, $contender);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
         try {
             $result = $owner->run([$instance->id], fn () => app(ScanInstanceDependenciesAction::class)->execute($instance));
             expect($result->composer->errorCode)->toBe('dependencies.operation_busy');

@@ -8,25 +8,25 @@ use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
 use App\Domain\Instances\Dependencies\DependencyCollectionException;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Projects\ProjectType;
-use App\Infrastructure\Instances\DependencyFilesProgram;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Project;
 use Throwable;
 
+/**
+ * Reads the dependency manifests and lockfiles of an Instance through the Node agent: a development checkout with
+ * `instances.read-dependency-files`, and a production home's current release with
+ * `instances.read-release-dependency-files` (docs/reference/instance-dependency-contracts.md). It checks that the
+ * answer names the recorded source.
+ */
 final readonly class CollectInstanceDependencyFilesAction
 {
+    /** The files an answer holds, in the order the agent reads them. */
+    public const array FILES = ['composer.json', 'composer.lock', 'package.json', 'npm-shrinkwrap.json', 'package-lock.json', 'pnpm-lock.yaml', 'bun.lock', 'bun.lockb', 'yarn.lock', 'pnpm-workspace.yaml', '.yarnrc.yml', '.pnpmfile.cjs', 'pnpmfile.cjs', 'bunfig.toml', 'yarn.config.cjs'];
+
     private const array ERRORS = ['dependencies.source_unavailable', 'dependencies.unsafe_source', 'dependencies.unreadable_source', 'dependencies.source_changed', 'dependencies.source_too_large'];
 
-    public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function execute(Instance $instance, bool $discover = true): CollectedDependencyFiles
     {
@@ -38,56 +38,26 @@ final readonly class CollectInstanceDependencyFilesAction
             || ! in_array($instance->source_layout, array_column(InstanceSourceLayout::cases(), 'value'), true)
             || ! is_string($path) || ! str_starts_with($path, '/') || str_contains($path, "\0")
             || ! is_string($user) || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
-            || ($production && $path !== '/home/'.$user)
-            || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            || ($production && $path !== '/home/'.$user)) {
             throw new DependencyCollectionException('dependencies.unsafe_source');
         }
 
         $base = $production ? $path.'/current' : $path;
         $application = substr($instance->dependencyDirectory(), strlen($base));
-        $arguments = ['/usr/bin/python3', '-I', '-', $instance->defaultAppEnv(), $path];
-        // In monorepo mode this suffix selects only the no-top-level-directories fallback.
-        if ($application !== '') {
-            $arguments[] = $application;
-        }
         $project = $instance->getRelationValue('project');
         $monorepo = $discover && $project instanceof Project && $project->type === ProjectType::Monorepo;
-        if ($monorepo) {
-            $arguments[] = '--monorepo';
-        }
-        if ($production) {
-            $arguments = ['sudo', '-n', '-u', $user, '-H', '--', ...$arguments];
-        }
 
         try {
-            $result = $this->ssh->execute(new SshConnection(
-                host: $node->wireguard_ip,
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-            ), new RemoteCommand(
-                arguments: $arguments,
-                input: DependencyFilesProgram::render(),
-                maxOutputBytes: 48 * 1024 * 1024,
-                timeout: 30.0,
-            ));
+            // In monorepo mode the application selects only the no-top-level-directories fallback.
+            $receipt = $this->agents->run($node, $production ? 'instances.read-release-dependency-files' : 'instances.read-dependency-files', [
+                'path' => $path,
+                'application' => $application,
+                'monorepo' => $monorepo,
+            ]);
         } catch (Throwable) {
             throw new DependencyCollectionException('dependencies.unreadable_source');
         }
 
-        if (! $result->succeeded() || $result->truncated || $result->stderr !== '') {
-            throw new DependencyCollectionException('dependencies.unreadable_source');
-        }
-
-        try {
-            $receipt = json_decode($result->stdout, true, 32, JSON_THROW_ON_ERROR);
-        } catch (Throwable) {
-            throw new DependencyCollectionException('dependencies.invalid_collection');
-        }
-        if (! is_array($receipt)) {
-            throw new DependencyCollectionException('dependencies.invalid_collection');
-        }
         if (isset($receipt['error']) && in_array($receipt['error'], self::ERRORS, true)) {
             throw new DependencyCollectionException($receipt['error']);
         }
@@ -122,7 +92,7 @@ final readonly class CollectInstanceDependencyFilesAction
         $identity = $receipt['identity'] ?? null;
         $files = $receipt['files'] ?? null;
         if (! is_string($root) || ! is_string($identity) || preg_match('/\A[a-f0-9]{64}\z/D', $identity) !== 1
-            || ! is_array($files) || array_keys($files) !== DependencyFilesProgram::FILES
+            || ! is_array($files) || array_keys($files) !== self::FILES
             || ($production && (! is_string($reference) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/D', $reference) !== 1 || $root !== $path.'/releases/'.$reference.$application))
             || (! $production && ($root !== $path.$application || $reference !== null))) {
             throw new DependencyCollectionException('dependencies.invalid_collection');

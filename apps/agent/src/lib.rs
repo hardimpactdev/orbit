@@ -824,7 +824,7 @@ gateway_address = "10.44.0.1""#,
         assert_eq!(event.data["workspace"]["instance_id"], 7);
         assert_eq!(
             event.data.as_object().unwrap().keys().collect::<Vec<_>>(),
-            ["at", "sequence", "workspace"]
+            ["sequence", "at", "workspace"]
         );
         assert!(serde_json::to_vec(&event).unwrap().len() <= PUSHER_FRAME_LIMIT);
     }

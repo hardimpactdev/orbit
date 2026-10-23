@@ -34,7 +34,7 @@ final class DevelopmentDeploymentFixture
 
     public readonly RemoteDevelopmentDeployment $deployment;
 
-    public readonly DevelopmentDeploymentSshExecutor $transport;
+    public readonly LocalAgentSshExecutor $transport;
 
     public readonly string $initialCommit;
 
@@ -87,7 +87,7 @@ final class DevelopmentDeploymentFixture
         $keys->shouldReceive('privateKeyPath')->andReturn('/unused');
         $hosts = Mockery::mock(KnownHostsStore::class);
         $hosts->shouldReceive('path')->andReturn('/unused');
-        $transport = $this->transport = new DevelopmentDeploymentSshExecutor($global, $this->sandbox);
+        $transport = $this->transport = new LocalAgentSshExecutor($this->sandbox, ['GIT_CONFIG_GLOBAL' => $global, 'GIT_CONFIG_NOSYSTEM' => '1']);
         // The insteadOf rewrite points the Project's URL at the local origin, so the fetch may use the file transport.
         config(['orbit.git.checkout_protocols' => ['https', 'file']]);
         $this->deployment = new RemoteDevelopmentDeployment(

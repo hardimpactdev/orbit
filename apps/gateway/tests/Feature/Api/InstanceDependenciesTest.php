@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\PublishInstanceDependencyScanAction;
 use App\Actions\Instances\Dependencies\ReadNpmDependencyGraphAction;
 use App\Domain\Instances\Dependencies\DependencyEcosystem;
@@ -10,18 +11,9 @@ use App\Domain\Instances\Dependencies\DependencyScanResult;
 use App\Domain\Instances\Dependencies\DependencySnapshot;
 use App\Domain\Instances\Dependencies\DependencySource;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\BunDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\ComposerDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\DependencyFilesProgram;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\NpmDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\PnpmDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\YarnDependencyUpdatePresenceProgram;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -30,8 +22,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-
-use function Pest\Laravel\mock;
+use Tests\Support\FakeAgentCommandRunner;
 
 /** @return array{Node, Instance} */
 function dependency_api_fixture(): array
@@ -49,7 +40,7 @@ function dependency_api_fixture(): array
 /** @return array<string, mixed> */
 function dependency_api_receipt(): array
 {
-    $files = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+    $files = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
     foreach (['package.json' => 'manifest.json', 'package-lock.json' => 'package-lock-v3.json'] as $name => $fixture) {
         $content = file_get_contents(base_path('tests/Fixtures/Dependencies/Npm/'.$fixture));
         $files[$name] = ['content' => base64_encode($content), 'hash' => hash('sha256', $content), 'error' => null];
@@ -60,9 +51,7 @@ function dependency_api_receipt(): array
 
 function dependency_api_remote(Closure $receipt): void
 {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(fn (): CommandResult => new CommandResult(0, json_encode($receipt(), JSON_THROW_ON_ERROR), '', 1, false));
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('instances.read-dependency-files', fn (): array => $receipt()));
 }
 
 function dependency_api_seed(Instance $instance): void
@@ -117,7 +106,7 @@ describe('single-instance dependency API', function (): void {
 
     it('reads never-scanned inventory without collection or attempts', function (): void {
         [$caller, $instance] = dependency_api_fixture();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json']);
 
@@ -212,7 +201,7 @@ describe('single-instance dependency API', function (): void {
         $publish->execute($instance->id, DependencyScanResult::failed(DependencyEcosystem::Composer, $time, 'dependencies.unsupported_format'));
         $publish->execute($instance->id, DependencyScanResult::refreshed(new DependencySnapshot(DependencyEcosystem::Npm,
             new DependencySource('/home/orbit/project', null, [], null), $time, new DependencyGraph(DependencyEcosystem::Npm, [], []))));
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json']);
 
@@ -226,7 +215,7 @@ describe('single-instance dependency API', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         dependency_api_seed($instance);
         $caller->accessibleNodes()->detach();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $known ? $caller->wireguard_ip : '192.0.2.222'])
             ->call($method, "/api/v1/instances/{$instance->id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $method === 'POST' ? '{}' : '');
@@ -238,7 +227,7 @@ describe('single-instance dependency API', function (): void {
 
     it('returns 404 for missing and nonnumeric IDs without collection', function (string $method, string $suffix, string $id): void {
         [$caller] = dependency_api_fixture();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $method === 'POST' ? '{}' : '')
             ->assertNotFound()->assertJsonMissingPath('data');
@@ -247,7 +236,7 @@ describe('single-instance dependency API', function (): void {
 
     it('rejects unsupported input before scanning', function (string $method, string $suffix, string $body): void {
         [$caller, $instance] = dependency_api_fixture();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$instance->id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body)
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonMissingPath('data');
@@ -258,7 +247,7 @@ describe('single-instance dependency API', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         dependency_api_seed($instance);
         dependency_api_removing($instance, $markedRemoving);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$instance->id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $method === 'POST' ? '{}' : '')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
@@ -280,7 +269,7 @@ describe('single-instance dependency API', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         $caller->accessibleNodes()->detach();
         $caller->roles()->create(['role' => 'gateway', 'status' => 'active']);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json'])
             ->assertOk()->assertJsonPath('data.instance_id', $instance->id);
@@ -289,7 +278,7 @@ describe('single-instance dependency API', function (): void {
     it('rejects inactive targets before collection', function (array $attributes): void {
         [$caller, $instance] = dependency_api_fixture();
         $instance->update($attributes);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
@@ -340,7 +329,7 @@ describe('single-instance dependency API', function (): void {
             $time += $wait / 1_000_000;
         });
         app()->instance(InstanceEnvironmentOperationLock::class, $contender);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
         try {
             $response = $owner->run([$instance->id], fn () => $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}'));
             $response->assertConflict()->assertJsonPath('error.code', 'dependencies.operation_busy')->assertJsonMissingPath('data');
@@ -361,32 +350,22 @@ describe('single-instance dependency update API', function (): void {
         $composerLock = file_get_contents(base_path('tests/Fixtures/Dependencies/Composer/composer2-lock.json'));
         $receipt['files']['composer.json'] = ['content' => base64_encode($composerManifest), 'hash' => hash('sha256', $composerManifest), 'error' => null];
         $receipt['files']['composer.lock'] = ['content' => base64_encode($composerLock), 'hash' => hash('sha256', $composerLock), 'error' => null];
-        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-        mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, $command) use (&$kinds, $receipt): CommandResult {
-            $input = $command->input;
-            $kind = match (true) {
-                $input === YarnDependencyUpdatePresenceProgram::render() => 'yarn',
-                $input === ComposerDependencyUpdatePresenceProgram::render() => 'composer-inspect',
-                $input === NpmDependencyUpdatePresenceProgram::render() => 'npm-inspect',
-                $input === PnpmDependencyUpdatePresenceProgram::render() => 'pnpm',
-                $input === BunDependencyUpdatePresenceProgram::render() => 'bun',
-                $input === DependencyFilesProgram::render() => 'collect',
-                in_array('composer-update', $command->arguments, true) => 'composer-apply',
-                in_array('npm-update', $command->arguments, true) => 'npm-apply',
-                default => 'unknown',
-            };
-            $kinds[] = $kind;
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+            ->answer('instances.probe-dependency-update', function (array $input) use (&$kinds): array {
+                $kinds[] = $input['ecosystem'].'-inspect';
 
-            return match ($kind) {
-                'yarn', 'pnpm', 'bun' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
-                'composer-inspect' => new CommandResult(0, '{"status":"present"}', '', 1, false),
-                'npm-inspect' => new CommandResult(0, '{"status":"present","vp":{"path":"/home/orbit/.local/share/vite-plus/bin/vp","version":"0.3.0"}}', '', 1, false),
-                'composer-apply', 'npm-apply' => new CommandResult(0, '', '', 12, false),
-                'collect' => new CommandResult(0, json_encode($receipt, JSON_THROW_ON_ERROR), '', 1, false),
-                default => throw new RuntimeException($kind),
-            };
-        });
+                return match ($input['ecosystem']) {
+                    'composer' => ['status' => 'present'],
+                    'npm' => ['status' => 'present', 'vp' => ['path' => '/home/orbit/.local/share/vite-plus/bin/vp', 'version' => '0.3.0']],
+                    default => ['status' => 'absent'],
+                };
+            })
+            ->answer('instances.update-dependencies', function (array $input) use (&$kinds): array {
+                $kinds[] = $input['ecosystem'].'-apply';
+
+                return ['exit_code' => 0];
+            })
+            ->answer('instances.read-dependency-files', fn (): array => $receipt));
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
@@ -406,7 +385,7 @@ describe('single-instance dependency update API', function (): void {
         $instance->node->roles()->where('role', 'app-dev')->delete();
         $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
         $instance->update(['production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
@@ -423,7 +402,7 @@ describe('single-instance dependency update API', function (): void {
     it('rejects unauthorized update callers without mutation', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         $caller->accessibleNodes()->detach();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
@@ -433,7 +412,7 @@ describe('single-instance dependency update API', function (): void {
 
     it('rejects unsupported update input before mutation', function (string $body): void {
         [$caller, $instance] = dependency_api_fixture();
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner);
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body)

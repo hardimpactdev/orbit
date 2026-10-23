@@ -1,6 +1,7 @@
 //! The named commands this binary implements, by area.
 
 pub mod agent;
+pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_deploy;
 pub mod dev_source;
@@ -73,6 +74,10 @@ pub fn all() -> Vec<Entry> {
         entry::<production::PrepareServedWebRoots>(),
         entry::<production::CheckServedWebRoots>(),
         entry::<deploy_step::RunDeployStep>(),
+        entry::<dependencies::ReadFiles>(),
+        entry::<dependencies::ReadReleaseFiles>(),
+        entry::<dependencies::ProbeUpdate>(),
+        entry::<dependencies::UpdateDependencies>(),
         entry::<dev_deploy::ResolveTarget>(),
         entry::<dev_deploy::CheckoutDefault>(),
         entry::<dev_deploy::RunStep>(),

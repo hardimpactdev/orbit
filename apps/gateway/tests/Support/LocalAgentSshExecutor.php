@@ -14,12 +14,13 @@ use App\Infrastructure\Ssh\SshExecutor;
 use RuntimeException;
 
 /**
- * Runs each agent command that the runner sends with the agent binary built from this checkout, locally. Git reads
- * the fixture's global configuration, which points the Project's remote URL at the local origin.
+ * Runs each agent command that the runner sends with the agent binary built from this checkout, locally, as the
+ * current user. Only account commands run so: an owner or root command needs root.
  */
-final class DevelopmentDeploymentSshExecutor implements SshExecutor
+final class LocalAgentSshExecutor implements SshExecutor
 {
-    public function __construct(private readonly string $global, private readonly string $sandbox) {}
+    /** @param  array<string, string>  $environment  Added to each command's environment, such as Git configuration. */
+    public function __construct(private readonly string $sandbox, private readonly array $environment = []) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
@@ -31,7 +32,7 @@ final class DevelopmentDeploymentSshExecutor implements SshExecutor
             timeout: $command->timeout ?? 30,
             protectedInput: $command->protectedInput ?? ProtectedInput::fromString(''),
             maxOutputBytes: $command->maxOutputBytes,
-            environment: LocalAgentBinary::environment($this->sandbox, ['GIT_CONFIG_GLOBAL' => $this->global, 'GIT_CONFIG_NOSYSTEM' => '1']),
+            environment: LocalAgentBinary::environment($this->sandbox, $this->environment),
         ));
     }
 }

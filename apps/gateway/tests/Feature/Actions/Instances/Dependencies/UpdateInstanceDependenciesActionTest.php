@@ -2,27 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\UpdateInstanceDependenciesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Dependencies\DependencyUpdateStepStatus;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\ProjectType;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
-use App\Infrastructure\Instances\BunDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\ComposerDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\NpmDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\PnpmDependencyUpdatePresenceProgram;
-use App\Infrastructure\Instances\YarnDependencyUpdatePresenceProgram;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessCancelledException;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -30,8 +20,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-
-use function Pest\Laravel\mock;
+use Tests\Support\FakeAgentCommandRunner;
 
 function dependency_update_instance(bool $production = false, ProjectType $type = ProjectType::LaravelApp): Instance
 {
@@ -59,7 +48,7 @@ function dependency_update_instance(bool $production = false, ProjectType $type 
 /** @return array<string, mixed> */
 function dependency_update_receipt(): array
 {
-    $files = array_fill_keys(DependencyFilesProgram::FILES, ['content' => null, 'hash' => null, 'error' => null]);
+    $files = array_fill_keys(CollectInstanceDependencyFilesAction::FILES, ['content' => null, 'hash' => null, 'error' => null]);
     foreach ([
         'composer.json' => 'Composer/composer2-manifest.json',
         'composer.lock' => 'Composer/composer2-lock.json',
@@ -79,66 +68,34 @@ function dependency_update_present_probe(string $vpPath = '/home/orbit/.local/sh
 }
 
 /**
- * @param  callable(SshConnection, RemoteCommand): (CommandResult|Throwable)  $handler
+ * Answers every agent command of an update through one handler that receives its kind, such as `npm-inspect`,
+ * `composer-apply`, or `collect`, and returns what the command's output would carry.
+ *
+ * @param  callable(string): (CommandResult|Throwable)  $handler
  */
-function dependency_update_ssh(callable $handler): void
+function dependency_update_agent(callable $handler): FakeAgentCommandRunner
 {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(
-        function ($connection, RemoteCommand $command) use ($handler): CommandResult {
-            $result = $handler($connection, $command);
-            if ($result instanceof Throwable) {
-                throw $result;
-            }
+    $answer = static function (string $kind, bool $apply) use ($handler): array {
+        $result = $handler($kind);
+        if ($result instanceof Throwable) {
+            throw $result;
+        }
 
-            return $result;
-        },
-    );
-}
+        return $apply ? ['exit_code' => $result->exitCode] : json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+    };
+    $agents = new FakeAgentCommandRunner()
+        ->answer('instances.probe-dependency-update', static fn (array $input): array => $answer($input['ecosystem'].'-inspect', false))
+        ->answer('instances.update-dependencies', static fn (array $input): array => $answer($input['ecosystem'].'-apply', true))
+        ->answer('instances.read-dependency-files', static fn (): array => $answer('collect', false));
+    app()->instance(AgentCommandRunner::class, $agents);
 
-function dependency_update_kind(RemoteCommand $command): string
-{
-    $input = $command->input;
-    if ($input === YarnDependencyUpdatePresenceProgram::render()) {
-        return 'yarn-inspect';
-    }
-    if ($input === ComposerDependencyUpdatePresenceProgram::render()) {
-        return 'composer-inspect';
-    }
-    if ($input === NpmDependencyUpdatePresenceProgram::render()) {
-        return 'npm-inspect';
-    }
-    if ($input === PnpmDependencyUpdatePresenceProgram::render()) {
-        return 'pnpm-inspect';
-    }
-    if ($input === BunDependencyUpdatePresenceProgram::render()) {
-        return 'bun-inspect';
-    }
-    if ($input === DependencyFilesProgram::render()) {
-        return 'collect';
-    }
-    $arguments = $command->arguments;
-    if (in_array('composer-update', $arguments, true)) {
-        return 'composer-apply';
-    }
-    if (in_array('npm-update', $arguments, true)) {
-        return 'npm-apply';
-    }
-    if (in_array('pnpm-update', $arguments, true)) {
-        return 'pnpm-apply';
-    }
-    if (in_array('bun-update', $arguments, true)) {
-        return 'bun-apply';
-    }
-
-    return 'unknown';
+    return $agents;
 }
 
 describe('coordinated development dependency updates', function (): void {
     it('refuses production before any package invocation', function (): void {
         $instance = dependency_update_instance(production: true);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        $agents = dependency_update_agent(static fn (string $kind): Throwable => new RuntimeException($kind));
 
         $result = app(UpdateInstanceDependenciesAction::class)->execute($instance);
 
@@ -154,8 +111,7 @@ describe('coordinated development dependency updates', function (): void {
     it('prefights Yarn before Composer mutation', function (): void {
         $instance = dependency_update_instance();
         $kinds = [];
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds): CommandResult {
             $kinds[] = $kind;
             expect($kind)->toBe('yarn-inspect');
 
@@ -176,8 +132,7 @@ describe('coordinated development dependency updates', function (): void {
     it('prefights both present ecosystems before mutating Composer', function (): void {
         $instance = dependency_update_instance();
         $kinds = [];
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds): CommandResult {
             $kinds[] = $kind;
             expect($kinds)->not->toContain('composer-apply');
 
@@ -203,8 +158,7 @@ describe('coordinated development dependency updates', function (): void {
         $instance = dependency_update_instance(type: $type);
         $kinds = [];
         $receipt = dependency_update_receipt();
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds, $receipt): CommandResult {
             $kinds[] = $kind;
 
             return match ($kind) {
@@ -237,8 +191,7 @@ describe('coordinated development dependency updates', function (): void {
         $instance = dependency_update_instance(type: ProjectType::NodePackage);
         $kinds = [];
         $receipt = dependency_update_receipt();
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds, $receipt): CommandResult {
             $kinds[] = $kind;
 
             return match ($kind) {
@@ -265,8 +218,7 @@ describe('coordinated development dependency updates', function (): void {
         $instance = dependency_update_instance();
         $kinds = [];
         $receipt = dependency_update_receipt();
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds, $receipt): CommandResult {
             $kinds[] = $kind;
 
             return match ($kind) {
@@ -302,8 +254,7 @@ describe('coordinated development dependency updates', function (): void {
         $instance = dependency_update_instance();
         $kinds = [];
         $receipt = dependency_update_receipt();
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds, $receipt): CommandResult {
             $kinds[] = $kind;
 
             return match ($kind) {
@@ -331,8 +282,7 @@ describe('coordinated development dependency updates', function (): void {
 
     it('does not report success when mutation succeeds and the post-update scan fails', function (): void {
         $instance = dependency_update_instance();
-        dependency_update_ssh(function ($connection, RemoteCommand $command): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind): CommandResult {
 
             return match ($kind) {
                 'yarn-inspect', 'pnpm-inspect', 'bun-inspect' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
@@ -354,68 +304,10 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->inventory?->javascript->errorCode)->toBe('dependencies.unreadable_source');
     });
 
-    it('cancels during preflight without mutation or inventory refresh', function (): void {
-        $instance = dependency_update_instance();
-        $cancelled = false;
-        $kinds = [];
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds): CommandResult {
-            $kinds[] = dependency_update_kind($command);
-            throw new ProcessCancelledException;
-        });
-
-        $result = app(UpdateInstanceDependenciesAction::class)->execute($instance, function () use (&$cancelled): bool {
-            $cancelled = true;
-
-            return true;
-        });
-
-        expect($kinds)->toBe(['yarn-inspect']);
-        expect($result->errorCode)->toBe('dependencies.update_cancelled');
-        expect($result->composer->status)->toBe(DependencyUpdateStepStatus::NotRun);
-        expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
-        expect($result->inventory)->toBeNull();
-        expect($result->mayHaveMutated())->toBeFalse();
-        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
-    });
-
-    it('cancels Composer mutation, skips JavaScript, and scans readable files', function (): void {
-        $instance = dependency_update_instance();
-        $receipt = dependency_update_receipt();
-        $kinds = [];
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
-            $kinds[] = $kind;
-            if ($kind === 'composer-apply') {
-                throw new ProcessCancelledException;
-            }
-
-            return match ($kind) {
-                'yarn-inspect', 'pnpm-inspect', 'bun-inspect' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
-                'composer-inspect' => new CommandResult(0, '{"status":"present"}', '', 1, false),
-                'npm-inspect' => dependency_update_present_probe(),
-                'collect' => new CommandResult(0, json_encode($receipt, JSON_THROW_ON_ERROR), '', 1, false),
-                default => throw new RuntimeException($kind),
-            };
-        });
-
-        $result = app(UpdateInstanceDependenciesAction::class)->execute($instance);
-
-        expect($kinds)->toContain('composer-apply');
-        expect($kinds)->not->toContain('npm-apply');
-        expect($kinds)->toContain('collect');
-        expect($result->succeeded())->toBeFalse();
-        expect($result->composer->status)->toBe(DependencyUpdateStepStatus::Failed);
-        expect($result->composer->errorCode)->toBe('dependencies.update_cancelled');
-        expect($result->composer->mayHaveMutated)->toBeTrue();
-        expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
-        expect($result->inventory?->succeeded())->toBeTrue();
-    });
-
     it('does not claim success when the instance is removed after Composer mutation', function (): void {
         $instance = dependency_update_instance();
         $kinds = [];
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use (&$kinds, $instance): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use (&$kinds, $instance): CommandResult {
             $kinds[] = $kind;
             if ($kind === 'composer-apply') {
                 $instance->delete();
@@ -444,8 +336,7 @@ describe('coordinated development dependency updates', function (): void {
         $instance = dependency_update_instance();
         $receipt = dependency_update_receipt();
         $calls = 0;
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use ($instance, $receipt, &$calls): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use ($instance, $receipt, &$calls): CommandResult {
             if ($kind === 'collect' && ++$calls === 1) {
                 $instance->project->update(['repository_identity' => 'example.test/update']);
                 $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
@@ -495,7 +386,7 @@ describe('coordinated development dependency updates', function (): void {
             $time += $wait / 1_000_000;
         });
         app()->instance(InstanceEnvironmentOperationLock::class, $contender);
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+        $agents = dependency_update_agent(static fn (string $kind): Throwable => new RuntimeException($kind));
         try {
             $result = $owner->run([$instance->id], fn () => app(UpdateInstanceDependenciesAction::class)->execute($instance));
             expect($result->errorCode)->toBe('dependencies.operation_busy');
@@ -522,8 +413,7 @@ describe('coordinated development dependency updates', function (): void {
                 fclose($handle);
             }
         };
-        dependency_update_ssh(function ($connection, RemoteCommand $command) use ($check, $receipt): CommandResult {
-            $kind = dependency_update_kind($command);
+        dependency_update_agent(function (string $kind) use ($check, $receipt): CommandResult {
             $check();
 
             return match ($kind) {

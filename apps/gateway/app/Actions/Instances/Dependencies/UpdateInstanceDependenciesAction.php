@@ -13,26 +13,20 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use Closure;
 
 final readonly class UpdateInstanceDependenciesAction
 {
     public function __construct(
         private InstanceEnvironmentOperationLock $operations,
         private AppDevSourceOperationLock $sourceOperations,
-        private UpdateComposerDependenciesAction $composer,
-        private UpdateYarnDependenciesAction $yarn,
-        private UpdateNpmDependenciesAction $npm,
-        private UpdatePnpmDependenciesAction $pnpm,
-        private UpdateBunDependenciesAction $bun,
+        private UpdateEcosystemDependenciesAction $ecosystems,
         private ScanInstanceDependenciesAction $scan,
     ) {}
 
-    /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(Instance $instance, ?Closure $cancelled = null): InstanceDependencyUpdateResult
+    public function execute(Instance $instance): InstanceDependencyUpdateResult
     {
         try {
-            return $this->operations->run([$instance->id], function () use ($instance, $cancelled): InstanceDependencyUpdateResult {
+            return $this->operations->run([$instance->id], function () use ($instance): InstanceDependencyUpdateResult {
                 $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null || ! $this->available($current)) {
                     return $this->refused($instance->id, 'dependencies.instance_unavailable');
@@ -43,7 +37,7 @@ final readonly class UpdateInstanceDependenciesAction
 
                 return $this->sourceOperations->synchronized(
                     $current->node_id,
-                    fn (): InstanceDependencyUpdateResult => $this->update($current, $cancelled),
+                    fn (): InstanceDependencyUpdateResult => $this->update($current),
                 );
             });
         } catch (ResourceOperationException) {
@@ -51,20 +45,19 @@ final readonly class UpdateInstanceDependenciesAction
         }
     }
 
-    /** @param  (Closure(): bool)|null  $cancelled */
-    private function update(Instance $instance, ?Closure $cancelled): InstanceDependencyUpdateResult
+    private function update(Instance $instance): InstanceDependencyUpdateResult
     {
-        $yarn = $this->yarn->inspect($instance, $cancelled);
+        $yarn = $this->ecosystems->inspect($instance, 'yarn');
         if ($yarn->blocked()) {
             return $this->refused($instance->id, $yarn->errorCode ?? 'dependencies.unsupported_format');
         }
 
-        $composerInspection = $this->composer->inspect($instance, $cancelled);
+        $composerInspection = $this->ecosystems->inspect($instance, 'composer');
         if ($composerInspection->blocked()) {
             return $this->refused($instance->id, $composerInspection->errorCode ?? 'dependencies.unreadable_source');
         }
 
-        [$javascriptAction, $javascriptInspection] = $this->javascript($instance, $cancelled);
+        [$javascriptEcosystem, $javascriptInspection] = $this->javascript($instance);
         if ($javascriptInspection->blocked()) {
             return $this->refused($instance->id, $javascriptInspection->errorCode ?? 'dependencies.unreadable_source');
         }
@@ -76,7 +69,7 @@ final readonly class UpdateInstanceDependenciesAction
 
         $composer = DependencyUpdateStepResult::absent(DependencyEcosystem::Composer);
         if ($composerInspection->present) {
-            $composer = $this->composer->apply($current, $cancelled);
+            $composer = $this->ecosystems->apply($current, 'composer');
             if (! $composer->completed()) {
                 return $this->result($current, $composer, DependencyUpdateStepResult::notRun(DependencyEcosystem::Npm));
             }
@@ -89,37 +82,33 @@ final readonly class UpdateInstanceDependenciesAction
 
         $javascript = DependencyUpdateStepResult::absent(DependencyEcosystem::Npm);
         if ($javascriptInspection->present) {
-            if ($javascriptAction === null || $javascriptInspection->toolPath === null) {
+            if ($javascriptEcosystem === null || $javascriptInspection->toolPath === null) {
                 $javascript = DependencyUpdateStepResult::failed(DependencyEcosystem::Npm, 'dependencies.unsupported_delegation', false);
             } else {
-                $javascript = $javascriptAction->apply($current, $javascriptInspection->toolPath, $cancelled);
+                $javascript = $this->ecosystems->apply($current, $javascriptEcosystem, $javascriptInspection->toolPath);
             }
         }
 
         return $this->result($current, $composer, $javascript);
     }
 
-    /**
-     * @param  (Closure(): bool)|null  $cancelled
-     * @return array{0: UpdateNpmDependenciesAction|UpdatePnpmDependenciesAction|UpdateBunDependenciesAction|null, 1: DependencyUpdateInspection}
-     */
-    private function javascript(Instance $instance, ?Closure $cancelled): array
+    /** @return array{0: 'npm'|'pnpm'|'bun'|null, 1: DependencyUpdateInspection} */
+    private function javascript(Instance $instance): array
     {
-        $adapters = [$this->npm, $this->pnpm, $this->bun];
         $selected = null;
         $inspection = DependencyUpdateInspection::absent();
-        foreach ($adapters as $adapter) {
-            $candidate = $adapter->inspect($instance, $cancelled);
+        foreach (['npm', 'pnpm', 'bun'] as $ecosystem) {
+            $candidate = $this->ecosystems->inspect($instance, $ecosystem);
             if ($candidate->blocked()) {
-                return [$adapter, $candidate];
+                return [$ecosystem, $candidate];
             }
             if (! $candidate->present) {
                 continue;
             }
             if ($selected !== null) {
-                return [$adapter, DependencyUpdateInspection::failed('dependencies.ambiguous_manager')];
+                return [$ecosystem, DependencyUpdateInspection::failed('dependencies.ambiguous_manager')];
             }
-            $selected = $adapter;
+            $selected = $ecosystem;
             $inspection = $candidate;
         }
 

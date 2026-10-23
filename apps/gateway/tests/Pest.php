@@ -11,7 +11,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -193,16 +192,6 @@ function deployment_api_fixture(): array
     ]);
 
     return [$caller, $owner, $project, $instance->fresh()];
-}
-
-/**
- * Returns the host variant for running a dependency update supervisor program in a test. Linux runs the exact
- * Node program. Other hosts, such as macOS, have no /proc, so they run the same program logic with the
- * Portable variant, which reads process state with ps.
- */
-function dependency_update_supervisor_host(): DependencyUpdateSupervisorHost
-{
-    return PHP_OS_FAMILY === 'Linux' ? DependencyUpdateSupervisorHost::Node : DependencyUpdateSupervisorHost::Portable;
 }
 
 /**

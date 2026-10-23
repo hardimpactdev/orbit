@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\SelectDependencyInputAction;
 use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
 use App\Domain\Instances\Dependencies\DependencyEcosystem;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Models\Node;
 use App\Models\Project;
 
@@ -137,7 +137,7 @@ it('rejects unknown Project types on create and update', function (): void {
 it('selects Composer and Node package manifests and lockfiles without web-root assumptions', function (): void {
     $files = [];
     $hashes = [];
-    foreach (DependencyFilesProgram::FILES as $name) {
+    foreach (CollectInstanceDependencyFilesAction::FILES as $name) {
         $files[$name] = null;
         $hashes[$name] = null;
     }

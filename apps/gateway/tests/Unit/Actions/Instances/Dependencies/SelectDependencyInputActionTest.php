@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\Dependencies\CollectInstanceDependencyFilesAction;
 use App\Actions\Instances\Dependencies\SelectDependencyInputAction;
 use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
 use App\Domain\Instances\Dependencies\DependencyCollectionException;
 use App\Domain\Instances\Dependencies\DependencyEcosystem;
-use App\Infrastructure\Instances\DependencyFilesProgram;
 
 /** @param array<string, string> $contents @param array<string, string> $errors */
 function collected_dependency_input(array $contents, array $errors = []): CollectedDependencyFiles
 {
-    $contents = array_replace(array_fill_keys(DependencyFilesProgram::FILES, null), $contents);
+    $contents = array_replace(array_fill_keys(CollectInstanceDependencyFilesAction::FILES, null), $contents);
 
     return new CollectedDependencyFiles('/project', null, str_repeat('a', 64), $contents,
         array_map(fn (?string $value): ?string => $value === null ? null : hash('sha256', $value), $contents), $errors);

@@ -67,6 +67,14 @@ final class LocalAgentBinary
         return new NativeAgentCommandRunner(app(AgentContract::class), self::delivery($directory), $transports);
     }
 
+    /** The real runner with this binary as every Node's agent, run locally as the current user. */
+    public static function localRunner(string $sandbox, array $environment = []): NativeAgentCommandRunner
+    {
+        $keys = new Fleet\FleetTestSsh;
+
+        return self::runner(new LocalAgentSshExecutor($sandbox, $environment), $keys, $keys, $sandbox.'/agent-delivery');
+    }
+
     /**
      * The local arguments of an agent command that the runner sent over SSH, or null for any other command. `sudo -n`
      * is dropped and the installed path becomes the built binary.
