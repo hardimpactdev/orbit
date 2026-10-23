@@ -3,6 +3,7 @@
 //! access, the check of the `current` selection, and the home's removal. These replace the Bash that
 //! `RemoteProductionInstanceSourceLifecycle` sent, check for check, and keep its marker formats.
 
+use super::laravel::{entries, plain, put};
 use super::production::{
     account, as_user, as_user_with_input, check, failed, git, invalid, none, relative_path,
     root_owned, setfacl, walk, Layout, ReleaseError, ReleaseHome,
@@ -665,8 +666,18 @@ pub fn profile(input: &ProfileInput) -> Result<Profile, ReleaseError> {
     {
         return Ok(unsafe_profile());
     }
+    composer_profile(&application, &input.entry_point, uid)
+}
+
+/// The Composer metadata of an application directory, when only the user owns `composer.json` and neither it nor
+/// the entry point is a link.
+pub(super) fn composer_profile(
+    application: &Path,
+    entry_point: &str,
+    uid: u32,
+) -> Result<Profile, ReleaseError> {
     let composer = application.join("composer.json");
-    let entry_point = application.join(&input.entry_point);
+    let entry_point = application.join(entry_point);
     if is_symlink(&composer) || (exists(&composer) && !composer.is_file()) {
         return Ok(unsafe_profile());
     }
@@ -1019,43 +1030,6 @@ pub struct DirectoryUrlInput {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Written {
     pub written: bool,
-}
-
-/// The `KEY=` lines of an environment file.
-fn entries(text: &[u8], key: &str) -> Vec<std::ops::Range<usize>> {
-    regex::bytes::Regex::new(&format!(r"(?m)^{key}=[^\r\n]*"))
-        .map(|pattern| pattern.find_iter(text).map(|found| found.range()).collect())
-        .unwrap_or_default()
-}
-
-/// The value of the first line, without its quotes.
-fn plain<'a>(text: &'a [u8], found: &[std::ops::Range<usize>], key: &str) -> &'a [u8] {
-    let Some(range) = found.first() else {
-        return b"";
-    };
-    let value = text[range.start + key.len() + 1..range.end].trim_ascii();
-    if value.len() >= 2
-        && value[0] == value[value.len() - 1]
-        && (value[0] == b'"' || value[0] == b'\'')
-    {
-        &value[1..value.len() - 1]
-    } else {
-        value
-    }
-}
-
-/// Replaces the first line, or appends one.
-fn put(text: &[u8], found: &[std::ops::Range<usize>], line: &[u8]) -> Vec<u8> {
-    if let Some(range) = found.first() {
-        return [&text[..range.start], line, &text[range.end..]].concat();
-    }
-    let mut updated = text.to_vec();
-    if !updated.is_empty() && !updated.ends_with(b"\n") {
-        updated.push(b'\n');
-    }
-    updated.extend_from_slice(line);
-    updated.push(b'\n');
-    updated
 }
 
 /// Writes `APP_URL` into the stable `.env` of another application directory, `<home>/env/<directory>/.env`, which

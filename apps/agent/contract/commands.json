@@ -540,6 +540,38 @@
       ]
     },
     {
+      "name": "instances.inspect-development-profile",
+      "summary": "Read a development checkout's Composer metadata, refusing a link or another owner.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
+      "name": "instances.write-development-url",
+      "summary": "Write APP_URL into a development application's .env and cached configuration.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

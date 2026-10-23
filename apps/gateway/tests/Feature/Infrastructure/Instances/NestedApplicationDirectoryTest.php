@@ -9,21 +9,13 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
+use Tests\Support\LocalAgentBinary;
 
 it('detects PHP and configures the Laravel URL in the application directory', function (string $root, string $relative): void {
     $checkout = sys_get_temp_dir().'/orbit-nested-source-'.Str::uuid();
@@ -130,41 +122,10 @@ function nested_application_configurator(string $checkout, string $root): array
             return $this->account;
         }
     };
-    $ssh = new class implements SshExecutor
-    {
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $process = new Process($command->arguments);
-            $process->setInput($command->protectedInput?->stream() ?? $command->input);
-            $process->mustRun();
-
-            return new CommandResult(0, $process->getOutput(), $process->getErrorOutput(), 0, false);
-        }
-    };
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $hosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-    $node = Node::query()->create(['name' => 'nested-source', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'user' => $owner['name']]);
+    $node = Node::query()->create(['name' => 'nested-source', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'user' => $owner['name']]);
     $project = Project::query()->create(['name' => 'Nested', 'slug' => 'nested-'.Str::lower(Str::random(8)), 'repository_url' => 'https://example.test/nested.git', 'root' => $root]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => $checkout, 'branch' => 'feature', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
 
-    return [new RemoteDevelopmentInstanceConfigurator(new DevelopmentSshExecutor($ssh, $keys, $hosts), $accounts, new ComposerSourceClassifier(new InstancePhpVersionCatalog)), $instance, $account];
+    // The managed account's commands run with the agent built from this checkout, as the current user.
+    return [new RemoteDevelopmentInstanceConfigurator(LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-nested-agent-'.Str::uuid()), $accounts, new ComposerSourceClassifier(new InstancePhpVersionCatalog)), $instance, $account];
 }

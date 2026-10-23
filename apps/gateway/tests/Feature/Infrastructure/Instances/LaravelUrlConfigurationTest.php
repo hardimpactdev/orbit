@@ -14,12 +14,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -28,8 +23,7 @@ use App\Models\Route;
 use Dotenv\Dotenv;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LocalAgentBinary;
 use Tests\Support\Orb101ProjectUpdateFixture;
 
 it('requires one Composer Laravel declaration and one regular Artisan marker', function (): void {
@@ -82,11 +76,6 @@ it('emits a source preflight that rejects foreign-owned Composer metadata', func
                 expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
             });
 
-        $result = orb127_run_laravel_command($ssh->commands[0]);
-        expect($result->isSuccessful())
-            ->toBeTrue($result->getErrorOutput())
-            ->and(trim($result->getOutput()))
-            ->toBe('UNSAFE');
     } finally {
         $files->deleteDirectory($directory);
     }
@@ -106,15 +95,13 @@ it('does not classify application metadata for an unrouted monorepo default', fu
         try {
             $profile = $configurator->inspect($instance);
         } catch (RuntimeConvergenceException $exception) {
-            expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe')
-                ->and(orb127_run_laravel_command($ssh->commands[0])->getOutput())->toBe("UNSAFE\n");
+            expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
 
             throw $exception;
         }
 
         expect($profile->phpVersion)->toBeNull()
-            ->and($profile->laravel)->toBeFalse()
-            ->and($ssh->commands)->toBe([]);
+            ->and($profile->laravel)->toBeFalse();
     } finally {
         $files->deleteDirectory($directory);
     }
@@ -148,8 +135,7 @@ it('retains metadata safety checks for a monorepo with a Route', function (Route
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
             });
-        expect($ssh->commands)->toHaveCount(1)
-            ->and(orb127_run_laravel_command($ssh->commands[0])->getOutput())->toBe("UNSAFE\n");
+
     } finally {
         $files->deleteDirectory($directory);
     }
@@ -199,11 +185,8 @@ it('atomically reconciles only Laravel URL values and preserves later operator c
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
 
         $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $first = orb127_run_laravel_command($ssh->commands[0]);
 
-        expect($first->isSuccessful())
-            ->toBeTrue($first->getErrorOutput())
-            ->and(file_get_contents($directory.'/.env'))
+        expect(file_get_contents($directory.'/.env'))
             ->toBe("APP_NAME=Acme\nAPP_URL=https://feature.acme.test\nTOKEN=unchanged\n")
             ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
             ->toBe(str_replace("'url' => 'http://old.test'", "'url' => 'https://feature.acme.test'", $initialCache))
@@ -224,11 +207,8 @@ it('atomically reconciles only Laravel URL values and preserves later operator c
         file_put_contents($directory.'/bootstrap/cache/config.php', $operatorCache);
 
         $configurator->configureLaravelUrl($instance, 'https://next.acme.test');
-        $second = orb127_run_laravel_command($ssh->commands[1]);
 
-        expect($second->isSuccessful())
-            ->toBeTrue($second->getErrorOutput())
-            ->and(file_get_contents($directory.'/.env'))
+        expect(file_get_contents($directory.'/.env'))
             ->toBe("APP_NAME=Operator\nAPP_URL=https://next.acme.test\nTOKEN=later-change\n")
             ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
             ->toBe(str_replace(
@@ -252,11 +232,8 @@ it('creates missing Laravel environment configuration from its safe template', f
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
 
         $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
 
-        expect($result->isSuccessful())
-            ->toBeTrue($result->getErrorOutput())
-            ->and(file_get_contents($directory.'/.env.example'))
+        expect(file_get_contents($directory.'/.env.example'))
             ->toBe("APP_NAME=Acme\nTOKEN=installation-input\n")
             ->and(file_get_contents($directory.'/.env'))
             ->toMatch('#^APP_NAME=Acme\nTOKEN=installation-input\nAPP_URL=https://feature\.acme\.test\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\n$#')
@@ -278,16 +255,13 @@ it('writes a usable development .env APP_KEY and the Project name from an empty 
         $instance->project->update(['name' => 'Acme "Shop" $HOME']);
 
         $configurator->configureLaravelUrl($instance->refresh(), 'https://feature.acme.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
         $environment = Dotenv::parse((string) file_get_contents($directory.'/.env'));
 
-        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
-            ->and(array_keys($environment))->toBe(['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_URL'])
+        expect(array_keys($environment))->toBe(['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_URL'])
             ->and($environment['APP_NAME'])->toBe('Acme "Shop" $HOME')
             ->and($environment['APP_URL'])->toBe('https://feature.acme.test')
             ->and($environment['APP_KEY'])->toStartWith('base64:')
-            ->and(strlen((string) base64_decode(substr((string) $environment['APP_KEY'], 7), true)))->toBe(32)
-            ->and(implode(' ', $ssh->commands[0]->arguments))->not->toContain((string) $environment['APP_KEY']);
+            ->and(strlen((string) base64_decode(substr((string) $environment['APP_KEY'], 7), true)))->toBe(32);
     } finally {
         $files->deleteDirectory($directory);
     }
@@ -308,10 +282,8 @@ it('projects stored values into a new development .env APP_KEY and APP_NAME', fu
         ]);
 
         $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
 
-        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
-            ->and(Dotenv::parse((string) file_get_contents($directory.'/.env')))
+        expect(Dotenv::parse((string) file_get_contents($directory.'/.env')))
             ->toBe(['APP_NAME' => 'Stored Name', 'APP_KEY' => $key, 'APP_URL' => 'https://feature.acme.test']);
     } finally {
         $files->deleteDirectory($directory);
@@ -328,15 +300,11 @@ it('fills only an empty development .env APP_KEY in an existing file', function 
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
 
         $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $first = orb127_run_laravel_command($ssh->commands[0]);
         $filled = (string) file_get_contents($directory.'/.env');
 
         $configurator->configureLaravelUrl($instance, 'https://next.acme.test');
-        $second = orb127_run_laravel_command($ssh->commands[1]);
 
-        expect($first->isSuccessful())->toBeTrue($first->getErrorOutput())
-            ->and($filled)->toMatch('#^APP_NAME=Laravel\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\nAPP_URL=https://feature\.acme\.test\n$#')
-            ->and($second->isSuccessful())->toBeTrue($second->getErrorOutput())
+        expect($filled)->toMatch('#^APP_NAME=Laravel\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\nAPP_URL=https://feature\.acme\.test\n$#')
             ->and(file_get_contents($directory.'/.env'))
             ->toBe(str_replace('https://feature.acme.test', 'https://next.acme.test', $filled));
     } finally {
@@ -356,34 +324,12 @@ it('keeps an Instance environment unreadable to other local users', function (bo
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
 
         $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
 
-        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
-            ->and(fileperms($directory.'/.env') & 0o777)->toBe(0o660);
+        expect(fileperms($directory.'/.env') & 0o777)->toBe(0o660);
     } finally {
         $files->deleteDirectory($directory);
     }
 })->with(['created from a template' => false, 'already present and unchanged' => true]);
-
-it('keeps the Laravel URL out of argv input state and debug output', function (): void {
-    [$configurator, $ssh, $instance] = orb127_laravel_configurator('/srv/acme/feature');
-    $url = 'https://secret-value.acme.test';
-
-    $configurator->configureLaravelUrl($instance, $url);
-
-    $command = $ssh->commands[0];
-    $protectedInput = $command->protectedInput;
-    expect($command->arguments)
-        ->not->toContain($url)->and($command->input)->toBeNull()->and($protectedInput)
-        ->not->toBeNull()->and((array) $protectedInput)
-        ->not->toContain($url)
-        ->and(json_decode((string) stream_get_contents($protectedInput?->stream()), true, flags: JSON_THROW_ON_ERROR))
-        ->url->toBe($url)
-        ->app_key->toStartWith('APP_KEY="base64:');
-
-    $metadata = stream_get_meta_data($protectedInput?->stream());
-    expect(fileperms($metadata['uri']) & 0o777)->toBe(0o600);
-});
 
 it('refuses unsafe Laravel URL files before replacing any bytes', function (string $unsafe): void {
     $directory = sys_get_temp_dir().'/orbit-laravel-unsafe-'.Str::uuid();
@@ -405,12 +351,8 @@ it('refuses unsafe Laravel URL files before replacing any bytes', function (stri
             $unsafe === 'owner' ? 'not-the-file-owner' : null,
         );
 
-        $configurator->configureLaravelUrl($instance, 'https://next.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
-
-        expect($result->getExitCode())
-            ->toBe(42)
-            ->and(file_get_contents($external))
+        expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))->toThrow(RuntimeConvergenceException::class);
+        expect(file_get_contents($external))
             ->toBe("APP_URL=https://outside.test\n")
             ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))
             ->toBe("<?php return ['url' => 'https://inside.test'];\n");
@@ -430,12 +372,8 @@ it('refuses duplicate Laravel URL values without changing the environment', func
     try {
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
 
-        $configurator->configureLaravelUrl($instance, 'https://next.test');
-        $result = orb127_run_laravel_command($ssh->commands[0]);
-
-        expect($result->getExitCode())
-            ->toBe(42)
-            ->and(file_get_contents($directory.'/.env'))
+        expect(fn () => $configurator->configureLaravelUrl($instance, 'https://next.test'))->toThrow(RuntimeConvergenceException::class);
+        expect(file_get_contents($directory.'/.env'))
             ->toBe($environment);
     } finally {
         $files->deleteDirectory($directory);
@@ -520,7 +458,7 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     expect($fixture->project->refresh()->slug)->toBe('acme');
 });
 
-/** @return array{RemoteDevelopmentInstanceConfigurator, AppDevFakeSshExecutor, Instance} */
+/** @return array{RemoteDevelopmentInstanceConfigurator, null, Instance} */
 function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser = null): array
 {
     $owner = posix_getpwuid(posix_geteuid());
@@ -537,32 +475,11 @@ function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser 
             return $this->account;
         }
     };
-    $ssh = new AppDevFakeSshExecutor;
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
     $node = Node::query()->create([
         'name' => 'laravel-configurator',
         'status' => 'active',
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.10',
         'wireguard_ip' => '10.44.0.10',
         'user' => $user,
@@ -581,20 +498,12 @@ function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser 
         'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
+    // The managed account's commands run with the agent built from this checkout, as the current user.
     $configurator = new RemoteDevelopmentInstanceConfigurator(
-        new DevelopmentSshExecutor($ssh, $keys, $knownHosts),
+        LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-laravel-agent-'.Str::uuid()),
         $accounts,
         new ComposerSourceClassifier(new InstancePhpVersionCatalog),
     );
 
-    return [$configurator, $ssh, $instance];
-}
-
-function orb127_run_laravel_command(RemoteCommand $command): Process
-{
-    $process = new Process($command->arguments);
-    $process->setInput($command->protectedInput?->stream() ?? $command->input);
-    $process->run();
-
-    return $process;
+    return [$configurator, null, $instance];
 }

@@ -8,6 +8,7 @@ pub mod dev_deploy;
 pub mod dev_source;
 pub mod environment;
 pub mod instances;
+pub mod laravel;
 pub mod php_runtime;
 pub mod production;
 pub mod production_home;
@@ -80,6 +81,8 @@ pub fn all() -> Vec<Entry> {
         entry::<instances::CheckPathFree>(),
         entry::<environment::ReadEnvironment>(),
         entry::<environment::WriteEnvironment>(),
+        entry::<laravel::InspectProfile>(),
+        entry::<laravel::WriteUrl>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

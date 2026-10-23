@@ -11,17 +11,12 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Str;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('owns a finite descending Instance PHP candidate catalog', function (): void {
     expect(new InstancePhpVersionCatalog()->versions())->toBe(['8.5', '8.4']);
@@ -119,7 +114,7 @@ it('rejects inconsistent or unsafe Symfony markers', function (string $composer,
 ]);
 
 it('inspects bin/console for a Symfony app and artisan for a Laravel app', function (ProjectType $type, string $entryPoint, string $wireguardIp): void {
-    [$configurator, $instance, $ssh] = orb170_source_configurator(
+    [$configurator, $instance, $agents] = orb170_source_configurator(
         $type,
         '{"require":{"symfony/framework-bundle":"^7.3"}}',
         $wireguardIp,
@@ -132,7 +127,7 @@ it('inspects bin/console for a Symfony app and artisan for a Laravel app', funct
         expect(fn () => $configurator->inspect($instance))->toThrow(RuntimeConvergenceException::class);
     }
 
-    expect($ssh->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/home/orbit/checkout', 'orbit', $entryPoint]);
+    expect($agents->calls[0]['input'])->toBe(['application' => '/home/orbit/checkout', 'owner' => 'orbit', 'entry_point' => $entryPoint]);
 })->with([
     'Symfony' => [ProjectType::SymfonyApp, 'bin/console', '10.44.0.12'],
     'Laravel' => [ProjectType::LaravelApp, 'artisan', '10.44.0.13'],
@@ -193,7 +188,7 @@ it('renders only the selected production PHP site with its recorded user home po
         );
 });
 
-/** @return array{RemoteDevelopmentInstanceConfigurator, Instance, AppDevFakeSshExecutor} */
+/** @return array{RemoteDevelopmentInstanceConfigurator, Instance, FakeAgentCommandRunner} */
 function orb170_source_configurator(ProjectType $type, string $composer, string $wireguardIp, string $entryPointKind = 'absent'): array
 {
     $node = Node::query()->create([
@@ -230,38 +225,15 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
             return $this->account;
         }
     };
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "COMPOSER\t{$entryPointKind}\t".base64_encode($composer)."\n", '', 0, false),
-    ]);
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
+    $agents = new FakeAgentCommandRunner()->answer('instances.inspect-development-profile', ['kind' => 'composer', 'entry_point' => $entryPointKind, 'composer' => base64_encode($composer)]);
 
     return [
         new RemoteDevelopmentInstanceConfigurator(
-            new DevelopmentSshExecutor($ssh, $keys, $knownHosts),
+            $agents,
             $accounts,
             new ComposerSourceClassifier(new InstancePhpVersionCatalog),
         ),
         $instance,
-        $ssh,
+        $agents,
     ];
 }
