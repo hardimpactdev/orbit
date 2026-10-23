@@ -1674,3 +1674,19 @@ it('preserves explicit keep-alive and deploy restart options without supplying o
 
     expect($mock->getLastRequest()?->body()->all())->toBe(['keep_alive' => true, 'restart_on_deploy' => false]);
 });
+
+it('renders the blocking Route when an update changes its listener', function (bool $json): void {
+    $mock = MockClient::global([UpdateProcessRequest::class => MockResponse::make([
+        'error' => ['code' => 'process.route_upstream_changed', 'message' => 'Route [sync.example.com] needs its listener.',
+            'details' => ['route_id' => 12, 'domain' => 'sync.example.com']],
+    ], 409, ['X-Orbit-Request-Id' => process_cli_request_id()])]);
+
+    [$exit, $output] = process_cli_display('process:update', ['name' => '267', '--port' => ['8096:8080'], '--json' => $json]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('sync.example.com', process_cli_request_id())
+        ->and($mock->getLastRequest()?->body()->all())->toBe(['ports' => ['8096:8080']]);
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.route_upstream_changed');
+    }
+})->with([true, false]);

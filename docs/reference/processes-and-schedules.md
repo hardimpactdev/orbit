@@ -168,6 +168,15 @@ This example updates an ordinary Process. Run a Valkey that clients log in to as
 
 The response keeps `id: 41`, returns `working_directory: null`, and exposes the environment only as `{"CACHE_LABEL":"[REDACTED]"}` under `runtime_config.environment`. Invalid fields return HTTP 422 before runtime mutation. An ownership conflict or competing operation returns the existing Process error code, not a successful replacement. A failed runtime operation uses the same failure contract as create, start, and restart.
 
+A public or private custom proxy Route does not block an environment-only or image-only update. Before runtime work, Orbit checks the merged specification against each targeting Route's stored upstream. It must still resolve exactly one TCP listener to the same address and host port. The container port may change while that upstream stays the same. Dropping the listener, changing its address or host port, switching away from Docker, or adding an ambiguous listener returns `process.route_upstream_changed` (409). The error names the blocking Route and includes `route_id` and `domain` in `details`; the stored Process and runtime stay unchanged.
+
+| Route-related error code | Meaning |
+| --- | --- |
+| `process.route_upstream_changed` | An update would remove, change, or make a targeting Route's resolved TCP listener ambiguous. |
+| `process.has_routes` | Destroy is refused while any Route targets the Process. |
+
+The Route stays active through an allowed update, without certificate or firewall activation. Container replacement can briefly interrupt the listener. Caddy reconnects to the unchanged upstream, and [Route Doctor checks](/reference/routes#public-process-hostnames) report an unreachable listener.
+
 ### Persisted intent and retry recovery
 
 Updating the Gateway record and changing a remote runtime are not one atomic transaction. The Gateway validates the request and acquires the operation locks before accepting new intent. Invalid input, an admission failure, or a detected ownership conflict before acceptance leaves the stored specification and runtime unchanged. Once accepted, the new specification and an incomplete convergence state are persisted before remote changes begin. The desired state remains unchanged. A later runtime failure does not roll the specification back or restore the old container layer.

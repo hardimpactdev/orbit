@@ -45,6 +45,9 @@ final class UpdateProcessCommand extends ProcessCommand
     #[\Override]
     protected $description = 'Update an installed Process specification or one Project process definition.';
 
+    #[\Override]
+    protected $help = 'Installed updates preserve omitted fields. Public and private Process Routes stay active when their single resolved TCP listener keeps the same address and host port. Otherwise the Gateway returns process.route_upstream_changed (409), naming the Route. Process removal remains refused with process.has_routes.';
+
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
