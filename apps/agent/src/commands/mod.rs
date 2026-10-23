@@ -18,6 +18,7 @@ pub mod environment;
 pub mod firewall;
 pub mod health;
 pub mod hibernation;
+pub mod horizon_queue;
 pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
@@ -81,6 +82,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<horizon_queue::ReadQueue>(),
         entry::<valkey_acl::WriteValkeyAcl>(),
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),

@@ -8,24 +8,16 @@ use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\Node;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Process;
-use JsonException;
 
 final readonly class RemoteInstanceQueueReader implements InstanceQueueReader
 {
-    private const string Marker = "\n--orbit-queue--\n";
-
     public function __construct(
         private ProcessTargetResolver $targets,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function read(Process $horizon, string $state, int $limit): array
@@ -40,34 +32,16 @@ final readonly class RemoteInstanceQueueReader implements InstanceQueueReader
             throw $this->failed($horizon);
         }
 
-        // The script is fixed and arrives on stdin. The only values from the caller are the
-        // validated state and limit, and each is one argument, never part of a shell line.
-        $result = $this->ssh->execute(
-            $this->connection($target->node),
-            new RemoteCommand(
-                [
-                    'sudo', '-u', $target->user, '-H',
-                    'env', '--chdir='.$directory->value,
-                    $php->value, '-d', 'display_errors=0', '--', $state, (string) $limit,
-                ],
-                (string) file_get_contents(resource_path('scripts/horizon-queue.php')),
-                maxOutputBytes: 1_048_576,
-            ),
-        );
-
-        $marker = strrpos($result->stdout, self::Marker);
-
-        if (! $result->succeeded() || $marker === false) {
-            throw $this->failed($horizon);
-        }
-
+        // The agent runs its fixed report script; the only values from the caller are the validated state and limit.
         try {
-            $report = json_decode(
-                substr($result->stdout, $marker + strlen(self::Marker)),
-                true,
-                flags: JSON_THROW_ON_ERROR,
-            );
-        } catch (JsonException) {
+            $report = $this->agents->run($target->node, 'instances.read-queue', [
+                'user' => $target->user,
+                'directory' => $directory->value,
+                'php' => $php->value,
+                'state' => $state,
+                'limit' => $limit,
+            ])['report'] ?? null;
+        } catch (AgentCommandRefused|AgentRunnerFailure) {
             throw $this->failed($horizon);
         }
 
@@ -80,25 +54,6 @@ final readonly class RemoteInstanceQueueReader implements InstanceQueueReader
             errorCode: 'instance.queue_failed',
             message: "The queue of Process [{$horizon->name}] could not be read.",
             status: 502,
-        );
-    }
-
-    private function connection(Node $node): SshConnection
-    {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            throw new ResourceOperationException(
-                errorCode: 'instance.wireguard_ip_missing',
-                message: "Node [{$node->name}] has no WireGuard address.",
-            );
-        }
-
-        return new SshConnection(
-            host: $node->wireguard_ip,
-            user: $node->user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-            commandTimeout: 30.0,
         );
     }
 }

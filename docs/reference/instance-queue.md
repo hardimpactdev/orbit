@@ -34,7 +34,7 @@ The Gateway reports a queue when the Instance owns a systemd Process whose comma
 
 ## Know how the Gateway reads it
 
-The Gateway opens an SSH session to the Node and runs one fixed PHP script in the checkout. It runs as the user of the Horizon Process, with the PHP binary that Process names, so it sees the same Redis connection and configuration that Horizon sees. The script reads Horizon's own repositories and changes nothing. It does not call the application over HTTP, so the authorization gate of the Horizon dashboard does not apply, and a production Instance reports the same way as a development one.
+The agent's `instances.read-queue` runs one fixed PHP script, which ships inside the agent, in the checkout. It runs as the user of the Horizon Process, with the PHP binary that Process names, so it sees the same Redis connection and configuration that Horizon sees. The script reads Horizon's own repositories and changes nothing. It does not call the application over HTTP, so the authorization gate of the Horizon dashboard does not apply, and a production Instance reports the same way as a development one.
 
 The caller supplies only `state` and `limit`. The Gateway validates both and passes each as one command argument.
 

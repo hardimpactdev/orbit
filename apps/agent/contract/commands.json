@@ -85,6 +85,20 @@
       ]
     },
     {
+      "name": "instances.read-queue",
+      "summary": "Report an Instance's Horizon queue, without job payloads.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.queue_invalid",
+        "instances.queue_failed"
+      ]
+    },
+    {
       "name": "databases.write-valkey-acl",
       "summary": "Write the ACL file into a Valkey Database server's volume.",
       "mutates": true,
