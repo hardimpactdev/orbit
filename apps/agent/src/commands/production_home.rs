@@ -19,7 +19,7 @@ use std::{
     ffi::{CStr, CString, OsStr},
     fs,
     io::Write,
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
@@ -398,7 +398,10 @@ pub fn prepare_source(input: &SourceInput, layout: &Layout) -> Result<Prepared, 
     as_user(user, "git", &clone, &input.git_read).ok_or_else(|| failed("clone the repository"))?;
     for directory in [&layout.state_root, &state] {
         if !exists(directory) {
-            fs::create_dir(directory)
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(directory)
                 .and_then(|()| fs::set_permissions(directory, fs::Permissions::from_mode(0o700)))
                 .map_err(|_| failed("create the source state"))?;
         }

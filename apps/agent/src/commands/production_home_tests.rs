@@ -73,7 +73,7 @@ impl Fixture {
         Self {
             layout: Layout {
                 home_root: base.join("home"),
-                state_root: base.join("state"),
+                state_root: base.join("var/lib/orbit/app-instance-sources"),
                 root_uid: uid,
             },
             home: Home {
@@ -141,6 +141,17 @@ fn clones_the_initial_release_into_an_empty_home_with_its_markers() {
         fixture.home.layout_marker()
     );
     assert_eq!(fs::metadata(&state).unwrap().mode() & 0o7777, 0o700);
+    for path in [
+        "var",
+        "var/lib",
+        "var/lib/orbit",
+        "var/lib/orbit/app-instance-sources",
+    ] {
+        assert_eq!(
+            fs::metadata(fixture.base.join(path)).unwrap().mode() & 0o7777,
+            0o700
+        );
+    }
     assert_eq!(
         fs::metadata(state.join("release-layout")).unwrap().mode() & 0o7777,
         0o600
