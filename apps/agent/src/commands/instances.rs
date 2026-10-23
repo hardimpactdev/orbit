@@ -1937,3 +1937,39 @@ fn output_before(mut command: std::process::Command, deadline: Instant) -> Optio
 #[cfg(test)]
 #[path = "instances_tests.rs"]
 mod tests;
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Whether nothing, not even a dangling link, occupies a path where an Instance's source will go.
+pub struct CheckPathFree;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PathInput {
+    pub path: PathBuf,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct PathFree {
+    pub free: bool,
+}
+
+impl Command for CheckPathFree {
+    const NAME: &'static str = "instances.check-path-free";
+    const SUMMARY: &'static str = "Check that nothing occupies the path of a new Instance source.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = PathInput;
+    type Output = PathFree;
+    type Error = SourceError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+
+    fn run(input: PathInput, _: &Context) -> Result<PathFree, SourceError> {
+        Ok(PathFree {
+            free: !exists(&input.path),
+        })
+    }
+}

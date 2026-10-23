@@ -1007,3 +1007,26 @@ fn laravel_routes_refuse_a_current_link_outside_the_releases() {
         Err(LaravelRoutesError::PathMismatch {})
     );
 }
+
+#[test]
+fn a_path_is_free_only_when_nothing_and_no_dangling_link_occupies_it() {
+    let base = fs::canonicalize(std::env::temp_dir())
+        .unwrap()
+        .join(format!("orbit-path-free-{:016x}", rand::random::<u64>()));
+    fs::create_dir_all(&base).unwrap();
+    let context = Context::new(
+        Platform::Linux,
+        std::time::Instant::now() + Duration::from_secs(5),
+    );
+    let check = |path: &Path| {
+        CheckPathFree::run(PathInput { path: path.into() }, &context)
+            .unwrap()
+            .free
+    };
+
+    assert!(check(&base.join("new")));
+    std::os::unix::fs::symlink(base.join("missing"), base.join("dangling")).unwrap();
+    assert!(!check(&base.join("dangling")));
+    assert!(!check(&base));
+    fs::remove_dir_all(&base).unwrap();
+}
