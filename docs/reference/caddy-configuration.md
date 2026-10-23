@@ -137,7 +137,7 @@ Caddy cannot start with a missing listen address. So every build first checks th
 The build binds 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.
 ```
 
-The `websocket` role runs this check before it changes anything on the Node. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
+The `websocket` role runs the read-only `caddy.check-addresses` command before it changes anything on the Node. Doctor and `caddy:build --dry-run --diff` read only the live file through `caddy.read-live`; they do not expand imports. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
 
 ### When a build runs
 
@@ -153,7 +153,7 @@ The Gateway runs one build at a time for each Node. A second build waits up to 3
 
 ### How a build is pushed
 
-The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The script runs these stages:
+The Gateway sends the rendered configuration, its digest, and its listen addresses to `caddy.publish` through `AgentCommandRunner`. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
 
 | Stage | Work |
 | --- | --- |
@@ -168,7 +168,7 @@ The Gateway sends one script to the Node over SSH. On the Node that runs the Gat
 | `reload` | Enables and reloads the `caddy` service. |
 | — | Keeps the live version and the nine newest others, and removes older versions. |
 
-Every build and every certificate step that reloads Caddy holds `/run/lock/orbit/caddy.lock`. A second holder waits up to 30 seconds and then fails without a change. Before the script takes the lock, it checks the lock path:
+Every build and every certificate step that reloads Caddy holds `/run/lock/orbit/caddy.lock`. A second holder waits up to 30 seconds and then fails without a change. Before the agent takes the lock, it checks the lock path:
 
 | Path | Requirement |
 | --- | --- |
@@ -191,7 +191,7 @@ A failed build does not publish a new file. A build fails when a site cannot ren
 
 While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. No other task VM value affects a build.
 
-A failed reload leaves Caddy on the configuration it already runs. The script points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
+A failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
 One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
 

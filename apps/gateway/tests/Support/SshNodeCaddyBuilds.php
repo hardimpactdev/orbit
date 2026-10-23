@@ -4,79 +4,48 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\Gateway\GatewayServingHost;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use LogicException;
+use App\Models\Node;
 
-/**
- * A real Node Caddy builder whose push goes through a test's fake SSH executor, so a test sees the whole
- * rendered Caddyfile each publisher's build pushes. A build that would run through local `sudo` fails.
- *
- * The build lock lives in this process's scratch directory, so it never meets a lock directory that another run
- * or another user left in the shared temporary directory.
- */
+/** Records fake agent publications in the same ordered event list as the publisher's other Node calls. */
 final class SshNodeCaddyBuilds
 {
     public static function over(SshExecutor $ssh): NodeCaddyBuilder
     {
+        $agents = new FakeAgentCommandRunner()->answer('caddy.publish', static function (array $input, Node $node) use ($ssh): array {
+            $result = $ssh->execute(
+                new SshConnection(host: (string) $node->wireguard_ip, user: $node->user, port: 22, identityFile: '/tmp/orbit-test-key', knownHostsFile: '/tmp/orbit-test-known-hosts'),
+                new RemoteCommand(arguments: ['orbit-agent', 'command', 'caddy.publish'], input: json_encode($input, JSON_THROW_ON_ERROR)),
+            );
+            if (! $result->succeeded()) {
+                throw new AgentCommandRefused('caddy.publish', 'caddy.publication_failed', $result->stderr, ['stage' => 'reload', 'message' => $result->stderr]);
+            }
+
+            return ['result' => 'published'];
+        });
+
         return new NodeCaddyBuilder(
             app(NodeCaddyfileRenderer::class),
             new NodeCaddyBuildLock(TestOrbitHome::scratch('caddy-build')),
-            new NodeCaddyTransport(
-                new class implements ProcessRunner
-                {
-                    public function run(ProcessInvocation $invocation): CommandResult
-                    {
-                        throw new LogicException('A test build must not run through local sudo.');
-                    }
-                },
-                $ssh,
-                new class implements SshKeyProvider
-                {
-                    public function privateKeyPath(): string
-                    {
-                        return '/tmp/orbit-test-key';
-                    }
-
-                    public function publicKey(): string
-                    {
-                        return 'ssh-ed25519 AAAA test';
-                    }
-                },
-                new class implements KnownHostsStore
-                {
-                    public function path(): string
-                    {
-                        return '/tmp/orbit-test-known-hosts';
-                    }
-
-                    public function put(string $host, int $port, HostKey $key): void {}
-                },
-                app(GatewayServingHost::class),
-            ),
+            new NodeCaddyTransport($agents),
         );
     }
 
-    /** The Caddyfile a push command carries, or null for any other command. */
     public static function pushed(RemoteCommand $command): ?string
     {
-        if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $command->input, $match) !== 1) {
+        if ($command->arguments !== ['orbit-agent', 'command', 'caddy.publish']) {
             return null;
         }
 
-        $content = base64_decode($match[1], true);
+        $input = json_decode((string) $command->input, true, flags: JSON_THROW_ON_ERROR);
 
-        return is_string($content) && str_starts_with($content, NodeCaddyfileRenderer::Marker) ? $content : null;
+        return $input['content'];
     }
 }

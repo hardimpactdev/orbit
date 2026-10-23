@@ -644,9 +644,8 @@ final class CertificateOrderNodes implements SshExecutor
             return new CommandResult(0, '', '', 1, false);
         }
 
-        if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
-            $configuration = (string) base64_decode($matches[1], true);
-
+        $configuration = SshNodeCaddyBuilds::pushed($command);
+        if ($configuration !== null) {
             if ($host === $this->failCaddy || ! $this->allNamedExist($host, $configuration)) {
                 return new CommandResult(1, '', 'caddy validate failed', 1, false);
             }

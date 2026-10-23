@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
-use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshConnection;
@@ -16,7 +18,7 @@ use App\Models\Node;
 class AgentTransports
 {
     public function __construct(
-        private readonly NodeAccessAuthorizer $access,
+        private readonly GatewayServingHost $servingHost,
         private readonly ProcessRunner $processes,
         private readonly SshExecutor $ssh,
         private readonly SshKeyProvider $keys,
@@ -26,7 +28,12 @@ class AgentTransports
 
     public function for(Node $node): AgentTransport
     {
-        if ($this->access->isGatewayNode($node)) {
+        $serving = $this->servingHost->nodeId();
+        $local = $serving !== null
+            ? $serving === $node->id
+            : CaddySiteRoles::nodeServes($node->id, RoleName::Gateway);
+
+        if ($local) {
             return new LocalAgentTransport($this->processes, $this->orbitHome);
         }
 

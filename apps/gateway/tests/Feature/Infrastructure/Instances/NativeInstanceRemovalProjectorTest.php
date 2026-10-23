@@ -810,25 +810,7 @@ function orb181_published_php_pools(array $commands): array
 /** @param list<RemoteCommand> $commands @return list<string> */
 function orb181_caddy_configurations(array $commands): array
 {
-    $configurations = [];
-
-    foreach ($commands as $command) {
-        if (! is_string($command->input)) {
-            continue;
-        }
-
-        if (preg_match("/printf '%s' '([^']+)' \\| base64 --decode/", $command->input, $matches) !== 1) {
-            continue;
-        }
-
-        $decoded = base64_decode($matches[1], true);
-
-        if (is_string($decoded)) {
-            $configurations[] = $decoded;
-        }
-    }
-
-    return $configurations;
+    return array_values(array_filter(array_map(SshNodeCaddyBuilds::pushed(...), $commands), is_string(...)));
 }
 
 /** @param list<ProcessInvocation> $invocations @return list<string> */

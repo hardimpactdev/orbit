@@ -90,6 +90,7 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -166,7 +167,6 @@ use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
-use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -584,7 +584,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->singleton(AgentContract::class, static fn (): AgentContract => new AgentContract(Config::string('orbit.agent.contract')));
         $this->app->singleton(AgentDelivery::class, static fn (): AgentDelivery => new AgentDelivery(Config::string('orbit.agent.delivery'), Config::string('orbit.home').'/agent-artifacts'));
         $this->app->bind(AgentTransports::class, static fn ($app): AgentTransports => new AgentTransports(
-            $app->make(NodeAccessAuthorizer::class),
+            $app->make(GatewayServingHost::class),
             $app->make(ProcessRunner::class),
             $app->make(SshExecutor::class),
             $app->make(SshKeyProvider::class),

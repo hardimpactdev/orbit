@@ -6,6 +6,7 @@ pub mod agent_footprint;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
+mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 pub mod clone_candidate;
@@ -142,6 +143,9 @@ pub fn all() -> Vec<Entry> {
         entry::<tls_check::VerifyCertificate>(),
         entry::<caddy::InstallCertificate>(),
         entry::<caddy::Reload>(),
+        entry::<caddy_publication::Publish>(),
+        entry::<caddy_publication::CheckAddresses>(),
+        entry::<caddy_publication::ReadLive>(),
         entry::<caddy::RemoveCertificate>(),
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),

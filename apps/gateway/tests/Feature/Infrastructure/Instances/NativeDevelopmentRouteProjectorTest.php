@@ -191,10 +191,10 @@ it('retires a transferred generated Route without inventing an old Router certif
         expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
             ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
         $firstDeletion = $deletions->keys()->first();
-        $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'))
+        $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null)
             ->keys()->map(fn (int $index): string => $ssh->hosts[$index])->unique()->sort()->values()->all();
         expect($caddyHosts)->toBe(['10.44.0.10', '10.44.0.30']);
-        expect(collect($ssh->commands)->take($firstDeletion)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'))->count())->toBe(2);
+        expect(collect($ssh->commands)->take($firstDeletion)->filter(static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null)->count())->toBe(2);
         $projector->retireSource($transfer);
         expect($sourceRoute->refresh()->status)->toBe(RouteStatus::Retiring);
     } finally {
@@ -360,7 +360,7 @@ it('keeps source certificates when retirement cannot reconcile Caddy', function 
     $route->update(['status' => RouteStatus::Active]);
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $router, $router);
     [$projector, $ssh, , $home] = orb127_route_projector(
-        static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'),
+        static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null,
     );
 
     try {
@@ -1371,10 +1371,7 @@ it('refuses an invalid workload leaf before Router Caddy or DNS publication', fu
             ->toBeEmpty()
             ->and(collect($ssh->commands)
                 ->filter(
-                    static fn (RemoteCommand $command): bool => str_contains(
-                        $command->input ?? '',
-                        'orbit-caddy-build-result',
-                    ),
+                    static fn (RemoteCommand $command): bool => SshNodeCaddyBuilds::pushed($command) !== null,
                 ))
             ->toHaveCount(1);
     } finally {
@@ -1547,16 +1544,14 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
             continue;
         }
 
-        if (
-            ! str_contains($command->input ?? '', 'orbit-caddy-build-result')
-            || preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $command->input ?? '', $encoded) !== 1
-        ) {
+        $configuration = SshNodeCaddyBuilds::pushed($command);
+        if ($configuration === null) {
             continue;
         }
 
         preg_match_all(
             '#https://(\S+) \{\s+bind [^\n]+\s+tls /etc/caddy/orbit-certificates/([^/]+)/current/cert\.pem#',
-            (string) base64_decode($encoded[1], true),
+            $configuration,
             $sites,
             PREG_SET_ORDER,
         );

@@ -130,7 +130,7 @@ The agent drops a line that exceeds a rate and reports the count in its next eve
 
 ## Commands
 
-The Gateway runs every Node action through one runner, `AgentCommandRunner`. It sends a command name and typed input, never program source ([ADR 0225](/decisions/0225-make-node-changes-through-agent-commands)).
+The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source ([ADR 0225](/decisions/0225-make-node-changes-through-agent-commands)).
 
 ```text
 [sudo -n] /usr/local/bin/orbit-agent command <name>

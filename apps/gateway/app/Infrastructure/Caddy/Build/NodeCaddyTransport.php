@@ -4,72 +4,32 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
-use App\Domain\Gateway\GatewayServingHost;
-use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 
-/**
- * Runs a Node Caddy build command. The Node that runs the Gateway process runs it through local
- * `sudo`; every other Node runs it over pinned SSH. The Gateway's recorded serving Node names that
- * Node. Before bootstrap records it, the Node whose `gateway` role serves its site is that Node,
- * so bootstrap and a failed reconvergence still build locally.
- */
+/** Maps the agent's typed Caddy results into the build's public failures. */
 final readonly class NodeCaddyTransport
 {
-    public function __construct(
-        private ProcessRunner $processes,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-        private GatewayServingHost $servingHost,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
-    public function runsLocally(Node $node): bool
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    public function run(Node $node, string $command, array $input = [], ?float $timeout = null): array
     {
-        $serving = $this->servingHost->nodeId();
-
-        if ($serving !== null) {
-            return $serving === $node->id;
+        try {
+            return $this->agents->run($node, $command, $input, $timeout);
+        } catch (AgentCommandRefused $exception) {
+            throw new NodeCaddyBuildException(
+                $node->name,
+                is_string($exception->details['stage'] ?? null) ? $exception->details['stage'] : 'connect',
+                is_string($exception->details['message'] ?? null) ? $exception->details['message'] : $exception->getMessage(),
+            );
+        } catch (AgentRunnerFailure $exception) {
+            throw new NodeCaddyBuildException($node->name, 'connect', $exception->getMessage());
         }
-
-        return CaddySiteRoles::nodeServes($node->id, RoleName::Gateway);
-    }
-
-    public function run(Node $node, RemoteCommand $command): CommandResult
-    {
-        if ($this->runsLocally($node)) {
-            return $this->processes->run(new ProcessInvocation(
-                arguments: $command->arguments,
-                timeout: $command->timeout ?? 120.0,
-                input: $command->input,
-                maxOutputBytes: $command->maxOutputBytes,
-            ));
-        }
-
-        $address = $node->wireguard_ip;
-
-        if (! is_string($address) || $address === '') {
-            throw new NodeCaddyBuildException($node->name, 'connect', 'The Node has no WireGuard address.');
-        }
-
-        return $this->ssh->execute(
-            new SshConnection(
-                host: $address,
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-                commandTimeout: $command->timeout ?? 120.0,
-            ),
-            $command,
-        );
     }
 }

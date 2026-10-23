@@ -1673,7 +1673,6 @@
                 "Instance",
                 "Node",
                 "Placement",
-                "Process",
                 "Project",
                 "Role",
                 "Route",
@@ -3153,8 +3152,7 @@
             "title": "Migrate an unmanaged Executor hostname",
             "kind": "solution",
             "components": [
-                "apps/cli",
-                "apps/gateway"
+                "apps/cli"
             ],
             "concepts": [
                 "Cluster",

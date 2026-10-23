@@ -980,6 +980,48 @@
       ]
     },
     {
+      "name": "caddy.publish",
+      "summary": "Validate and publish a rendered Node Caddyfile, restoring the previous configuration on reload failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
+      "name": "caddy.check-addresses",
+      "summary": "Check that every Caddy listen address exists on the Node.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
+      "name": "caddy.read-live",
+      "summary": "Read the live Caddyfile without expanding imports.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_invalid",
+        "caddy.publication_failed"
+      ]
+    },
+    {
       "name": "caddy.remove-certificate",
       "summary": "Remove a certificate directory that Caddy reads.",
       "mutates": true,

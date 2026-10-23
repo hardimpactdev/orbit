@@ -6,12 +6,12 @@ use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayServiceStartHook;
-use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -31,11 +31,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
@@ -43,6 +38,7 @@ use Illuminate\Support\Str;
 use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('installs and executes the FPM pre-start gate for a restart or refusal', function (string $ambientEnvironment, string $boundary): void {
     $previousEnvironment = $_ENV['APP_ENV'] ?? null;
@@ -1013,19 +1009,18 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             builds: new NodeCaddyBuilder(
                 app(NodeCaddyfileRenderer::class),
                 new NodeCaddyBuildLock($orbitHome.'/locks/caddy-build'),
-                new NodeCaddyTransport(
-                    $processes,
-                    new class implements SshExecutor
-                    {
-                        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-                        {
-                            throw new LogicException('The Gateway Node builds through local sudo.');
-                        }
-                    },
-                    app(SshKeyProvider::class),
-                    app(KnownHostsStore::class),
-                    app(GatewayServingHost::class),
-                ),
+                new NodeCaddyTransport(new FakeAgentCommandRunner()->answer('caddy.publish', static function (array $input) use ($processes): array {
+                    $result = $processes->run(new ProcessInvocation(
+                        arguments: ['orbit-agent', 'command', 'caddy.publish'],
+                        input: json_encode($input, JSON_THROW_ON_ERROR),
+                    ));
+                    if (! $result->succeeded()) {
+                        preg_match('/orbit-caddy-build-stage=([a-z-]+)/', $result->stderr, $stage);
+                        throw new AgentCommandRefused('caddy.publish', 'caddy.publication_failed', $result->stderr, ['stage' => $stage[1] ?? 'reload', 'message' => 'Error: aggregate route conflict']);
+                    }
+
+                    return ['result' => 'published'];
+                })),
             ),
             caddyInstaller: new NativeGatewayCaddyInstaller($processes),
             orbitHome: $orbitHome,
@@ -1059,15 +1054,12 @@ function gateway_web_node(): Node
 
 function gateway_web_is_build(ProcessInvocation $invocation): bool
 {
-    return array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
-        && str_contains($invocation->input ?? '', 'orbit-caddy-build-result');
+    return $invocation->arguments === ['orbit-agent', 'command', 'caddy.publish'];
 }
 
 function gateway_web_pushed(ProcessInvocation $invocation): string
 {
-    preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $invocation->input, $match);
-
-    return (string) base64_decode($match[1] ?? '', true);
+    return json_decode((string) $invocation->input, true, flags: JSON_THROW_ON_ERROR)['content'];
 }
 
 final class RecordingGatewayReleaseUnitConverger implements GatewayReleaseUnitConverger
