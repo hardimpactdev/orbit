@@ -141,6 +141,7 @@ pub fn all() -> Vec<Entry> {
         entry::<firewall::ChangeFirewall>(),
         entry::<tls_check::VerifyCertificate>(),
         entry::<caddy::InstallCertificate>(),
+        entry::<caddy::Reload>(),
         entry::<caddy::RemoveCertificate>(),
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),

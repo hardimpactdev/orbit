@@ -5,33 +5,30 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
+use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('reloads Caddy whenever a Metrics route may remain published', function (
     LifecycleStatus $roleStatus,
     LifecycleStatus $nodeStatus,
 ): void {
+    $gateway = metricsAccessRevokerGateway();
     $metrics = metricsAccessRevokerNode('metrics', $nodeStatus);
     $metrics->roles()->create([
         'role' => RoleName::Metrics,
         'status' => $roleStatus,
     ]);
-    $processes = new MetricsAccessRevokerProcessRunner;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.reload', []);
 
-    new NativeMetricsAccessRevoker($processes)->revoke();
+    new NativeMetricsAccessRevoker($agents)->revoke();
 
-    expect($processes->invocations)
-        ->toHaveCount(1)
-        ->and($processes->invocations[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu'])
-        ->and($processes->invocations[0]->input)
-        ->toStartWith(CaddyPublicationLock::script(CaddyPublicationLock::Path))
-        ->toEndWith("systemctl reload caddy\n");
+    expect($agents->calls)->toBe([['node' => $gateway->name, 'command' => 'caddy.reload', 'input' => []]]);
 })->with([
     'active assignment' => [LifecycleStatus::Active, LifecycleStatus::Active],
     'provisioning assignment' => [LifecycleStatus::Provisioning, LifecycleStatus::Active],
@@ -41,22 +38,23 @@ it('reloads Caddy whenever a Metrics route may remain published', function (
 ]);
 
 it('does not touch Caddy without an active Metrics assignment', function (): void {
-    $processes = new MetricsAccessRevokerProcessRunner;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.reload', []);
 
-    new NativeMetricsAccessRevoker($processes)->revoke();
+    new NativeMetricsAccessRevoker($agents)->revoke();
 
-    expect($processes->invocations)->toBeEmpty();
+    expect($agents->calls)->toBeEmpty();
 });
 
 it('fails closed when the stream-closing reload fails', function (): void {
+    metricsAccessRevokerGateway();
     $metrics = metricsAccessRevokerNode('metrics');
     $metrics->roles()->create([
         'role' => RoleName::Metrics,
         'status' => LifecycleStatus::Active,
     ]);
-    $processes = new MetricsAccessRevokerProcessRunner(fail: true);
+    $agents = new FakeAgentCommandRunner()->refuse('caddy.reload', 'caddy.reload_failed');
 
-    expect(fn () => new NativeMetricsAccessRevoker($processes)->revoke())
+    expect(fn () => new NativeMetricsAccessRevoker($agents)->revoke())
         ->toThrow(ResourceOperationException::class, 'Metrics Caddy publication did not complete.');
 });
 
@@ -70,23 +68,24 @@ function metricsAccessRevokerNode(
         'platform' => 'linux',
         'public_ssh_host' => $name.'.example.test',
         'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.3',
+        'wireguard_ip' => $name === 'gateway' ? '10.44.0.1' : '10.44.0.3',
     ]);
 }
 
-final class MetricsAccessRevokerProcessRunner implements ProcessRunner
+function metricsAccessRevokerGateway(): Node
 {
-    /** @var list<ProcessInvocation> */
-    public array $invocations = [];
+    $gateway = metricsAccessRevokerNode('gateway');
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 
-    public function __construct(
-        private bool $fail = false,
-    ) {}
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->invocations[] = $invocation;
-
-        return new CommandResult($this->fail ? 1 : 0, '', '', 1, false);
-    }
+    return $gateway;
 }
+
+arch('Metrics access revocation runs Node code only through the agent runner')
+    ->expect(NativeMetricsAccessRevoker::class)
+    ->not->toUse([
+        SshExecutor::class,
+        RemoteCommand::class,
+        ProcessRunner::class,
+        ProcessInvocation::class,
+        Process::class,
+    ]);

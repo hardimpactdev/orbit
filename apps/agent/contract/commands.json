@@ -966,6 +966,20 @@
       ]
     },
     {
+      "name": "caddy.reload",
+      "summary": "Reload Caddy under its publication lock to close revoked Metrics streams.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.publication_lock_failed",
+        "caddy.reload_failed"
+      ]
+    },
+    {
       "name": "caddy.remove-certificate",
       "summary": "Remove a certificate directory that Caddy reads.",
       "mutates": true,
