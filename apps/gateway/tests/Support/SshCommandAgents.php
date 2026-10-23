@@ -14,9 +14,10 @@ use App\Models\Node;
 use LogicException;
 
 /**
- * For route and firewall tests whose SSH fakes model a Node's tools: each UFW and certificate agent command reaches
- * the fake as the command it runs on a Node, such as `sudo ufw status numbered`. Every other agent command goes to
- * `$others`.
+ * For route and firewall tests whose SSH fakes model a Node's tools: each UFW, TLS check, and development leaf
+ * agent command reaches the fake as one SSH command, such as `sudo ufw status numbered`. A leaf command keeps the
+ * shape those fakes read: its scope at argument 3, and a marker input for a reuse, a presence check, or a removal.
+ * Every other agent command goes to `$others`.
  */
 final readonly class SshCommandAgents implements AgentCommandRunner
 {
@@ -28,6 +29,10 @@ final readonly class SshCommandAgents implements AgentCommandRunner
             'firewall.status' => [['sudo', 'ufw', 'status', 'numbered'], null],
             'firewall.ufw' => [['sudo', 'ufw', ...$input['arguments']], null],
             'routes.verify-certificate' => [['timeout', '10', 'openssl', 's_client', '-connect', "{$input['address']}:{$input['port']}", '-servername', $input['domain'], '-verify_return_error'], ''],
+            'certificates.request-leaf' => [['bash', '-seu', '--', $input['scope'], $input['domain'], $input['version'], $input['root_hash'], $input['user'], '', $input['home']], "printf 'CURRENT\\n'"],
+            'certificates.publish-leaf' => [['bash', '-ceu', 'orbit-certificates/$scope', '--', $input['scope'], $input['domain'], $input['version'], $input['root_hash']], $input['certificate'].$input['root_certificate']],
+            'certificates.inspect-leaf' => [['bash', '-seu', '--', $input['scope'], $input['home']], "printf 'PRESENT\\n'"],
+            'certificates.remove-leaf' => [['bash', '-seu', '--', $input['scope'], '', '', $input['home']], 'rm -rf -- "$managed_home/.orbit/certificates/$scope"'."\n".'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'],
             default => [null, null],
         };
         if ($arguments === null) {
@@ -36,10 +41,12 @@ final readonly class SshCommandAgents implements AgentCommandRunner
         $connection = new SshConnection((string) $node->wireguard_ip, $node->user, 22, '/tmp/orbit-test-key', '/tmp/orbit-test-known-hosts', commandTimeout: $deadlineSeconds ?? 900.0);
         $result = $this->ssh->execute($connection, new RemoteCommand($arguments, input: $stdin));
         if (! $result->succeeded()) {
-            $code = $command === 'routes.verify-certificate' ? 'routes.certificate_invalid' : 'firewall.ufw_failed';
-            throw new AgentCommandRefused($command, $code, 'Failed.', $command === 'routes.verify-certificate'
-                ? ['stderr' => $result->stderr]
-                : ['exit_code' => $result->exitCode, 'stdout' => $result->stdout, 'stderr' => $result->stderr]);
+            [$code, $details] = match (true) {
+                $command === 'routes.verify-certificate' => ['routes.certificate_invalid', ['stderr' => $result->stderr]],
+                str_starts_with($command, 'certificates.') => ['certificates.leaf_failed', ['step' => $command]],
+                default => ['firewall.ufw_failed', ['exit_code' => $result->exitCode, 'stdout' => $result->stdout, 'stderr' => $result->stderr]],
+            };
+            throw new AgentCommandRefused($command, $code, 'Failed.', $details);
         }
         if ($command === 'firewall.status') {
             $stored = ($input['stored'] ?? false) === true
@@ -49,7 +56,12 @@ final readonly class SshCommandAgents implements AgentCommandRunner
             return ['status' => $result->stdout, 'stored' => array_values(array_filter(explode("\n", $stored)))];
         }
 
-        return $command === 'firewall.ufw' ? ['stdout' => $result->stdout] : [];
+        return match ($command) {
+            'firewall.ufw' => ['stdout' => $result->stdout],
+            'certificates.request-leaf' => trim($result->stdout) === 'CURRENT' ? ['state' => 'current'] : ['state' => 'request', 'request' => $result->stdout],
+            'certificates.inspect-leaf' => ['present' => trim($result->stdout) === 'PRESENT'],
+            default => [],
+        };
     }
 
     public function install(Node $node): bool

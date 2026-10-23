@@ -67,7 +67,6 @@ describe('every Caddy writer', function (): void {
 
         expect($reloaders)->toEqualCanonicalizing([
             'app/Infrastructure/Analytics/AnalyticsCertificatePublisher.php',
-            'app/Infrastructure/AppDev/RemoteAppDevCertificateManager.php',
             'app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php',
             'app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php',
             'app/Infrastructure/Metrics/MetricsCertificatePublisher.php',

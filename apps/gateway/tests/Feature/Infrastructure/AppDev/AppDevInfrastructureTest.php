@@ -32,7 +32,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuild;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -57,12 +56,9 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
-use Tests\Support\FixtureProcessRunner;
 use Tests\Support\FpmPublishHarness;
-use Tests\Support\RootCaFixture;
-
-beforeAll(fn () => RootCaFixture::prepare('app-dev', '/CN=Orbit Test Root', 3650, ['basicConstraints=critical,CA:TRUE', 'keyUsage=critical,keyCertSign,cRLSign']));
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -821,14 +817,70 @@ it('rejects an unsupported PHP version before target discovery or installation',
         ->toBeEmpty();
 });
 
-it('keeps leaf private keys on the target while publishing a gateway-signed certificate', function (): void {
+it('signs the request of the Node and publishes the leaf without the key leaving the Node', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $instance = app_dev_supported_app_instance($node, $project->id);
     $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
-    ]);
-    $signer = new class implements LeafCertificateSigner
+    $agents = new FakeAgentCommandRunner()
+        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR FROM TARGET'])
+        ->answer('certificates.publish-leaf', []);
+    $signer = app_dev_test_signer();
+    $manager = new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver());
+
+    $manager->convergeInstance($instance, $route);
+
+    $leaf = $agents->calls[0]['input'];
+    expect($agents->commands())->toBe(['certificates.request-leaf', 'certificates.publish-leaf'])
+        ->and($leaf)->toMatchArray([
+            'scope' => "app-instance-{$instance->id}",
+            'domain' => 'acme.app-dev.orbit',
+            'root_hash' => hash('sha256', "ROOT CERTIFICATE\n"),
+            'user' => 'orbit',
+            'home' => '/home/orbit',
+        ])
+        ->and($signer->calls)->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
+        ->and($agents->calls[1]['input'])->toBe([...$leaf, 'certificate' => "LEAF CERTIFICATE\n", 'root_certificate' => "ROOT CERTIFICATE\n"]);
+});
+
+it('reuses a current leaf without signing', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $agents = new FakeAgentCommandRunner()->answer('certificates.request-leaf', ['state' => 'current']);
+    $signer = app_dev_test_signer();
+
+    new RemoteAppDevCertificateManager($agents, $signer, app_dev_account_resolver())->convergeInstance($instance, $route);
+
+    expect($agents->commands())->toBe(['certificates.request-leaf'])
+        ->and($signer->calls)->toBe([]);
+});
+
+it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
+    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+    [$node, $project] = app_dev_runtime_models(account: $account);
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $agents = new FakeAgentCommandRunner()
+        ->answer('certificates.request-leaf', ['state' => 'request', 'request' => 'CSR'])
+        ->answer('certificates.publish-leaf', [])
+        ->answer('certificates.remove-leaf', []);
+    $manager = new RemoteAppDevCertificateManager($agents, app_dev_test_signer(), app_dev_account_resolver($account));
+
+    $manager->convergeInstance($instance, $route);
+    // Removal withdraws the Route's sites before it removes their certificate.
+    $route->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+    $manager->removeInstance($instance);
+
+    expect($agents->calls[0]['input'])->toMatchArray(['user' => 'nckrtl', 'home' => '/srv/users/nckrtl'])
+        ->and($agents->calls[2])->toMatchArray([
+            'command' => 'certificates.remove-leaf',
+            'input' => ['scope' => "app-instance-{$instance->id}", 'home' => '/srv/users/nckrtl'],
+        ]);
+});
+
+function app_dev_test_signer(): LeafCertificateSigner
+{
+    return new class implements LeafCertificateSigner
     {
         /** @var list<array{domain: string, csr: string}> */
         public array $calls = [];
@@ -845,173 +897,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             return "ROOT CERTIFICATE\n";
         }
     };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
-
-    $manager->convergeInstance($instance, $route);
-
-    expect($ssh->commands)
-        ->toHaveCount(2)
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'openssl genrsa -out "$candidate/key.pem" 2048',
-            'cat "$candidate/request.pem"',
-            'openssl verify -CAfile "$current/root.pem" "$current/cert.pem"',
-            'openssl x509 -in "$current/cert.pem" -noout -checkend 2592000',
-            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
-            'not_before_epoch=$(date -d "$not_before" +%s)',
-            '[ "$validity_seconds" -ge 34214400 ]',
-            '[ "$validity_seconds" -le 34387200 ]',
-            'sha256sum "$current/root.pem"',
-            'trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            'sudo update-ca-certificates',
-        )
-        ->and($ssh->commands[0]->arguments)
-        ->toContain(hash(algo: 'sha256', data: "ROOT CERTIFICATE\n"))
-        ->and($signer->calls)
-        ->toBe([['domain' => 'acme.app-dev.orbit', 'csr' => 'CSR FROM TARGET']])
-        ->and($ssh->commands[1]->input)
-        ->toBe("LEAF CERTIFICATE\nROOT CERTIFICATE\n")
-        ->and($ssh->commands[1]->arguments[2])
-        ->toContain(
-            'head -c "$certificate_length"',
-            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
-            'openssl verify -CAfile',
-            'test "$(sha256sum "$candidate/root.pem" | cut -d \' \' -f 1)" = "$expected_root_hash"',
-            'sudo install -o root -g root -m 0644',
-            'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
-            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-            "if sudo systemctl is-active --quiet caddy; then\n    sudo bash -ceu \"\$locked_reload\"\nfi",
-        )
-        ->not
-        ->toContain('PRIVATE KEY')
-        ->and(mb_strpos($ssh->commands[1]->arguments[2], 'sudo bash -ceu "$locked_reload"'))
-        ->toBeGreaterThan((int) mb_strpos(
-            $ssh->commands[1]->arguments[2],
-            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
-        ))
-        ->and($ssh->commands[1]->arguments[array_key_last($ssh->commands[1]->arguments)])
-        ->toBe(CaddyPublicationLock::script(CaddyPublicationLock::Path)."\nsystemctl reload-or-restart caddy\n");
-});
-
-it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
-    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
-    [$node, $project] = app_dev_runtime_models(account: $account);
-    $instance = app_dev_supported_app_instance($node, $project->id);
-    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $signer = new class implements LeafCertificateSigner
-    {
-        public function sign(string $domain, string $certificateRequest): string
-        {
-            return "LEAF CERTIFICATE\n";
-        }
-
-        public function rootCertificate(): string
-        {
-            return "ROOT CERTIFICATE\n";
-        }
-    };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver($account));
-
-    $manager->convergeInstance($instance, $route);
-    // Removal withdraws the Route's sites before it removes their certificate.
-    $route->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
-    $manager->removeInstance($instance);
-
-    expect($ssh->commands)
-        ->toHaveCount(3)
-        ->and($ssh->commands[0]->arguments)
-        ->toContain("app-instance-{$instance->id}", 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
-        ->and($ssh->commands[0]->input)
-        ->toContain('managed_home=$7', 'root="$managed_home/.orbit/certificates/$scope"')
-        ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[2]->arguments)->toBe([
-            'bash',
-            '-seu',
-            '--',
-            "app-instance-{$instance->id}",
-            'nckrtl',
-            'nckrtl',
-            '/srv/users/nckrtl',
-        ])->and($ssh->commands[2]->input)->toContain(
-            'managed_user=$2',
-            'managed_group=$3',
-            'managed_home=$4',
-            'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
-        )
-        ->not->toContain('/home/orbit/.orbit/certificates');
-});
-
-it('reuses only current app-dev leaves with the exact RSA extension policy', function (
-    string $keyUsage,
-    string $keyAlgorithm,
-    string $expectedDecision,
-): void {
-    [$node, $project] = app_dev_runtime_models();
-    $instance = app_dev_supported_app_instance($node, $project->id);
-    $route = app_dev_supported_route($instance, 'acme.app-dev.orbit');
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "CURRENT\n", '', 1, false),
-    ]);
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-app-dev-certificate-policy-'.(string) Str::uuid();
-    $rootCertificate = create_app_dev_certificate_reuse_fixture(
-        root: $root,
-        scope: "app-instance-{$instance->id}",
-        domain: $route->domain,
-        keyUsage: $keyUsage,
-        keyAlgorithm: $keyAlgorithm,
-    );
-    new Filesystem()->ensureDirectoryExists($root.'/usr/local/share/ca-certificates', recursive: true);
-    file_put_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt', "STALE\n");
-    $signer = new class($rootCertificate) implements LeafCertificateSigner
-    {
-        public function __construct(
-            private readonly string $rootCertificate,
-        ) {}
-
-        public function sign(string $domain, string $certificateRequest): string
-        {
-            return "unused\n";
-        }
-
-        public function rootCertificate(): string
-        {
-            return $this->rootCertificate;
-        }
-    };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
-
-    try {
-        $manager->convergeInstance($instance, $route);
-        $result = run_app_dev_certificate_probe_locally($ssh->commands[0], $root);
-        $decision = trim($result->stdout) === 'CURRENT' ? 'reuse' : 'reissue';
-
-        expect($result->succeeded())->toBeTrue($result->stderr);
-        expect($decision)->toBe($expectedDecision);
-
-        if ($expectedDecision === 'reuse') {
-            expect(file_get_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'))
-                ->toBe($rootCertificate)
-                ->and(is_file($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt.updated'))
-                ->toBeTrue();
-        }
-
-        if ($expectedDecision === 'reissue') {
-            expect($result->stdout)
-                ->toContain('BEGIN CERTIFICATE REQUEST')
-                ->not->toContain("CURRENT\n");
-        }
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-})->with([
-    'RSA with the approved usages' => ['digitalSignature,keyEncipherment', 'RSA', 'reuse'],
-    'RSA without key encipherment' => ['digitalSignature', 'RSA', 'reissue'],
-    'Ed25519 with the approved usages' => ['digitalSignature,keyEncipherment', 'ED25519', 'reissue'],
-]);
+}
 
 it('requests a Node Caddy build for Route sites and publishes DNS through its preserved validation aggregate', function (): void {
     [$node, $project] = app_dev_runtime_models();
@@ -1585,135 +1471,6 @@ function orb173_dns_projection_route(
     }
 
     return $route;
-}
-
-function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $root): CommandResult
-{
-    $arguments = array_map(
-        static fn (string $argument): string => str_replace(
-            ['/home/orbit', '/etc/caddy'],
-            [$root, $root.'/etc/caddy'],
-            $argument,
-        ),
-        $command->arguments,
-    );
-    $input = str_replace(
-        [
-            '/home/orbit',
-            '/etc/caddy',
-            '/usr/local/share/ca-certificates',
-            '/etc/ssl/certs/ca-certificates.crt',
-            'sudo update-ca-certificates',
-            'install -o root -g root ',
-            'sudo ',
-            'openssl ',
-        ],
-        [
-            $root,
-            $root.'/etc/caddy',
-            $root.'/usr/local/share/ca-certificates',
-            $root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            '{ printf "Updating certificates\\n"; touch "$trust_anchor.updated"; }',
-            'install ',
-            '',
-            app_dev_test_openssl_binary().' ',
-        ],
-        $command->input ?? '',
-    );
-
-    return new FixtureProcessRunner()->run(new ProcessInvocation(
-        arguments: $arguments,
-        input: $input,
-    ));
-}
-
-function create_app_dev_certificate_reuse_fixture(
-    string $root,
-    string $scope,
-    string $domain,
-    string $keyUsage,
-    string $keyAlgorithm,
-): string {
-    $processes = new FixtureProcessRunner;
-    $ca = "{$root}/ca";
-    $current = "{$root}/.orbit/certificates/{$scope}/current";
-    $caddyCurrent = "{$root}/etc/caddy/orbit-certificates/{$scope}/current";
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory($ca, mode: 0o700, recursive: true);
-    $filesystem->makeDirectory($current, mode: 0o700, recursive: true);
-    $filesystem->makeDirectory($caddyCurrent, mode: 0o700, recursive: true);
-
-    $openssl = app_dev_test_openssl_binary();
-    $leafKeyArguments = [$openssl, 'genpkey', '-algorithm', $keyAlgorithm];
-
-    if ($keyAlgorithm === 'RSA') {
-        $leafKeyArguments = [...$leafKeyArguments, '-pkeyopt', 'rsa_keygen_bits:2048'];
-    }
-
-    $leafKeyArguments = [...$leafKeyArguments, '-out', "{$current}/key.pem"];
-    RootCaFixture::install($ca, 'app-dev');
-    $rootKey = openssl_pkey_get_private(file_get_contents("{$ca}/root.key"));
-    expect($rootKey)->not->toBeFalse();
-    expect(openssl_pkey_get_details($rootKey)['bits'])->toBe(4096)
-        ->and(openssl_x509_check_private_key(file_get_contents("{$ca}/root.pem"), $rootKey))->toBeTrue();
-    $commands = [
-        $leafKeyArguments,
-        [
-            $openssl,
-            'req',
-            '-new',
-            '-key',
-            "{$current}/key.pem",
-            '-out',
-            "{$current}/request.pem",
-            '-subj',
-            "/CN={$domain}",
-        ],
-    ];
-
-    foreach ($commands as $arguments) {
-        $result = $processes->run(new ProcessInvocation($arguments));
-        expect($result->succeeded())->toBeTrue($result->stderr);
-    }
-
-    file_put_contents("{$current}/leaf.ext", implode("\n", [
-        'basicConstraints=critical,CA:FALSE',
-        "keyUsage=critical,{$keyUsage}",
-        'extendedKeyUsage=serverAuth',
-        "subjectAltName=DNS:{$domain}",
-    ]));
-    $signed = $processes->run(new ProcessInvocation([
-        $openssl,
-        'x509',
-        '-req',
-        '-in',
-        "{$current}/request.pem",
-        '-CA',
-        "{$ca}/root.pem",
-        '-CAkey',
-        "{$ca}/root.key",
-        '-set_serial',
-        '0x01',
-        '-out',
-        "{$current}/cert.pem",
-        '-days',
-        '397',
-        '-extfile',
-        "{$current}/leaf.ext",
-    ]));
-    expect($signed->succeeded())->toBeTrue($signed->stderr);
-    $rootCertificate = file_get_contents("{$ca}/root.pem");
-    expect($rootCertificate)->toBeString();
-    file_put_contents("{$current}/root.pem", $rootCertificate);
-    copy("{$current}/key.pem", "{$caddyCurrent}/key.pem");
-    copy("{$current}/cert.pem", "{$caddyCurrent}/cert.pem");
-
-    return is_string($rootCertificate) ? $rootCertificate : '';
-}
-
-function app_dev_test_openssl_binary(): string
-{
-    return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
 
 it('builds the Node on role removal, so the build keeps every Route site stored state still places there', function (): void {

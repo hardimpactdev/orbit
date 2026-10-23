@@ -745,6 +745,86 @@
       ]
     },
     {
+      "name": "caddy.install-certificate",
+      "summary": "Install a certificate and key that Caddy reads, and reload Caddy when they change.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.certificate_invalid",
+        "caddy.certificate_failed"
+      ]
+    },
+    {
+      "name": "caddy.remove-certificate",
+      "summary": "Remove a certificate directory that Caddy reads.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.certificate_invalid",
+        "caddy.certificate_failed"
+      ]
+    },
+    {
+      "name": "certificates.request-leaf",
+      "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.publish-leaf",
+      "summary": "Install a signed development leaf for the managed account and Caddy, and reload Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.inspect-leaf",
+      "summary": "Report whether a development leaf exists for the managed account and for Caddy.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
+      "name": "certificates.remove-leaf",
+      "summary": "Remove a development leaf for the managed account and for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "certificates.leaf_failed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

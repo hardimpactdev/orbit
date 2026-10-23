@@ -45,6 +45,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
+use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
 it('creates an Instance Route with the native production projector on a separate Router', function (): void {
@@ -425,7 +426,7 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
     $firewall = new Orb199ProductionFirewall;
     $projector = new NativeProductionRouteProjector(
         $productionPhp,
-        new RemoteAppDevCertificateManager($executor, $signer, $accounts),
+        new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
         $firewall,
         new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
         new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),

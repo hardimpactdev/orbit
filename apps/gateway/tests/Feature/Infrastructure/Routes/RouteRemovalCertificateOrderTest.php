@@ -455,7 +455,7 @@ function certificate_order_bind_projectors(
     $sites = new DevelopmentSiteRepository;
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
     $certificates = new RemoteAppDevCertificateManager(
-        $executor,
+        new SshCommandAgents($nodes),
         new class implements LeafCertificateSigner
         {
             public function sign(string $domain, string $certificateRequest): string

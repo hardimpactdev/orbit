@@ -234,14 +234,6 @@ pub enum MarkerInput {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Done {}
 
-fn group_id(name: &str) -> Option<u32> {
-    let name = std::ffi::CString::new(name).ok()?;
-    // SAFETY: getgrnam reads a NUL-terminated name and returns null or a pointer valid until the next call.
-    let group = unsafe { libc::getgrnam(name.as_ptr()) };
-    // SAFETY: a non-null result points at a group entry.
-    (!group.is_null()).then(|| unsafe { (*group).gr_gid })
-}
-
 fn remove(path: &Path) -> io::Result<()> {
     match fs::remove_file(path) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
@@ -254,7 +246,7 @@ fn awake(marker: &Path) -> io::Result<()> {
     if !directory.is_dir() {
         fs::DirBuilder::new().mode(0o755).create(directory)?;
     }
-    let caddy = group_id("caddy").ok_or(io::ErrorKind::NotFound)?;
+    let caddy = super::caddy::group_id("caddy").ok_or(io::ErrorKind::NotFound)?;
     rustix::fs::chown(
         directory,
         Some(rustix::fs::Uid::ROOT),

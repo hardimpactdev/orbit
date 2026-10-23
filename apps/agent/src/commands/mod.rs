@@ -2,10 +2,12 @@
 
 pub mod agent;
 pub mod application_log;
+pub mod caddy;
 pub mod caddy_access;
 pub mod clone_candidate;
 pub mod dependencies;
 pub mod deploy_step;
+pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
 pub mod environment;
@@ -103,6 +105,12 @@ pub fn all() -> Vec<Entry> {
         entry::<firewall::FirewallStatus>(),
         entry::<firewall::ChangeFirewall>(),
         entry::<tls_check::VerifyCertificate>(),
+        entry::<caddy::InstallCertificate>(),
+        entry::<caddy::RemoveCertificate>(),
+        entry::<dev_certificates::RequestLeaf>(),
+        entry::<dev_certificates::PublishLeaf>(),
+        entry::<dev_certificates::InspectLeaf>(),
+        entry::<dev_certificates::RemoveLeaf>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

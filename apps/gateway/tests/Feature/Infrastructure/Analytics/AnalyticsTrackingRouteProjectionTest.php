@@ -301,7 +301,7 @@ describe('analytics tracking Route removal', function (): void {
         $sites = new DevelopmentSiteRepository;
         $projector = new NativeRouteRemovalProjector(
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevCertificateManager($executor, $signer, $accounts),
+            new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
             new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
             new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
         );
