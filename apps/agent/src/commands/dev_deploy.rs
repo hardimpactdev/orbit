@@ -3,7 +3,7 @@
 //! each step take the same lock without waiting. These replace the Bash of `DevelopmentCheckoutProgram`, check for
 //! check.
 
-use super::deploy_step::{run_program, with_live, DeployStepError, RunDeployStepOutput};
+use super::deploy_step::{run_program, with_live, DeployStepError, Program, RunDeployStepOutput};
 use super::dev_source::fetch_options;
 use super::source::{
     canonical, exists, git, git_in, git_output, is_real_directory, is_symlink, origin_url,
@@ -92,23 +92,7 @@ impl Checkout {
 
     /// The lifecycle lock, held until the value drops. Setup and teardown steps hold it while they run.
     fn lock(&self) -> Result<fs::File, DevDeployError> {
-        let directory = fs::File::open(&self.home).map_err(|_| failed("open the checkout"))?;
-        check(!is_symlink(&self.home), "the checkout is a directory")?;
-        let opened = fs::metadata(format!(
-            "/proc/self/fd/{}",
-            std::os::fd::AsRawFd::as_raw_fd(&directory)
-        ));
-        let named = fs::symlink_metadata(&self.home);
-        check(
-            matches!((opened, named), (Ok(opened), Ok(named)) if opened.dev() == named.dev() && opened.ino() == named.ino()),
-            "the lock holds the checkout",
-        )?;
-        rustix::fs::flock(
-            &directory,
-            rustix::fs::FlockOperation::NonBlockingLockExclusive,
-        )
-        .map_err(|_| DevDeployError::Busy {})?;
-        Ok(directory)
+        lifecycle_lock(&self.home)
     }
 
     fn git(&self, arguments: &[&str]) -> Option<String> {
@@ -117,6 +101,27 @@ impl Checkout {
         git_output(&self.home, &all, true)
             .map(|output| String::from_utf8_lossy(&output).into_owned())
     }
+}
+
+/// The lifecycle lock of a checkout: an exclusive `flock` on the directory itself, so it leaves no file behind.
+fn lifecycle_lock(home: &Path) -> Result<fs::File, DevDeployError> {
+    let directory = fs::File::open(home).map_err(|_| failed("open the checkout"))?;
+    check(!is_symlink(home), "the checkout is a directory")?;
+    let opened = fs::metadata(format!(
+        "/proc/self/fd/{}",
+        std::os::fd::AsRawFd::as_raw_fd(&directory)
+    ));
+    let named = fs::symlink_metadata(home);
+    check(
+        matches!((opened, named), (Ok(opened), Ok(named)) if opened.dev() == named.dev() && opened.ino() == named.ino()),
+        "the lock holds the checkout",
+    )?;
+    rustix::fs::flock(
+        &directory,
+        rustix::fs::FlockOperation::NonBlockingLockExclusive,
+    )
+    .map_err(|_| DevDeployError::Busy {})?;
+    Ok(directory)
 }
 
 // ---- target ------------------------------------------------------------------------------------------------------
@@ -399,12 +404,15 @@ pub fn step(
         .and_then(|mut handle| handle.write_all(input.script.as_bytes()))
         .map_err(|_| failed("write the step"))?;
     let result = run_program(
-        None,
-        &checkout.home,
-        &file,
-        &input.step,
-        &input.secrets,
-        Duration::from_secs(input.timeout_seconds),
+        &Program {
+            user: None,
+            directory: &checkout.home,
+            file: &file,
+            step: &input.step,
+            secrets: &input.secrets,
+            environment: &BTreeMap::new(),
+            timeout: Duration::from_secs(input.timeout_seconds),
+        },
         live,
     );
     let _ = fs::remove_file(&file);
@@ -436,6 +444,77 @@ impl Command for RunStep {
 
     fn run(input: StepInput, _: &Context) -> Result<RunDeployStepOutput, DevDeployError> {
         with_live(input.operation, |live| step(&input, live))
+    }
+}
+
+// ---- a setup or teardown step ------------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleInput {
+    /// Any Instance checkout of this account, by its canonical path.
+    pub checkout: PathBuf,
+    /// The Project step's program, which runs with `bash -eu` in the checkout.
+    pub script: String,
+    pub step: String,
+    pub timeout_seconds: u64,
+    /// Variables the step sees beside the account's own, such as `VP_HOME` and the seed.
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
+}
+
+/// Runs one Project setup or teardown step with the lifecycle lock held and not inherited, as `step` runs a deploy
+/// step. Another step in the checkout refuses it at once with `instances.lifecycle_busy`.
+pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, DevDeployError> {
+    check(
+        input.checkout.is_absolute() && canonical(&input.checkout),
+        "the checkout is a canonical path",
+    )?;
+    let _lock = lifecycle_lock(&input.checkout)?;
+    let file = std::env::temp_dir().join(format!("orbit-lifecycle-{:016x}", rand::random::<u64>()));
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&file)
+        .and_then(|mut handle| handle.write_all(input.script.as_bytes()))
+        .map_err(|_| failed("write the step"))?;
+    let result = run_program(
+        &Program {
+            user: None,
+            directory: &input.checkout,
+            file: &file,
+            step: &input.step,
+            secrets: &[],
+            environment: &input.environment,
+            timeout: Duration::from_secs(input.timeout_seconds),
+        },
+        None,
+    );
+    let _ = fs::remove_file(&file);
+    result.map_err(|error| match error {
+        DeployStepError::StartFailed { reason } => DevDeployError::StepFailed { step: reason },
+        DeployStepError::Invalid { check } => DevDeployError::Invalid { check },
+    })
+}
+
+pub struct RunLifecycleStep;
+
+impl Command for RunLifecycleStep {
+    const NAME: &'static str = "instances.run-lifecycle-step";
+    const SUMMARY: &'static str = "Run a Project setup or teardown step in an Instance checkout.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(3600);
+    type Input = LifecycleInput;
+    type Output = RunDeployStepOutput;
+    type Error = DevDeployError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+
+    fn run(input: LifecycleInput, _: &Context) -> Result<RunDeployStepOutput, DevDeployError> {
+        lifecycle_step(&input)
     }
 }
 

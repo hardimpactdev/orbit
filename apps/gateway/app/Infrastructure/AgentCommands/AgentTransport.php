@@ -13,6 +13,12 @@ use App\Infrastructure\Processes\ProtectedInput;
  */
 interface AgentTransport
 {
+    /**
+     * The most result bytes a transport keeps. The agent bounds its own output, so a result is never cut, even when
+     * every byte of a step's 128 KiB output needs a six-byte JSON escape.
+     */
+    public const int ResultBytes = 4_194_304;
+
     /** `linux` or `macos`. */
     public function platform(): string;
 

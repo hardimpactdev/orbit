@@ -287,3 +287,85 @@ fn stops_a_step_and_every_process_it_started_at_its_timeout() {
         "the step's background process stopped"
     );
 }
+
+fn lifecycle_checkout() -> PathBuf {
+    let path = fs::canonicalize(std::env::temp_dir())
+        .unwrap()
+        .join(format!("orbit-lifecycle-{:016x}", rand::random::<u64>()));
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+fn lifecycle_input(checkout: &Path, script: &str) -> LifecycleInput {
+    LifecycleInput {
+        checkout: checkout.to_path_buf(),
+        script: script.into(),
+        step: "setup".into(),
+        timeout_seconds: 30,
+        environment: [("ORBIT_SEED_PATH".to_string(), "/seed".to_string())].into(),
+    }
+}
+
+#[test]
+fn a_lifecycle_step_runs_in_the_checkout_with_its_environment_and_reports_its_exit() {
+    let checkout = lifecycle_checkout();
+
+    let output = lifecycle_step(&lifecycle_input(
+        &checkout,
+        "pwd\necho \"$ORBIT_SEED_PATH\" >&2\nexit 4\n",
+    ))
+    .unwrap();
+
+    assert_eq!(output.exit_code, 4);
+    assert!(output.output.iter().any(
+        |chunk| chunk.stream == "stdout" && chunk.value == format!("{}\n", checkout.display())
+    ));
+    assert!(output
+        .output
+        .iter()
+        .any(|chunk| chunk.stream == "stderr" && chunk.value == "/seed\n"));
+    assert_eq!(
+        lifecycle_step(&lifecycle_input(&checkout, "true\n"))
+            .unwrap()
+            .exit_code,
+        0
+    );
+    let _ = fs::remove_dir_all(&checkout);
+}
+
+#[test]
+fn a_lifecycle_step_refuses_a_busy_or_non_canonical_checkout_before_it_runs() {
+    let checkout = lifecycle_checkout();
+    let marker = checkout.join("ran");
+    let script = format!("touch {}\n", marker.display());
+    let held = fs::File::open(&checkout).unwrap();
+    rustix::fs::flock(&held, rustix::fs::FlockOperation::LockExclusive).unwrap();
+
+    assert_eq!(
+        lifecycle_step(&lifecycle_input(&checkout, &script)).err(),
+        Some(DevDeployError::Busy {})
+    );
+    drop(held);
+    let link = checkout.with_extension("link");
+    std::os::unix::fs::symlink(&checkout, &link).unwrap();
+    assert!(matches!(
+        lifecycle_step(&lifecycle_input(&link, &script)),
+        Err(DevDeployError::Invalid { .. })
+    ));
+    assert!(!marker.exists());
+    let _ = fs::remove_file(&link);
+    let _ = fs::remove_dir_all(&checkout);
+}
+
+#[test]
+fn a_lifecycle_step_reports_that_its_own_bound_stopped_it() {
+    let checkout = lifecycle_checkout();
+    let mut input = lifecycle_input(&checkout, "sleep 5\n");
+    input.timeout_seconds = 1;
+
+    let output = lifecycle_step(&input).unwrap();
+
+    assert!(output.timed_out);
+    assert_ne!(output.exit_code, 0);
+    let _ = fs::remove_dir_all(&checkout);
+}

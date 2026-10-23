@@ -25,7 +25,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
@@ -180,7 +180,7 @@ function reserved_removal_source(
     bool $force,
     ?ArrayObject $steps = null,
     ?Throwable $withdrawalFailure = null,
-): LifecycleSshExecutor {
+): LifecycleAgent {
     $steps ??= new ArrayObject;
     $instance->loadMissing('project');
     $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
@@ -236,7 +236,7 @@ function reserved_removal_source(
         'timeout_seconds' => 30,
         'position' => 0,
     ]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     return $transport;

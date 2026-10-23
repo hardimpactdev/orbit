@@ -6,20 +6,21 @@ namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 final readonly class ProjectLifecycleRunner
 {
     public function __construct(
         private ProjectLifecycleStepStore $steps,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private CommandDeadline $deadline,
         private VpToolManager $vp,
         private GatewaySetupSteps $gatewaySteps,
@@ -46,12 +47,6 @@ final readonly class ProjectLifecycleRunner
                 message: 'The Instance has no checkout.',
                 status: 422,
             );
-        }
-
-        $program = file_get_contents(resource_path('instances/lifecycle.py'));
-
-        if (! is_string($program) || $program === '') {
-            throw new ResourceOperationException('instance.setup_unavailable', 'The lifecycle runner is unavailable.', 503);
         }
 
         $vpHome = null;
@@ -87,28 +82,11 @@ final readonly class ProjectLifecycleRunner
                 $seed = $phase === LifecyclePhase::Setup ? Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']) : null;
                 // A default records its own checkout as its seed; its setup has no other seed.
                 $seeded = $seed !== null && $seed->seed_path !== $checkout;
-                $input = ProtectedInput::fromString(json_encode([
-                    'checkout' => $checkout,
-                    'command' => $command,
-                    'environment' => [
-                        'VP_HOME' => $vpHome,
-                        'ORBIT_SEED_PATH' => $seeded ? ($seed->seed_path ?? '') : '',
-                        'ORBIT_SEED_COMMIT' => $seeded ? ($seed->seed_commit ?? '') : '',
-                    ],
-                    'timeout' => $timeout - 5.0,
-                ], JSON_THROW_ON_ERROR));
-                $this->ssh->execute(
-                    $instance->node,
-                    new RemoteCommand(
-                        arguments: ['python3', '-c', $program],
-                        protectedInput: $input,
-                        maxOutputBytes: 1024,
-                        timeout: $timeout,
-                    ),
-                    $step->name,
-                    $phase === LifecyclePhase::Setup ? 'instance.setup_step_failed' : 'instance.teardown_step_failed',
-                    $timeout,
-                );
+                $this->runStep($instance, $step, $phase, $command, $timeout, [
+                    'VP_HOME' => $vpHome,
+                    'ORBIT_SEED_PATH' => $seeded ? ($seed->seed_path ?? '') : '',
+                    'ORBIT_SEED_COMMIT' => $seeded ? ($seed->seed_commit ?? '') : '',
+                ]);
             } catch (Throwable $exception) {
                 if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded' && ($exception->details['outcome'] ?? null) !== 'deadline') {
                     throw $this->deadlineCut($phase, $step, $budget, $exception);
@@ -147,8 +125,7 @@ final readonly class ProjectLifecycleRunner
 
                 // The step ran out of the time the request had left, not out of its own timeout.
                 $timedOut = $result?->exitCode === 124
-                    || $exception instanceof ProcessTimedOutException
-                    || $exception->getPrevious() instanceof ProcessTimedOutException;
+                    || ($exception instanceof AgentRunnerFailure && $exception->kind === AgentRunnerFailure::Timeout);
 
                 if ($timedOut && $budget < $step->timeoutSeconds) {
                     throw $this->deadlineCut($phase, $step, $budget, $exception);
@@ -162,12 +139,53 @@ final readonly class ProjectLifecycleRunner
                     status: 422,
                     details: ['step' => $step->name, 'outcome' => $confirmed ? 'failed' : 'unconfirmed'],
                 );
-            } finally {
-                $input?->close();
             }
         }
 
         return true;
+    }
+
+    /**
+     * Runs one step through the agent's `instances.run-lifecycle-step` and fails it with a result in the shape the
+     * caller maps: exit 75 for a busy checkout, 124 when the step's own bound stopped it, 126 or 127 for a missing
+     * command, and 1 for any other failure. The result keeps the last KiB of the step's standard error.
+     *
+     * @param  array<string, string>  $environment
+     */
+    private function runStep(Instance $instance, LifecycleStep $step, LifecyclePhase $phase, string $command, float $timeout, array $environment): void
+    {
+        try {
+            $answer = $this->agents->run($instance->node, 'instances.run-lifecycle-step', [
+                'checkout' => $instance->checkout_path,
+                'script' => $command,
+                'step' => $step->name,
+                'timeout_seconds' => max(1, (int) floor($timeout - 5.0)),
+                'environment' => $environment,
+            ], microtime(true) + $timeout);
+            $stderr = implode('', array_map(
+                static fn (array $chunk): string => StoredValue::string($chunk['value'] ?? null),
+                array_filter(is_array($answer['output'] ?? null) ? $answer['output'] : [], static fn (mixed $chunk): bool => is_array($chunk) && ($chunk['stream'] ?? null) === 'stderr'),
+            ));
+            $exit = StoredValue::integer($answer['exit_code'] ?? 1, 1);
+            $result = new CommandResult(
+                ($answer['timed_out'] ?? false) === true ? 124 : (in_array($exit, [0, 126, 127], true) ? $exit : 1),
+                '',
+                substr($stderr, -1024),
+                0,
+                false,
+            );
+        } catch (AgentCommandRefused $refusal) {
+            $result = new CommandResult($refusal->errorCode === 'instances.lifecycle_busy' ? 75 : 125, '', $refusal->getMessage(), 0, false);
+        }
+
+        if (! $result->succeeded()) {
+            throw new RuntimeConvergenceException(
+                step: $step->name,
+                errorCode: $phase === LifecyclePhase::Setup ? 'instance.setup_step_failed' : 'instance.teardown_step_failed',
+                message: "App development step [{$step->name}] failed on node [{$instance->node->name}].",
+                result: $result,
+            );
+        }
     }
 
     /**

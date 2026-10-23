@@ -13,7 +13,7 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 
 function ci_setup_run(string $checkout, string $command): Process
 {
@@ -114,7 +114,7 @@ describe('CI main cache setup', function (): void {
         $store = new ProjectLifecycleStepStore;
         $store->create($project, LifecyclePhase::Setup, new LifecycleStep('ci-caches', LifecycleStep::ImportCiCaches, 60), null, null);
         $store->create($project, LifecyclePhase::Teardown, new LifecycleStep('ci-caches', LifecycleStep::ImportCiCaches, 60), null, null);
-        $transport = new LifecycleSshExecutor(local: true);
+        $transport = new LifecycleAgent(local: true);
 
         expect($transport->runner()->run($instance, LifecyclePhase::Setup))->toBeTrue()
             ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)

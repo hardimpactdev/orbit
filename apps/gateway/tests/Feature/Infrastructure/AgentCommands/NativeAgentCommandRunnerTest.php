@@ -295,3 +295,26 @@ it('keeps the bootstrap connection, with the command deadline, for every call ov
 
     expect($connections[0])->toEqual(new SshConnection('192.0.2.10', 'root', 2222, '/key', '/known', commandTimeout: 42.0, proxyJump: $jump, hostIdentity: 'SHA256:pinned'));
 });
+
+it('keeps a whole agent result above the default process output limit', function (): void {
+    $result = json_encode(['ok' => true, 'data' => ['output' => str_repeat('x', 200_000)]], JSON_THROW_ON_ERROR);
+    $ssh = new class($result) implements SshExecutor
+    {
+        public ?RemoteCommand $command = null;
+
+        public function __construct(private string $result) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->command = $command;
+
+            return new CommandResult(0, $this->result, '', 1, false);
+        }
+    };
+    $keys = new FleetTestSsh;
+
+    new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys)->run(['true'], ProtectedInput::fromString(''), 42.0);
+
+    expect($ssh->command?->maxOutputBytes)->toBe(AgentTransport::ResultBytes)
+        ->and(AgentTransport::ResultBytes)->toBeGreaterThan(6 * 131_072);
+});

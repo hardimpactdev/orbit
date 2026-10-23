@@ -136,7 +136,7 @@ final class FindingRuleAnalysis
                 $directory.'/phpstan-var.php',
                 $directory.'/psalm-var.php',
                 $directory.'/MethodBodyVar.php',
-                __DIR__.'/LifecycleSshExecutor.php',
+                __DIR__.'/LifecycleAgent.php',
             ]);
             $allowed = self::analyse([$directory.'/Allowed.php', $directory.'/outside-method.php']);
 

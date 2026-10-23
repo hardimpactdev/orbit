@@ -592,7 +592,18 @@ pub fn update(
         rand::random::<u64>()
     ));
     std::fs::write(&file, script).map_err(|_| invalid("the update can be written"))?;
-    let result = run_program(None, directory, &file, "update", &[], deadline, None);
+    let result = run_program(
+        &super::deploy_step::Program {
+            user: None,
+            directory,
+            file: &file,
+            step: "update",
+            secrets: &[],
+            environment: &std::collections::BTreeMap::new(),
+            timeout: deadline,
+        },
+        None,
+    );
     let _ = std::fs::remove_file(&file);
     let RunDeployStepOutput { exit_code, .. } = result.map_err(|_| invalid("the update starts"))?;
     // The step runner reports a stop at the deadline as TERM's 143; an update reports it as `timeout` does.

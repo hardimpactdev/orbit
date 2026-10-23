@@ -90,7 +90,7 @@ use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 use Tests\Support\SshCommandAgents;
 use Tests\TestCase;
 
@@ -1660,7 +1660,7 @@ it('removes interrupted pre-activation checkouts with no failure record without 
     $instance->update(['status' => $state, 'failed_step' => null, 'error_code' => null, 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
     expect($instance->source_prepare_id)->not->toBeNull();
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->deleteJson('/api/v1/instances/'.$instance->id, ['force' => $force])->assertOk();
     expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0)->and($transport->inputs)->toBe([]);
@@ -3280,7 +3280,7 @@ it('creates or resumes an unrouted monorepo default and runs setup once', functi
         'timeout_seconds' => 30,
         'position' => 0,
     ]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     if ($resume) {
@@ -3327,7 +3327,7 @@ it('creates or resumes an unrouted monorepo default and runs setup once', functi
 
 it('runs setup once on create and skips it for an already active instance', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $input = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
     $this->postJson('/api/v1/instances', $input)->assertCreated();
@@ -3338,7 +3338,7 @@ it('runs setup once on create and skips it for an already active instance', func
 it('busy setup retry points to instance:setup instead of treating the Instance as complete', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
+    $transport = new LifecycleAgent(result: static fn (): int => 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy', 'branch' => 'dev'])
@@ -3386,7 +3386,7 @@ it('keeps setup pending when create is interrupted after activation before the b
             throw new RuntimeException('Simulated interruption before setup result persistence.');
         }
     });
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $data = new CreateInstanceData(
         projectId: $this->orbitApp->id,
@@ -3421,7 +3421,7 @@ it('keeps the Instance when rollback teardown encounters a busy lifecycle lock',
     foreach (['setup', 'teardown'] as $position => $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => $position]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'busy-rollback', 'branch' => 'dev'])
@@ -3442,7 +3442,7 @@ it('tears down and removes a newly created instance after confirmed setup failur
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
@@ -3456,7 +3456,7 @@ it('preserves unavailable setup commands through create rollback', function (int
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install-dependencies', 'command' => $command, 'timeout_seconds' => 30, 'position' => 0]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     // The real-runner tests establish Bash's 126/127 results; this exercises the create wrappers.
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === $command ? $setupExit : ($cleanup === 'unconfirmed' ? 255 : 0));
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === $command ? $setupExit : ($cleanup === 'unconfirmed' ? 255 : 0));
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     if ($cleanup === 'incomplete') {
@@ -3503,7 +3503,7 @@ it('stops setup early enough in a create that the rollback still fits the reques
     app()->instance(CommandDeadline::class, $deadline);
     $now = 300.0;
     // Both lists run until their timeout, as a remote `sleep` would.
-    $transport = new LifecycleSshExecutor(result: static function (array $input) use (&$now): int {
+    $transport = new LifecycleAgent(result: static function (array $input) use (&$now): int {
         $now += $input['timeout'];
 
         return $input['command'] === 'setup' ? 124 : 0;
@@ -3529,7 +3529,7 @@ it('names the forced destroy that finishes a create rollback whose removal did n
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
-    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
+    $transport = new LifecycleAgent(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     // The Instance this create makes is the next id; its source removal is interrupted.
     $this->removalSource->failPrepareFor = (int) Instance::query()->max('id') + 1;
@@ -3555,7 +3555,7 @@ it('names the forced destroy that finishes a create rollback whose removal did n
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
+    $transport = new LifecycleAgent(result: static fn (): int => 255);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');

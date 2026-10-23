@@ -17,7 +17,7 @@ use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
@@ -75,7 +75,7 @@ function legacy_reserved_removal_instance(): Instance
     ]);
 }
 
-function legacy_reserved_removal_source(Instance $instance, bool $force): LifecycleSshExecutor
+function legacy_reserved_removal_source(Instance $instance, bool $force): LifecycleAgent
 {
     $instance->loadMissing('project');
     $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
@@ -118,7 +118,7 @@ function legacy_reserved_removal_source(Instance $instance, bool $force): Lifecy
         'timeout_seconds' => 30,
         'position' => 0,
     ]);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
     return $transport;

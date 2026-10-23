@@ -37,7 +37,7 @@ final readonly class LocalAgentTransport implements AgentTransport
     #[\Override]
     public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
     {
-        return $this->processes->run(new ProcessInvocation($arguments, timeout: $timeout, protectedInput: $envelope));
+        return $this->processes->run(new ProcessInvocation($arguments, timeout: $timeout, protectedInput: $envelope, maxOutputBytes: self::ResultBytes));
     }
 
     #[\Override]

@@ -48,7 +48,7 @@ final readonly class SshAgentTransport implements AgentTransport
     #[\Override]
     public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
     {
-        return $this->ssh->execute($this->connection($timeout), new RemoteCommand($arguments, protectedInput: $envelope, timeout: $timeout));
+        return $this->ssh->execute($this->connection($timeout), new RemoteCommand($arguments, protectedInput: $envelope, timeout: $timeout, maxOutputBytes: self::ResultBytes));
     }
 
     #[\Override]

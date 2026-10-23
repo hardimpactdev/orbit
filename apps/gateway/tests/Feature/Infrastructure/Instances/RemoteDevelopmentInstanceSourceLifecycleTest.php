@@ -73,7 +73,7 @@ use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GitRemoteRedirect;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 use Tests\Support\LocalAgentBinary;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PlantedGitConfig;
@@ -662,7 +662,7 @@ it('removes receipt-owned crash states without failure fields teardown or unrela
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     DB::table('vite_port_assignments')->insert(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'port' => 5200]);
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
-    $teardown = new LifecycleSshExecutor;
+    $teardown = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
     // Removal must not need the origin to clean an interrupted create.
     $this->files->deleteDirectory($this->repository);
@@ -686,7 +686,7 @@ it('keeps normal teardown for a healthy receipt-owned unrouted task workspace', 
     $resolution = $this->source->resolve($instance);
     $instance->update(['status' => InstanceState::SourceResolved, 'task_workspace_routed' => false, 'branch' => $resolution->branch, 'starting_commit' => $resolution->startingCommit]);
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'normal-teardown', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $teardown = new LifecycleSshExecutor;
+    $teardown = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
     $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
     $removal = $action->execute($instance, true);
@@ -738,7 +738,7 @@ it('removes a checkout_prepared failed create with its partial checkout Route an
     $route->update(['status' => RouteStatus::Failed, 'failed_step' => 'source_resolved', 'error_code' => 'instance.branch_resolution_failed']);
     DB::table('vite_port_assignments')->insert(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'port' => 5200]);
     ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-    $teardown = new LifecycleSshExecutor;
+    $teardown = new LifecycleAgent;
     app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
     $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
 

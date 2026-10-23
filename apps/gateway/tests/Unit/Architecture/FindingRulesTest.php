@@ -209,7 +209,7 @@ it('reports method-body var overrides while allowing declaration docblocks', fun
         ->and($messages)->toHaveCount(1)
         ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
 
-    $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
+    $existingSource = realpath(__DIR__.'/../../Support/LifecycleAgent.php');
     $sourceMessages = $result['files'][$existingSource]['messages'] ?? [];
     $sourceOverrides = array_values(array_filter(
         $sourceMessages,

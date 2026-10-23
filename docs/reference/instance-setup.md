@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
-  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/instances/{lifecycle.py,ci-caches.sh}}
+  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/instances/ci-caches.sh}
   - apps/agent/src/commands/{dev_source,dev_source_tests}.rs
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
@@ -117,7 +117,7 @@ That root is the checkout. A `default` Instance deploys in its checkout too, so 
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
-Commands read no input. Orbit discards their stdout and retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+The agent's `instances.run-lifecycle-step` runs each step. Commands read no input. Orbit retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance: an exclusive `flock` on its checkout directory, so the lock leaves no file behind. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 

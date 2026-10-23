@@ -9,6 +9,7 @@ use crate::command_errors;
 use crate::logs::redact::Redactor;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::{
     io::{BufRead, BufReader, Read, Write},
     os::unix::fs::OpenOptionsExt,
@@ -68,6 +69,8 @@ pub struct Chunk {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct RunDeployStepOutput {
     pub exit_code: i32,
+    /// Whether the step's own bound stopped it.
+    pub timed_out: bool,
     /// The redacted output in the order it was written.
     pub output: Vec<Chunk>,
     /// Whether older output was dropped.
@@ -84,7 +87,15 @@ fn redact(redactor: &mut Redactor, line: &str, secrets: &[String]) -> Option<Str
 }
 
 /// Keeps the newest output within `OUTPUT_LIMIT`.
-fn keep(output: &mut Vec<Chunk>, size: &mut usize, truncated: &mut bool, chunk: Chunk) {
+fn keep(output: &mut Vec<Chunk>, size: &mut usize, truncated: &mut bool, mut chunk: Chunk) {
+    if chunk.value.len() > OUTPUT_LIMIT {
+        let mut start = chunk.value.len() - OUTPUT_LIMIT;
+        while !chunk.value.is_char_boundary(start) {
+            start += 1;
+        }
+        chunk.value = chunk.value[start..].to_string();
+        *truncated = true;
+    }
     *size += chunk.value.len();
     output.push(chunk);
     while *size > OUTPUT_LIMIT && output.len() > 1 {
@@ -192,12 +203,15 @@ pub fn run(
         });
     }
     let result = run_program(
-        Some(&input.user),
-        &release,
-        &file,
-        &input.step,
-        &input.secrets,
-        Duration::from_secs(input.timeout_seconds),
+        &Program {
+            user: Some(&input.user),
+            directory: &release,
+            file: &file,
+            step: &input.step,
+            secrets: &input.secrets,
+            environment: &BTreeMap::new(),
+            timeout: Duration::from_secs(input.timeout_seconds),
+        },
         live,
     );
     let _ = std::fs::remove_file(&file);
@@ -206,17 +220,33 @@ pub fn run(
 
 /// Runs a step's program file with `bash -eu` in its own session in `directory`, as `user` when one is given, and
 /// keeps its redacted output. Each line also goes to `live`, when the step publishes its lines.
+/// A step program to run: its account, directory, script file, name, secret values, environment, and bound.
+pub(super) struct Program<'a> {
+    pub user: Option<&'a str>,
+    pub directory: &'a Path,
+    pub file: &'a Path,
+    pub step: &'a str,
+    pub secrets: &'a [String],
+    pub environment: &'a BTreeMap<String, String>,
+    pub timeout: Duration,
+}
+
 pub(super) fn run_program(
-    user: Option<&str>,
-    directory: &Path,
-    file: &Path,
-    step: &str,
-    secrets: &[String],
-    timeout: Duration,
+    program: &Program,
     live: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
 ) -> Result<RunDeployStepOutput, DeployStepError> {
+    let Program {
+        user,
+        directory,
+        file,
+        step,
+        secrets,
+        environment,
+        timeout,
+    } = *program;
     let mut command = Process::new("setsid");
     command
+        .envs(environment)
         .args([
             "--wait",
             "bash",
@@ -291,11 +321,11 @@ pub(super) fn run_program(
         match child.try_wait() {
             Ok(Some(status)) => {
                 stop();
-                break Ok(status);
+                break Ok((status, false));
             }
             Ok(None) if std::time::Instant::now() >= end => {
                 stop();
-                break child.wait();
+                break child.wait().map(|status| (status, true));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(error) => break Err(error),
@@ -333,7 +363,7 @@ pub(super) fn run_program(
     for reader in readers {
         let _ = reader.join();
     }
-    let status = waiter
+    let (status, timed_out) = waiter
         .join()
         .map_err(|_| DeployStepError::StartFailed {
             reason: "the step's waiter stopped".into(),
@@ -346,6 +376,7 @@ pub(super) fn run_program(
     });
     Ok(RunDeployStepOutput {
         exit_code,
+        timed_out,
         output,
         truncated,
     })
@@ -485,5 +516,21 @@ mod tests {
         }
         assert_eq!(output.len(), 2);
         assert!(truncated);
+    }
+
+    #[test]
+    fn keeps_only_the_tail_of_a_line_above_the_limit() {
+        let (mut output, mut size, mut truncated) = (Vec::new(), 0, false);
+        keep(
+            &mut output,
+            &mut size,
+            &mut truncated,
+            Chunk {
+                stream: "stderr",
+                value: format!("{}tail\n", "x".repeat(OUTPUT_LIMIT * 2)),
+            },
+        );
+        assert_eq!(output[0].value.len(), OUTPUT_LIMIT);
+        assert!(output[0].value.ends_with("tail\n") && truncated);
     }
 }

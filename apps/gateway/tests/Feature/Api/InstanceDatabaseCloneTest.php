@@ -49,7 +49,7 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Tests\Support\FakeDatabaseServerAdmin;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 
 const DATABASE_CLONE_ROOT_SECRET = 'clone-root-secret-77ab';
 
@@ -223,7 +223,7 @@ describe('instance:create database clone', function (): void {
         ]);
         ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'migrate', 'command' => 'php artisan migrate', 'timeout_seconds' => 30, 'position' => 0]);
         $copiesAtSetup = null;
-        $transport = new LifecycleSshExecutor(result: function () use (&$copiesAtSetup): int {
+        $transport = new LifecycleAgent(result: function () use (&$copiesAtSetup): int {
             $copiesAtSetup = count($this->admin->copies);
 
             return 0;
@@ -447,7 +447,7 @@ describe('interrupted clones', function (): void {
             'password' => 'default-secret',
         ]);
         ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'migrate', 'command' => 'php artisan migrate', 'timeout_seconds' => 30, 'position' => 0]);
-        $this->transport = new LifecycleSshExecutor;
+        $this->transport = new LifecycleAgent;
         app()->instance(ProjectLifecycleRunner::class, $this->transport->runner());
     });
 
@@ -582,7 +582,7 @@ describe('instance:create with database_server', function (): void {
         ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'migrate', 'command' => 'php artisan migrate', 'timeout_seconds' => 30, 'position' => 0]);
         $this->databasesAtSetup = null;
         $this->setupExit = 0;
-        $this->transport = new LifecycleSshExecutor(result: function (): int {
+        $this->transport = new LifecycleAgent(result: function (): int {
             $this->databasesAtSetup = DatabaseConnectionTarget::query()->where('prefix', 'DB')->count();
             $this->envAtSetup = $this->environment->contents;
 
@@ -948,7 +948,7 @@ it('runs Project setup after the database clone without an automatic dependency 
     ]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 30, 'position' => 0]);
     $clonesAtSetup = null;
-    $transport = new LifecycleSshExecutor(result: function () use (&$clonesAtSetup): int {
+    $transport = new LifecycleAgent(result: function () use (&$clonesAtSetup): int {
         $clonesAtSetup = count($this->sqlite->copies);
 
         return 0;

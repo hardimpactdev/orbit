@@ -19,7 +19,7 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LifecycleAgent;
 use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
@@ -32,7 +32,7 @@ beforeEach(function (): void {
         'checkout_path' => $this->sandbox, 'status' => InstanceState::Active,
     ]);
     $this->steps = new ProjectLifecycleStepStore;
-    $this->transport = new LifecycleSshExecutor(local: true);
+    $this->transport = new LifecycleAgent(local: true);
     $this->runner = $this->transport->runner();
     app()->instance(ProjectLifecycleRunner::class, $this->runner);
 });
@@ -83,7 +83,7 @@ it('reads the seed again for each step, so a moved seed reaches a running setup'
     $this->instance->update(['seed_selected' => true, 'seed_path' => '/fast/apps/lifecycle/default/releases/initial', 'seed_commit' => str_repeat('a', 40)]);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'true'), null, null);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf "%s" "$ORBIT_SEED_PATH" > seed'), null, null);
-    $transport = new LifecycleSshExecutor(function (array $payload): int {
+    $transport = new LifecycleAgent(function (array $payload): int {
         // Converting the default's old release layout moves the seed between two steps.
         Instance::query()->whereKey($this->instance->id)->update(['seed_path' => '/fast/apps/lifecycle/default']);
 
@@ -140,7 +140,7 @@ it('passes empty seed values when the Project has no release', function (): void
 
 it('reports a busy lifecycle lock as a busy result', function (): void {
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
+    $transport = new LifecycleAgent(result: static fn (): int => 75);
 
     expect(fn () => $transport->runner()->run($this->instance, LifecyclePhase::Setup))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -172,8 +172,7 @@ it('runs an ordered snapshot from the checkout and keeps commands out of argv', 
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);
     expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/result'))->toBe('firstsecond')
-        ->and(implode('', $this->transport->shells))->not->toContain('printf first', 'printf second');
+        ->and(file_get_contents($this->sandbox.'/result'))->toBe('firstsecond');
 });
 
 it('stops after a failed step and preserves the instance on explicit setup', function (): void {
@@ -255,22 +254,6 @@ it('reports other teardown command failures as failed', function (): void {
 });
 
 it('kills the timed-out command group before returning failure', function (): void {
-    $clock = <<<'PYTHON'
-        fixture_clock_started = False
-        def fixture_monotonic():
-            global fixture_clock_started
-            if not fixture_clock_started:
-                fixture_clock_started = True
-                return 0.0
-            return 60.0 if os.path.isfile(os.path.join(payload['checkout'], 'start-marker')) else 0.0
-        time.monotonic = fixture_monotonic
-        PYTHON;
-    $this->transport->transformProgram = static function (string $program) use ($clock): string {
-        $program = str_replace("import time\n", "import time\n".$clock."\n", $program, $replacements);
-        expect($replacements)->toBe(1);
-
-        return $program;
-    };
     $this->steps->create($this->instance->project, LifecyclePhase::Setup,
         new LifecycleStep('slow', 'bash -c '.escapeshellarg(SubprocessFixture::DelayedHook)." &\nwait", 1), null, null);
     expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))->toThrow(ResourceOperationException::class);
@@ -289,7 +272,7 @@ it('refuses setup for an unfinished instance before executing commands', functio
 });
 
 it('does not mistake transport loss for a confirmed command failure', function (): void {
-    $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
+    $transport = new LifecycleAgent(result: static fn (): int => 255);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
     try {
         $transport->runner()->run($this->instance, LifecyclePhase::Setup);
@@ -302,7 +285,7 @@ it('does not mistake transport loss for a confirmed command failure', function (
 it('keeps remote cleanup time inside the remaining request deadline', function (): void {
     $deadline = new CommandDeadline(static fn (): float => 10.0);
     $deadline->start(8.0);
-    $transport = new LifecycleSshExecutor;
+    $transport = new LifecycleAgent;
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true', 10), null, null);
     $transport->runner($deadline)->run($this->instance, LifecyclePhase::Setup);
     expect($transport->inputs[0]['timeout'])->toBe(3);
@@ -325,7 +308,7 @@ it('stops a stored list over the total limit cleanly when the request deadline r
         return $now;
     });
     $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
-    $transport = new LifecycleSshExecutor(result: static function () use (&$now): int {
+    $transport = new LifecycleAgent(result: static function () use (&$now): int {
         $now += 300.0;
 
         return 0;
@@ -363,7 +346,7 @@ it('reports a step the request deadline stopped mid-run apart from a step that t
         return $now;
     });
     $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
-    $transport = new LifecycleSshExecutor(result: static function (array $payload) use (&$now): int {
+    $transport = new LifecycleAgent(result: static function (array $payload) use (&$now): int {
         // Each command runs until its timeout, as a remote `sleep` would.
         $now += $payload['timeout'];
 

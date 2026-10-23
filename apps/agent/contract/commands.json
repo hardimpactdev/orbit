@@ -1504,6 +1504,24 @@
       ]
     },
     {
+      "name": "instances.run-lifecycle-step",
+      "summary": "Run a Project setup or teardown step in an Instance checkout.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ]
+    },
+    {
       "name": "instances.prepare-production-user",
       "summary": "Create a production Instance's system account and private home, or check them.",
       "mutates": true,
