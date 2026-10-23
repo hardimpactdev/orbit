@@ -101,8 +101,10 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             'script' => $this->environments->command($instance, $release->path, $step->name, $step->command),
             'operation' => $request->operation,
             'step' => $step->name,
+            'timeout_seconds' => $step->timeoutSeconds,
             'secrets' => app(LogRedactor::class)->valuesFor($instance),
-        ], $stepName, 'deployment.step_failed', 'App production', deadlineSeconds: $step->timeoutSeconds);
+            // The agent stops the step at its timeout; the rest leaves time for that stop and the result.
+        ], $stepName, 'deployment.step_failed', 'App production', deadlineSeconds: $step->timeoutSeconds + 30);
         $streams = ['stdout' => '', 'stderr' => ''];
 
         foreach (is_array($result['output'] ?? null) ? $result['output'] : [] as $chunk) {

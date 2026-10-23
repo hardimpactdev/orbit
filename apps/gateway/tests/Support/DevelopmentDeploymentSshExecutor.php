@@ -7,30 +7,31 @@ namespace Tests\Support;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use RuntimeException;
 
-/** Executes the real checkout programs locally, with case-local shell instrumentation. */
+/**
+ * Runs each agent command that the runner sends with the agent binary built from this checkout, locally. Git reads
+ * the fixture's global configuration, which points the Project's remote URL at the local origin.
+ */
 final class DevelopmentDeploymentSshExecutor implements SshExecutor
 {
-    /** @var array<string, string> */
-    public array $environment = [];
-
-    public function __construct(private readonly string $global) {}
+    public function __construct(private readonly string $global, private readonly string $sandbox) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $arguments = LocalAgentBinary::localArguments($command->arguments)
+            ?? throw new RuntimeException('Only agent commands reach a development Node in this fixture.');
+
         return new NativeProcessRunner()->run(new ProcessInvocation(
-            $command->arguments,
+            $arguments,
             timeout: $command->timeout ?? 30,
-            input: $command->input,
-            protectedInput: $command->protectedInput,
+            protectedInput: $command->protectedInput ?? ProtectedInput::fromString(''),
             maxOutputBytes: $command->maxOutputBytes,
-            output: $command->output,
-            cancelled: $command->cancelled,
-            terminateGraceSeconds: $command->terminateGraceSeconds,
-            environment: ['GIT_CONFIG_GLOBAL' => $this->global, 'GIT_CONFIG_NOSYSTEM' => '1', ...$this->environment],
+            environment: LocalAgentBinary::environment($this->sandbox, ['GIT_CONFIG_GLOBAL' => $this->global, 'GIT_CONFIG_NOSYSTEM' => '1']),
         ));
     }
 }

@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod deploy_step;
+pub mod dev_deploy;
 pub mod dev_source;
 pub mod instances;
 pub mod php_runtime;
@@ -72,6 +73,9 @@ pub fn all() -> Vec<Entry> {
         entry::<production::PrepareServedWebRoots>(),
         entry::<production::CheckServedWebRoots>(),
         entry::<deploy_step::RunDeployStep>(),
+        entry::<dev_deploy::ResolveTarget>(),
+        entry::<dev_deploy::CheckoutDefault>(),
+        entry::<dev_deploy::RunStep>(),
         entry::<production_home::PrepareUser>(),
         entry::<production_home::PrepareSource>(),
         entry::<production_home::ResolveSource>(),

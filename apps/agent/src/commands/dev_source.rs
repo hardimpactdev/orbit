@@ -438,7 +438,7 @@ pub struct ResolveOutput {
 }
 
 /// The `-c` options of a fetch that planted configuration cannot widen.
-fn fetch_options(protocols: &[String]) -> Vec<String> {
+pub(super) fn fetch_options(protocols: &[String]) -> Vec<String> {
     let mut options: Vec<String> = [
         "credential.helper=",
         "core.alternateRefsCommand=true",

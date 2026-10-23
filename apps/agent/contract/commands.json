@@ -468,6 +468,60 @@
     },
     {
       "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.resolve-development-target",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Fetch a development default's branch and name the commit a deploy checks out.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.checkout-development-default",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Check out a commit on a development default's branch in place.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.development_checkout_invalid",
+        "instances.checkout_dirty",
+        "instances.branch_diverged",
+        "instances.commit_not_on_branch",
+        "instances.lifecycle_busy",
+        "instances.development_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.run-development-step",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Run a development deploy step in a development default's checkout, live.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
         "instances.release_step_failed",

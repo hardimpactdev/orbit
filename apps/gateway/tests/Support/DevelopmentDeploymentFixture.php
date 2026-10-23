@@ -9,7 +9,6 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -20,7 +19,7 @@ use Illuminate\Filesystem\Filesystem;
 use Mockery;
 use Symfony\Component\Process\Process;
 
-/** Real checkout programs and Git, with only SSH replaced by local process execution. */
+/** The real agent commands and Git, with only SSH replaced by local process execution. */
 final class DevelopmentDeploymentFixture
 {
     public readonly string $sandbox;
@@ -77,7 +76,7 @@ final class DevelopmentDeploymentFixture
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 't3code-ab12', $this->sandbox.'/apps/dev935/t3code-ab12', 'HEAD']);
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 'task-935-e2e', $this->sandbox.'/apps/dev935/task-935-e2e', 'HEAD']);
 
-        $node = Node::query()->create(['name' => 'dev935', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'wireguard_ip' => '10.44.0.35']);
+        $node = Node::query()->create(['name' => 'dev935', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'wireguard_ip' => '10.44.0.35']);
         $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
         $project = Project::query()->create(['name' => 'dev935', 'slug' => 'dev935', 'type' => 'monorepo', 'repository_url' => $url, 'default_branch' => 'main', 'root' => 'public']);
         $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => $this->home, 'source_layout' => 'checkout', 'branch' => 'main', 'status' => 'active']);
@@ -88,9 +87,11 @@ final class DevelopmentDeploymentFixture
         $keys->shouldReceive('privateKeyPath')->andReturn('/unused');
         $hosts = Mockery::mock(KnownHostsStore::class);
         $hosts->shouldReceive('path')->andReturn('/unused');
-        $transport = $this->transport = new DevelopmentDeploymentSshExecutor($global);
+        $transport = $this->transport = new DevelopmentDeploymentSshExecutor($global, $this->sandbox);
+        // The insteadOf rewrite points the Project's URL at the local origin, so the fetch may use the file transport.
+        config(['orbit.git.checkout_protocols' => ['https', 'file']]);
         $this->deployment = new RemoteDevelopmentDeployment(
-            new DevelopmentSshExecutor($transport, $keys, $hosts),
+            LocalAgentBinary::runner($transport, $keys, $hosts, $this->sandbox.'/agent-delivery'),
             $accounts,
             app(CheckoutRemovalBoundary::class),
             app(RepositoryReadAccess::class),

@@ -119,6 +119,8 @@ Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lo
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
+The Node agent fetches the branch with `instances.resolve-development-target`, checks the commit out in place with `instances.checkout-development-default`, and runs each step with `instances.run-development-step`, all as the managed account. Checkout refuses tracked changes, which the deploy output lists, and a local branch with commits that the target lacks. A setup or teardown step that runs in the checkout makes each of them refuse with `instance.lifecycle_busy`.
+
 Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
 ### Production deploy steps

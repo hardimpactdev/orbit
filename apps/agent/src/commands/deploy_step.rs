@@ -52,6 +52,8 @@ pub struct RunDeployStepInput {
     #[serde(default)]
     pub operation: Option<u64>,
     pub step: String,
+    /// The step's own bound. At its end the step's process group stops, and the step fails with its output.
+    pub timeout_seconds: u64,
     /// Values that never leave the Node, such as the Instance's stored environment values.
     #[serde(default)]
     pub secrets: Vec<String>,
@@ -129,6 +131,23 @@ fn publish(channel: String, mut events: tokio::sync::mpsc::UnboundedReceiver<Val
     }
 }
 
+/// Runs `run` with a sender whose events go out on the operation's channel, when there is an operation.
+pub(super) fn with_live<T>(
+    operation: Option<u64>,
+    run: impl FnOnce(Option<tokio::sync::mpsc::UnboundedSender<Value>>) -> T,
+) -> T {
+    let Some(operation) = operation else {
+        return run(None);
+    };
+    let (events, received) = tokio::sync::mpsc::unbounded_channel();
+    let publisher =
+        std::thread::spawn(move || publish(format!("private-operation.{operation}"), received));
+    let result = run(Some(events));
+    // The sender is gone, so the publisher sends what it has and closes.
+    let _ = publisher.join();
+    result
+}
+
 pub fn run(
     input: &RunDeployStepInput,
     home_root: &Path,
@@ -172,15 +191,28 @@ pub fn run(
             reason: error.to_string(),
         });
     }
-    let result = run_program(input, &release, &file, live);
+    let result = run_program(
+        Some(&input.user),
+        &release,
+        &file,
+        &input.step,
+        &input.secrets,
+        Duration::from_secs(input.timeout_seconds),
+        live,
+    );
     let _ = std::fs::remove_file(&file);
     result
 }
 
-fn run_program(
-    input: &RunDeployStepInput,
-    release: &Path,
+/// Runs a step's program file with `bash -eu` in its own session in `directory`, as `user` when one is given, and
+/// keeps its redacted output. Each line also goes to `live`, when the step publishes its lines.
+pub(super) fn run_program(
+    user: Option<&str>,
+    directory: &Path,
     file: &Path,
+    step: &str,
+    secrets: &[String],
+    timeout: Duration,
     live: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
 ) -> Result<RunDeployStepOutput, DeployStepError> {
     let mut command = Process::new("setsid");
@@ -193,13 +225,15 @@ fn run_program(
             "umask 077; cd -- \"$1\"; exec bash -eu \"$2\"",
             "bash",
         ])
-        .arg(release)
+        .arg(directory)
         .arg(file)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    identity::drop_to(&mut command, &input.user)
-        .map_err(|reason| DeployStepError::StartFailed { reason })?;
+    if let Some(user) = user {
+        identity::drop_to(&mut command, user)
+            .map_err(|reason| DeployStepError::StartFailed { reason })?;
+    }
     let mut child = command
         .spawn()
         .map_err(|error| DeployStepError::StartFailed {
@@ -240,6 +274,33 @@ fn run_program(
     })
     .collect::<Vec<_>>();
     drop(lines);
+    // The step ends with its shell, or at its timeout. A process it left behind, such as a daemon, would keep the
+    // output open, so the step's process group stops then: TERM, and KILL after 100 milliseconds. `setsid` runs the
+    // shell as the group's leader, so the group has the child's pid.
+    let group = rustix::process::Pid::from_child(&child);
+    let stop = move || {
+        for signal in [rustix::process::Signal::TERM, rustix::process::Signal::KILL] {
+            if rustix::process::kill_process_group(group, signal).is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+    let end = std::time::Instant::now() + timeout;
+    let waiter = std::thread::spawn(move || loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                stop();
+                break Ok(status);
+            }
+            Ok(None) if std::time::Instant::now() >= end => {
+                stop();
+                break child.wait();
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(error) => break Err(error),
+        }
+    });
 
     let mut redactors = (Redactor::default(), Redactor::default());
     let (mut output, mut size, mut truncated, mut sequence) = (Vec::new(), 0, false, 0u64);
@@ -250,15 +311,14 @@ fn run_program(
             &mut redactors.1
         };
         let ending = if line.ends_with('\n') { "\n" } else { "" };
-        let Some(text) = redact(redactor, line.trim_end_matches('\n'), &input.secrets) else {
+        let Some(text) = redact(redactor, line.trim_end_matches('\n'), secrets) else {
             continue;
         };
         if let Some(live) = &live {
             sequence += 1;
             let shown: String = text.chars().take(LINE_LIMIT).collect();
-            let _ = live.send(
-                json!({"step": input.step, "stream": stream, "sequence": sequence, "line": shown}),
-            );
+            let _ = live
+                .send(json!({"step": step, "stream": stream, "sequence": sequence, "line": shown}));
         }
         keep(
             &mut output,
@@ -273,9 +333,14 @@ fn run_program(
     for reader in readers {
         let _ = reader.join();
     }
-    let status = child.wait().map_err(|error| DeployStepError::StartFailed {
-        reason: error.to_string(),
-    })?;
+    let status = waiter
+        .join()
+        .map_err(|_| DeployStepError::StartFailed {
+            reason: "the step's waiter stopped".into(),
+        })?
+        .map_err(|error| DeployStepError::StartFailed {
+            reason: error.to_string(),
+        })?;
     let exit_code = status.code().unwrap_or_else(|| {
         128 + std::os::unix::process::ExitStatusExt::signal(&status).unwrap_or(0)
     });
@@ -301,16 +366,9 @@ impl Command for RunDeployStep {
     }
 
     fn run(input: RunDeployStepInput, _: &Context) -> Result<RunDeployStepOutput, DeployStepError> {
-        let Some(operation) = input.operation else {
-            return run(&input, Path::new("/home"), None);
-        };
-        let (events, received) = tokio::sync::mpsc::unbounded_channel();
-        let publisher =
-            std::thread::spawn(move || publish(format!("private-operation.{operation}"), received));
-        let result = run(&input, Path::new("/home"), Some(events));
-        // The sender is gone, so the publisher sends what it has and closes.
-        let _ = publisher.join();
-        result
+        with_live(input.operation, |live| {
+            run(&input, Path::new("/home"), live)
+        })
     }
 }
 
@@ -333,6 +391,7 @@ mod tests {
             script: "echo building\necho \"key=$SECRET_VALUE\" >&2\npwd\n".into(),
             operation: Some(7),
             step: "build".into(),
+            timeout_seconds: 60,
             secrets: vec!["s3cret".into()],
         };
         (base, input)

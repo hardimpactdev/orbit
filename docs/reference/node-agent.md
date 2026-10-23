@@ -194,7 +194,9 @@ The runner picks the transport from the Node. Both carry the same arguments, env
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instances.run-deploy-step` runs one production deploy step as the Instance owner. While it runs, it joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
+A command that runs project code can publish its output while it runs. `instances.run-deploy-step` runs one production deploy step as the Instance owner, and `instances.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+
+While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 
 SSH stays the repair path. When an agent cannot start or answer, `orbit node:converge` reaches the Node over SSH and installs the pin.
 
