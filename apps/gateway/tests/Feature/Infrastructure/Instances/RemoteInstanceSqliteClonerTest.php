@@ -6,19 +6,14 @@ use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Tests\Support\LocalAgentBinary;
 
 beforeEach(function (): void {
     $this->root = sys_get_temp_dir().'/orbit-sqlite-cloner-'.bin2hex(random_bytes(6));
@@ -48,6 +43,7 @@ function sqlite_cloner_node(string $name, string $address): Node
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => $address,
         'wireguard_ip' => $address,
         'user' => (string) posix_getpwuid(posix_geteuid())['name'],
@@ -64,31 +60,10 @@ function sqlite_cloner_instance(Project $project, Node $node, string $name, stri
     ]);
 }
 
-function sqlite_cloner(SqliteClonerLocalSsh $ssh): RemoteInstanceSqliteCloner
+function sqlite_cloner(SqliteClonerRecordingAgents $agents): RemoteInstanceSqliteCloner
 {
     return new RemoteInstanceSqliteCloner(
-        $ssh,
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 synthetic';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
+        $agents,
         new class implements SqliteSnapshotTransfer
         {
             public function transfer(
@@ -127,16 +102,16 @@ function sqlite_cloner_rows(string $path): array
 
 describe('RemoteInstanceSqliteCloner', function (): void {
     it('copies a consistent snapshot into the same relative path on the same Node', function (): void {
-        $ssh = new SqliteClonerLocalSsh;
+        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
         $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
 
-        sqlite_cloner($ssh)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
+        sqlite_cloner($agents)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
 
         expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
             ->and(fileperms("{$this->root}/feature/database/database.sqlite") & 0777)->toBe(0640)
             ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([])
-            ->and(array_column($ssh->commands, 0))->toBe(['local'])
-            ->and($ssh->hosts)->toBe(['10.44.0.11']);
+            ->and(array_column($agents->commands, 'operation'))->toBe(['local'])
+            ->and($agents->hosts)->toBe(['10.44.0.11']);
     });
 
     it('copies writes that are still in the WAL, by reflink where the filesystem can clone and by snapshot otherwise', function (): void {
@@ -144,15 +119,15 @@ describe('RemoteInstanceSqliteCloner', function (): void {
         $writer = new PDO("sqlite:{$source}");
         $writer->exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
         $writer->exec("INSERT INTO users VALUES ('grace')");
-        $ssh = new SqliteClonerLocalSsh;
+        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
         $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
 
         expect(filesize("{$source}-wal"))->toBeGreaterThan(0);
 
-        sqlite_cloner($ssh)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
+        sqlite_cloner($agents)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
 
         expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada', 'grace'])
-            ->and(json_decode($ssh->outputs[0], true)['copy'])->toBe(sqlite_cloner_can_reflink("{$this->root}/feature") ? 'reflink' : 'snapshot')
+            ->and($agents->outputs[0]['copy'])->toBe(sqlite_cloner_can_reflink("{$this->root}/feature") ? 'reflink' : 'snapshot')
             ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([]);
 
         $writer = null;
@@ -164,14 +139,14 @@ describe('RemoteInstanceSqliteCloner', function (): void {
         $writer->exec('PRAGMA journal_mode=WAL;');
         $writer->exec('BEGIN IMMEDIATE');
         $writer->exec("INSERT INTO users VALUES ('uncommitted')");
-        $ssh = new SqliteClonerLocalSsh;
+        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
         $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
         $started = hrtime(true);
 
-        sqlite_cloner($ssh)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
+        sqlite_cloner($agents)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
 
         expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
-            ->and(json_decode($ssh->outputs[0], true)['copy'])->toBe('snapshot')
+            ->and($agents->outputs[0]['copy'])->toBe('snapshot')
             ->and((hrtime(true) - $started) / 1e9)->toBeLessThan(10.0);
 
         $writer->exec('ROLLBACK');
@@ -179,16 +154,16 @@ describe('RemoteInstanceSqliteCloner', function (): void {
     });
 
     it('moves the snapshot through the Gateway to another Node and removes the source snapshot', function (): void {
-        $ssh = new SqliteClonerLocalSsh;
+        $agents = new SqliteClonerRecordingAgents("{$this->root}/agent");
         $target = sqlite_cloner_instance($this->project, sqlite_cloner_node('target', '10.44.0.12'), 'feature', "{$this->root}/feature");
 
-        sqlite_cloner($ssh)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
+        sqlite_cloner($agents)->copy($this->default, "{$this->root}/default/database/database.sqlite", $target, "{$this->root}/feature/database/database.sqlite");
 
-        $exportDirectory = $ssh->commands[0][3];
+        $exportDirectory = $agents->commands[0]['directory'];
 
         expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
-            ->and(array_column($ssh->commands, 0))->toBe(['export', 'prepare', 'install', 'cleanup'])
-            ->and($ssh->hosts)->toBe(['10.44.0.11', '10.44.0.12', '10.44.0.12', '10.44.0.11'])
+            ->and(array_column($agents->commands, 'operation'))->toBe(['export', 'prepare', 'install', 'cleanup'])
+            ->and($agents->hosts)->toBe(['10.44.0.11', '10.44.0.12', '10.44.0.12', '10.44.0.11'])
             ->and(is_dir($exportDirectory))->toBeFalse()
             ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([]);
     });
@@ -198,7 +173,7 @@ describe('RemoteInstanceSqliteCloner', function (): void {
         $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
         $source = str_replace('ROOT', $this->root, $source);
 
-        expect(fn () => sqlite_cloner(new SqliteClonerLocalSsh)->copy($this->default, $source, $target, "{$this->root}/feature/database.sqlite"))
+        expect(fn () => sqlite_cloner(new SqliteClonerRecordingAgents("{$this->root}/agent"))->copy($this->default, $source, $target, "{$this->root}/feature/database.sqlite"))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.database_clone_failed'));
 
         expect(file_exists("{$this->root}/feature/database.sqlite"))->toBeFalse();
@@ -210,7 +185,7 @@ describe('RemoteInstanceSqliteCloner', function (): void {
     it('removes a copied file and treats a missing checkout as removed', function (): void {
         $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
         touch("{$this->root}/feature/database.sqlite");
-        $cloner = sqlite_cloner(new SqliteClonerLocalSsh);
+        $cloner = sqlite_cloner(new SqliteClonerRecordingAgents("{$this->root}/agent"));
 
         $cloner->remove($target, "{$this->root}/feature/database.sqlite");
         $cloner->remove(sqlite_cloner_instance($this->project, $this->sourceNode, 'gone', "{$this->root}/gone"), "{$this->root}/gone/database.sqlite");
@@ -219,28 +194,35 @@ describe('RemoteInstanceSqliteCloner', function (): void {
     });
 });
 
-final class SqliteClonerLocalSsh implements SshExecutor
+/** The built agent, run locally, with each call's host, input, and answer recorded. */
+final class SqliteClonerRecordingAgents implements AgentCommandRunner
 {
-    /** @var list<list<string>> */
+    /** @var list<array<string, mixed>> */
     public array $commands = [];
 
     /** @var list<string> */
     public array $hosts = [];
 
-    /** @var list<string> */
+    /** @var list<array<string, mixed>> */
     public array $outputs = [];
 
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    private AgentCommandRunner $agents;
+
+    public function __construct(string $sandbox)
     {
-        $this->hosts[] = $connection->host;
-        $this->commands[] = array_slice($command->arguments, 3);
+        $this->agents = LocalAgentBinary::localRunner($sandbox);
+    }
 
-        $result = (new NativeProcessRunner)->run(new ProcessInvocation(
-            arguments: $command->arguments,
-            maxOutputBytes: $command->maxOutputBytes,
-        ));
-        $this->outputs[] = $result->stdout;
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        $this->hosts[] = (string) $node->wireguard_ip;
+        $this->commands[] = $input;
 
-        return $result;
+        return $this->outputs[] = $this->agents->run($node, $command, $input, $deadlineSeconds);
+    }
+
+    public function install(Node $node): bool
+    {
+        return $this->agents->install($node);
     }
 }

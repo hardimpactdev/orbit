@@ -607,6 +607,20 @@
       ]
     },
     {
+      "name": "instances.copy-sqlite",
+      "summary": "Copy, export, install, or remove a development SQLite database.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_copy_refused",
+        "instances.sqlite_copy_failed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,
