@@ -23,6 +23,7 @@ pub mod metrics_certificate;
 pub mod os_release;
 pub mod peer_dns;
 pub mod php_runtime;
+pub mod processes;
 pub mod production;
 pub mod production_home;
 pub mod project_source;
@@ -141,6 +142,14 @@ pub fn all() -> Vec<Entry> {
         entry::<schedules::ReadScheduleLogs>(),
         entry::<schedules::RemoveSchedule>(),
         entry::<accounts::LookupAccount>(),
+        entry::<processes::CheckRelease>(),
+        entry::<processes::ReadStatus>(),
+        entry::<processes::ControlProcess>(),
+        entry::<processes::RemoveProcess>(),
+        entry::<processes::StageUnit>(),
+        entry::<processes::ActivateUnit>(),
+        entry::<processes::ConvergeContainer>(),
+        entry::<processes::ReadLogs>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),

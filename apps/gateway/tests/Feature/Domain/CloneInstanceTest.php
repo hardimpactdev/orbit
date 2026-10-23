@@ -57,14 +57,10 @@ use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -76,7 +72,6 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Event;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
@@ -392,12 +387,13 @@ it('captures production runtime definitions during clone and installs them only 
         ],
     ]);
 
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(1, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(1, '', '', 1, false),
-        ...array_fill(0, 12, new CommandResult(0, '', '', 1, false)),
-    ]);
+    $releases = [false];
+    $processAgents = new FakeAgentCommandRunner()
+        ->answer('processes.check-release', static function () use (&$releases): array {
+            return ['available' => array_shift($releases) ?? true];
+        })
+        ->answer('processes.stage-unit', ['staged' => true, 'previous' => false, 'state' => null])
+        ->answer('processes.activate-unit', ['backup_left' => false]);
     $accounts = new class implements ManagedUserAccountResolver
     {
         public function resolve(Node $node): ManagedUserAccount
@@ -405,33 +401,10 @@ it('captures production runtime definitions during clone and installs them only 
             return new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
         }
     };
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 test';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
     $processRuntime = new RemoteProcessRuntimeManager(
         new ProcessTargetResolver,
         $accounts,
-        $ssh,
-        $keys,
-        $knownHosts,
+        $processAgents,
         new SystemdProcessRenderer,
         new DockerProcessRenderer,
     );
@@ -486,7 +459,7 @@ it('captures production runtime definitions during clone and installs them only 
     $process = Process::query()->where('owner_id', $target->id)->sole();
     $schedule = Schedule::query()->where('target_id', $target->id)->sole();
 
-    expect($ssh->commands)
+    expect($processAgents->calls)
         ->toBeEmpty()
         ->and($target->runtime_definitions_captured_at)
         ->not->toBeNull()
@@ -503,8 +476,8 @@ it('captures production runtime definitions during clone and installs them only 
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('process.release_unavailable');
         });
-    expect($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'test', '-d', $target->production_home.'/current']);
+    expect($processAgents->calls[0]['input'])
+        ->toBe(['directory' => $target->production_home.'/current']);
 
     $target->update(['checkout_path' => $target->production_home.'/releases/first']);
     $definitions->installCaptured($target->refresh());
@@ -517,8 +490,8 @@ it('captures production runtime definitions during clone and installs them only 
         ->toBe(LifecycleStatus::Active)
         ->and($schedule->desired_timer_state)
         ->toBe(DesiredTimerState::Disabled)
-        ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
-        ->toContain(['sudo', 'test', '-d', $target->production_home.'/current'])
+        ->and($processAgents->commands())
+        ->toBe(['processes.check-release', 'processes.check-release', 'processes.stage-unit', 'processes.activate-unit'])
         ->and($scheduleAgents->calls[0]['input'])
         ->toMatchArray(['user' => $target->production_user, 'working_directory' => $target->production_home.'/current']);
 });

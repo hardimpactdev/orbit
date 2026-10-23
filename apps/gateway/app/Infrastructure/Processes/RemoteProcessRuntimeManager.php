@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
-use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -16,83 +15,56 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Process;
 use SensitiveParameter;
 
+/**
+ * A Process's systemd unit or Docker container on its Node, through the agent's `processes.*` commands
+ * (docs/reference/processes-and-schedules.md). The Gateway renders the unit and the container definition and records
+ * a pending systemd activation; the agent checks each artifact's owner marker and makes the change with its rollback.
+ */
 final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
 {
-    /** Reads a container's last lines with standard error merged into standard output, in order. */
-    /**
-     * Reads a unit's last entries newest first, as `journalctl --output short-iso --utc` prints them, in
-     * UTC as the Node agent writes live lines (ADR 0153), and stops after a number of bytes.
-     *
-     * `awk` cuts each entry as the agent does: it counts bytes, indent included, keeps the first line,
-     * and stops at the first further line that would take the entry past 256 KiB. A first line whose
-     * message is longer than 256 KiB is cut there, before a character rather than inside one. The
-     * entry then ends with the agent's cut marker, so a huge entry reads the same live and over SSH
-     * and cannot hide the older entries.
-     */
-    public const string JournalLogsScript = <<<'SH'
-        journalctl --unit "$1" --lines "$2" --reverse --no-pager --output short-iso --utc | LC_ALL=C awk '
-        /^ / {
-            if (cut) next
-            if (used + length($0) > 262144) { print indent "[orbit] message cut at 256 KiB"; cut = 1; next }
-            used += length($0); print; next
-        }
-        {
-            cut = 0; used = length($0); start = index($0, ": ")
-            prefix = start ? substr($0, 1, start + 1) : ""
-            gsub(/[\200-\277]/, "", prefix)
-            indent = sprintf("%" length(prefix) "s", "")
-            if (start && length($0) - start - 1 > 262144) {
-                keep = 262144
-                while (keep > 0 && substr($0, start + 2 + keep, 1) ~ /[\200-\277]/) keep--
-                print substr($0, 1, start + 1 + keep)
-                print indent "[orbit] message cut at 256 KiB"; cut = 1; next
-            }
-            print
-        }' | head -c "$3"
-        SH;
+    /** Each `processes.*` refusal and its error code; `{runtime}` is `systemd` or `docker`. */
+    private const array ERRORS = [
+        'processes.name_collision' => 'process.runtime_name_collision',
+        'processes.not_found' => 'process.runtime_not_found',
+        'processes.start_failed' => 'process.start_failed',
+        'processes.stop_failed' => 'process.stop_failed',
+        'processes.restart_failed' => 'process.restart_failed',
+        'processes.remove_failed' => 'process.remove_failed',
+        'processes.status_failed' => 'process.status_failed',
+        'processes.logs_failed' => 'process.logs_failed',
+        'processes.converge_failed' => 'process.{runtime}_converge_failed',
+        'processes.candidate_invalid' => 'process.{runtime}_candidate_invalid',
+        'processes.activation_failed' => 'process.{runtime}_activation_failed',
+        'processes.rollback_failed' => 'process.{runtime}_rollback_failed',
+        'processes.recovery_required' => 'process.{runtime}_recovery_required',
+        'processes.vite_cleanup_failed' => 'vite.environment_cleanup_failed',
+    ];
 
-    public const string DockerLogsScript = 'exec docker container logs --tail "$1" "$2" 2>&1';
+    /** What a failed systemd activation left, by the change it made. */
+    private const array RESTORATIONS = [
+        'replace' => 'the previous unit was restored',
+        'create' => 'the new unit was removed',
+        'reload' => 'activation remains pending for retry',
+    ];
 
     private ProcessRuntimeLease $lease;
-
-    private AgentProcessView $agents;
-
-    private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.spec" }}{{ printf "\\n" }}{{ .State.Running }}';
-
-    private const string DOCKER_OWNER_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}';
-
-    private const string DOCKER_CREATE_SCRIPT = <<<'BASH'
-        umask 077
-        environment_file=$(mktemp /tmp/orbit-process-environment.XXXXXX)
-        trap 'rm -f -- "$environment_file"' EXIT
-        cat > "$environment_file"
-        chmod 0600 "$environment_file"
-        sudo docker container create --env-file "$environment_file" "$@"
-        BASH;
-
-    private const string SYSTEMD_CANDIDATE_DIRECTORY = '/etc/orbit/systemd-candidates';
 
     public function __construct(
         private ProcessTargetResolver $targets,
         private ManagedUserAccountResolver $accounts,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
         ?ProcessRuntimeLease $lease = null,
-        ?AgentProcessView $agents = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
-        $this->agents = $agents ?? app(AgentProcessView::class);
     }
 
     public function assertCanStart(#[SensitiveParameter] Process $process): void
@@ -152,7 +124,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
                 return;
             }
-            $this->restartUnlocked($fresh, $target);
+            $this->control($fresh, $target, 'restart', 'process.restart_failed');
         });
     }
 
@@ -169,275 +141,23 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         });
     }
 
-    private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->requireOwnedRuntime($process, 'start', 'process.start_failed', $target);
-
-        $arguments = match ($process->runtime) {
-            ProcessRuntime::Systemd => $this->systemdStartArguments($process, $target),
-            ProcessRuntime::Docker => [
-                'sudo',
-                'docker',
-                'container',
-                'start',
-                $this->docker->containerName($process),
-            ],
-        };
-
-        $this->executeSuccessfully($process, $arguments, 'start', 'process.start_failed', target: $target);
-    }
-
-    private function stopUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->requireOwnedRuntime($process, 'stop', 'process.stop_failed', $target);
-
-        $arguments = match ($process->runtime) {
-            ProcessRuntime::Systemd => [
-                'sudo',
-                'systemctl',
-                'disable',
-                '--now',
-                $this->systemd->unitName($process),
-            ],
-            ProcessRuntime::Docker => [
-                'sudo',
-                'docker',
-                'container',
-                'stop',
-                $this->docker->containerName($process),
-            ],
-        };
-
-        $this->executeSuccessfully($process, $arguments, 'stop', 'process.stop_failed', target: $target);
-    }
-
-    private function restartUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->requireOwnedRuntime($process, 'restart', 'process.restart_failed', $target);
-
-        if ($process->runtime === ProcessRuntime::Docker) {
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'docker', 'container', 'restart', $this->docker->containerName($process)],
-                'restart',
-                'process.restart_failed',
-                target: $target,
-            );
-
-            return;
-        }
-
-        if (! $target->onDemandHostStart) {
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'systemctl', 'enable', $this->systemd->unitName($process)],
-                'restart-enable',
-                'process.restart_failed',
-                target: $target,
-            );
-        }
-
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'systemctl', 'restart', $this->systemd->unitName($process)],
-            'restart',
-            'process.restart_failed',
-            target: $target,
-        );
-    }
-
-    private function removeUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        if ($process->runtime === ProcessRuntime::Docker) {
-            $this->removeDockerArtifacts($process, $target);
-
-            return;
-        }
-
-        if (! $this->runtimeExistsAndIsOwned($process, 'inspect-runtime', 'process.remove_failed', $target)) {
-            $this->removeViteEnvironment($process, $target);
-
-            return;
-        }
-
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'systemctl', 'disable', '--now', $this->systemd->unitName($process)],
-            'stop',
-            'process.remove_failed',
-            target: $target,
-        );
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'rm', '-f', '--', $this->systemd->unitPath($process)],
-            'remove-unit',
-            'process.remove_failed',
-            target: $target,
-        );
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'systemctl', 'daemon-reload'],
-            'daemon-reload',
-            'process.remove_failed',
-            target: $target,
-        );
-        $this->resetFailedUnit($process, $target);
-        $this->removeViteEnvironment($process, $target);
-    }
-
-    /**
-     * Clears the failed-unit record that systemd keeps after a crashed unit's file is removed.
-     * The command fails for a unit that is not failed or no longer loaded, so its result is ignored.
-     */
-    private function resetFailedUnit(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $this->execute($process, ['sudo', 'systemctl', 'reset-failed', $this->systemd->unitName($process)], target: $target);
-    }
-
-    private function removeViteEnvironment(Process $process, ProcessTarget $target): void
-    {
-        if (! $process->isVpDev()) {
-            return;
-        }
-        $path = SystemdProcessRenderer::viteEnvironmentPath($process->owner_id);
-        $this->executeSuccessfully($process, ['bash', '-c', <<<'BASH'
-            set -euo pipefail
-            if sudo test -e "$1"; then
-                test ! -L "$1"
-                sudo grep -Fx -- "# Orbit Instance $2" "$1" >/dev/null
-                sudo rm -f -- "$1" "$1.pending"
-            fi
-            BASH, 'orbit-remove-vite-environment', $path, (string) $process->owner_id], 'remove-vite-environment', 'vite.environment_cleanup_failed', target: $target);
-    }
-
-    private function removeDockerArtifacts(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $name = $this->docker->containerName($process);
-        $artifacts = [
-            $name => $this->inspectOwnedDockerContainer($process, $name, 'inspect-runtime', $target),
-            "{$name}-rollback-running" => $this->inspectOwnedDockerContainer(
-                $process,
-                "{$name}-rollback-running",
-                'inspect-runtime',
-                $target,
-            ),
-            "{$name}-rollback-stopped" => $this->inspectOwnedDockerContainer(
-                $process,
-                "{$name}-rollback-stopped",
-                'inspect-runtime',
-                $target,
-            ),
-            "{$name}-candidate" => $this->inspectOwnedDockerContainer(
-                $process,
-                "{$name}-candidate",
-                'inspect-runtime',
-                $target,
-            ),
-        ];
-
-        foreach (["{$name}-candidate", $name, "{$name}-rollback-running", "{$name}-rollback-stopped"] as $artifact) {
-            if ($artifacts[$artifact] === null) {
-                continue;
-            }
-
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'docker', 'container', 'rm', '--force', $artifact],
-                'remove',
-                'process.remove_failed',
-                target: $target,
-            );
-        }
-    }
-
     public function status(#[SensitiveParameter] Process $process): string
     {
-        if (! $this->runtimeExistsAndIsOwned($process, 'status', 'process.status_failed')) {
-            return 'absent';
-        }
+        $status = $this->call($process, 'processes.status', $this->artifact($process), 'status', 'process.status_failed');
 
-        $arguments = match ($process->runtime) {
-            ProcessRuntime::Systemd => [
-                'sudo',
-                'systemctl',
-                'is-active',
-                $this->systemd->unitName($process),
-            ],
-            ProcessRuntime::Docker => [
-                'sudo',
-                'docker',
-                'container',
-                'inspect',
-                '--format',
-                '{{.State.Status}}',
-                $this->docker->containerName($process),
-            ],
-        };
-        $result = $this->execute($process, $arguments);
-        $status = trim($result->stdout);
-
-        if ($this->isNativeNotFound($process->runtime, $result)) {
-            return 'absent';
-        }
-
-        if ($result->succeeded()) {
-            return $status !== '' ? $status : 'unknown';
-        }
-
-        if (
-            $process->runtime === ProcessRuntime::Systemd
-            && in_array(
-                $status,
-                ['active', 'reloading', 'inactive', 'failed', 'activating', 'deactivating', 'maintenance'],
-                strict: true,
-            )
-        ) {
-            return $status;
-        }
-
-        $this->fail($process, 'status', 'process.status_failed', $result);
+        return self::text($status, 'state');
     }
 
     public function logs(#[SensitiveParameter] Process $process, int $lines): string
     {
-        // A fresh agent view that lists this exact unit or container stands in for the ownership
-        // check: only root on that Node can create an `orbit-process-*` unit (ADR 0148).
-        if ($this->agents->lists($process) !== true) {
-            $this->requireOwnedRuntime($process, 'logs', 'process.logs_failed');
-        }
-
-        $arguments = match ($process->runtime) {
-            // Newest entry first, stopped after the byte limit, so the Node does bounded work.
-            ProcessRuntime::Systemd => [
-                'sudo',
-                'sh',
-                '-c',
-                self::JournalLogsScript,
-                'orbit-process-logs',
-                $this->systemd->unitName($process),
-                (string) $lines,
-                (string) LogReadLimit::Bytes,
-            ],
-            // Standard output and standard error in one stream, in the order the container wrote
-            // them, as the Node agent streams them live (ADR 0153).
-            ProcessRuntime::Docker => [
-                'sudo',
-                'sh',
-                '-c',
-                self::DockerLogsScript,
-                'orbit-process-logs',
-                (string) $lines,
-                $this->docker->containerName($process),
-            ],
-        };
-
-        $output = $this->executeSuccessfully(
-            $process,
-            $arguments,
-            'logs',
-            'process.logs_failed',
-            maxOutputBytes: LogReadLimit::Bytes,
-        )->stdout;
+        // Newest journal entry first, stopped after the byte limit, so the Node does bounded work; a container's
+        // standard output and standard error in one stream, in the order it wrote them (ADR 0153).
+        $logs = $this->call($process, 'processes.logs', [
+            ...$this->artifact($process),
+            'lines' => $lines,
+            'max_bytes' => LogReadLimit::Bytes,
+        ], 'logs', 'process.logs_failed');
+        $output = self::text($logs, 'output');
 
         return $process->runtime === ProcessRuntime::Systemd
             ? LogReadLimit::journalInTimeOrder($output)
@@ -449,882 +169,103 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         return $this->docker->specHash($process, $this->targets->forInspection($process));
     }
 
+    private function startUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
+    {
+        $this->control($process, $target, 'start', 'process.start_failed');
+    }
+
+    private function stopUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
+    {
+        $this->control($process, $target, 'stop', 'process.stop_failed');
+    }
+
+    /** Starts, stops, or restarts the Process's own unit or container; an absent one is `process.runtime_not_found`. */
+    private function control(#[SensitiveParameter] Process $process, ProcessTarget $target, string $operation, string $errorCode): void
+    {
+        $this->call($process, 'processes.control', [
+            'operation' => $operation,
+            ...$this->artifact($process),
+            'on_demand' => $target->onDemandHostStart,
+        ], $operation, $errorCode, $target);
+    }
+
+    private function removeUnlocked(#[SensitiveParameter] Process $process, ProcessTarget $target): void
+    {
+        $vite = $process->runtime === ProcessRuntime::Systemd && $process->isVpDev()
+            ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id]
+            : null;
+
+        $this->call($process, 'processes.remove', [...$this->artifact($process), 'vite' => $vite], 'remove', 'process.remove_failed', $target);
+    }
+
+    /**
+     * Stages the rendered unit, and publishes and activates it when it changed or a published one never finished
+     * activating. Completion is cleared before publication, so a lost response leaves the activation pending for the
+     * next converge.
+     */
     private function convergeAndActivateSystemd(
         #[SensitiveParameter]
         Process $process,
         ProcessTarget $target,
     ): void {
-        $hadPreviousUnit = $this->convergeSystemd($process, $target);
-        if ($hadPreviousUnit === null) {
-            $status = $this->status($process);
-            $running = $process->desired_state === DesiredProcessState::Running;
-            if (! $process->systemd_activation_pending
-                && ($process->systemd_activation_hash === null || $process->systemd_activation_hash === $this->systemdActivationHash($process, $target))
-                && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
-                return;
-            }
-            // Published bytes can outlive a failed or interrupted reload/activation.
-            $this->executeSuccessfully($process, ['sudo', 'systemctl', 'daemon-reload'], 'daemon-reload', 'process.systemd_activation_failed');
-        }
-        $activation = $this->activateSystemdDesiredState($process, $target);
-
-        if (! $activation->succeeded()) {
-            if ($hadPreviousUnit) {
-                $this->rollbackSystemdReplacement($process, $target);
-            }
-
-            if ($hadPreviousUnit === false) {
-                $this->removeFailedNewSystemdUnit($process);
-            }
-
-            $state = $process->desired_state === DesiredProcessState::Running ? 'start' : 'stop';
-            $restoration = match ($hadPreviousUnit) {
-                true => 'the previous unit was restored',
-                false => 'the new unit was removed',
-                null => 'activation remains pending for retry',
-            };
-
-            throw new ProcessOperationException(
-                step: $state,
-                errorCode: "process.{$state}_failed",
-                message: "Process [{$process->name}] failed to {$state}; {$restoration}.",
-                result: $activation,
-            );
-        }
-
-        $process->systemd_activation_hash = $this->systemdActivationHash($process, $target);
-        $process->systemd_activation_pending = false;
-        $process->save();
-
-        if ($hadPreviousUnit) {
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'rm', '-f', '--', $this->systemdBackupPath($process)],
-                'remove-unit-backup',
-                'process.systemd_converge_failed',
-            );
-        }
-    }
-
-    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target): ?bool
-    {
-        $path = $this->systemd->unitPath($process);
-        $candidate = $this->systemdCandidatePath($process);
-        $backup = $this->systemdBackupPath($process);
-        $exists = $this->execute($process, ['sudo', 'test', '-e', $path]);
-        $hadPreviousUnit = $exists->succeeded();
-
-        if (! $hadPreviousUnit && ! $this->isSystemdPathAbsent($exists)) {
-            $this->fail($process, 'inspect-unit', 'process.systemd_converge_failed', $exists);
-        }
-
         $rendered = $this->systemd->render(
             $process, $target,
             $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
         );
-        if ($hadPreviousUnit) {
-            $current = $this->assertSystemdUnitOwnedForConvergence($process, $path);
-            if ($current === $rendered) {
-                return null;
+        $unit = $this->systemd->unitName($process);
+        $staged = $this->call($process, 'processes.stage-unit', [
+            'process_id' => $process->id,
+            'unit' => $unit,
+            'content' => $rendered,
+        ], 'inspect-unit', 'process.systemd_converge_failed');
+
+        if ($staged['staged'] !== true) {
+            $running = $process->desired_state === DesiredProcessState::Running;
+            $status = $staged['state'] ?? null;
+            if (! $process->systemd_activation_pending
+                && ($process->systemd_activation_hash === null || $process->systemd_activation_hash === hash('sha256', $rendered))
+                && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
+                return;
             }
+            // Published bytes can outlive a failed or interrupted reload or activation.
+            $change = 'reload';
+        } else {
+            $process->systemd_activation_hash = null;
+            $process->systemd_activation_pending = true;
+            $process->save();
+            $change = $staged['previous'] === true ? 'replace' : 'create';
         }
 
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'install', '-d', '-m', '0755', self::SYSTEMD_CANDIDATE_DIRECTORY],
-            'prepare-unit-candidate',
-            'process.systemd_converge_failed',
-        );
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'install', '-m', '0644', '/dev/stdin', $candidate],
-            'stage-unit',
-            'process.systemd_converge_failed',
-            $this->systemd->render(
-                $process,
-                $target,
-                $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
-            ),
-        );
-        $validation = $this->execute(
-            $process,
-            ['sudo', 'systemd-analyze', 'verify', $candidate],
-        );
+        $activated = $this->call($process, 'processes.activate-unit', [
+            'process_id' => $process->id,
+            'unit' => $unit,
+            'change' => $change,
+            'desired' => $process->desired_state->value,
+            'on_demand' => $target->onDemandHostStart,
+        ], 'activate-unit', 'process.systemd_converge_failed', change: $change);
 
-        if (! $validation->succeeded()) {
-            $this->execute($process, ['sudo', 'rm', '-f', '--', $candidate]);
-
-            throw new ProcessOperationException(
-                step: 'verify-unit',
-                errorCode: 'process.systemd_candidate_invalid',
-                message: "Process [{$process->name}] systemd candidate validation failed.",
-                result: $validation,
-            );
-        }
-
-        // Invalidate completion before any publication that can survive a lost response.
-        $process->systemd_activation_hash = null;
-        $process->systemd_activation_pending = true;
+        $process->systemd_activation_hash = hash('sha256', $rendered);
+        $process->systemd_activation_pending = false;
         $process->save();
 
-        if ($hadPreviousUnit) {
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'cp', '--preserve=mode,ownership,timestamps', '--', $path, $backup],
-                'backup-unit',
-                'process.systemd_converge_failed',
-            );
-        }
-
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'mv', '--', $candidate, $path],
-            'activate-unit',
-            'process.systemd_converge_failed',
-        );
-        $activation = $this->execute($process, ['sudo', 'systemctl', 'daemon-reload']);
-
-        if (! $activation->succeeded()) {
-            $restoreArguments = $hadPreviousUnit
-                ? ['sudo', 'mv', '--', $backup, $path]
-                : ['sudo', 'rm', '-f', '--', $path];
-            $this->restoreSystemdUnit($process, $restoreArguments);
-
+        if ($activated['backup_left'] === true) {
             throw new ProcessOperationException(
-                step: 'daemon-reload',
-                errorCode: 'process.systemd_activation_failed',
-                message: "Process [{$process->name}] systemd activation failed; the previous unit was restored.",
-                result: $activation,
+                step: 'remove-unit-backup',
+                errorCode: 'process.systemd_converge_failed',
+                message: "Process [{$process->name}] runtime step [remove-unit-backup] failed.",
             );
         }
-
-        return $hadPreviousUnit;
-    }
-
-    private function systemdActivationHash(Process $process, ProcessTarget $target): string
-    {
-        return hash('sha256', $this->systemd->render(
-            $process, $target,
-            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
-        ));
-    }
-
-    private function activateSystemdDesiredState(
-        #[SensitiveParameter]
-        Process $process,
-        ProcessTarget $target,
-    ): CommandResult {
-        $unit = $this->systemd->unitName($process);
-
-        if ($process->desired_state === DesiredProcessState::Stopped) {
-            return $this->execute($process, ['sudo', 'systemctl', 'disable', '--now', $unit]);
-        }
-
-        if (! $target->onDemandHostStart) {
-            $enable = $this->execute($process, ['sudo', 'systemctl', 'enable', $unit]);
-
-            if (! $enable->succeeded()) {
-                return $enable;
-            }
-        }
-
-        return $this->execute($process, ['sudo', 'systemctl', 'restart', $unit]);
-    }
-
-    /** @return non-empty-list<string> */
-    private function systemdStartArguments(#[SensitiveParameter] Process $process, ProcessTarget $target): array
-    {
-        $unit = $this->systemd->unitName($process);
-
-        return $target->onDemandHostStart
-            ? ['sudo', 'systemctl', 'start', $unit]
-            : ['sudo', 'systemctl', 'enable', '--now', $unit];
-    }
-
-    private function rollbackSystemdReplacement(#[SensitiveParameter] Process $process, ProcessTarget $target): void
-    {
-        $unit = $this->systemd->unitName($process);
-        $path = $this->systemd->unitPath($process);
-        $this->quiesceFailedSystemdReplacement($process, $unit);
-        $this->restoreSystemdUnit(
-            $process,
-            ['sudo', 'mv', '--', $this->systemdBackupPath($process), $path],
-        );
-
-        $restoreState = $process->desired_state === DesiredProcessState::Running
-            ? $this->systemdStartArguments($process, $target)
-            : ['sudo', 'systemctl', 'disable', '--now', $unit];
-        $this->executeSuccessfully(
-            $process,
-            $restoreState,
-            'restore-service-state',
-            'process.systemd_rollback_failed',
-        );
-    }
-
-    private function removeFailedNewSystemdUnit(#[SensitiveParameter] Process $process): void
-    {
-        $unit = $this->systemd->unitName($process);
-        $this->quiesceFailedSystemdReplacement($process, $unit);
-        $this->restoreSystemdUnit(
-            $process,
-            ['sudo', 'rm', '-f', '--', $this->systemd->unitPath($process)],
-        );
-    }
-
-    private function quiesceFailedSystemdReplacement(
-        #[SensitiveParameter]
-        Process $process,
-        string $unit,
-    ): void {
-        $quiesce = $this->execute($process, ['sudo', 'systemctl', 'disable', '--now', $unit]);
-
-        if (! $quiesce->succeeded()) {
-            $this->fail($process, 'stop-replacement-unit', 'process.systemd_recovery_required', $quiesce);
-        }
-    }
-
-    private function assertSystemdUnitOwnedForConvergence(
-        #[SensitiveParameter]
-        Process $process,
-        string $path,
-    ): string {
-        $current = $this->executeSuccessfully(
-            $process,
-            ['sudo', 'cat', '--', $path],
-            'inspect-unit',
-            'process.systemd_converge_failed',
-        );
-        $ownershipMarker = preg_quote("X-Orbit-Process-ID={$process->id}", delimiter: '/');
-
-        if (preg_match("/^{$ownershipMarker}\\r?$/mD", $current->stdout) === 1) {
-            return $current->stdout;
-        }
-
-        throw new ProcessOperationException(
-            step: 'inspect-unit',
-            errorCode: 'process.runtime_name_collision',
-            message: "Systemd unit [{$path}] is not owned by this process.",
-            result: $current,
-        );
     }
 
     private function convergeDocker(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
-        $name = $this->docker->containerName($process);
-        $candidate = "{$name}-candidate";
-        $desiredSpec = $this->docker->specHash($process, $target);
-        $state = $this->recoverDockerArtifacts($process, $name, $candidate, $desiredSpec);
-
-        if ($state['complete']) {
-            if ($state['canonical'] === null) {
-                throw new ProcessOperationException(
-                    step: 'inspect-container',
-                    errorCode: 'process.docker_recovery_required',
-                    message: "Docker process [{$process->name}] has no canonical runtime after recovery.",
-                );
-            }
-
-            $this->convergeDockerDesiredState($process, $name, $state['canonical']);
-
-            return;
-        }
-
-        $canonicalState = $state['canonical'];
-        $candidateState = $state['candidate'];
-        $createName = $canonicalState === null ? $name : $candidate;
-        $createArguments = $this->docker->createArguments($process, $target, $createName);
-        $environmentInput = $this->docker->environmentInput($process);
-
-        try {
-            $this->removeOwnedDockerCandidate($process, $candidate, $candidateState);
-            $this->createDockerContainer($process, $createArguments, $environmentInput);
-
-            if ($canonicalState === null) {
-                $createdCanonical = $this->inspectOwnedDockerContainer(
-                    $process,
-                    $name,
-                    'verify-container',
-                );
-
-                if ($createdCanonical === null || $createdCanonical['spec'] !== $desiredSpec) {
-                    throw new ProcessOperationException(
-                        step: 'verify-container',
-                        errorCode: 'process.docker_candidate_invalid',
-                        message: "Docker container [{$name}] does not match the desired process specification.",
-                        result: $createdCanonical['result'] ?? null,
-                    );
-                }
-
-                $this->convergeDockerDesiredState($process, $name, $createdCanonical);
-
-                return;
-            }
-
-            $createdCandidate = $this->inspectOwnedDockerContainer(
-                $process,
-                $candidate,
-                'verify-candidate-container',
-            );
-
-            if ($createdCandidate === null || $createdCandidate['spec'] !== $desiredSpec) {
-                $this->removeOwnedDockerCandidate($process, $candidate, $createdCandidate);
-
-                throw new ProcessOperationException(
-                    step: 'verify-candidate-container',
-                    errorCode: 'process.docker_candidate_invalid',
-                    message: "Docker candidate [{$candidate}] does not match the desired process specification.",
-                    result: $createdCandidate['result'] ?? null,
-                );
-            }
-
-            $this->publishDockerCandidate($process, $name, $candidate, $canonicalState);
-        } finally {
-            $environmentInput->close();
-        }
-    }
-
-    /**
-     * @return array{
-     *     complete: bool,
-     *     canonical: array{spec: string, running: bool, result: CommandResult}|null,
-     *     candidate: array{spec: string, running: bool, result: CommandResult}|null
-     * }
-     */
-    private function recoverDockerArtifacts(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $candidate,
-        string $desiredSpec,
-    ): array {
-        $canonicalState = $this->inspectOwnedDockerContainer($process, $name, 'inspect-container');
-        $runningRollback = "{$name}-rollback-running";
-        $stoppedRollback = "{$name}-rollback-stopped";
-        $runningRollbackState = $this->inspectOwnedDockerContainer(
-            $process,
-            $runningRollback,
-            'inspect-rollback-container',
-        );
-        $stoppedRollbackState = $this->inspectOwnedDockerContainer(
-            $process,
-            $stoppedRollback,
-            'inspect-rollback-container',
-        );
-        $candidateState = $this->inspectOwnedDockerContainer($process, $candidate, 'inspect-candidate-container');
-
-        if ($runningRollbackState !== null && $stoppedRollbackState !== null) {
-            throw new ProcessOperationException(
-                step: 'inspect-rollback-container',
-                errorCode: 'process.docker_recovery_required',
-                message: "Docker process [{$process->name}] has ambiguous rollback state.",
-                result: $runningRollbackState['result'],
-            );
-        }
-
-        $rollback = $runningRollbackState !== null ? $runningRollback : $stoppedRollback;
-        $rollbackState = $runningRollbackState ?? $stoppedRollbackState;
-
-        if ($rollbackState !== null) {
-            $canonicalState = $this->recoverDockerRollback(
-                $process,
-                $name,
-                $candidate,
-                $rollback,
-                $desiredSpec,
-                $canonicalState,
-                $candidateState,
-                $rollbackState,
-            );
-
-            $candidateState = $this->inspectOwnedDockerContainer(
-                $process,
-                $candidate,
-                'inspect-candidate-container',
-            );
-        }
-
-        if ($canonicalState !== null && $canonicalState['spec'] === $desiredSpec) {
-            $this->removeOwnedDockerCandidate($process, $candidate, $candidateState);
-
-            return ['complete' => true, 'canonical' => $canonicalState, 'candidate' => null];
-        }
-
-        if ($canonicalState === null && $candidateState !== null && $candidateState['spec'] === $desiredSpec) {
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'docker', 'container', 'rename', $candidate, $name],
-                'recover-candidate-container',
-                'process.docker_converge_failed',
-            );
-
-            return ['complete' => true, 'canonical' => $candidateState, 'candidate' => null];
-        }
-
-        return ['complete' => false, 'canonical' => $canonicalState, 'candidate' => $candidateState];
-    }
-
-    /**
-     * @param  non-empty-list<string>  $createArguments
-     */
-    private function createDockerContainer(
-        #[SensitiveParameter]
-        Process $process,
-        array $createArguments,
-        #[SensitiveParameter]
-        ProtectedInput $environmentInput,
-    ): void {
-        $this->executeSuccessfully(
-            $process,
-            [
-                'bash',
-                '-seu',
-                '-c',
-                self::DOCKER_CREATE_SCRIPT,
-                'orbit-process-docker-create',
-                ...array_slice($createArguments, offset: 4),
-            ],
-            'create-container',
-            'process.docker_converge_failed',
-            protectedInput: $environmentInput,
-        );
-    }
-
-    /**
-     * @param  array{spec: string, running: bool, result: CommandResult}|null  $canonicalState
-     * @param  array{spec: string, running: bool, result: CommandResult}|null  $candidateState
-     * @param  array{spec: string, running: bool, result: CommandResult}  $rollbackState
-     * @return array{spec: string, running: bool, result: CommandResult}
-     */
-    private function recoverDockerRollback(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $candidate,
-        string $rollback,
-        string $desiredSpec,
-        ?array $canonicalState,
-        ?array $candidateState,
-        array $rollbackState,
-    ): array {
-        if ($canonicalState === null) {
-            if ($candidateState !== null && $candidateState['running']) {
-                $stopCandidate = $this->execute(
-                    $process,
-                    ['sudo', 'docker', 'container', 'stop', $candidate],
-                );
-
-                if (! $stopCandidate->succeeded()) {
-                    $this->fail(
-                        $process,
-                        'stop-recovery-candidate',
-                        'process.docker_recovery_required',
-                        $stopCandidate,
-                    );
-                }
-            }
-
-            $this->restoreDockerRollbackRuntime($process, $name, $rollback);
-
-            return [
-                ...$rollbackState,
-                'running' => $this->dockerRollbackShouldRun($rollback),
-            ];
-        }
-
-        if ($canonicalState['spec'] === $desiredSpec) {
-            if ($candidateState !== null) {
-                throw new ProcessOperationException(
-                    step: 'inspect-rollback-container',
-                    errorCode: 'process.docker_recovery_required',
-                    message: "Docker process [{$process->name}] has ambiguous candidate and rollback state.",
-                    result: $candidateState['result'],
-                );
-            }
-
-            if (
-                $process->desired_state === DesiredProcessState::Running
-                && ! $canonicalState['running']
-            ) {
-                $this->rollbackPublishedDockerCandidate(
-                    $process,
-                    $name,
-                    $candidate,
-                    $rollback,
-                );
-
-                return [
-                    ...$rollbackState,
-                    'running' => $this->dockerRollbackShouldRun($rollback),
-                ];
-            }
-
-            if (
-                $process->desired_state === DesiredProcessState::Stopped
-                && $canonicalState['running']
-            ) {
-                $this->executeSuccessfully(
-                    $process,
-                    ['sudo', 'docker', 'container', 'stop', $name],
-                    'stop',
-                    'process.stop_failed',
-                );
-            }
-
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'docker', 'container', 'rm', '--force', $rollback],
-                'finalize-rollback-container',
-                'process.docker_converge_failed',
-            );
-
-            return [
-                ...$canonicalState,
-                'running' => $process->desired_state === DesiredProcessState::Running,
-            ];
-        }
-
-        throw new ProcessOperationException(
-            step: 'inspect-rollback-container',
-            errorCode: 'process.docker_recovery_required',
-            message: "Docker process [{$process->name}] has ambiguous rollback state.",
-            result: $rollbackState['result'],
-        );
-    }
-
-    /** @param array{spec: string, running: bool, result: CommandResult}|null $candidateState */
-    private function removeOwnedDockerCandidate(
-        #[SensitiveParameter]
-        Process $process,
-        string $candidate,
-        ?array $candidateState,
-    ): void {
-        if ($candidateState === null) {
-            return;
-        }
-
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'docker', 'container', 'rm', '--force', $candidate],
-            'remove-candidate-container',
-            'process.docker_converge_failed',
-        );
-    }
-
-    /** @param array{spec: string, running: bool, result: CommandResult} $state */
-    private function convergeDockerDesiredState(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        array $state,
-    ): void {
-        if ($process->desired_state === DesiredProcessState::Running) {
-            if ($state['running']) {
-                return;
-            }
-
-            $this->executeSuccessfully(
-                $process,
-                ['sudo', 'docker', 'container', 'start', $name],
-                'start',
-                'process.start_failed',
-            );
-
-            return;
-        }
-
-        if (! $state['running']) {
-            return;
-        }
-
-        $this->executeSuccessfully(
-            $process,
-            ['sudo', 'docker', 'container', 'stop', $name],
-            'stop',
-            'process.stop_failed',
-        );
-    }
-
-    /** @param array{spec: string, running: bool, result: CommandResult} $previousState */
-    private function publishDockerCandidate(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $candidate,
-        array $previousState,
-    ): void {
-        $rollback = $previousState['running']
-            ? "{$name}-rollback-running"
-            : "{$name}-rollback-stopped";
-        $stageRollback = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rename', $name, $rollback],
-        );
-
-        if (! $stageRollback->succeeded()) {
-            $this->removeDockerCandidateAfterFailedActivation($process, $candidate);
-            $this->throwDockerActivationFailure($process, 'stage-rollback-container', $stageRollback);
-        }
-
-        if ($previousState['running']) {
-            $stopPrevious = $this->execute(
-                $process,
-                ['sudo', 'docker', 'container', 'stop', $rollback],
-            );
-
-            if (! $stopPrevious->succeeded()) {
-                $this->restoreDockerRollback(
-                    $process,
-                    $name,
-                    $candidate,
-                    $rollback,
-                );
-                $this->throwDockerActivationFailure($process, 'stop-previous-container', $stopPrevious);
-            }
-        }
-
-        $activation = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rename', $candidate, $name],
-        );
-
-        if (! $activation->succeeded()) {
-            $this->restoreDockerRollback(
-                $process,
-                $name,
-                $candidate,
-                $rollback,
-            );
-            $this->throwDockerActivationFailure($process, 'activate-container', $activation);
-        }
-
-        if ($process->desired_state === DesiredProcessState::Running) {
-            $start = $this->execute(
-                $process,
-                ['sudo', 'docker', 'container', 'start', $name],
-            );
-
-            if (! $start->succeeded()) {
-                $this->rollbackPublishedDockerCandidate(
-                    $process,
-                    $name,
-                    $candidate,
-                    $rollback,
-                );
-
-                throw new ProcessOperationException(
-                    step: 'start',
-                    errorCode: 'process.start_failed',
-                    message: "Process [{$process->name}] failed to start; the previous container was restored.",
-                    result: $this->redactDockerEnvironment($process, $start),
-                );
-            }
-        }
-
-        $finalize = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rm', '--force', $rollback],
-        );
-
-        if ($finalize->succeeded()) {
-            return;
-        }
-
-        $this->rollbackPublishedDockerCandidate(
-            $process,
-            $name,
-            $candidate,
-            $rollback,
-        );
-        $this->throwDockerActivationFailure($process, 'finalize-container', $finalize);
-    }
-
-    private function restoreDockerRollback(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $candidate,
-        string $rollback,
-    ): void {
-        $this->restoreDockerRollbackRuntime($process, $name, $rollback);
-
-        $this->removeDockerCandidateAfterFailedActivation($process, $candidate);
-    }
-
-    private function restoreDockerRollbackRuntime(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $rollback,
-    ): void {
-        $restoreState = $this->execute(
-            $process,
-            $this->dockerRollbackShouldRun($rollback)
-                ? ['sudo', 'docker', 'container', 'start', $rollback]
-                : ['sudo', 'docker', 'container', 'stop', $rollback],
-        );
-
-        if (! $restoreState->succeeded()) {
-            $this->fail(
-                $process,
-                'restore-container-state',
-                'process.docker_recovery_required',
-                $restoreState,
-            );
-        }
-
-        $restore = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rename', $rollback, $name],
-        );
-
-        if (! $restore->succeeded()) {
-            $this->fail($process, 'restore-container', 'process.docker_recovery_required', $restore);
-        }
-    }
-
-    private function rollbackPublishedDockerCandidate(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $candidate,
-        string $rollback,
-    ): void {
-        $unpublish = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rename', $name, $candidate],
-        );
-
-        if (! $unpublish->succeeded()) {
-            $this->fail($process, 'unpublish-container', 'process.docker_recovery_required', $unpublish);
-        }
-
-        $stopCandidate = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'stop', $candidate],
-        );
-
-        if (! $stopCandidate->succeeded()) {
-            $this->fail($process, 'stop-candidate-container', 'process.docker_recovery_required', $stopCandidate);
-        }
-
-        $this->restoreDockerRollback(
-            $process,
-            $name,
-            $candidate,
-            $rollback,
-        );
-    }
-
-    private function dockerRollbackShouldRun(string $rollback): bool
-    {
-        return str_ends_with($rollback, '-rollback-running');
-    }
-
-    private function removeDockerCandidateAfterFailedActivation(
-        #[SensitiveParameter]
-        Process $process,
-        string $candidate,
-    ): void {
-        $cleanup = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'rm', '--force', $candidate],
-        );
-
-        if (! $cleanup->succeeded() && ! $this->isDockerNotFound($cleanup)) {
-            $this->fail($process, 'remove-candidate-container', 'process.docker_recovery_required', $cleanup);
-        }
-    }
-
-    private function throwDockerActivationFailure(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        CommandResult $result,
-    ): never {
-        throw new ProcessOperationException(
-            step: $step,
-            errorCode: 'process.docker_activation_failed',
-            message: "Docker process [{$process->name}] activation failed; the previous container was restored.",
-            result: $this->redactDockerEnvironment($process, $result),
-        );
-    }
-
-    /** @return array{spec: string, running: bool, result: CommandResult}|null */
-    private function inspectOwnedDockerContainer(
-        #[SensitiveParameter]
-        Process $process,
-        string $name,
-        string $step,
-        ?ProcessTarget $target = null,
-    ): ?array {
-        $inspect = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'inspect', '--format', self::DOCKER_INSPECT_FORMAT, $name],
-            target: $target,
-        );
-
-        if ($this->isDockerNotFound($inspect)) {
-            return null;
-        }
-
-        if (! $inspect->succeeded()) {
-            $this->fail($process, $step, 'process.docker_converge_failed', $inspect);
-        }
-
-        [$managed, $kind, $ownerId, $specHash, $running] = array_pad(
-            explode("\n", trim($inspect->stdout), limit: 5),
-            length: 5,
-            value: '',
-        );
-
-        if (! $this->hasExactDockerOwnership($process, $managed, $kind, $ownerId)) {
-            throw new ProcessOperationException(
-                step: $step,
-                errorCode: 'process.runtime_name_collision',
-                message: "Docker container [{$name}] is not owned by this process.",
-                result: $inspect,
-            );
-        }
-
-        if (! in_array($running, ['true', 'false'], strict: true)) {
-            throw new ProcessOperationException(
-                step: $step,
-                errorCode: 'process.docker_converge_failed',
-                message: "Docker container [{$name}] returned an invalid running state.",
-                result: $inspect,
-            );
-        }
-
-        return ['spec' => $specHash, 'running' => $running === 'true', 'result' => $inspect];
-    }
-
-    private function systemdCandidatePath(#[SensitiveParameter] Process $process): string
-    {
-        return self::SYSTEMD_CANDIDATE_DIRECTORY.'/'.$this->systemd->unitName($process);
-    }
-
-    private function systemdBackupPath(#[SensitiveParameter] Process $process): string
-    {
-        return self::SYSTEMD_CANDIDATE_DIRECTORY.'/.'.$this->systemd->unitName($process).'.backup';
-    }
-
-    private function requireOwnedRuntime(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        string $errorCode,
-        ?ProcessTarget $target = null,
-    ): void {
-        if ($this->runtimeExistsAndIsOwned($process, $step, $errorCode, $target)) {
-            return;
-        }
-
-        throw new ProcessOperationException(
-            step: $step,
-            errorCode: 'process.runtime_not_found',
-            message: "Process [{$process->name}] has no native runtime artifact.",
-        );
+        $this->call($process, 'processes.converge-container', [
+            'process_id' => $process->id,
+            'container' => $this->docker->containerName($process),
+            'desired' => $process->desired_state->value,
+            'spec' => $this->docker->specHash($process, $target),
+            ...$this->docker->containerInput($process, $target),
+        ], 'converge-container', 'process.docker_converge_failed');
     }
 
     private function assertReleaseAvailable(
@@ -1338,254 +279,144 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             return;
         }
 
-        $result = $this->execute(
-            $process,
-            ['sudo', 'test', '-d', $target->defaultWorkingDirectory],
-            target: $target,
-        );
+        $release = $this->call($process, 'processes.check-release', ['directory' => $target->defaultWorkingDirectory], $step, $errorCode, $target);
 
-        if ($result->succeeded()) {
-            return;
-        }
-
-        if ($this->isSystemdPathAbsent($result)) {
+        if ($release['available'] !== true) {
             throw new ResourceOperationException(
                 errorCode: 'process.release_unavailable',
                 message: "Process [{$process->name}] has no selected production release.",
                 status: 409,
             );
         }
-
-        $this->fail($process, $step, $errorCode, $result);
     }
 
-    private function runtimeExistsAndIsOwned(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        string $errorCode,
-        ?ProcessTarget $target = null,
-    ): bool {
-        return match ($process->runtime) {
-            ProcessRuntime::Systemd => $this->systemdExistsAndIsOwned($process, $step, $errorCode, $target),
-            ProcessRuntime::Docker => $this->dockerExistsAndIsOwned($process, $step, $errorCode, $target),
-        };
-    }
-
-    private function systemdExistsAndIsOwned(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        string $errorCode,
-        ?ProcessTarget $target = null,
-    ): bool {
-        $path = $this->systemd->unitPath($process);
-        $exists = $this->execute($process, ['sudo', 'test', '-e', $path], target: $target);
-
-        if ($this->isSystemdPathAbsent($exists)) {
-            return false;
-        }
-
-        if (! $exists->succeeded()) {
-            $this->fail($process, $step, $errorCode, $exists);
-        }
-
-        $current = $this->execute($process, ['sudo', 'cat', '--', $path], target: $target);
-
-        if ($this->isSystemdNotFound($current)) {
-            return false;
-        }
-
-        if (! $current->succeeded()) {
-            $this->fail($process, $step, $errorCode, $current);
-        }
-
-        $ownershipMarker = preg_quote("X-Orbit-Process-ID={$process->id}", delimiter: '/');
-
-        if (preg_match("/^{$ownershipMarker}\\r?$/mD", $current->stdout) === 1) {
-            return true;
-        }
-
-        throw new ProcessOperationException(
-            step: $step,
-            errorCode: 'process.runtime_name_collision',
-            message: "Systemd unit [{$path}] is not owned by this process.",
-            result: $current,
-        );
-    }
-
-    private function dockerExistsAndIsOwned(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        string $errorCode,
-        ?ProcessTarget $target = null,
-    ): bool {
-        $name = $this->docker->containerName($process);
-        $inspect = $this->execute(
-            $process,
-            ['sudo', 'docker', 'container', 'inspect', '--format', self::DOCKER_OWNER_FORMAT, $name],
-            target: $target,
-        );
-
-        if ($this->isDockerNotFound($inspect)) {
-            return false;
-        }
-
-        if (! $inspect->succeeded()) {
-            $this->fail($process, $step, $errorCode, $inspect);
-        }
-
-        [$managed, $kind, $ownerId] = array_pad(
-            explode("\n", trim($inspect->stdout), limit: 3),
-            length: 3,
-            value: '',
-        );
-
-        if ($this->hasExactDockerOwnership($process, $managed, $kind, $ownerId)) {
-            return true;
-        }
-
-        throw new ProcessOperationException(
-            step: $step,
-            errorCode: 'process.runtime_name_collision',
-            message: "Docker container [{$name}] is not owned by this process.",
-            result: $inspect,
-        );
-    }
-
-    private function hasExactDockerOwnership(
-        #[SensitiveParameter]
-        Process $process,
-        string $managed,
-        string $kind,
-        string $ownerId,
-    ): bool {
-        return $managed === 'true' && $kind === 'process' && $ownerId === (string) $process->id;
-    }
-
-    private function isNativeNotFound(ProcessRuntime $runtime, CommandResult $result): bool
+    /** @return array{process_id: int, runtime: string, name: string} */
+    private function artifact(#[SensitiveParameter] Process $process): array
     {
-        return match ($runtime) {
-            ProcessRuntime::Systemd => $this->isSystemdNotFound($result),
-            ProcessRuntime::Docker => $this->isDockerNotFound($result),
-        };
+        return [
+            'process_id' => $process->id,
+            'runtime' => $process->runtime->value,
+            'name' => match ($process->runtime) {
+                ProcessRuntime::Systemd => $this->systemd->unitName($process),
+                ProcessRuntime::Docker => $this->docker->containerName($process),
+            },
+        ];
     }
 
-    private function isSystemdNotFound(CommandResult $result): bool
-    {
-        return
-            ! $result->succeeded()
-            && (
-                str_contains($result->stderr, 'No such file or directory')
-                || str_contains($result->stderr, 'could not be found')
-                || str_contains($result->stderr, 'not found')
+    /**
+     * Runs one `processes.*` command on the Process's Node. A refusal becomes its error code with the agent's step;
+     * a command error the Process does not name, or a run without a result, fails `$step` with `$errorCode`.
+     *
+     * @param  array<string, mixed>  $input
+     * @param  string|null  $change  The change of a systemd activation, which names what a failure restored.
+     * @return array<string, mixed>
+     */
+    private function call(
+        #[SensitiveParameter]
+        Process $process,
+        string $command,
+        #[SensitiveParameter]
+        array $input,
+        string $step,
+        string $errorCode,
+        ?ProcessTarget $target = null,
+        ?string $change = null,
+    ): array {
+        $target ??= $this->targets->forInspection($process);
+
+        if (! is_string($target->node->wireguard_ip) || $target->node->wireguard_ip === '') {
+            throw new ProcessOperationException(
+                step: 'ssh',
+                errorCode: 'process.wireguard_ip_missing',
+                message: "Node [{$target->node->name}] has no WireGuard address.",
             );
-    }
-
-    private function isSystemdPathAbsent(CommandResult $result): bool
-    {
-        return $result->exitCode === 1 && trim($result->stdout) === '' && trim($result->stderr) === '';
-    }
-
-    private function isDockerNotFound(CommandResult $result): bool
-    {
-        return
-            ! $result->succeeded()
-            && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'));
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function restoreSystemdUnit(#[SensitiveParameter] Process $process, array $arguments): void
-    {
-        $restore = $this->execute($process, $arguments);
-
-        if (! $restore->succeeded()) {
-            $this->fail($process, 'restore-unit', 'process.systemd_rollback_failed', $restore);
         }
 
-        $reload = $this->execute($process, ['sudo', 'systemctl', 'daemon-reload']);
-
-        if (! $reload->succeeded()) {
-            $this->fail($process, 'rollback-daemon-reload', 'process.systemd_rollback_failed', $reload);
-        }
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function execute(
-        #[SensitiveParameter]
-        Process $process,
-        array $arguments,
-        #[SensitiveParameter]
-        ?string $input = null,
-        #[SensitiveParameter]
-        ?ProtectedInput $protectedInput = null,
-        ?ProcessTarget $target = null,
-        ?int $maxOutputBytes = null,
-    ): CommandResult {
         try {
-            $target ??= $this->targets->forInspection($process);
-
-            if (! is_string($target->node->wireguard_ip) || $target->node->wireguard_ip === '') {
-                throw new ProcessOperationException(
-                    step: 'ssh',
-                    errorCode: 'process.wireguard_ip_missing',
-                    message: "Node [{$target->node->name}] has no WireGuard address.",
-                );
+            return $this->agents->run($target->node, $command, $input);
+        } catch (AgentCommandRefused $refused) {
+            throw $this->refusal($process, $refused, $step, $errorCode, $change);
+        } catch (AgentRunnerFailure $failure) {
+            if ($failure->kind === AgentRunnerFailure::Timeout) {
+                throw $failure;
             }
 
-            return $this->ssh->execute(
-                new SshConnection(
-                    host: $target->node->wireguard_ip,
-                    user: $target->node->user,
-                    port: 22,
-                    identityFile: $this->keys->privateKeyPath(),
-                    knownHostsFile: $this->knownHosts->path(),
-                ),
-                new RemoteCommand($arguments, $input, $protectedInput, $maxOutputBytes),
+            throw new ProcessOperationException(
+                step: $step,
+                errorCode: $errorCode,
+                message: "Process [{$process->name}] runtime step [{$step}] failed.",
+                result: $failure->result === null ? null : $this->redactDockerEnvironment($process, $failure->result),
+                previous: $failure,
             );
-        } finally {
-            $protectedInput?->close();
         }
     }
 
-    /** @param non-empty-list<string> $arguments */
-    private function executeSuccessfully(
+    private function refusal(
         #[SensitiveParameter]
         Process $process,
-        array $arguments,
+        AgentCommandRefused $refused,
         string $step,
         string $errorCode,
-        #[SensitiveParameter]
-        ?string $input = null,
-        #[SensitiveParameter]
-        ?ProtectedInput $protectedInput = null,
-        ?ProcessTarget $target = null,
-        ?int $maxOutputBytes = null,
-    ): CommandResult {
-        $result = $this->execute($process, $arguments, $input, $protectedInput, $target, $maxOutputBytes);
+        ?string $change,
+    ): ProcessOperationException {
+        $code = self::ERRORS[$refused->errorCode] ?? null;
 
-        if ($result->succeeded()) {
-            return $result;
+        if ($code === null) {
+            return new ProcessOperationException(
+                step: $step,
+                errorCode: $errorCode,
+                message: "Process [{$process->name}] runtime step [{$step}] failed.",
+                result: AgentStep::output($refused),
+                previous: $refused,
+            );
         }
 
-        $this->fail($process, $step, $errorCode, $result);
-    }
+        $details = $refused->details;
+        $step = is_string($details['step'] ?? null) ? $details['step'] : $step;
+        $output = is_array($details['output'] ?? null) ? $details['output'] : null;
+        $result = $output === null ? null : $this->redactDockerEnvironment($process, new CommandResult(
+            exitCode: is_int($output['exit_code'] ?? null) ? $output['exit_code'] : 1,
+            stdout: self::text($output, 'stdout'),
+            stderr: self::text($output, 'stderr'),
+            durationMs: 0,
+            truncated: false,
+        ));
 
-    private function fail(
-        #[SensitiveParameter]
-        Process $process,
-        string $step,
-        string $errorCode,
-        #[SensitiveParameter]
-        CommandResult $result,
-    ): never {
-        throw new ProcessOperationException(
+        return new ProcessOperationException(
             step: $step,
-            errorCode: $errorCode,
-            message: "Process [{$process->name}] runtime step [{$step}] failed.",
-            result: $this->redactDockerEnvironment($process, $result),
+            errorCode: str_replace('{runtime}', $process->runtime->value, $code),
+            message: $this->message($process, $refused->errorCode, $step, $details, $change),
+            result: $result,
+            previous: $refused,
         );
+    }
+
+    /** @param  array<string, mixed>  $details */
+    private function message(Process $process, string $code, string $step, array $details, ?string $change): string
+    {
+        $artifact = self::text($details, 'artifact');
+        $docker = $process->runtime === ProcessRuntime::Docker;
+        $restoration = $docker ? 'the previous container was restored' : self::RESTORATIONS[$change ?? 'reload'];
+
+        return match (true) {
+            $code === 'processes.name_collision' => ($docker ? "Docker container [{$artifact}]" : "Systemd unit [{$artifact}]").' is not owned by this process.',
+            $code === 'processes.not_found' => "Process [{$process->name}] has no native runtime artifact.",
+            $code === 'processes.candidate_invalid' && ! $docker => "Process [{$process->name}] systemd candidate validation failed.",
+            $code === 'processes.candidate_invalid' => ($step === 'verify-container' ? 'Docker container' : 'Docker candidate')." [{$artifact}] does not match the desired process specification.",
+            $code === 'processes.activation_failed' && $docker => "Docker process [{$process->name}] activation failed; the previous container was restored.",
+            $code === 'processes.activation_failed' && $change !== 'reload' => "Process [{$process->name}] systemd activation failed; the previous unit was restored.",
+            in_array($code, ['processes.start_failed', 'processes.stop_failed'], true) && ($details['restored'] ?? false) === true => sprintf('Process [%s] failed to %s; %s.', $process->name, $code === 'processes.start_failed' ? 'start' : 'stop', $restoration),
+            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_rollback' => "Docker process [{$process->name}] has ambiguous rollback state.",
+            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'ambiguous_candidate' => "Docker process [{$process->name}] has ambiguous candidate and rollback state.",
+            $code === 'processes.recovery_required' && ($details['reason'] ?? null) === 'no_canonical' => "Docker process [{$process->name}] has no canonical runtime after recovery.",
+            default => "Process [{$process->name}] runtime step [{$step}] failed.",
+        };
+    }
+
+    /** @param  array<mixed>  $values */
+    private static function text(array $values, string $key): string
+    {
+        return is_string($values[$key] ?? null) ? $values[$key] : '';
     }
 
     private function redactDockerEnvironment(

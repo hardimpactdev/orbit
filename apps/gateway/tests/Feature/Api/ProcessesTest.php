@@ -7,11 +7,9 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Mcp\ToolManifest;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -27,9 +25,8 @@ use Monolog\Logger;
 use Monolog\LogRecord;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Psr\Log\LoggerInterface;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
-
-use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
@@ -67,8 +64,9 @@ beforeEach(function (): void {
 
 describe('ProcessUser', function (): void {
     beforeEach(function (): void {
-        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+        $this->agents = new FakeAgentCommandRunner;
+        app()->instance(AgentCommandRunner::class, $this->agents);
+        $this->nobody = ['user' => 'nobody', 'uid' => 65534, 'group' => 'nogroup', 'home' => '/nonexistent', 'shell' => '/usr/sbin/nologin'];
         $this->userPayload = [
             'target_type' => 'node',
             'target_id' => $this->node->id,
@@ -80,21 +78,12 @@ describe('ProcessUser', function (): void {
     });
 
     it('stores the named account, defaults to its passwd home, and renders User', function (): void {
-        mock(SshExecutor::class)->shouldReceive('execute')->once()
-            ->withArgs(function ($connection, $command): bool {
-                expect($connection->host)->toBe($this->node->wireguard_ip)
-                    ->and($connection->user)->toBe('orbit')
-                    ->and($connection->identityFile)->toBe('/keys/private')
-                    ->and($connection->knownHostsFile)->toBe('/keys/known_hosts')
-                    ->and($command->arguments)->toBe(['getent', 'passwd', '--', 'nobody']);
-
-                return true;
-            })
-            ->andReturn(new CommandResult(0, "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n", '', 1, false));
+        $this->agents->answer('accounts.lookup', $this->nobody);
         $this->postJson('/api/v1/processes', $this->userPayload)->assertCreated()
             ->assertJsonPath('data.user', 'nobody')
             ->assertJsonPath('data.runtime_config.user', 'nobody')
             ->assertJsonPath('data.working_directory', '/nonexistent');
+        expect($this->agents->calls)->toBe([['node' => $this->node->name, 'command' => 'accounts.lookup', 'input' => ['user' => 'nobody']]]);
         $process = Process::query()->sole();
         $target = app(ProcessTargetResolver::class)->forProcess($process);
         expect(new SystemdProcessRenderer()->render($process, $target))
@@ -104,8 +93,7 @@ describe('ProcessUser', function (): void {
     });
 
     it('creates the Process through MCP with the same user contract', function (): void {
-        mock(SshExecutor::class)->shouldReceive('execute')->once()
-            ->andReturn(new CommandResult(0, "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n", '', 1, false));
+        $this->agents->answer('accounts.lookup', $this->nobody);
         $tool = collect(ToolManifest::default()->definitions())->first(static fn ($definition): bool => $definition->name === 'process-create');
         expect($tool?->inputSchema['properties']['user']['type'])->toBe('string');
         $response = $this->postJson('/mcp', [
@@ -116,27 +104,25 @@ describe('ProcessUser', function (): void {
         expect($document['data']['user'])->toBe('nobody')->and($document['data']['working_directory'])->toBe('/nonexistent');
     });
 
-    it('does not leak an SSH failure or persist the Process', function (): void {
-        mock(SshExecutor::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('private SSH detail'));
+    it('does not leak an agent failure or persist the Process', function (): void {
+        $this->agents->answer('accounts.lookup', static fn (): array => throw new RuntimeException('private SSH detail'));
         $this->postJson('/api/v1/processes', $this->userPayload)->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.user_unavailable')->assertDontSee('private SSH detail');
         expect(Process::query()->count())->toBe(0);
     });
 
     it('honors an explicit directory and includes the account in identity matching', function (): void {
-        mock(SshExecutor::class)->shouldReceive('execute')->times(3)
-            ->andReturn(new CommandResult(0, "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n", '', 1, false));
+        $this->agents->answer('accounts.lookup', $this->nobody);
         $payload = [...$this->userPayload, 'working_directory' => '/srv/worker'];
         $this->postJson('/api/v1/processes', $payload)->assertCreated()->assertJsonPath('data.working_directory', '/srv/worker');
         $this->postJson('/api/v1/processes', $payload)->assertOk();
         $process = Process::query()->sole();
         $process->update(['runtime_config' => [...$process->runtime_config, 'user' => 'other-worker']]);
         $this->postJson('/api/v1/processes', $payload)->assertConflict()->assertJsonPath('error.code', 'process.name_taken');
-        expect(Process::query()->count())->toBe(1);
+        expect(Process::query()->count())->toBe(1)->and($this->agents->calls)->toHaveCount(3);
     });
 
     it('retains the derived account when omitted', function (): void {
-        mock(SshExecutor::class)->shouldNotReceive('execute');
         $payload = $this->userPayload;
         unset($payload['user']);
         $this->postJson('/api/v1/processes', $payload)->assertCreated()
@@ -144,14 +130,14 @@ describe('ProcessUser', function (): void {
             ->assertJsonMissingPath('data.runtime_config.user');
         $process = Process::query()->sole();
         expect(new SystemdProcessRenderer()->render($process, app(ProcessTargetResolver::class)->forProcess($process)))
-            ->toContain('User=orbit');
+            ->toContain('User=orbit')
+            ->and($this->agents->calls)->toBeEmpty();
     });
 
-    it('rejects invalid names and unsupported combinations before SSH', function (array $override): void {
-        mock(SshExecutor::class)->shouldNotReceive('execute');
+    it('rejects invalid names and unsupported combinations before the Node lookup', function (array $override): void {
         $this->postJson('/api/v1/processes', [...$this->userPayload, ...$override])
             ->assertUnprocessable()->assertJsonValidationErrors('user', 'error.details');
-        expect(Process::query()->count())->toBe(0);
+        expect(Process::query()->count())->toBe(0)->and($this->agents->calls)->toBeEmpty();
     })->with([
         'root' => [['user' => 'root']],
         'option injection' => [['user' => '--root']],
@@ -165,21 +151,20 @@ describe('ProcessUser', function (): void {
         'preset' => [['preset' => 'vp-dev']],
     ]);
 
-    it('fails closed on unavailable or unsafe passwd records without storing a Process', function (int $exit, string $stdout, bool $truncated): void {
-        mock(SshExecutor::class)->shouldReceive('execute')->once()
-            ->andReturn(new CommandResult($exit, $stdout, 'private remote detail', 1, $truncated));
+    it('fails closed on an unavailable or unsafe account without storing a Process', function (?array $account): void {
+        $account === null
+            ? $this->agents->refuse('accounts.lookup', 'accounts.missing')
+            : $this->agents->answer('accounts.lookup', [...$this->nobody, ...$account]);
         $this->postJson('/api/v1/processes', $this->userPayload)->assertUnprocessable()
-            ->assertJsonPath('error.code', 'process.user_unavailable')->assertDontSee('private remote detail');
+            ->assertJsonPath('error.code', 'process.user_unavailable');
         expect(Process::query()->count())->toBe(0);
     })->with([
-        'missing' => [2, '', false],
-        'truncated' => [0, "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n", true],
-        'wrong account' => [0, "other:x:65534:65534::/home/other:/bin/bash\n", false],
-        'UID zero' => [0, "nobody:x:0:0::/root:/bin/bash\n", false],
-        'malformed' => [0, "nobody\n", false],
-        'relative home' => [0, "nobody:x:65534:65534::relative:/bin/bash\n", false],
-        'traversal home' => [0, "nobody:x:65534:65534::/home/../root:/bin/bash\n", false],
-        'multiple records' => [0, "nobody:x:65534:65534::/nonexistent:/bin/bash\nnobody:x:65534:65534::/tmp:/bin/bash\n", false],
+        'missing' => [null],
+        'wrong account' => [['user' => 'other']],
+        'UID zero' => [['uid' => 0]],
+        'relative home' => [['home' => 'relative']],
+        'traversal home' => [['home' => '/home/../root']],
+        'control character' => [['home' => "/home/no\nbody"]],
     ]);
 });
 

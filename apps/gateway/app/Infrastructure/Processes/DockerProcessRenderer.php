@@ -21,22 +21,28 @@ final readonly class DockerProcessRenderer
     }
 
     /**
-     * @return non-empty-list<string>
+     * The container definition that `processes.converge-container` creates, apart from its name and labels. The
+     * environment travels in the command's protected input, and the agent hands it to Docker in a root-only file.
+     *
+     * @return array{
+     *     image: string,
+     *     command: non-empty-list<string>,
+     *     restart: string,
+     *     working_directory: string|null,
+     *     ports: list<string>,
+     *     mounts: list<array{source: string, target: string, read_only: bool}>,
+     *     environment: array<string, string>|object
+     * }
      */
-    public function createArguments(
+    public function containerInput(
         #[SensitiveParameter]
         Process $process,
         ProcessTarget $target,
-        ?string $containerName = null,
     ): array {
         $runtimeConfig = $this->runtimeConfig($process);
         $image = $runtimeConfig['image'] ?? null;
         $command = $this->stringList($runtimeConfig['command'] ?? null);
-        $containerName ??= $this->containerName($process);
-
-        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9_.-]*\z/D', $containerName) !== 1) {
-            throw new InvalidArgumentException('A Docker process needs a safe container name.');
-        }
+        $this->containerName($process);
 
         if (
             ! is_string($image)
@@ -46,37 +52,18 @@ final readonly class DockerProcessRenderer
             throw new InvalidArgumentException('A Docker process needs an image and command argv.');
         }
 
-        $arguments = [
-            'sudo',
-            'docker',
-            'container',
-            'create',
-            '--name',
-            $containerName,
-            '--label',
-            'orbit.managed=true',
-            '--label',
-            'orbit.container.kind=process',
-            '--label',
-            "orbit.process.id={$process->id}",
-            '--label',
-            'orbit.process.spec='.$this->specHash($process, $target),
-            '--restart',
-            $this->restartPolicy($process, $target),
-            ...($process->working_directory === null ? [] : ['--workdir', $process->working_directory]),
+        $environment = $this->stringMap($process->runtime_config['environment'] ?? []);
+
+        return [
+            'image' => $image,
+            'command' => $command,
+            'restart' => $this->restartPolicy($process, $target),
+            'working_directory' => $process->working_directory,
+            'ports' => $this->stringList($runtimeConfig['ports'] ?? []),
+            'mounts' => $this->volumes($runtimeConfig['volumes'] ?? []),
+            // An empty map stays a JSON object.
+            'environment' => $environment === [] ? (object) [] : $environment,
         ];
-
-        foreach ($this->stringList($runtimeConfig['ports'] ?? []) as $port) {
-            $arguments[] = '--publish';
-            $arguments[] = $port;
-        }
-
-        foreach ($this->volumes($runtimeConfig['volumes'] ?? []) as $volume) {
-            $arguments[] = '--mount';
-            $arguments[] = $this->mount($volume);
-        }
-
-        return [...$arguments, $image, ...$command];
     }
 
     public function specHash(#[SensitiveParameter] Process $process, ProcessTarget $target): string
@@ -87,20 +74,6 @@ final readonly class DockerProcessRenderer
             'restart_policy' => $process->restart_policy,
             'node_id' => $target->node->id,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    }
-
-    public function environmentInput(#[SensitiveParameter] Process $process): ProtectedInput
-    {
-        $contents = '';
-        $environment = array_key_exists('environment', $process->runtime_config)
-            ? $process->runtime_config['environment']
-            : [];
-
-        foreach ($this->stringMap($environment) as $name => $value) {
-            $contents .= "{$name}={$value}\n";
-        }
-
-        return ProtectedInput::fromString($contents);
     }
 
     /** @return array<string, mixed> */
@@ -198,15 +171,6 @@ final readonly class DockerProcessRenderer
         }
 
         return $volumes;
-    }
-
-    /** @param array{source: string, target: string, read_only: bool} $volume */
-    private function mount(array $volume): string
-    {
-        $type = str_starts_with($volume['source'], '/') ? 'bind' : 'volume';
-        $mount = "type={$type},source={$volume['source']},target={$volume['target']}";
-
-        return $volume['read_only'] ? "{$mount},readonly" : $mount;
     }
 
     private function restartPolicy(#[SensitiveParameter] Process $process, ProcessTarget $target): string

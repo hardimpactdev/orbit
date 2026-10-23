@@ -6,16 +6,12 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Http\Mcp\ToolManifest;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
-
-use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
@@ -36,10 +32,10 @@ it('uses the Docker image working directory without rewriting existing overrides
     $process = Process::query()->sole();
     $target = app(ProcessTargetResolver::class)->forProcess($process);
     expect($process->working_directory)->toBeNull()
-        ->and(new DockerProcessRenderer()->createArguments($process, $target))->not->toContain('--workdir');
+        ->and(new DockerProcessRenderer()->containerInput($process, $target)['working_directory'])->toBeNull();
     $process->update(['working_directory' => '/app']);
     $this->getJson('/api/v1/processes')->assertOk()->assertJsonPath('data.0.working_directory', '/app');
-    expect(new DockerProcessRenderer()->createArguments($process->refresh(), $target))->toContain('--workdir', '/app');
+    expect(new DockerProcessRenderer()->containerInput($process->refresh(), $target)['working_directory'])->toBe('/app');
 });
 
 it('updates a stopped Process in place and preserves omitted Docker fields', function (): void {
@@ -175,10 +171,8 @@ it('keeps every omitted field when only ports change', function (string $transpo
 ]);
 
 it('keeps the systemd user and working directory when only restart policy changes', function (): void {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    mock(SshExecutor::class)->shouldReceive('execute')->once()
-        ->andReturn(new CommandResult(0, "svc-worker:x:1001:1001:worker:/home/worker:/bin/sh\n", '', 1, false));
+    $agents = new FakeAgentCommandRunner()->answer('accounts.lookup', ['user' => 'svc-worker', 'uid' => 1001, 'group' => 'svc-worker', 'home' => '/home/worker', 'shell' => '/bin/sh']);
+    app()->instance(AgentCommandRunner::class, $agents);
     $process = Process::query()->create([
         'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'worker',
         'runtime' => 'systemd', 'working_directory' => '/srv/worker',

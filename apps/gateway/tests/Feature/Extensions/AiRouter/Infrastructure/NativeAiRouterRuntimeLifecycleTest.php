@@ -10,6 +10,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -24,6 +25,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterSourcePublisher;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 final class CollectorActivationSsh implements SshExecutor
@@ -72,6 +74,29 @@ final class CollectorActivationSsh implements SshExecutor
 
         return new CommandResult(0, $stdout, '', 0, false);
     }
+}
+
+/** The collector's unit through the `processes.*` commands, on the unit and state that the SSH fake holds. */
+function collector_unit_agents(CollectorActivationSsh $node): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()
+        ->answer('processes.stage-unit', static function (array $input) use ($node): array {
+            if ($node->unit === $input['content']) {
+                return ['staged' => false, 'previous' => true, 'state' => $node->state];
+            }
+            $node->candidate = $input['content'];
+
+            return ['staged' => true, 'previous' => $node->unit !== '', 'state' => null];
+        })
+        ->answer('processes.activate-unit', static function (array $input) use ($node): array {
+            if ($input['change'] !== 'reload') {
+                $node->unit = $node->candidate;
+            }
+            $node->state = $input['desired'] === 'running' ? 'active' : 'inactive';
+
+            return ['backup_left' => false];
+        })
+        ->answer('processes.status', static fn (): array => ['state' => $node->unit === '' ? 'absent' : $node->state]);
 }
 
 beforeEach(function (): void {
@@ -179,13 +204,16 @@ it('leaves an unchanged migrated collector untouched on upgrade', function (stri
     $this->ssh->unit = new SystemdProcessRenderer()->render($this->process, $target, $account);
     $this->ssh->source = (string) file_get_contents(base_path('extensions/ai-router/resources/collector.py'));
     $this->ssh->state = $state;
+    $agents = collector_unit_agents($this->ssh);
+    app()->instance(AgentCommandRunner::class, $agents);
     app()->instance(ProcessRuntimeManager::class, app(RemoteProcessRuntimeManager::class));
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
     expect($this->process->refresh()->systemd_activation_hash)->toBeNull()
         ->and($this->process->systemd_activation_pending)->toBeFalse()
-        ->and($this->source->refresh()->activation_pending)->toBeFalse();
+        ->and($this->source->refresh()->activation_pending)->toBeFalse()
+        ->and($agents->commands())->not->toContain('processes.activate-unit', 'processes.control');
     foreach ($this->ssh->commands as $command) {
         expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
     }
@@ -203,11 +231,13 @@ it('activates changed source once through unit convergence and leaves the next c
         'changed' => $renderer->render($this->process, $target, $account)."# previous unit\n",
         'absent' => '',
     };
+    $agents = collector_unit_agents($this->ssh);
+    app()->instance(AgentCommandRunner::class, $agents);
     app()->instance(ProcessRuntimeManager::class, app(RemoteProcessRuntimeManager::class));
     $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
     $lifecycle->converge($this->node, $this->environment);
     $lifecycle->converge($this->node, $this->environment);
-    $starts = array_filter($this->ssh->commands, fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'restart', 'orbit-process-'.$this->process->id.'-ai-router-collector.service']);
+    $starts = array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'processes.activate-unit' && $call['input']['desired'] === 'running');
     expect($starts)->toHaveCount(1)
         ->and($this->source->refresh()->activation_pending)->toBeFalse()
         ->and($this->process->refresh()->systemd_activation_pending)->toBeFalse();

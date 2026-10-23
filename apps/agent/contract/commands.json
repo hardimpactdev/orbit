@@ -1078,6 +1078,222 @@
       ]
     },
     {
+      "name": "processes.check-release",
+      "summary": "Tell whether a production Process has a selected release.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.status",
+      "summary": "Read the state of a Process's unit or container.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.control",
+      "summary": "Start, stop, or restart a Process's unit or container.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.remove",
+      "summary": "Delete a Process's unit or containers.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.stage-unit",
+      "summary": "Write a Process unit candidate that systemd accepts.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.activate-unit",
+      "summary": "Publish a Process unit candidate and set its desired state.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.converge-container",
+      "summary": "Create or replace a Process's container and set its desired state.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
+      "name": "processes.logs",
+      "summary": "Read the newest lines of a Process's unit or container.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "processes.invalid",
+        "processes.name_collision",
+        "processes.not_found",
+        "processes.start_failed",
+        "processes.stop_failed",
+        "processes.restart_failed",
+        "processes.remove_failed",
+        "processes.status_failed",
+        "processes.logs_failed",
+        "processes.converge_failed",
+        "processes.candidate_invalid",
+        "processes.activation_failed",
+        "processes.rollback_failed",
+        "processes.recovery_required",
+        "processes.vite_cleanup_failed"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

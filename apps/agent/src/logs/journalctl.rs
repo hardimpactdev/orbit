@@ -1,7 +1,7 @@
 //! Follows one systemd unit through `journalctl` (ADR 0153). The agent runs no program that changes the
-//! Node; this read-only `journalctl`, with fixed arguments, is the only program it runs. It runs the
-//! one-shot read's command, `journalctl --unit <unit> --output short-iso --utc`, and cuts each entry by
-//! the one-shot read's rule, so a live line and a line of the one-shot read over SSH are the same text.
+//! Node; this read-only `journalctl`, with fixed arguments, is the only program it runs. It runs
+//! `journalctl --unit <unit> --output short-iso --utc` and cuts each entry by one rule, which the one-shot read of
+//! `processes.logs` shares, so a live line and a line of the one-shot read are the same text.
 use super::{
     laravel::Unavailable,
     limits::{LineSink, FIRST_LINES_BYTES},
@@ -264,7 +264,85 @@ impl<R: AsyncBufRead + Unpin> LineReader<R> {
     }
 }
 
-/// Cuts each entry as the one-shot read's `awk` does (`RemoteProcessRuntimeManager::JournalLogsScript`):
+/// The one-shot read of `processes.logs`: the unit's newest `lines` entries, newest first, each cut as a live entry
+/// is, and stopped after `max_bytes` bytes. `journalctl` is stopped there, so the Node does bounded work however long
+/// an entry is. Its exit status does not count: a read that stopped early killed it.
+pub fn read_newest(
+    program: &Path,
+    unit: &str,
+    lines: usize,
+    max_bytes: usize,
+) -> Result<Vec<u8>, Unavailable> {
+    let mut child = std::process::Command::new(program)
+        .args(["--no-pager", "--quiet"])
+        .arg(format!("--unit={unit}"))
+        .args([
+            "--reverse",
+            &format!("--lines={lines}"),
+            "--output=short-iso",
+            "--utc",
+        ])
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| Unavailable("journalctl"))?;
+    let stdout = child.stdout.take().ok_or(Unavailable("journalctl"))?;
+    let output = newest_cut(
+        std::io::BufReader::with_capacity(READ_BUFFER, stdout),
+        max_bytes,
+    );
+    let _ = child.kill();
+    let _ = child.wait();
+    output.map_err(|_| Unavailable("journalctl output"))
+}
+
+/// Cuts journalctl's printed lines by `EntryCut` into newline-ended lines, and stops after `max_bytes` bytes.
+fn newest_cut<R: std::io::BufRead>(mut reader: R, max_bytes: usize) -> std::io::Result<Vec<u8>> {
+    let mut cut = EntryCut::default();
+    let mut lines = Vec::new();
+    let mut output = Vec::new();
+    while let Some(line) = next_line(&mut reader)? {
+        cut.push(&line, &mut lines);
+        for line in lines.drain(..) {
+            output.extend_from_slice(line.as_bytes());
+            output.push(b'\n');
+            if output.len() >= max_bytes {
+                output.truncate(max_bytes);
+                return Ok(output);
+            }
+        }
+    }
+    Ok(output)
+}
+
+/// `LineReader::next` for a blocking reader.
+fn next_line<R: std::io::BufRead>(reader: &mut R) -> std::io::Result<Option<Line>> {
+    let mut line = Line {
+        kept: Vec::new(),
+        len: 0,
+    };
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok((line.len > 0).then_some(line));
+        }
+        let (piece, used, complete) = match available.iter().position(|b| *b == b'\n') {
+            Some(end) => (&available[..end], end + 1, true),
+            None => (available, available.len(), false),
+        };
+        let room = MAX_LINE_READ.saturating_sub(line.kept.len());
+        line.kept.extend_from_slice(&piece[..piece.len().min(room)]);
+        line.len += piece.len();
+        reader.consume(used);
+        if complete {
+            return Ok(Some(line));
+        }
+    }
+}
+
+/// Cuts each entry, for the live stream and the one-shot read alike:
 /// it counts bytes, indent included, keeps the first line, and stops at the first further line that
 /// would take the entry past 256 KiB. A first line whose message is longer than 256 KiB is cut there,
 /// before a character rather than inside one. A cut entry ends with `[orbit] message cut at 256 KiB`,
@@ -291,7 +369,7 @@ impl EntryCut {
             return;
         }
         let kept = &line.kept;
-        // The message starts after the first `: `, as the one-shot read's `index($0, ": ")` finds it.
+        // The message starts after the first `: `.
         let message = kept
             .windows(2)
             .position(|pair| pair == b": ")
@@ -533,8 +611,7 @@ exec sleep 600
         text.lines().map(str::to_owned).collect()
     }
 
-    /// The Gateway's one-shot read cuts journalctl's lines to the same text; its test
-    /// `JournalLogsScriptTest` reads the same files.
+    /// The fixtures hold the lines the earlier one-shot read over SSH printed for the same input.
     #[tokio::test]
     async fn cuts_entries_as_the_one_shot_read_does() {
         // A 400 KB message of 400 lines, between two ordinary entries.
@@ -582,6 +659,39 @@ exec sleep 600
                 format!("{}{MESSAGE_CUT}", " ".repeat(prefix.chars().count())),
                 "2026-09-25T10:15:03+00:00 b\u{eb}ast queue[7]: next".to_owned(),
             ]
+        );
+    }
+
+    /// The one-shot read stops after its byte limit, keeps the entry cut, and writes newest first.
+    #[test]
+    fn the_one_shot_read_stops_at_its_byte_limit_and_cuts_huge_entries() {
+        let newest = "2026-09-25T10:00:03+00:00 host web[7]: newest";
+        let older = format!(
+            "2026-09-25T10:00:02+00:00 host web[7]: {}\n",
+            "0".repeat(100)
+        );
+        let endless = format!("{newest}\n{}", older.repeat(50_000));
+        let limit = 4 * 1024 * 1024;
+        let output = newest_cut(endless.as_bytes(), limit).unwrap();
+        assert_eq!(output.len(), limit);
+        assert!(output.starts_with(format!("{newest}\n{older}").as_bytes()));
+
+        // A message of a million short lines, between two ordinary entries.
+        let indent = " ".repeat(39);
+        let mut huge = "2026-09-25T10:00:03+00:00 host web[7]: newer\n".to_owned();
+        huge.push_str("2026-09-25T10:00:02+00:00 host web[7]: huge 0\n");
+        for i in 1..1_000_000 {
+            huge.push_str(&format!("{indent}{i}\n"));
+        }
+        huge.push_str("2026-09-25T10:00:01+00:00 host web[7]: older\n");
+        let output = String::from_utf8(newest_cut(huge.as_bytes(), limit).unwrap()).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(output.len() < 270_000);
+        assert_eq!(lines[2], format!("{indent}1"));
+        assert_eq!(lines[lines.len() - 2], format!("{indent}{MESSAGE_CUT}"));
+        assert_eq!(
+            lines[lines.len() - 1],
+            "2026-09-25T10:00:01+00:00 host web[7]: older"
         );
     }
 
