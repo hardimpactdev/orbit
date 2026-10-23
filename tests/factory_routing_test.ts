@@ -2,7 +2,7 @@
 // Gateway client, run by swamp in a throwaway copy of this repo against a fake
 // Gateway. Every case runs as its own group, and one driver tick steps them all.
 // Needs the swamp CLI; it takes a minute or two. Run: ~/.swamp/deno/deno test --allow-all tests/
-import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
 
 const REPO = new URL("..", import.meta.url).pathname;
@@ -18,6 +18,12 @@ const SCENARIOS: Record<number, Scenario & { approve?: string[]; end: (s: Seen) 
   108: { prClosedOnce: true, approve: ["republish"], end: (s) => s.stage === "completed" },
   109: { handoffCancelOnce: true, approve: ["handoff-retry"], end: (s) => s.stage === "completed" },
   110: { provisionCancelOnce: true, approve: ["provision-retry"], end: (s) => s.stage === "completed" },
+  // A stored pre-approval resumes the run with no approval during the run.
+  111: { baselineFailOnce: true, end: (s) => s.stage === "completed" },
+  // Pre-approvals for another cycle, another stage, or another group are never applied.
+  112: { provisionCancelOnce: true, end: (s) => s.stage === "provision" && s.waiting.includes("provision-retry") },
+  // A reset mid-run starts over and still finishes (the driver ignores evidence from before it).
+  113: { end: (s) => s.stage === "completed" },
 };
 
 interface Seen {
@@ -68,19 +74,36 @@ Deno.test({
     try {
       const items = Object.keys(SCENARIOS).map((g) => `tg-${g}`);
       for (const wi of items) await swamp(dir, "model", "method", "run", "orbit-groups", "start", "--input", `workItem=${wi}`);
+      const preapprove = (wi: string, gateId: string, stage: string, cycle: number) =>
+        swamp(dir, "model", "method", "run", "orbit-driver-groups", "preapprove", "--input", `workItem=${wi}`, "--input", `gateId=${gateId}`,
+          "--input", `stage=${stage}`, "--input", `cycle=${cycle}`, "--input", "actor=routing-test");
+      await preapprove("tg-111", "baseline-retry", "baseline", 1);
+      await preapprove("tg-112", "provision-retry", "provision", 2);
+      await preapprove("tg-112", "provision-retry", "baseline", 1);
+      await preapprove("tg-111", "provision-retry", "provision", 1);
+      let refused = false;
+      await preapprove("tg-999", "baseline-retry", "baseline", 1).catch(() => (refused = true));
+      assert(refused, "a pre-approval for a work item without an active run is refused");
       await Deno.writeTextFile(`${dir}/tick-input.json`, JSON.stringify({ maxSteps: 3, workItems: items }));
 
       const seen = new Map<number, Seen>();
       const approved = new Set<string>();
+      let resetDone = false;
+      let deferredTicks = 0;
       const done = () => Object.entries(SCENARIOS).every(([g, sc]) => seen.has(Number(g)) && sc.end(seen.get(Number(g))!));
       for (let tick = 0; tick < 70 && !done(); tick++) {
         await swamp(dir, "workflow", "run", "groups-driver", "--input-file", `${dir}/tick-input.json`);
         const q = lastJson(await swamp(dir, "data", "query", 'modelName == "orbit-driver-groups" && name == "tick"', "--select", "attributes", "--json"));
-        const row = (q.results as { items: { workItem: string; stage: string; cycle: number; waiting: string | null }[] }[])[0];
+        const row = (q.results as { items: { workItem: string; stage: string; cycle: number; waiting: string | null }[]; deferred?: string[] }[])[0];
+        if ((row.deferred ?? []).length > 0) deferredTicks++;
         for (const it of row.items) {
           const g = Number(it.workItem.slice(3));
           const s = { stage: it.stage, cycle: it.cycle, waiting: it.waiting ?? "" };
           seen.set(g, s);
+          if (g === 113 && !resetDone && s.stage === "implement") {
+            resetDone = true;
+            await swamp(dir, "model", "method", "run", "orbit-groups", "reset", "--input", `workItem=${it.workItem}`, "--input", "confirm=reset");
+          }
           for (const gate of SCENARIOS[g].approve ?? []) {
             const once = `${g}:${gate}`;
             if (!approved.has(once) && s.waiting.includes(gate)) {
@@ -116,6 +139,40 @@ Deno.test({
       assertEquals(fake.groups.get(106)!.tasks.map((t) => t.status), ["completed", "completed", "completed", "completed"]);
       // The review cap parks the 3rd change request on one subtask.
       assertEquals([fake.startsOf(107, "implement"), fake.startsOf(107, "review")], [3, 3]);
+      // A stored pre-approval resumed 111 without any approval during the run, and raised nothing on the board.
+      assertEquals(fake.startsOf(111, "baseline"), 2);
+      assertEquals(fake.commentsOf(111), []);
+      // 112's pre-approvals name another cycle, another stage, and (on tg-111) another group: none applied.
+      assertEquals(fake.startsOf(112, "provision"), 1);
+      // The reset ran and the run still completed.
+      assert(resetDone, "113 was reset mid-run");
+      // Thirteen groups need more calls than one execution allows: ticks deferred some and still finished them all.
+      assert(deferredTicks > 0, "a tick deferred work items to stay within swamp's call cap");
+
+      // Board assistance: a parked run raises it once with a plain reason; a resumed run clears it.
+      const types = (g: number) => fake.commentsOf(g).map((c) => c.type);
+      assertEquals(types(105), ["assistance_requested"]);
+      assertStringIncludes(fake.commentsOf(105)[0].body, "at handoff, cycle 4: the handoff check");
+      assertStringIncludes(fake.commentsOf(105)[0].body, "handoff-assistance");
+      assertEquals(fake.groups.get(105)!.tasks[0].assistance_requested, true);
+      assertEquals(types(112), ["assistance_requested"]);
+      assertStringIncludes(fake.commentsOf(112)[0].body, "provision-retry");
+      assertEquals(types(103), ["assistance_requested", "resolution"]);
+      assertStringIncludes(fake.commentsOf(103)[0].body, "at baseline, cycle 1: the baseline operation");
+      assertEquals(fake.groups.get(103)!.tasks[0].assistance_requested, false);
+      assertEquals(types(101), []);
+      // Both flags, parent and child: a raise on an open subtask is mirrored on the group, and its
+      // resolution clears both; a parked run still shows on both.
+      const flags = (g: number) => [fake.groups.get(g)!.assistance_requested, fake.groups.get(g)!.tasks.map((x) => x.assistance_requested)];
+      assertEquals(flags(103), [false, [false]]);
+      assertEquals(flags(105), [true, [true]]);
+      // Known limitation, pinned until Orbit has a group-level assistance route: publish-retry and republish
+      // are reached after every subtask ended, so no subtask can own a request and none is raised (Orbit
+      // would keep an independent group request open). Nothing is left on the board.
+      assertEquals(types(104), []);
+      assertEquals(flags(104), [false, [false]]);
+      assertEquals(types(108), []);
+      assertEquals(flags(108), [false, [false]]);
     } finally {
       await fake.close();
       await Deno.remove(dir, { recursive: true }).catch(() => {});

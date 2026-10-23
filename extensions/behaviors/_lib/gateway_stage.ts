@@ -77,6 +77,7 @@ interface TaskRow {
   brief: string;
   status: string;
   deliverables?: { id: string; type: string; description: string }[];
+  assistance_requested?: boolean;
 }
 interface GroupRow {
   id: number;
@@ -481,4 +482,110 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   }
   await deps.writeJob(job);
   return job;
+}
+
+// ---- Assistance on the board -------------------------------------------------------------
+// Orbit raises no assistance for an external group, so the orchestrator does: when the run
+// parks at a human gate, it posts an assistance_requested comment with a plain reason on the
+// group's current (open) subtask, and a resolution once it moves on. On an open subtask the
+// request is the subtask's own, and Orbit mirrors it on the group; its resolution clears both
+// (TaskAssistance::resolveExternalSubtask). On an ended subtask Orbit refuses the subtask flag
+// and raises an independent group request that no resolution clears, so a gate reached after
+// every subtask ended (publish-retry, republish) raises nothing; the record says why.
+// The subtask's own assistance flag decides whether a comment is still needed, so a repeat or
+// a crash between the post and the record posts nothing twice.
+
+export interface AssistanceArgs {
+  workItem: string;
+  parked: boolean;
+  stage: string;
+  cycle: number;
+  reason: string;
+}
+
+export interface AssistanceRecord {
+  workItem: string;
+  subtask: number | null;
+  key: string | null;
+  raisedAt: string | null;
+  /** Why a parked entry raised nothing, such as no open subtask to own the request. */
+  skipped?: string | null;
+}
+
+export interface AssistanceDeps {
+  http: Http;
+  readRecord: () => Promise<AssistanceRecord | null>;
+  writeRecord: (r: AssistanceRecord) => Promise<void>;
+  /** The stage job of a driver key, to explain why the stage parked. */
+  readJob: (key: string) => Promise<Job | null>;
+  now?: () => number;
+}
+
+/** Why a stage entry parked, from its job: the failed operation, or the outcome it ended with. */
+export function parkedWhy(job: Job | null): string {
+  if (job === null) return "";
+  if (job.state === "failed") return `the ${job.stage} operation${job.operationId !== null ? ` ${job.operationId}` : ""} failed (${job.lastError ?? "no error recorded"})`;
+  const products = Object.values(job.artifacts)[0] as Record<string, unknown> | undefined;
+  if (!products) return "";
+  const outcome = String(products.outcome ?? "");
+  if (job.stage === "baseline" || job.stage === "handoff") {
+    return outcome === "passed" ? "" : `the ${job.stage} check ${String(products.checkId ?? "")} ended ${outcome}`;
+  }
+  if (job.stage === "implement" || job.stage === "review") {
+    const q = products.question ? `: ${String(products.question)}` : "";
+    return `the ${job.stage === "implement" ? "implementer" : "reviewer"} turn ended ${outcome}${q}`;
+  }
+  return "";
+}
+
+export function assistanceBody(args: AssistanceArgs, why: string): string {
+  const text = [
+    `Swamp parked ${args.workItem} at ${args.stage}, cycle ${args.cycle}${why ? `: ${why}` : ""}.`,
+    `Waiting for: ${args.reason}`,
+  ].join(" ");
+  return text.slice(0, 2000);
+}
+
+async function postComment(http: Http, group: number, subtask: number, type: "assistance_requested" | "resolution", body: string) {
+  const r = await http("POST", `/api/v1/task-groups/${group}/tasks/${subtask}/comments`, { type, body, author: "swamp" });
+  if (r.status !== 200 && r.status !== 201) throw new Error(`posting ${type} on subtask ${subtask}: ${errorCode(r)}`);
+}
+
+/** One assistance sync for one work item: raise it when parked, clear it when not. */
+export async function syncAssistance(args: AssistanceArgs, deps: AssistanceDeps): Promise<AssistanceRecord> {
+  const group = groupOf(args.workItem);
+  const rec = (await deps.readRecord()) ?? { workItem: args.workItem, subtask: null, key: null, raisedAt: null, skipped: null };
+  const key = `${args.stage}.c${args.cycle}`;
+  const clear = async (): Promise<AssistanceRecord> => {
+    if (rec.subtask === null) return rec;
+    const g = await readGroup(deps.http, group);
+    const t = g.tasks.find((x) => x.id === rec.subtask);
+    if (t?.assistance_requested) {
+      await postComment(deps.http, group, t.id, "resolution", `Swamp resumed ${args.workItem} at ${args.stage}, cycle ${args.cycle}.`);
+    }
+    const cleared = { workItem: args.workItem, subtask: null, key: null, raisedAt: null, skipped: null };
+    await deps.writeRecord(cleared);
+    return cleared;
+  };
+  if (!args.parked) return clear();
+  if (rec.key === key && (rec.subtask !== null || rec.skipped)) return rec;
+  if (rec.subtask !== null) await clear();
+  const g = await readGroup(deps.http, group);
+  const t = currentSubtask(g);
+  if (t === null) {
+    // Known limitation: publish-retry and republish are reached after every subtask ended, and the
+    // Gateway has no route to raise and later resolve a group-level request (the comment route
+    // needs a child, and clears the group only when that child owns the request). So these gates
+    // post no board assistance until Orbit adds one; see "ADR 0229 follow-ups" in docs/phase-3-design.md.
+    const skipped = { workItem: args.workItem, subtask: null, key, raisedAt: null, skipped: "no open subtask can own the request" };
+    await deps.writeRecord(skipped);
+    return skipped;
+  }
+  if (!t.assistance_requested) {
+    const why = parkedWhy(await deps.readJob(`${args.workItem}.${args.stage}.c${args.cycle}`));
+    await postComment(deps.http, group, t.id, "assistance_requested", assistanceBody(args, why));
+  }
+  const raised = { workItem: args.workItem, subtask: t.id, key, raisedAt: new Date((deps.now ?? Date.now)()).toISOString(), skipped: null };
+  await deps.writeRecord(raised);
+  return raised;
 }

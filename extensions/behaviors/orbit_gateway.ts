@@ -3,7 +3,7 @@
 // see _lib/gateway_stage.ts. The Gateway authenticates this Node by its
 // WireGuard address, so the transport only needs the Orbit root CA.
 import { z } from "npm:zod@4";
-import { type Http, type Job, runStage, STAGES } from "./_lib/gateway_stage.ts";
+import { type AssistanceRecord, type Http, type Job, runStage, STAGES, syncAssistance } from "./_lib/gateway_stage.ts";
 
 const GlobalArgsSchema = z.object({
   gatewayUrl: z.string().default("https://gateway.orbit"),
@@ -73,8 +73,52 @@ export const behavior = {
       lifetime: "infinite",
       garbageCollection: 10,
     },
+    assistance: {
+      description: "The subtask where this work item raised board assistance while parked, if any",
+      schema: z.object({
+        workItem: z.string(),
+        subtask: z.number().nullable(),
+        key: z.string().nullable(),
+        raisedAt: z.string().nullable(),
+        skipped: z.string().nullable().optional(),
+      }),
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
   },
   methods: {
+    assistance: {
+      description: "Raise board assistance on the group while the run is parked at a human gate, and clear it once it moves on",
+      arguments: z.object({
+        workItem: z.string().describe("tg-<task group id>"),
+        parked: z.boolean(),
+        stage: z.string(),
+        cycle: z.number().int(),
+        reason: z.string(),
+      }),
+      execute: async (
+        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string },
+        context: {
+          globalArgs: { gatewayUrl: string; caFile: string; timeoutSeconds: number };
+          definition: { name: string };
+          queryData: (predicate: string, select?: string) => Promise<unknown[]>;
+          writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
+        },
+      ) => {
+        const read = async <T>(name: string): Promise<T | null> =>
+          ((await context.queryData(`modelName == "${context.definition.name}" && name == "${name}"`, "attributes")) as T[])[0] ?? null;
+        let handle: { name: string } | null = null;
+        await syncAssistance(args, {
+          http: curlHttp(context.globalArgs),
+          readRecord: () => read<AssistanceRecord>(`assistance-${args.workItem}`),
+          writeRecord: async (r) => {
+            handle = await context.writeResource("assistance", `assistance-${args.workItem}`, r as unknown as Record<string, unknown>);
+          },
+          readJob: (key) => read<Job>(`job-${key}`),
+        });
+        return { dataHandles: handle ? [handle] : [] };
+      },
+    },
     stage: {
       description: "Ensure the Gateway operation of one stage entry: start it once, then report its result",
       arguments: z.object({

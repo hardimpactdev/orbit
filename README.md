@@ -160,6 +160,25 @@ decides the next step. Swamp never merges.
   group per routing case.
 - Driver: `orbit-driver-groups` in method mode; `workflows/workflow-groups-driver.yaml`
   ticks every minute under swamp serve, three guarded steps per group.
+- Pre-approvals: a person can approve a gate before the run reaches it. The
+  driver stores it for one exact work item, gate, stage and cycle, and the
+  first tick that parks there applies it; nobody has to be online.
+  `swamp model method run orbit-driver-groups preapprove --input workItem=tg-1234
+  --input gateId=baseline-override --input stage=baseline --input cycle=1 --input actor=nick`
+- Board assistance: while a run is parked at a human gate, the driver has
+  `orbit-gateway.assistance` raise `assistance_requested` on the group's current
+  subtask with a plain reason (stage, cycle, why, which approval), so the
+  parked group shows on the Orbit board. It posts a `resolution` once the run
+  moves on. Only an open subtask can own the request, so its resolution also
+  clears the group's copy. A gate reached after every subtask ended
+  (`publish-retry`, `republish`) raises nothing: on an ended subtask Orbit
+  raises an independent group request that no resolution clears. This is a
+  known limitation until the Gateway has a route to raise and resolve a
+  group-level request; see "ADR 0229 follow-ups" in `docs/phase-3-design.md`.
+- swamp caps one execution at 100 cross-behavior calls. A tick stops starting
+  steps at `maxCallsPerTick` (90) and the next tick starts with the work items
+  it deferred. Evidence from before a `reset` never counts as the current
+  entry's.
 
 ```bash
 swamp model method run orbit-groups start --input workItem=tg-1234

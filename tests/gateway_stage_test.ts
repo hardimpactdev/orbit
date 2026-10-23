@@ -3,6 +3,7 @@
 // (TaskTurnOperation), and an accepted start carries poll_after_seconds.
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import {
+  assistanceBody,
   counters,
   currentSubtask,
   groupOf,
@@ -12,6 +13,7 @@ import {
   type Job,
   runStage,
   type StageArgs,
+  syncAssistance,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 
 interface Call {
@@ -32,6 +34,7 @@ function fakeGateway(opts: {
   const calls: Call[] = [];
   const tasks = (opts.tasks ?? [{ id: 11, position: 1, status: "todo" }]).map((t) => ({
     ...t, title: `Subtask ${t.id}`, brief: "Update dependencies.", deliverables: [{ id: "lock", type: "file", description: "composer.lock modified" }],
+    assistance_requested: false,
   }));
   let groupStatus = opts.groupStatus ?? "backlog";
   const http: Http = (method, path, body, key) => {
@@ -360,4 +363,75 @@ Deno.test("a failed provision records whether it ended the Orbit group", async (
   const refused = fakeGateway({ groupStatus: "running", start: () => ({ status: 409, body: { error: { code: "tasks.already_claimed" } } }) });
   const claimed = await runStage(args("provision"), harness().deps(refused.http));
   assertEquals(claimed.evidence?.groupEnded, false);
+});
+
+Deno.test("a parked run raises assistance once with a plain reason, and clears it when it moves on", async () => {
+  const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
+  const posts: Record<string, unknown>[] = [];
+  const http: Http = async (method, path, body, key) => {
+    if (method === "POST" && path.endsWith("/comments")) {
+      posts.push(body!);
+      gw.tasks[0].assistance_requested = body!.type === "assistance_requested";
+      return { status: 201, body: { data: {} } };
+    }
+    return gw.http(method, path, body, key);
+  };
+  let rec: import("../extensions/behaviors/_lib/gateway_stage.ts").AssistanceRecord | null = null;
+  const failedBaseline: Job = {
+    key: "tg-7.baseline.c1", workItem: "tg-7", stage: "baseline", group: 7, subtask: 11, state: "succeeded", launches: 1, launchedNow: false,
+    request: null, operationId: 600, operationStatus: "succeeded", lastError: null, inputIdentity: "{}", nextReadAt: null,
+    artifacts: { baseline: { subtask: 11, outcome: "failed", checkId: 2039 } }, evidence: { status: "succeeded" },
+  };
+  const deps = {
+    http,
+    readRecord: () => Promise.resolve(rec),
+    writeRecord: (r: typeof rec) => { rec = r; return Promise.resolve(); },
+    readJob: (key: string) => Promise.resolve(key === "tg-7.baseline.c1" ? failedBaseline : null),
+  };
+  const parked = { workItem: "tg-7", parked: true, stage: "baseline", cycle: 1, reason: "awaiting human approval 'baseline-override'" };
+  await syncAssistance(parked, deps);
+  await syncAssistance(parked, deps);
+  assertEquals(posts.length, 1);
+  assertEquals(posts[0].type, "assistance_requested");
+  assertEquals(posts[0].body, "Swamp parked tg-7 at baseline, cycle 1: the baseline check 2039 ended failed. Waiting for: awaiting human approval 'baseline-override'");
+  assertEquals(rec!.subtask, 11);
+  await syncAssistance({ ...parked, parked: false, stage: "implement", reason: "" }, deps);
+  assertEquals(posts.map((p) => p.type), ["assistance_requested", "resolution"]);
+  assertEquals(rec!.subtask, null);
+  await syncAssistance({ ...parked, parked: false, stage: "implement", reason: "" }, deps);
+  assertEquals(posts.length, 2);
+});
+
+Deno.test("assistance already on the subtask is not posted again after a lost record", async () => {
+  const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
+  gw.tasks[0].assistance_requested = true;
+  const posts: unknown[] = [];
+  const http: Http = (method, path, body, key) => {
+    if (method === "POST" && path.endsWith("/comments")) posts.push(body);
+    return gw.http(method, path, body, key);
+  };
+  const rec = await syncAssistance(
+    { workItem: "tg-7", parked: true, stage: "handoff", cycle: 4, reason: "x" },
+    { http, readRecord: () => Promise.resolve(null), writeRecord: () => Promise.resolve(), readJob: () => Promise.resolve(null) },
+  );
+  assertEquals(posts, []);
+  assertEquals(rec.subtask, 11);
+  assertEquals(assistanceBody({ workItem: "tg-7", parked: true, stage: "publish", cycle: 1, reason: "r" }, ""), "Swamp parked tg-7 at publish, cycle 1. Waiting for: r");
+});
+
+Deno.test("known limitation: a gate reached after every subtask ended raises no board assistance (no group-level route yet)", async () => {
+  const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "completed" }] });
+  const posts: unknown[] = [];
+  const http: Http = (method, path, body, key) => {
+    if (method === "POST" && path.endsWith("/comments")) posts.push(body);
+    return gw.http(method, path, body, key);
+  };
+  let rec: import("../extensions/behaviors/_lib/gateway_stage.ts").AssistanceRecord | null = null;
+  const deps = { http, readRecord: () => Promise.resolve(rec), writeRecord: (r: typeof rec) => { rec = r; return Promise.resolve(); }, readJob: () => Promise.resolve(null) };
+  const parked = { workItem: "tg-7", parked: true, stage: "publish", cycle: 1, reason: "awaiting human approval 'publish-retry'" };
+  await syncAssistance(parked, deps);
+  await syncAssistance(parked, deps);
+  await syncAssistance({ ...parked, parked: false, stage: "published" }, deps);
+  assertEquals(posts, []);
+  assertEquals(rec!.subtask, null);
 });

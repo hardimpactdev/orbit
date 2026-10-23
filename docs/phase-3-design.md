@@ -146,6 +146,30 @@ it if its spike holds.
   `tasks.publish`) wrap code Tasks already has. The dev-Instance operations
   in the table above are dropped.
 
+## ADR 0229 follow-ups (from the first live run, 2026-10-23)
+
+Found while Swamp drove Orbit group 2046 (nckrtl/website#7) end to end:
+
+1. A Gateway route to raise and resolve group-level assistance after all
+   subtasks have ended (needed for the publish-retry and republish gates). The
+   comment route needs a child task and clears the group only when that child
+   owns the request.
+2. A failed check is an operation that succeeded with `outcome: failed`; the
+   board shows a parked external group only through the orchestrator's own
+   assistance comment.
+3. The check output is a short redacted tail, so in a long run the root cause
+   can fall out of it.
+4. No API shows which pi-server artifact new task VMs get
+   (`ORBIT_TASK_VMS_PI_ARTIFACT_PATH` / `_SHA256`).
+5. The orchestrator re-derives the current subtask from the Gateway's own rule
+   (lowest open position).
+6. A merge is seen only by polling `watched_pr_state`.
+
+Closed in orbit-swamp #3: pre-approved gates without a live turn, board
+assistance at subtask gates, and the driver ignoring evidence from before a
+reset. Settled: the last approval in an external group needs no `--pr-*`
+flags.
+
 ## Recommendation
 
 Do **B** (chosen), in two steps:

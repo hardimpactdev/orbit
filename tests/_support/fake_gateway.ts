@@ -21,7 +21,12 @@ interface Group {
   brief: string;
   status: string;
   watched_pr_state: string | null;
-  tasks: { id: number; position: number; title: string; brief: string; status: string; deliverables: unknown[] }[];
+  assistance_requested: boolean;
+  assistance_question: string | null;
+  tasks: {
+    id: number; position: number; title: string; brief: string; status: string; deliverables: unknown[];
+    assistance_requested: boolean; assistance_question: string | null;
+  }[];
   scenario: Scenario;
   counts: Record<string, number>;
 }
@@ -32,14 +37,16 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     const gid = Number(id);
     groups.set(gid, {
       id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {},
+      assistance_requested: false, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
-        id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [],
+        id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_question: null,
       })),
     });
   }
   const ops = new Map<number, Record<string, unknown>>();
   const byKey = new Map<string, number>();
   const starts = new Map<string, number>();
+  const comments: { group: number; subtask: number; type: string; body: string }[] = [];
   let nextOp = 1000;
 
   const bump = (g: Group, k: string) => (g.counts[k] = (g.counts[k] ?? 0) + 1);
@@ -109,6 +116,37 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         t.status = body.status;
         return json(200, t);
       }
+      const comment = /^\/tasks\/(\d+)\/comments$/.exec(rest);
+      if (req.method === "POST" && comment) {
+        const t = g.tasks.find((x) => x.id === Number(comment[1]));
+        if (!t) return json(404, { error: { code: "http.404" } });
+        comments.push({ group: g.id, subtask: t.id, type: body.type, body: body.body });
+        // Orbit's TaskAssistance rules for an external group:
+        // - a request on an open subtask flags the subtask and mirrors it on the group;
+        // - a request on an ended subtask is refused for the subtask and raises an independent
+        //   group request;
+        // - a resolution clears the subtask, and clears the group only when that subtask owned the
+        //   group's request; the group then shows the first sibling still asking, or clears.
+        const ended = ["completed", "failed", "cancelled"].includes(t.status);
+        if (body.type === "assistance_requested") {
+          if (!ended) {
+            t.assistance_requested = true;
+            t.assistance_question = body.body;
+          }
+          g.assistance_requested = true;
+          g.assistance_question = body.body;
+        } else if (body.type === "resolution") {
+          const owns = t.assistance_requested && g.assistance_requested && t.assistance_question === g.assistance_question;
+          t.assistance_requested = false;
+          t.assistance_question = null;
+          if (owns) {
+            const pending = [...g.tasks].sort((a, b) => a.position - b.position).find((x) => x.assistance_requested);
+            g.assistance_requested = pending !== undefined;
+            g.assistance_question = pending?.assistance_question ?? null;
+          }
+        }
+        return json(201, { id: comments.length, type: body.type });
+      }
       if (req.method === "POST" && rest === "/complete") {
         g.status = "completed";
         return json(200, view());
@@ -137,6 +175,8 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     url: `http://127.0.0.1:${(server.addr as Deno.NetAddr).port}`,
     starts,
     groups,
+    comments,
+    commentsOf: (gid: number) => comments.filter((c) => c.group === gid),
     /** Starts per stage name for a group, from the Idempotency-Keys. */
     startsOf: (gid: number, stage: string) => [...starts.keys()].filter((k) => k.startsWith(`tg-${gid}.${stage}.`)).length,
     close: () => server.shutdown(),
