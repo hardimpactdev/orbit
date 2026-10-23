@@ -227,7 +227,7 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ## Gateway-owned setup steps
 
-A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. The Gateway renders its command right before the step runs, within the step's timeout. Development Instance setup and the task baseline setup list run it the same way. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
+A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. For development Instances, the Rust agent selects the baseline and invokes the checkout's `bin/ci-cache-ref` importer with fixed arguments, within the step's timeout. It sends no shell source. The task workspace setup list applies the same baseline rule through its workspace tooling. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
 
 ## Import CI main caches
 

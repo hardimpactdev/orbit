@@ -3,7 +3,9 @@
 //! each step take the same lock without waiting. These replace the Bash of `DevelopmentCheckoutProgram`, check for
 //! check.
 
-use super::deploy_step::{run_program, with_live, DeployStepError, Program, RunDeployStepOutput};
+use super::deploy_step::{
+    run_program, with_live, Chunk, DeployStepError, Program, RunDeployStepOutput, StepCommand,
+};
 use super::dev_source::fetch_options;
 use super::source::{
     canonical, exists, git, git_in, git_output, is_real_directory, is_symlink, origin_url,
@@ -407,7 +409,7 @@ pub fn step(
         &Program {
             user: None,
             directory: &checkout.home,
-            file: &file,
+            command: StepCommand::Script(&file),
             step: &input.step,
             secrets: &input.secrets,
             environment: &BTreeMap::new(),
@@ -462,8 +464,7 @@ pub struct LifecycleInput {
     pub environment: BTreeMap<String, String>,
 }
 
-/// What a setup or teardown step runs with `bash -eu` in the checkout: the Project's command, or a Gateway-owned
-/// operation whose program ships with the agent.
+/// A Project shell command, or a built-in operation implemented in Rust.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum StepProgram {
@@ -472,13 +473,78 @@ pub enum StepProgram {
     ImportCiCaches,
 }
 
-impl StepProgram {
-    fn script(&self) -> &str {
-        match self {
-            Self::Command(command) => command,
-            Self::ImportCiCaches => include_str!("ci_caches.sh"),
-        }
+/// Select only the recorded baseline, or the checkout commit when it is on the default branch.
+fn ci_cache_baseline(checkout: &Path) -> Option<String> {
+    let repository = git2::Repository::open(checkout).ok()?;
+    let head = repository.head().ok()?;
+    let commit = head.peel_to_commit().ok()?.id();
+    let default = repository
+        .find_reference("refs/remotes/origin/HEAD")
+        .ok()
+        .and_then(|reference| reference.resolve().ok());
+    let is_default = default
+        .as_ref()
+        .and_then(|reference| reference.name())
+        .and_then(|name| name.strip_prefix("refs/remotes/origin/"))
+        .is_some_and(|name| head.name() == Some(format!("refs/heads/{name}").as_str()));
+    if is_default {
+        return Some(commit.to_string());
     }
+    if let Ok(baseline) = repository
+        .revparse_single("refs/worktree/orbit/ci-baseline")
+        .and_then(|object| object.peel_to_commit())
+    {
+        return Some(baseline.id().to_string());
+    }
+    let tip = default?.peel_to_commit().ok()?.id();
+    (tip == commit || repository.graph_descendant_of(tip, commit).unwrap_or(false))
+        .then(|| commit.to_string())
+}
+
+fn ci_caches(input: &LifecycleInput) -> Result<RunDeployStepOutput, DeployStepError> {
+    let report = |exit_code, stream, value: &str| RunDeployStepOutput {
+        exit_code,
+        timed_out: false,
+        output: vec![Chunk {
+            stream,
+            value: value.into(),
+        }],
+        truncated: false,
+    };
+    if !input.checkout.join("bin/ci-cache-ref").is_file() {
+        return Ok(report(
+            1,
+            "stderr",
+            "CI cache import tooling is missing from this checkout.\n",
+        ));
+    }
+    let Some(commit) = ci_cache_baseline(&input.checkout) else {
+        return Ok(report(
+            0,
+            "stdout",
+            "CI caches cold: no recorded code baseline.\n",
+        ));
+    };
+    run_program(
+        &Program {
+            user: None,
+            directory: &input.checkout,
+            command: StepCommand::Fixed {
+                executable: "/usr/bin/python3",
+                arguments: &[
+                    "bin/ci-cache-ref".as_ref(),
+                    "import".as_ref(),
+                    "--commit".as_ref(),
+                    commit.as_ref(),
+                ],
+            },
+            step: &input.step,
+            secrets: &[],
+            environment: &input.environment,
+            timeout: Duration::from_secs(input.timeout_seconds),
+        },
+        None,
+    )
 }
 
 /// Runs one Project setup or teardown step with the lifecycle lock held and not inherited, as `step` runs a deploy
@@ -489,19 +555,22 @@ pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, Dev
         "the checkout is a canonical path",
     )?;
     let _lock = lifecycle_lock(&input.checkout)?;
+    let StepProgram::Command(script) = &input.program else {
+        return ci_caches(input).map_err(lifecycle_error);
+    };
     let file = std::env::temp_dir().join(format!("orbit-lifecycle-{:016x}", rand::random::<u64>()));
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(&file)
-        .and_then(|mut handle| handle.write_all(input.program.script().as_bytes()))
+        .and_then(|mut handle| handle.write_all(script.as_bytes()))
         .map_err(|_| failed("write the step"))?;
     let result = run_program(
         &Program {
             user: None,
             directory: &input.checkout,
-            file: &file,
+            command: StepCommand::Script(&file),
             step: &input.step,
             secrets: &[],
             environment: &input.environment,
@@ -510,10 +579,14 @@ pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, Dev
         None,
     );
     let _ = fs::remove_file(&file);
-    result.map_err(|error| match error {
+    result.map_err(lifecycle_error)
+}
+
+fn lifecycle_error(error: DeployStepError) -> DevDeployError {
+    match error {
         DeployStepError::StartFailed { reason } => DevDeployError::StepFailed { step: reason },
         DeployStepError::Invalid { check } => DevDeployError::Invalid { check },
-    })
+    }
 }
 
 pub struct RunLifecycleStep;

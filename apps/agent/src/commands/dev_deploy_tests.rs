@@ -391,3 +391,164 @@ fn a_lifecycle_step_reports_that_its_own_bound_stopped_it() {
     assert_ne!(output.exit_code, 0);
     let _ = fs::remove_dir_all(&checkout);
 }
+
+#[test]
+fn ci_cache_selection_uses_the_default_checkout_or_its_recorded_baseline() {
+    let checkout = lifecycle_checkout();
+    sh_git(&checkout, &["init", "--quiet"]);
+    fs::write(checkout.join("code"), "one").unwrap();
+    sh_git(&checkout, &["add", "code"]);
+    sh_git(&checkout, &["commit", "--quiet", "-m", "one"]);
+    let first = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    sh_git(
+        &checkout,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    );
+    assert_eq!(ci_cache_baseline(&checkout), Some(first.clone()));
+
+    fs::write(checkout.join("code"), "two").unwrap();
+    sh_git(&checkout, &["commit", "--quiet", "-am", "two"]);
+    let second = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/worktree/orbit/ci-baseline", &first],
+    );
+    assert_eq!(ci_cache_baseline(&checkout), Some(second));
+
+    sh_git(&checkout, &["checkout", "--quiet", "-b", "task"]);
+    assert_eq!(ci_cache_baseline(&checkout), Some(first.clone()));
+    sh_git(
+        &checkout,
+        &["update-ref", "-d", "refs/worktree/orbit/ci-baseline"],
+    );
+    sh_git(&checkout, &["checkout", "--quiet", "--detach", &first]);
+    assert_eq!(ci_cache_baseline(&checkout), Some(first.clone()));
+    sh_git(&checkout, &["checkout", "--quiet", "-b", "diverged"]);
+    fs::write(checkout.join("code"), "own change").unwrap();
+    sh_git(&checkout, &["commit", "--quiet", "-am", "own"]);
+    assert_eq!(ci_cache_baseline(&checkout), None);
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/worktree/orbit/ci-baseline", &first],
+    );
+    assert_eq!(ci_cache_baseline(&checkout), Some(first));
+    fs::remove_dir_all(checkout).unwrap();
+}
+
+#[test]
+fn ci_cache_import_reports_missing_tooling_and_cold_baselines_then_runs_the_fixed_importer() {
+    // A separate process keeps unrelated fork-based tests from retaining this checkout's flock.
+    let output = Process::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "commands::dev_deploy::tests::ci_cache_import_helper",
+            "--nocapture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "runs in its own process from the CI cache import test"]
+fn ci_cache_import_helper() {
+    let checkout = lifecycle_checkout();
+    let mut input = lifecycle_input(&checkout, "");
+    input.program = StepProgram::ImportCiCaches;
+    let missing = lifecycle_step(&input).unwrap();
+    assert_eq!(missing.exit_code, 1);
+    assert!(missing.output[0].value.contains("tooling is missing"));
+    fs::create_dir(checkout.join("bin")).unwrap();
+    fs::write(checkout.join("bin/ci-cache-ref"), "import sys\nfrom pathlib import Path\nPath('imported').write_text('|'.join(sys.argv[1:]))\nprint('imported')\n").unwrap();
+    assert_eq!(
+        lifecycle_step(&input).unwrap().output[0].value,
+        "CI caches cold: no recorded code baseline.\n"
+    );
+    assert!(!checkout.join("imported").exists());
+    sh_git(&checkout, &["init", "--quiet"]);
+    sh_git(&checkout, &["add", "bin/ci-cache-ref"]);
+    sh_git(&checkout, &["commit", "--quiet", "-m", "importer"]);
+    let commit = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    sh_git(
+        &checkout,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    );
+    for _ in 0..2 {
+        let result = lifecycle_step(&input).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.output[0].value, "imported\n");
+        assert_eq!(
+            fs::read_to_string(checkout.join("imported")).unwrap(),
+            format!("import|--commit|{commit}")
+        );
+        assert_eq!(
+            fs::metadata(checkout.join("imported")).unwrap().mode() & 0o777,
+            0o600
+        );
+    }
+    fs::write(checkout.join("bin/ci-cache-ref"), "raise SystemExit(7)\n").unwrap();
+    assert_eq!(lifecycle_step(&input).unwrap().exit_code, 7);
+    fs::remove_dir_all(checkout).unwrap();
+}
+
+#[test]
+fn ci_cache_baselines_stay_local_to_each_linked_worktree() {
+    let checkout = lifecycle_checkout();
+    sh_git(&checkout, &["init", "--quiet"]);
+    fs::write(checkout.join("code"), "one").unwrap();
+    sh_git(&checkout, &["add", "code"]);
+    sh_git(&checkout, &["commit", "--quiet", "-m", "one"]);
+    let first = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    fs::write(checkout.join("code"), "two").unwrap();
+    sh_git(&checkout, &["commit", "--quiet", "-am", "two"]);
+    let second = sh_git(&checkout, &["rev-parse", "HEAD"]);
+    let linked = checkout.join("linked");
+    sh_git(
+        &checkout,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "task",
+            linked.to_str().unwrap(),
+        ],
+    );
+    sh_git(
+        &checkout,
+        &["update-ref", "refs/worktree/orbit/ci-baseline", &first],
+    );
+    sh_git(
+        &linked,
+        &["update-ref", "refs/worktree/orbit/ci-baseline", &second],
+    );
+    assert_eq!(ci_cache_baseline(&checkout), Some(first));
+    assert_eq!(ci_cache_baseline(&linked), Some(second));
+    fs::remove_dir_all(checkout).unwrap();
+}

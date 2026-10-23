@@ -596,7 +596,7 @@ pub fn update(
         &super::deploy_step::Program {
             user: None,
             directory,
-            file: &file,
+            command: super::deploy_step::StepCommand::Script(&file),
             step: "update",
             secrets: &[],
             environment: &std::collections::BTreeMap::new(),

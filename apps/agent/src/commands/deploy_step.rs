@@ -206,7 +206,7 @@ pub fn run(
         &Program {
             user: Some(&input.user),
             directory: &release,
-            file: &file,
+            command: StepCommand::Script(&file),
             step: &input.step,
             secrets: &input.secrets,
             environment: &BTreeMap::new(),
@@ -224,11 +224,20 @@ pub fn run(
 pub(super) struct Program<'a> {
     pub user: Option<&'a str>,
     pub directory: &'a Path,
-    pub file: &'a Path,
+    pub command: StepCommand<'a>,
     pub step: &'a str,
     pub secrets: &'a [String],
     pub environment: &'a BTreeMap<String, String>,
     pub timeout: Duration,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum StepCommand<'a> {
+    Script(&'a Path),
+    Fixed {
+        executable: &'a str,
+        arguments: &'a [&'a std::ffi::OsStr],
+    },
 }
 
 pub(super) fn run_program(
@@ -238,25 +247,46 @@ pub(super) fn run_program(
     let Program {
         user,
         directory,
-        file,
+        command: execution,
         step,
         secrets,
         environment,
         timeout,
     } = *program;
     let mut command = Process::new("setsid");
+    command.envs(environment).arg("--wait");
+    match execution {
+        StepCommand::Script(file) => {
+            command
+                .args([
+                    "bash",
+                    "-eu",
+                    "-c",
+                    "umask 077; cd -- \"$1\"; exec bash -eu \"$2\"",
+                    "bash",
+                ])
+                .arg(directory)
+                .arg(file);
+        }
+        StepCommand::Fixed {
+            executable,
+            arguments,
+        } => {
+            command
+                .arg(executable)
+                .args(arguments)
+                .current_dir(directory);
+            use std::os::unix::process::CommandExt;
+            // SAFETY: umask is async-signal-safe; only this child changes its file creation mask.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::umask(0o077);
+                    Ok(())
+                });
+            }
+        }
+    }
     command
-        .envs(environment)
-        .args([
-            "--wait",
-            "bash",
-            "-eu",
-            "-c",
-            "umask 077; cd -- \"$1\"; exec bash -eu \"$2\"",
-            "bash",
-        ])
-        .arg(directory)
-        .arg(file)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
