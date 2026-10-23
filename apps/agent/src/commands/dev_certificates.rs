@@ -321,6 +321,17 @@ fn install_file(source: &Path, target: &Path, uid: u32, gid: u32, mode: u32) -> 
     fs::set_permissions(target, fs::Permissions::from_mode(mode))
 }
 
+fn prepare_caddy_directories(directories: &[&Path], owner: u32, caddy: u32) -> io::Result<()> {
+    for directory in directories {
+        if !directory.is_dir() {
+            fs::DirBuilder::new().mode(0o750).create(directory)?;
+        }
+        chown(directory, owner, caddy)?;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o750))?;
+    }
+    Ok(())
+}
+
 pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     let leaf = &input.leaf;
     let step = "certificate-publish";
@@ -375,18 +386,8 @@ pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     let caddy_versions = caddy_root.join("versions");
     let caddy_candidate = caddy_versions.join(format!("{}.candidate", leaf.version));
     let caddy_published = caddy_versions.join(&leaf.version);
-    for directory in [&caddy_root, &caddy_versions, &caddy_candidate] {
-        if !directory.is_dir() {
-            fs::DirBuilder::new()
-                .mode(0o750)
-                .create(directory)
-                .map_err(io_failed)?;
-        }
-    }
-    for directory in [&caddy_versions, &caddy_candidate] {
-        chown(directory, 0, caddy).map_err(io_failed)?;
-        fs::set_permissions(directory, fs::Permissions::from_mode(0o750)).map_err(io_failed)?;
-    }
+    prepare_caddy_directories(&[&caddy_root, &caddy_versions, &caddy_candidate], 0, caddy)
+        .map_err(io_failed)?;
     install_file(
         &published.join("key.pem"),
         &caddy_candidate.join("key.pem"),
@@ -549,6 +550,40 @@ impl Command for RemoveLeaf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_directory_to_the_caddy_leaf_grants_group_access_on_creation_and_repair() {
+        use std::os::unix::fs::MetadataExt;
+        let root = std::env::temp_dir().join(format!(
+            "orbit-leaf-permissions-{:016x}",
+            rand::random::<u64>()
+        ));
+        fs::create_dir(&root).unwrap();
+        let scope = root.join("app-instance-3");
+        let versions = scope.join("versions");
+        let candidate = versions.join("leaf.candidate");
+        let directories = [scope.as_path(), versions.as_path(), candidate.as_path()];
+        let owner = rustix::process::getuid().as_raw();
+        let group = rustix::process::getgid().as_raw();
+        for repair in [false, true] {
+            if repair {
+                for path in directories {
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+                }
+            }
+            prepare_caddy_directories(&directories, owner, group).unwrap();
+            for path in directories {
+                let metadata = fs::metadata(path).unwrap();
+                assert_eq!(
+                    (metadata.uid(), metadata.gid(), metadata.mode() & 0o777),
+                    (owner, group, 0o750),
+                    "{}",
+                    path.display()
+                );
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn validity_reads_openssl_dates_with_one_and_two_digit_days() {

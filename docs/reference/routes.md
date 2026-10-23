@@ -298,6 +298,8 @@ This preparation walks only the Instance's checkout and served checkouts nested 
 
 #### Caddy access
 
+The agent publishes development TLS leaves under `/etc/caddy/orbit-certificates/<scope>`. The scope directory, its `versions` directory, and each certificate version belong to `root:caddy` with mode `0750`. Caddy can traverse the complete path to the certificate and its group-readable private key.
+
 Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The Node agent's `instances.grant-development-caddy-access` runs it. Its ACL tools run as the managed user, in this order:
 
 1. Deny Caddy the whole checkout and its Git directory, including the default ACL of every directory, so new files stay closed too.
