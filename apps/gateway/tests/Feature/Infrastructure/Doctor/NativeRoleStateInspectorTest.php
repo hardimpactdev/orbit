@@ -22,54 +22,21 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 use Tests\Support\FakeAgentCommandRunner;
 
-it('inspects each role with exact package service and firewall requirements', function (
-    RoleName $role,
-    array $packages,
-    array $services,
-    array $comments,
-): void {
-    $needsCaddy = in_array('caddy', $packages, strict: true);
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"),
-        role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw($comments)),
-        role_inspector_result("v2.11.4\n"),
-    ]);
+it('sends each role package and service intent to the agent and compares its firewall', function (RoleName $role, array $packages, array $services, array $comments): void {
+    $agents = role_runtime_agents(role_inspector_ufw($comments));
+    $ssh = new RoleInspectorSshExecutor([]);
 
-    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment($role));
+    $state = role_state_inspector($agents, $ssh)->inspect(role_inspector_assignment($role));
 
-    expect($state->packagesPresent)
-        ->toBeTrue()
-        ->and($state->servicesActive)
-        ->toBeTrue()
-        ->and($state->firewallProjectionMatches)
-        ->toBeTrue()
-        ->and($state->caddyVersion)
-        ->toBe($needsCaddy ? 'v2.11.4' : null)
-        ->and($ssh->calls)
-        ->toHaveCount($needsCaddy ? 4 : 3)
-        ->and($ssh->calls[0]['command']->arguments)
-        ->toBe(['bash', '-seu', '--', ...$packages])
-        ->and($ssh->calls[1]['command']->arguments)
-        ->toBe(['bash', '-seu', '--', ...$services])
-        ->and($ssh->calls[2]['command']->arguments)
-        ->toBe(['sudo', 'ufw', 'status', 'numbered'])
-        ->and($ssh->calls[0]['command']->input)
-        ->toContain('dpkg-query')
-        ->not->toContain('apt-get', 'install ', 'remove ', 'update ')->and($ssh->calls[1]['command']->input)->toContain(
-            'systemctl is-active',
-        )
-        ->not->toContain('systemctl start', 'systemctl stop', 'systemctl restart')->and(array_column(
-            $ssh->calls,
-            'connection',
-        ))->each(fn ($connection) => $connection->toEqual(
-            new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
-        ));
+    expect($state->packagesPresent)->toBeTrue();
+    expect($state->servicesActive)->toBeTrue();
+    expect($state->firewallProjectionMatches)->toBeTrue();
+    expect($state->caddyVersion)->toBe(in_array('caddy', $packages, true) ? 'v2.11.4' : null);
+    expect($agents->calls[0]['input'])->toBe(['packages' => $packages, 'services' => $services]);
+    expect($agents->calls[1]['input'])->toBe(['stored' => false]);
+    expect($ssh->calls)->toBe([]);
 })->with([
     'gateway' => [
         RoleName::Gateway,
@@ -110,196 +77,77 @@ it('inspects each role with exact package service and firewall requirements', fu
     ],
 ]);
 
-it('checks the private DNS route on the Gateway machine only while a Node serves VPN DNS', function (
-    string $probe,
-    ?bool $expected,
-): void {
+it('checks the excluded private DNS route only when the Gateway has a VPN DNS address', function (string $probe, ?bool $expected): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.1', domain: 'orbit');
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"),
-        role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
-        role_inspector_result("v2.11.4\n"),
-        role_inspector_result($probe),
-    ]);
+    $agents = role_runtime_agents(role_inspector_ufw(['orbit:gateway-https']));
+    $ssh = new RoleInspectorSshExecutor([role_inspector_result($probe)]);
 
-    $gateway = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway));
+    $state = role_state_inspector($agents, $ssh)->inspect(role_inspector_assignment(RoleName::Gateway));
 
-    expect($gateway->privateDnsRouteMatches)->toBe($expected)
-        ->and($ssh->calls)->toHaveCount(5)
-        ->and($ssh->calls[4]['command'])->toEqual(new GatewayPrivateDnsResolver()->inspectCommand('10.44.0.1', 'orbit'));
-})->with([
-    'the route matches' => ["1\n", true],
-    'the route is missing' => ["0\n", false],
-]);
+    expect($state->privateDnsRouteMatches)->toBe($expected);
+    expect($ssh->calls)->toHaveCount(1);
+    expect($ssh->calls[0]['command'])->toEqual(new GatewayPrivateDnsResolver()->inspectCommand('10.44.0.1', 'orbit'));
+    expect($ssh->calls[0]['connection'])->toEqual(new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0));
+})->with([["1\n", true], ["0\n", false]]);
 
-it('fails the Gateway role inspection closed on an unreadable private DNS probe', function (): void {
+it('refuses an unreadable private DNS observation', function (): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.1', domain: 'orbit');
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"),
-        role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
-        role_inspector_result("v2.11.4\n"),
-        role_inspector_result("maybe\n"),
-    ]);
+    $agents = role_runtime_agents(role_inspector_ufw(['orbit:gateway-https']));
+    $ssh = new RoleInspectorSshExecutor([role_inspector_result("maybe\n")]);
 
-    expect(fn () => role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway)))
-        ->toThrow(DoctorInspectionException::class);
+    expect(fn () => role_state_inspector($agents, $ssh)->inspect(role_inspector_assignment(RoleName::Gateway)))->toThrow(DoctorInspectionException::class);
 });
 
-it('leaves the private DNS route unchecked while no Node serves VPN DNS', function (): void {
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"),
-        role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw(['orbit:gateway-https'])),
-        role_inspector_result("v2.11.4\n"),
-    ]);
+it('leaves private DNS unchecked without a VPN DNS Node', function (): void {
+    $agents = role_runtime_agents(role_inspector_ufw(['orbit:gateway-https']));
+    $ssh = new RoleInspectorSshExecutor([]);
 
-    expect(role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway))->privateDnsRouteMatches)
-        ->toBeNull()
-        ->and($ssh->calls)->toHaveCount(4);
+    expect(role_state_inspector($agents, $ssh)->inspect(role_inspector_assignment(RoleName::Gateway))->privateDnsRouteMatches)->toBeNull();
+    expect($ssh->calls)->toBe([]);
 });
 
-it('returns independent false projections for one missing requirement', function (
-    RoleName $role,
-    string $packageState,
-    string $serviceState,
-    array $firewallComments,
-    array $expected,
-): void {
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result($packageState),
-        role_inspector_result($serviceState),
-        role_inspector_result(role_inspector_ufw($firewallComments)),
-        role_inspector_result("v2.11.4\n"),
-    ]);
+it('keeps independent package service and firewall observations', function (bool $packages, bool $services, bool $firewall): void {
+    $agents = role_runtime_agents(role_inspector_ufw($firewall ? ['orbit:gateway-https'] : []));
+    $agents->answer('doctor.inspect-role-runtime', ['packages' => $packages, 'services' => $services, 'caddy_version' => null]);
 
-    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment($role));
+    $state = role_state_inspector($agents)->inspect(role_inspector_assignment(RoleName::Gateway));
 
-    expect([
-        $state->packagesPresent,
-        $state->servicesActive,
-        $state->firewallProjectionMatches,
-    ])->toBe($expected);
-})->with([
-    'missing package' => [
-        RoleName::AppDev,
-        "0\n",
-        "1\n",
-        [],
-        [false, true, true],
-    ],
-    'inactive service' => [
-        RoleName::AppDev,
-        "1\n",
-        "0\n",
-        [],
-        [true, false, true],
-    ],
-    'stopped Ingress Caddy' => [
-        RoleName::Ingress,
-        "1\n",
-        "0\n",
-        [],
-        [true, false, true],
-    ],
-    'missing firewall rule' => [
-        RoleName::Gateway,
-        "1\n",
-        "1\n",
-        [],
-        [true, true, false],
-    ],
-]);
+    expect([$state->packagesPresent, $state->servicesActive, $state->firewallProjectionMatches])->toBe([$packages, $services, $firewall]);
+})->with([[false, true, true], [true, false, true], [true, true, false]]);
 
-it('fails closed for command failure timeout truncation and malformed output', function (
-    array $results,
-): void {
-    $ssh = new RoleInspectorSshExecutor($results);
-
-    expect(fn (): mixed => role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Gateway)))
-        ->toThrow(DoctorInspectionException::class, '');
-})->with([
-    'command failure' => [[new CommandResult(1, 'secret-output', 'secret-error', 1, false)]],
-    'timeout' => [[new CommandResult(124, '', 'timeout secret', 30_000, false)]],
-    'truncation' => [[new CommandResult(0, "1\n", '', 1, true)]],
-    'malformed tuple' => [[role_inspector_result("1\nsecret\n")]],
-]);
-
-it('maps transport failures to an empty typed exception and keeps persisted attributes unchanged', function (): void {
+it('refuses malformed results and agent failures without changing stored role attributes', function (string $failure): void {
+    $agents = role_runtime_agents('Status: active');
+    match ($failure) {
+        'refusal' => $agents->refuse('doctor.inspect-role-runtime', 'doctor.role_inspection_failed'),
+        'transport' => $agents->answer('doctor.inspect-role-runtime', fn () => throw new RuntimeException('secret detail')),
+        'malformed' => $agents->answer('doctor.inspect-role-runtime', ['packages' => '1', 'services' => true, 'caddy_version' => null]),
+        'missing version' => $agents->answer('doctor.inspect-role-runtime', ['packages' => true, 'services' => true]),
+        'firewall' => $agents->answer('firewall.status', []),
+    };
     $assignment = role_inspector_assignment(RoleName::Gateway);
     $before = $assignment->getAttributes();
-    $ssh = new RoleInspectorSshExecutor([]);
-    $ssh->throws = true;
 
-    expect(fn (): mixed => role_state_inspector($ssh)->inspect($assignment))
-        ->toThrow(DoctorInspectionException::class, '')
-        ->and($assignment->getAttributes())
-        ->toBe($before);
-});
+    expect(fn () => role_state_inspector($agents)->inspect($assignment))->toThrow(DoctorInspectionException::class, '');
+    expect($assignment->getAttributes())->toBe($before);
+})->with(['refusal', 'transport', 'malformed', 'missing version', 'firewall']);
 
-it('accepts only a complete healthy Docker CE stack as the Docker prerequisite', function (): void {
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"),
-        role_inspector_result("1\n"),
-        role_inspector_result(role_inspector_ufw([])),
-        role_inspector_result("v2.11.4\n"),
-    ]);
-
-    role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::AppDev));
-    $script = $ssh->calls[0]['command']->input;
-    $root = sys_get_temp_dir().'/orbit-doctor-'.Str::uuid();
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory("{$root}/bin", 0o755, true);
-    $filesystem->put(
-        "{$root}/bin/dpkg-query",
-        "#!/bin/sh\neval package=\\\${\$#}\n[ \"\$package\" = docker.io ] && exit 1\n[ \"\$package\" = git ] && [ \"\$DOCTOR_STATE\" = missing-git ] && exit 1\n[ \"\$DOCTOR_STATE\" = healthy ] || [ \"\$DOCTOR_STATE\" = missing-git ] || [ \"\$DOCTOR_STATE\" != \"missing-\$package\" ] || exit 1\ncase \"\$*\" in *db:Status-Abbrev*) printf 'ii \\n' ;; *) printf 'install ok installed\\n' ;; esac\n",
-    );
-    $filesystem->put(
-        "{$root}/bin/systemctl",
-        "#!/bin/sh\n[ \"\$DOCTOR_STATE\" != inactive ]\n",
-    );
-    chmod("{$root}/bin/dpkg-query", 0o755);
-    chmod("{$root}/bin/systemctl", 0o755);
-    $docker = "{$root}/docker";
-    $filesystem->put($docker, "#!/bin/sh\nexit 0\n");
-    chmod($docker, 0o755);
-    try {
-        foreach ([
-            'healthy',
-            'missing-docker-ce',
-            'missing-docker-ce-cli',
-            'missing-containerd.io',
-            'missing-binary',
-            'inactive',
-            'missing-git',
-        ] as $state) {
-            chmod($docker, $state === 'missing-binary' ? 0o644 : 0o755);
-            $process = new Process(['bash', '-seu', '--', 'acl', 'docker.io', 'git']);
-            $process->setEnv(['PATH' => "{$root}/bin:".getenv('PATH'), 'DOCTOR_STATE' => $state]);
-            $process->setInput(str_replace('/usr/bin/docker', $docker, $script));
-            $process->run();
-            expect($process->getOutput())->toBe($state === 'healthy' ? "1\n" : "0\n");
-        }
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-});
-
-function role_state_inspector(RoleInspectorSshExecutor $ssh, string $ciOutcome = 'matches', ?FakeAgentCommandRunner $agents = null): NativeRoleStateInspector
+function role_runtime_agents(string $firewall): FakeAgentCommandRunner
 {
-    $agents ??= new FakeAgentCommandRunner;
+    return new FakeAgentCommandRunner()
+        ->answer('doctor.inspect-role-runtime', static fn (array $input): array => [
+            'packages' => true, 'services' => true,
+            'caddy_version' => in_array('caddy', $input['packages'], true) ? 'v2.11.4' : null,
+        ])->answer('firewall.status', ['status' => $firewall, 'stored' => []]);
+}
+
+function role_state_inspector(FakeAgentCommandRunner $agents, ?RoleInspectorSshExecutor $ssh = null, string $ciOutcome = 'matches'): NativeRoleStateInspector
+{
     $agents->answer('ci-runners.host', ['outcome' => $ciOutcome]);
 
     return new NativeRoleStateInspector(
-        $ssh,
-        new RoleInspectorKeys,
-        new RoleInspectorKnownHosts,
-        new NodeBootstrapPackageCatalog,
-        new NodeRoleServiceCatalog,
-        new NodeFirewallRuleCatalog,
-        new CommandDeadline,
-        ciRunner: new CiRunnerHostProgram($agents),
+        $ssh ?? new RoleInspectorSshExecutor([]), new RoleInspectorKeys, new RoleInspectorKnownHosts,
+        new NodeBootstrapPackageCatalog, new NodeRoleServiceCatalog, new NodeFirewallRuleCatalog,
+        new CommandDeadline, $agents, ciRunner: new CiRunnerHostProgram($agents),
     );
 }
 
@@ -316,14 +164,11 @@ it('reports ineligible or unreadable Router LAN rules even with no desired membe
     }
     $target = ($broad ? '' : '10.20.0.10 ').$port.($protocol === 'any' ? '' : '/'.$protocol);
     $lines[] = "[ 9] {$target} ALLOW IN 10.20.0.99 # orbit:router-lan-{$family}:999";
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"), role_inspector_result("1\n"),
-        role_inspector_result(implode("\n", $lines)."\n"), role_inspector_result("v2.11.4\n"),
-    ]);
+    $agents = role_runtime_agents(implode("\n", $lines)."\n");
     $role = $router->roles()->firstOrFail();
 
-    expect(role_state_inspector($ssh)->inspect($role)->firewallProjectionMatches)->toBeFalse();
-    expect(array_filter($ssh->calls, static fn (array $call): bool => $call['command']->arguments === ['sudo', 'ufw', 'status', 'numbered']))->toHaveCount(1);
+    expect(role_state_inspector($agents)->inspect($role)->firewallProjectionMatches)->toBeFalse();
+    expect($agents->commands())->toBe(['doctor.inspect-role-runtime', 'firewall.status']);
 })->with([
     'HTTPS explicit protocol' => ['https', 'tcp', '443', false],
     'UDP explicit protocol' => ['dns-udp', 'udp', '53', false],
@@ -353,12 +198,9 @@ it('accepts the exact Router families and ignores other rules but rejects IPv6 r
     if ($ipv6) {
         $output .= "[ 9] 53/udp (v6) ALLOW IN Anywhere (v6) # orbit:router-lan-dns-udp:999\n";
     }
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"), role_inspector_result("1\n"),
-        role_inspector_result($output), role_inspector_result("v2.11.4\n"),
-    ]);
+    $agents = role_runtime_agents($output);
 
-    expect(role_state_inspector($ssh)->inspect($router->roles()->firstOrFail())->firewallProjectionMatches)->toBe(! $ipv6);
+    expect(role_state_inspector($agents)->inspect($router->roles()->firstOrFail())->firewallProjectionMatches)->toBe(! $ipv6);
 })->with([false, true]);
 
 function role_inspector_assignment(RoleName $role): NodeRole
@@ -464,19 +306,13 @@ final readonly class RoleInspectorKnownHosts implements KnownHostsStore
     public function put(string $host, int $port, HostKey $key): void {}
 }
 
-it('observes CI host projection with the read-only inspect action', function (string $outcome, bool $matches): void {
-    $assignment = role_inspector_assignment(RoleName::CiRunner);
-    $ssh = new RoleInspectorSshExecutor([
-        role_inspector_result("1\n"), role_inspector_result("1\n"),
-        role_inspector_result("Status: active\n[ 1] Anywhere ALLOW FWD Anywhere on orbitci0 # orbit-ci-runners\n[ 2] Anywhere (v6) ALLOW FWD Anywhere (v6) on orbitci0 # orbit-ci-runners\n"),
-    ]);
-    $agents = new FakeAgentCommandRunner;
+it('observes the CI host through its typed inspect command', function (string $outcome, bool $matches): void {
+    $agents = role_runtime_agents("Status: active\n[ 1] Anywhere ALLOW FWD Anywhere on orbitci0 # orbit-ci-runners\n[ 2] Anywhere (v6) ALLOW FWD Anywhere (v6) on orbitci0 # orbit-ci-runners\n");
 
-    $state = role_state_inspector($ssh, $outcome, $agents)->inspect($assignment);
+    $state = role_state_inspector($agents, ciOutcome: $outcome)->inspect(role_inspector_assignment(RoleName::CiRunner));
 
-    expect($state->ciRunnerHostMatches)->toBe($matches)
-        ->and($state->firewallProjectionMatches)->toBeTrue()
-        ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus', 'incus-base', 'incus-client'])
-        ->and($ssh->calls[1]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
-        ->and($agents->calls[0]['input'])->toBe(['action' => 'inspect']);
+    expect($state->ciRunnerHostMatches)->toBe($matches);
+    expect($state->firewallProjectionMatches)->toBeTrue();
+    expect($agents->calls[0]['input'])->toBe(['packages' => ['incus', 'incus-base', 'incus-client'], 'services' => ['incus']]);
+    expect($agents->calls[2]['input'])->toBe(['action' => 'inspect']);
 })->with([['matches', true], ['drift', false]]);

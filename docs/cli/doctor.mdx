@@ -71,6 +71,8 @@ On `app-prod`, the expected `pool.conf` also holds the pool of each directory th
 
 Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
 
+Role package, service, and Caddy version observations use `doctor.inspect-role-runtime`. The agent shares the Docker CE prerequisite rule with role convergence: all three packages, the executable, and the running Docker service must be present before Docker CE satisfies `docker.io`.
+
 Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
 
 Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, `database_server`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.

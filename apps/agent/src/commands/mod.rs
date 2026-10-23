@@ -16,6 +16,7 @@ pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
+mod doctor_role;
 mod doctor_route;
 pub mod environment;
 pub mod firewall;
@@ -25,6 +26,7 @@ pub mod horizon_queue;
 pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
+mod metrics_exporter;
 pub mod os_release;
 pub mod peer_dns;
 pub mod php_runtime;
@@ -147,6 +149,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_publication::Publish>(),
         entry::<caddy_publication::CheckAddresses>(),
         entry::<caddy_publication::ReadLive>(),
+        entry::<doctor_role::InspectRole>(),
         entry::<doctor_route::InspectPrivateRoute>(),
         entry::<doctor_route::InspectApplicationUrls>(),
         entry::<doctor_route::InspectCustomProxy>(),
@@ -155,6 +158,8 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
+        entry::<metrics_exporter::NodeExporter>(),
+        entry::<metrics_exporter::Cadvisor>(),
         entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),

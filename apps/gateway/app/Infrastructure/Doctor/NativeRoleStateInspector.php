@@ -10,6 +10,7 @@ use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
@@ -18,7 +19,6 @@ use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -28,41 +28,6 @@ use Throwable;
 
 final readonly class NativeRoleStateInspector implements RoleStateInspector
 {
-    private const string PACKAGE_SCRIPT = <<<'BASH'
-        present=1
-        docker_ce_healthy=false
-        if [ "$(dpkg-query -W -f='${Status}' docker-ce 2>/dev/null)" = 'install ok installed' ] \
-            && [ "$(dpkg-query -W -f='${Status}' docker-ce-cli 2>/dev/null)" = 'install ok installed' ] \
-            && [ "$(dpkg-query -W -f='${Status}' containerd.io 2>/dev/null)" = 'install ok installed' ] \
-            && test -x /usr/bin/docker \
-            && systemctl is-active --quiet docker; then
-            docker_ce_healthy=true
-        fi
-        for package in "$@"; do
-            if [ "$package" = docker.io ] && [ "$docker_ce_healthy" = true ]; then
-                continue
-            fi
-            if ! dpkg-query -W -f='${db:Status-Abbrev}\n' -- "$package" 2>/dev/null | grep -qx 'ii '; then
-                present=0
-            fi
-        done
-        printf '%s\n' "$present"
-        BASH;
-
-    private const string CADDY_VERSION_SCRIPT = <<<'BASH'
-        caddy version 2>/dev/null | head -n 1 | awk '{ print $1 }'
-        BASH;
-
-    private const string SERVICE_SCRIPT = <<<'BASH'
-        active=1
-        for service in "$@"; do
-            if ! systemctl is-active --quiet "$service"; then
-                active=0
-            fi
-        done
-        printf '%s\n' "$active"
-        BASH;
-
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
@@ -71,6 +36,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         private NodeRoleServiceCatalog $services,
         private NodeFirewallRuleCatalog $firewall,
         private CommandDeadline $deadline,
+        private AgentCommandRunner $agents,
         private UfwManagedRulesCheck $firewallCheck = new UfwManagedRulesCheck,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
         private ?VpnSettings $vpnSettings = null,
@@ -84,32 +50,26 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
             $node = $role->node;
             $connection = $this->connection($node);
             $required = $this->packages->forRole($node, $role->role);
-            $packages = $this->booleanResult($this->ssh->execute(
-                $connection,
-                new RemoteCommand(
-                    ['bash', '-seu', '--', ...$required],
-                    self::PACKAGE_SCRIPT,
-                ),
-            ));
-            $services = $this->booleanResult($this->ssh->execute(
-                $connection,
-                new RemoteCommand(
-                    ['bash', '-seu', '--', ...$this->services->forRole($role->role)],
-                    self::SERVICE_SCRIPT,
-                ),
-            ));
-            $firewall = $this->ssh->execute(
-                $connection,
-                new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            );
+            $runtime = $this->agents->run($node, 'doctor.inspect-role-runtime', [
+                'packages' => $required,
+                'services' => $this->services->forRole($role->role),
+            ], $this->deadline->cap(30.0));
+            if (! is_bool($runtime['packages'] ?? null) || ! is_bool($runtime['services'] ?? null)
+                || ! array_key_exists('caddy_version', $runtime)
+                || ($runtime['caddy_version'] !== null && ! is_string($runtime['caddy_version']))) {
+                throw new DoctorInspectionException;
+            }
+            $status = $this->agents->run($node, 'firewall.status', ['stored' => false], $this->deadline->cap(30.0));
+            if (! is_string($status['status'] ?? null)) {
+                throw new DoctorInspectionException;
+            }
+            $firewall = new CommandResult(0, $status['status'], '', 0, false);
 
             return new RoleInspectionData(
-                $packages,
-                $services,
+                $runtime['packages'],
+                $runtime['services'],
                 $this->firewallMatches($firewall, $node, $role),
-                in_array('caddy', $required, strict: true)
-                    ? $this->caddyVersion($connection)
-                    : null,
+                $runtime['caddy_version'],
                 $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
                 $role->role === RoleName::CiRunner
                     ? $this->ciRunnerHostMatches($node)
@@ -146,23 +106,6 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
             $this->knownHosts->path(),
             commandTimeout: $this->deadline->cap(30.0),
         );
-    }
-
-    /** Null means Caddy is absent, which the package expectation already reports. */
-    private function caddyVersion(SshConnection $connection): ?string
-    {
-        $result = $this->ssh->execute(
-            $connection,
-            new RemoteCommand(['bash', '-seu', '--'], self::CADDY_VERSION_SCRIPT),
-        );
-
-        if (! $result->succeeded() || $result->truncated) {
-            throw new DoctorInspectionException;
-        }
-
-        $reported = trim($result->stdout);
-
-        return $reported === '' ? null : $reported;
     }
 
     /**

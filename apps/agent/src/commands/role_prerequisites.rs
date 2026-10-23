@@ -104,23 +104,33 @@ fn as_user(step: &str, account: &Account, arguments: &[&str]) -> Result<(), Prer
     run(step, "sudo", &all, &[])
 }
 
-fn installed(package: &str) -> bool {
-    Process::new("dpkg-query")
-        .args(["-W", "-f=${Status}", package])
-        .stderr(Stdio::null())
-        .output()
-        .is_ok_and(|output| output.stdout == b"install ok installed")
+/// One Docker CE prerequisite rule for convergence and Doctor.
+pub(super) fn docker_ce_matches(
+    docker: &Path,
+    run: &mut impl FnMut(&str, &[&str]) -> io::Result<(bool, String)>,
+) -> bool {
+    ["docker-ce", "docker-ce-cli", "containerd.io"]
+        .iter()
+        .all(|package| {
+            run("dpkg-query", &["-W", "-f=${Status}", "--", package])
+                .is_ok_and(|(ok, status)| ok && status.trim() == "install ok installed")
+        })
+        && executable(docker)
+        && run("systemctl", &["is-active", "--quiet", "docker"]).is_ok_and(|(ok, _)| ok)
 }
 
 fn docker_ce_healthy() -> bool {
-    ["docker-ce", "docker-ce-cli", "containerd.io"]
-        .iter()
-        .all(|package| installed(package))
-        && executable(Path::new("/usr/bin/docker"))
-        && Process::new("systemctl")
-            .args(["is-active", "--quiet", "docker"])
-            .status()
-            .is_ok_and(|status| status.success())
+    docker_ce_matches(Path::new("/usr/bin/docker"), &mut |program, args| {
+        let output = Process::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()?;
+        Ok((
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+        ))
+    })
 }
 
 fn executable(path: &Path) -> bool {

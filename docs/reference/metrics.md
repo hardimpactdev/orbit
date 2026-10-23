@@ -89,6 +89,8 @@ A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit
 
 The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add` except the enrollment of a task VM, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
 
+The Gateway selects the fleet and sends the Node and Metrics IPv4 addresses to `metrics.node-exporter` and `metrics.cadvisor`. Each agent command snapshots, converges, removes, or restores one exporter under Node-local exporter and firewall locks. Rust owns configuration, package or binary installation, service control, firewall ownership checks, and verification. A failed change restores the prior configuration, service state, and firewall source before returning its error. Fleet rollback passes the snapshots back to the commands; cAdvisor restoration reinstalls its pinned binary when removal deleted it. The Gateway sends no configuration source or executable arguments.
+
 The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
 
 ### Exporter degradation

@@ -333,10 +333,10 @@ use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
+use App\Infrastructure\Metrics\AgentMetricsCadvisorRuntime;
+use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
-use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
-use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\MetricsSshExecutor;
@@ -504,12 +504,12 @@ final class ApplicationServiceProvider extends ServiceProvider
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
-        MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
+        MetricsExporterRuntime::class => AgentMetricsExporterRuntime::class,
         ServiceMetricsLifecycle::class => NativeServiceMetricsLifecycle::class,
         ServiceMetricsRuntime::class => NativeServiceMetricsRuntime::class,
         ServiceMetricsProjection::class => ServiceMetricsProjection::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
-        MetricsCadvisorRuntime::class => MetricsCadvisorSshExecutor::class,
+        MetricsCadvisorRuntime::class => AgentMetricsCadvisorRuntime::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
