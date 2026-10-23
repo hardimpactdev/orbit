@@ -5,6 +5,7 @@
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::{
     fs, io,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -251,5 +252,232 @@ impl Command for RemoveCertificate {
             Err(error) if error.kind() != io::ErrorKind::NotFound => Err(failed(error)),
             _ => Ok(Removed {}),
         }
+    }
+}
+
+command_errors! {
+    pub enum PackageError {
+        Unsafe {} => "caddy.package_unsafe", "An Orbit Caddy file has unsafe ownership or mode.";
+        Failed { reason: String } => "caddy.package_failed", "The Caddy package could not be installed.";
+    }
+}
+
+fn package_failed(reason: impl ToString) -> PackageError {
+    PackageError::Failed {
+        reason: reason.to_string(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageInput {
+    pub release: String,
+    pub release_url: String,
+    pub amd64_sha512: String,
+    pub arm64_sha512: String,
+    /// The oldest Caddy release Orbit renders against.
+    pub minimum_version: String,
+    pub kernel_setting_path: PathBuf,
+    pub kernel_setting: String,
+    /// The Cloudsmith keyring and apt source that Orbit no longer uses.
+    pub legacy_paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Package {
+    pub changed: bool,
+    pub version: String,
+}
+
+fn run_checked(program: &str, arguments: &[&str]) -> Result<String, PackageError> {
+    let output = Process::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| package_failed(format!("{program}: {error}")))?;
+    if !output.status.success() {
+        return Err(package_failed(format!(
+            "{program} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The version `caddy version` reports, without its `v`, or none when Caddy is absent.
+fn installed_version() -> Option<String> {
+    let output = Process::new("caddy")
+        .arg("version")
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let first = text.lines().next()?.split_whitespace().next()?;
+    Some(first.trim_start_matches('v').to_string()).filter(|version| !version.is_empty())
+}
+
+fn at_least(version: &str, minimum: &str) -> bool {
+    Process::new("dpkg")
+        .args(["--compare-versions", version, "ge", minimum])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+pub fn install_package(input: &PackageInput) -> Result<Package, PackageError> {
+    let mut changed = false;
+    let setting = &input.kernel_setting_path;
+    if let Ok(metadata) = fs::symlink_metadata(setting) {
+        if !metadata.is_file()
+            || metadata.uid() != 0
+            || metadata.gid() != 0
+            || metadata.mode() & 0o7777 != 0o644
+        {
+            return Err(PackageError::Unsafe {});
+        }
+    }
+    let body = format!("{}\n", input.kernel_setting);
+    let staged = std::env::temp_dir().join(format!(
+        "orbit-caddy-sysctl-{:016x}.conf",
+        rand::random::<u64>()
+    ));
+    fs::write(&staged, &body).map_err(package_failed)?;
+    let loaded = run_checked(
+        "sysctl",
+        &["--quiet", &format!("--load={}", staged.display())],
+    );
+    let _ = fs::remove_file(&staged);
+    loaded?;
+    if fs::read_to_string(setting).ok().as_deref() != Some(body.as_str()) {
+        fs::write(setting, &body).map_err(package_failed)?;
+        chown(setting, 0, 0).map_err(package_failed)?;
+        fs::set_permissions(setting, fs::Permissions::from_mode(0o644)).map_err(package_failed)?;
+        changed = true;
+    }
+    for legacy in &input.legacy_paths {
+        if fs::symlink_metadata(legacy).is_ok() {
+            fs::remove_file(legacy).map_err(package_failed)?;
+            changed = true;
+        }
+    }
+    let mut version = installed_version();
+    if !version
+        .as_deref()
+        .is_some_and(|version| at_least(version, &input.minimum_version))
+    {
+        let architecture = run_checked("dpkg", &["--print-architecture"])?
+            .trim()
+            .to_string();
+        let expected = match architecture.as_str() {
+            "amd64" => &input.amd64_sha512,
+            "arm64" => &input.arm64_sha512,
+            other => {
+                return Err(package_failed(format!(
+                    "Orbit pins no Caddy package for the {other} architecture."
+                )))
+            }
+        };
+        let directory =
+            std::env::temp_dir().join(format!("orbit-caddy-{:016x}", rand::random::<u64>()));
+        fs::DirBuilder::new()
+            .mode(0o755)
+            .create(&directory)
+            .map_err(package_failed)?;
+        let result = (|| {
+            let file = format!("caddy_{}_linux_{architecture}.deb", input.release);
+            let package = directory.join(&file);
+            let package_text = package.to_string_lossy().into_owned();
+            let url = format!("{}/{file}", input.release_url);
+            run_checked(
+                "curl",
+                &[
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--location",
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--output",
+                    &package_text,
+                    &url,
+                ],
+            )?;
+            let digest = format!(
+                "{:x}",
+                sha2::Sha512::digest(fs::read(&package).map_err(package_failed)?)
+            );
+            if &digest != expected {
+                return Err(package_failed(format!(
+                    "The Caddy {} package does not match the Orbit pin.",
+                    input.release
+                )));
+            }
+            fs::set_permissions(&package, fs::Permissions::from_mode(0o644))
+                .map_err(package_failed)?;
+            let status = Process::new("apt-get")
+                .args([
+                    "-o",
+                    "DPkg::Lock::Timeout=300",
+                    "-o",
+                    "Dpkg::Options::=--force-confold",
+                    "install",
+                    "--yes",
+                    "--no-install-recommends",
+                    "--no-remove",
+                    "--",
+                    &package_text,
+                ])
+                .env("DEBIAN_FRONTEND", "noninteractive")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .status()
+                .map_err(package_failed)?;
+            if !status.success() {
+                return Err(package_failed(
+                    "apt-get could not install the Caddy package",
+                ));
+            }
+            Ok(())
+        })();
+        let _ = fs::remove_dir_all(&directory);
+        result?;
+        changed = true;
+        version = installed_version();
+    }
+    let version = version.ok_or_else(|| package_failed("Caddy reported no version."))?;
+    if !at_least(&version, &input.minimum_version) {
+        return Err(package_failed(format!(
+            "Caddy {version} is older than the {} Orbit renders against.",
+            input.minimum_version
+        )));
+    }
+    Ok(Package { changed, version })
+}
+
+pub struct InstallPackage;
+
+impl Command for InstallPackage {
+    const NAME: &'static str = "caddy.install-package";
+    const SUMMARY: &'static str =
+        "Install the pinned Caddy release when the Node's Caddy is older than Orbit's floor.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(600);
+    type Input = PackageInput;
+    type Output = Package;
+    type Error = PackageError;
+
+    /// Packages and kernel settings belong to root.
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+
+    fn target(_: &PackageInput) -> Option<String> {
+        Some("caddy-package".into())
+    }
+
+    const RESOURCES: &'static [&'static str] = &["apt"];
+
+    fn run(input: PackageInput, _: &Context) -> Result<Package, PackageError> {
+        install_package(&input)
     }
 }

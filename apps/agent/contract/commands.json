@@ -773,6 +773,33 @@
       ]
     },
     {
+      "name": "caddy.install-package",
+      "summary": "Install the pinned Caddy release when the Node's Caddy is older than Orbit's floor.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "caddy.package_unsafe",
+        "caddy.package_failed"
+      ]
+    },
+    {
+      "name": "http.await-healthy",
+      "summary": "Wait until a service answers its health URL.",
+      "mutates": false,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "http.unhealthy"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

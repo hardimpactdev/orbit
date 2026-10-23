@@ -9,20 +9,16 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Caddy\RoleCaddyCertificate;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
 use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RecordingNodeCaddyBuilds;
 
 it('publishes the certificate, requests a Node Caddy build, then converges DNS last', function (): void {
@@ -44,8 +40,9 @@ it('writes no Caddy file on the Node itself', function (): void {
     $manager->converge(websocket_publication_node());
     $manager->remove(websocket_publication_node());
 
+    expect($commands)->toHaveCount(2);
     foreach ($commands as $command) {
-        expect(implode(' ', $command->arguments)."\n".($command->input ?? ''))
+        expect(json_encode($command, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->not->toContain('orbit-versions')
             ->not->toContain('/etc/caddy/Caddyfile')
             ->not->toContain('websocket.caddy');
@@ -156,7 +153,7 @@ function websocket_publication_node(): Node
     ]);
 }
 
-/** @param list<RemoteCommand> $commands */
+/** @param list<array{command: string, input: array<string, mixed>}> $commands */
 function websocket_publication_manager(
     array &$events,
     bool $failCertificate = false,
@@ -183,7 +180,7 @@ function websocket_publication_manager(
                 );
             }
         },
-        certificatePublisher: new WebSocketCertificatePublisher,
+        certificatePublisher: new WebSocketCertificatePublisher(new RoleCaddyCertificate(websocket_publication_agents($events, $failCertificate, $commands))),
         builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         dns: new class($events) implements PrivateDnsManager
         {
@@ -194,49 +191,27 @@ function websocket_publication_manager(
                 $this->events[] = $pendingNode instanceof Node ? 'dns:converge' : 'dns:converge-empty';
             }
         },
-        ssh: new class($events, $failCertificate, $commands) implements SshExecutor
-        {
-            public function __construct(
-                private array &$events,
-                private bool $failCertificate,
-                private array &$commands,
-            ) {}
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->commands[] = $command;
-
-                if ($command->protectedInput !== null) {
-                    $this->events[] = 'ssh:certificate';
-
-                    return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
-                }
-
-                $this->events[] = in_array('rm', $command->arguments, true) ? 'ssh:certificate-remove' : 'ssh:other';
-
-                return new CommandResult(0, '', '', 1, false);
-            }
-        },
-        keys: new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 AAAA test';
-            }
-        },
-        knownHosts: new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
-
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
     );
+}
+
+/** @param list<array{command: string, input: array<string, mixed>}> $commands */
+function websocket_publication_agents(array &$events, bool $failCertificate, array &$commands): FakeAgentCommandRunner
+{
+    $agents = new FakeAgentCommandRunner()
+        ->answer('caddy.install-certificate', static function (array $input) use (&$events, $failCertificate, &$commands): array {
+            $commands[] = ['command' => 'caddy.install-certificate', 'input' => $input];
+            $events[] = 'ssh:certificate';
+            if ($failCertificate) {
+                throw new AgentCommandRefused('caddy.install-certificate', 'caddy.certificate_failed', 'Failed.', ['reason' => 'refused']);
+            }
+
+            return ['changed' => true];
+        })
+        ->answer('caddy.remove-certificate', static function (array $input) use (&$events, &$commands): array {
+            $commands[] = ['command' => 'caddy.remove-certificate', 'input' => $input];
+            $events[] = 'ssh:certificate-remove';
+
+            return [];
+        });
+    return $agents;
 }

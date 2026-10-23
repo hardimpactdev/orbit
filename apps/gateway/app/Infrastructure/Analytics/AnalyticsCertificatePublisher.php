@@ -4,63 +4,23 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Analytics;
 
-use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Caddy\RoleCaddyCertificate;
+use App\Infrastructure\Processes\CommandResult;
+use App\Models\Node;
 use SensitiveParameter;
 
-/** Publishes and removes the Orbit CA leaf certificate on the analytics role's node. */
+/** Publishes and removes the Orbit CA leaf certificate of the analytics role on its Node. */
 final readonly class AnalyticsCertificatePublisher
 {
-    public function command(
-        string $certificatePem,
-        #[SensitiveParameter] string $privateKeyPem,
-    ): RemoteCommand {
-        $certificateEncoded = base64_encode($certificatePem);
-        $keyEncoded = base64_encode($privateKeyPem);
-        $current = AnalyticsFootprint::CertificateCurrentDirectory;
-        $caddyService = AnalyticsFootprint::CaddyServiceName;
-        $lockScript = CaddyPublicationLock::script(CaddyPublicationLock::Path);
+    public function __construct(private RoleCaddyCertificate $certificate) {}
 
-        $script = <<<BASH
-            current={$current}
-            caddy_service={$caddyService}
-            {$lockScript}
-            candidate="\$current.orbit-candidate"
-            trap 'rm -rf -- "\$candidate"' EXIT
-            install -d -o root -g caddy -m 0750 -- "\$candidate"
-            printf '%s' '{$certificateEncoded}' | base64 --decode > "\$candidate/analytics.pem"
-            printf '%s' '{$keyEncoded}' | base64 --decode > "\$candidate/analytics.key"
-            chown root:caddy "\$candidate/analytics.pem" "\$candidate/analytics.key"
-            chmod 0640 "\$candidate/analytics.pem" "\$candidate/analytics.key"
-            certificate_public=\$(openssl x509 -in "\$candidate/analytics.pem" -pubkey -noout)
-            private_public=\$(openssl pkey -in "\$candidate/analytics.key" -pubout)
-            test "\$certificate_public" = "\$private_public"
-            if [ -d "\$current" ] \\
-                && cmp -s -- "\$candidate/analytics.pem" "\$current/analytics.pem" \\
-                && cmp -s -- "\$candidate/analytics.key" "\$current/analytics.key"; then
-                rm -rf -- "\$candidate"
-                exit 0
-            fi
-            rm -rf -- "\$current"
-            mv -fT -- "\$candidate" "\$current"
-            if systemctl is-active --quiet "\$caddy_service"; then
-                systemctl reload-or-restart "\$caddy_service"
-            fi
-            BASH;
-
-        return new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu'],
-            protectedInput: ProtectedInput::fromString($script),
-        );
+    public function publish(Node $node, string $certificatePem, #[SensitiveParameter] string $privateKeyPem): CommandResult
+    {
+        return $this->certificate->publish($node, AnalyticsFootprint::CertificateCurrentDirectory, 'analytics', AnalyticsFootprint::CaddyServiceName, $certificatePem, $privateKeyPem);
     }
 
-    public function removeCommand(): RemoteCommand
+    public function remove(Node $node): CommandResult
     {
-        $current = AnalyticsFootprint::CertificateCurrentDirectory;
-
-        return new RemoteCommand(
-            arguments: ['sudo', 'rm', '-rf', '--', $current],
-        );
+        return $this->certificate->remove($node, AnalyticsFootprint::CertificateCurrentDirectory);
     }
 }

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyPushScript;
@@ -15,10 +14,8 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\WebSocket\WebSocketCertificatePublisher;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCertificatePublisher;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
 
@@ -49,15 +46,6 @@ describe('every Caddy writer', function (): void {
         ])],
         'metrics certificate' => [fn (): array => caddy_lock_metrics_programs()],
         'metrics access reload' => [fn (): array => caddy_lock_access_programs()],
-        'websocket certificate' => [fn (): array => caddy_lock_remote_programs([
-            new WebSocketCertificatePublisher()->command('certificate', 'key'),
-        ])],
-        'ai-router certificate' => [fn (): array => caddy_lock_remote_programs([
-            new AiRouterCertificatePublisher()->command('certificate', 'key'),
-        ])],
-        'analytics certificate' => [fn (): array => caddy_lock_remote_programs([
-            new AnalyticsCertificatePublisher()->command('certificate', 'key'),
-        ])],
     ]);
 
     it('is listed above whenever its program reloads Caddy', function (): void {
@@ -66,13 +54,10 @@ describe('every Caddy writer', function (): void {
         );
 
         expect($reloaders)->toEqualCanonicalizing([
-            'app/Infrastructure/Analytics/AnalyticsCertificatePublisher.php',
             'app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php',
             'app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php',
             'app/Infrastructure/Metrics/MetricsCertificatePublisher.php',
             'app/Infrastructure/Metrics/NativeMetricsAccessRevoker.php',
-            'extensions/ai-router/src/Infrastructure/AiRouterCertificatePublisher.php',
-            'app/Infrastructure/WebSocket/WebSocketCertificatePublisher.php',
         ]);
 
         foreach ($reloaders as $reloader) {
