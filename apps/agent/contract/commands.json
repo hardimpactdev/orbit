@@ -664,6 +664,48 @@
       ]
     },
     {
+      "name": "vite.select-port",
+      "summary": "Choose the first free TCP port from a preferred one, skipping excluded ports.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
+      "name": "vite.check-listener",
+      "summary": "Check that a Process's unit owns its Vite listener, and that it serves the Vite client.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
+      "name": "vite.set-traffic",
+      "summary": "Suspend or allow a Vite Instance's traffic, or write its port environment.",
+      "mutates": true,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "vite.ports_exhausted",
+        "vite.node_failed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

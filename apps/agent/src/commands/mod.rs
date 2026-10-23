@@ -19,6 +19,7 @@ pub mod source;
 pub mod sqlite_copy;
 pub mod sqlite_seed;
 pub mod transfer_source;
+pub mod vite;
 
 use crate::command::registry::{entry, Entry};
 use crate::command::{Platform, Privilege};
@@ -94,6 +95,9 @@ pub fn all() -> Vec<Entry> {
         entry::<sqlite_seed::PrepareSqliteSeed>(),
         entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<transfer_source::TransferSource>(),
+        entry::<vite::SelectVitePort>(),
+        entry::<vite::CheckViteListener>(),
+        entry::<vite::SetViteTraffic>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),
