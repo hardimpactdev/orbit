@@ -31,6 +31,7 @@ use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\StoreTaskGroupCommentAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
@@ -972,6 +973,9 @@ final class TaskOrchestrationEntryPoints
         ],
         StoreTaskCommentAction::class => [
             'commitHeldDirectionReview' => 'Records a held direction resolution after its guarded send boundary.',
+        ],
+        StoreTaskGroupCommentAction::class => [
+            'execute' => 'Records external group assistance after all children end without sending a turn, starting a check, or claiming work; TaskGroupCommentsTest covers it.',
         ],
         StreamAgentThreadAction::class => [
             'execute' => 'Reads transcript events.',
