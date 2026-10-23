@@ -38,6 +38,7 @@ pub mod sqlite_copy;
 pub mod sqlite_seed;
 pub mod storage_root;
 pub mod tls_check;
+pub mod tmpfiles;
 pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
@@ -84,6 +85,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<tmpfiles::PublishTmpfiles>(),
         entry::<websocket_runtime::ConvergeRuntime>(),
         entry::<websocket_runtime::RemoveRuntime>(),
         entry::<websocket_runtime::RuntimeActive>(),

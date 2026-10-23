@@ -20,7 +20,6 @@ use App\Infrastructure\Fleet\Footprint\SourceClosure;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\ServiceProvider;
@@ -29,7 +28,6 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\ScriptedSshExecutor;
 
 describe('footprint digests', function (): void {
@@ -161,7 +159,8 @@ describe('footprint digests', function (): void {
 
     it('publishes the tmpfiles rule on active Linux app-dev Nodes only', function (): void {
         $ssh = new ScriptedSshExecutor;
-        $artifact = new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh));
+        $agents = (new FakeAgentCommandRunner)->answer('nodes.publish-tmpfiles', ['changed' => false]);
+        $artifact = new TmpfilesFootprintArtifact($agents);
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
         $pending = FleetFixtures::node('pending');
         NodeRole::query()->create(['node_id' => $pending->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Provisioning]);
@@ -174,19 +173,13 @@ describe('footprint digests', function (): void {
             ->and($artifact->digest($dev))->toBe(hash('sha256', TmpfilesFootprintArtifact::Rule))
             ->and(TmpfilesFootprintArtifact::Rule)->toContain("\ne /tmp/orbit-* - - - 1d\ne /dev/shm/orbit-* - - - 1d\n");
 
-        $ssh->on('/sudo bash/', new CommandResult(0, '', '', 1, false));
         expect($artifact->apply($dev))->toBeFalse()
-            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/etc/tmpfiles.d/orbit.conf', base64_encode(TmpfilesFootprintArtifact::Rule)]);
+            ->and($agents->calls[0]['input'])->toBe(['rule' => TmpfilesFootprintArtifact::Rule])
+            ->and(new TmpfilesFootprintArtifact((new FakeAgentCommandRunner)->answer('nodes.publish-tmpfiles', ['changed' => true]))->apply($dev))->toBeTrue();
 
-        $ssh = new ScriptedSshExecutor;
-        $ssh->on('/sudo bash/', new CommandResult(0, "changed\n", '', 1, false));
-        expect(new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh))->apply($dev))->toBeTrue();
-
-        $ssh = new ScriptedSshExecutor;
-        $ssh->on('/sudo bash/', new CommandResult(1, '', "mv: cannot move\n", 1, false));
-        expect(fn () => new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh))->apply($dev))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('node.footprint_tmpfiles_failed')
-                ->and($exception->getMessage())->toContain('cannot move');
+        $refused = (new FakeAgentCommandRunner)->refuse('nodes.publish-tmpfiles', 'nodes.tmpfiles_failed', ['reason' => 'cannot move']);
+        expect(fn () => new TmpfilesFootprintArtifact($refused)->apply($dev))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.footprint_tmpfiles_failed');
         });
     });
 });

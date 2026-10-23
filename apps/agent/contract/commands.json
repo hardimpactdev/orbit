@@ -85,6 +85,20 @@
       ]
     },
     {
+      "name": "nodes.publish-tmpfiles",
+      "summary": "Publish Orbit's tmpfiles rule for its scratch directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.tmpfiles_invalid",
+        "nodes.tmpfiles_failed"
+      ]
+    },
+    {
       "name": "websocket.converge-runtime",
       "summary": "Install the pinned Reverb release, switch to it, and restart the websocket service.",
       "mutates": true,
