@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
-use Symfony\Component\Process\Process;
+use Tests\Support\ForkedGatewayProcess;
 
 describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
     beforeEach(function (): void {
@@ -242,17 +242,9 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
         try {
             $first->start();
             $second->start();
-            $deadline = microtime(true) + 10;
-
-            while (! is_file($this->orbitHome.'/ready-'.$this->node->id) || ! is_file($this->orbitHome.'/ready-'.$this->other->id)) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('Key assignment probes did not reach the barrier: '.$first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput());
-                }
-
-                usleep(1_000);
-            }
-
-            file_put_contents($this->orbitHome.'/assign-go', 'go');
+            expect($first->receive())->toBe('ready')->and($second->receive())->toBe('ready');
+            $first->send('assign');
+            $second->send('assign');
             $first->wait();
             $second->wait();
             expect([$first->getExitCode(), $second->getExitCode()])->toEqualCanonicalizing([0, 1], $first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput())
@@ -271,6 +263,7 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
     it('leaves the documented state after an interrupted publication and repairs it by authorized identical replay', function (string $window, int $exit): void {
         $database = wireguard_key_probe_database($this->orbitHome);
         file_put_contents($this->orbitHome.'/live.conf', $this->beforeConfig);
+        $crash = $replay = null;
 
         try {
             $crash = wireguard_key_probe($this->orbitHome, $database, $window, $this->node->id, $this->newKey);
@@ -288,6 +281,8 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
                 ->and(file_get_contents($this->orbitHome.'/live.conf'))->toBe(str_replace($this->oldKey, $this->newKey, $this->beforeConfig))
                 ->and($pdo->query("SELECT count(*) FROM activity_log WHERE command = 'node:wireguard-key' AND status = 'succeeded'")->fetchColumn())->toBe(1);
         } finally {
+            $crash?->stop();
+            $replay?->stop();
             unlink($database);
         }
     })->with([['before-publication', 86], ['after-publication', 87]]);
@@ -333,14 +328,12 @@ function wireguard_key_probe_database(string $home): string
     return $path;
 }
 
-function wireguard_key_probe(string $home, string $database, string $mode, int $nodeId, string $key): Process
+function wireguard_key_probe(string $home, string $database, string $mode, int $nodeId, string $key): ForkedGatewayProcess
 {
-    return new Process([
-        PHP_BINARY, base_path('tests/Fixtures/Nodes/WireguardKeyRequestProbe.php'), $home, $mode, (string) $nodeId, $key,
-    ], base_path(), [
-        'APP_ENV' => 'testing', 'APP_KEY' => config('app.key'),
-        'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $database, 'DB_URL' => false,
-        'ORBIT_TEST_DATABASE' => $database, 'ORBIT_HOME' => $home,
-        'CACHE_STORE' => 'array', 'BROADCAST_CONNECTION' => 'null',
-    ], timeout: 20);
+    return new ForkedGatewayProcess($database, $home.'/probe-'.bin2hex(random_bytes(8)), function ($socket) use ($home, $mode, $nodeId, $key): int {
+        $app = app();
+        config(['orbit.home' => $home, 'broadcasting.default' => 'null']);
+        $publicKey = $key;
+        require base_path('tests/Fixtures/Nodes/WireguardKeyRequestProbe.php');
+    });
 }

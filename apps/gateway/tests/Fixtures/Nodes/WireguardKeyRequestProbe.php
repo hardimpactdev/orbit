@@ -12,37 +12,18 @@ use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
-use Tests\Support\TestDatabaseGuard;
+use Tests\Support\ForkedGatewayProcess;
 
-require dirname(__DIR__, 3).'/vendor/autoload.php';
-
-$home = $argv[1];
-$mode = $argv[2];
-$nodeId = (int) $argv[3];
-$publicKey = $argv[4];
-$app = require dirname(__DIR__, 3).'/bootstrap/app.php';
-$app->loadEnvironmentFrom('.env.example');
-TestDatabaseGuard::register($app);
-$app->make(Kernel::class)->bootstrap();
-config()->set('orbit.home', $home);
-config()->set('broadcasting.default', 'null');
 $configuration = app(VpnConfigurationRepository::class);
 
 if ($mode === 'assign') {
     // Initialize SQLite before the barrier so connection PRAGMAs do not race a peer's write.
     $node = Node::query()->findOrFail($nodeId);
-    file_put_contents($home.'/ready-'.$nodeId, 'ready');
-    $deadline = microtime(true) + 10;
-
-    while (! is_file($home.'/assign-go')) {
-        if (microtime(true) > $deadline) {
-            exit(90);
-        }
-
-        usleep(1_000);
+    ForkedGatewayProcess::write($socket, 'ready');
+    if (ForkedGatewayProcess::read($socket) !== 'assign') {
+        throw new RuntimeException('The key assignment barrier was not released.');
     }
 
     try {

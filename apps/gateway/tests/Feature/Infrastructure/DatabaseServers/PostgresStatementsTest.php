@@ -10,8 +10,37 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\Concerns\TestDatabases;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 
 require_once __DIR__.'/../../../Support/PostgresServer.php';
+
+it('reuses one psql client with fresh sessions and preserves explicit exit and SQL failures', function (): void {
+    postgres_statements_server(function (Closure $psql): void {
+        $psql("\\set fixture_client reused\nCREATE ROLE session_role; CREATE DATABASE session_database;");
+        expect($psql("\\connect session_database\nSET ROLE session_role; SELECT current_database() || '|' || current_user;"))
+            ->toBe('session_database|session_role');
+        expect($psql("\\echo :fixture_client\nSELECT current_database() || '|' || current_user;"))
+            ->toBe("reused\npostgres|orbit_test");
+        $psql("BEGIN; CREATE TABLE uncommitted (id int);\n\\quit\n");
+        expect($psql("SELECT to_regclass('uncommitted') IS NULL;"))->toBe('t');
+        expect(fn () => $psql('SELECT 1/0;'))->toThrow(ProcessFailedException::class, 'division by zero');
+        expect($psql('SELECT 42;'))->toBe('42');
+    });
+});
+
+it('keeps the immutable PostgreSQL seed after a forked contender exits', function (): void {
+    postgres_statements_server(fn (Closure $psql) => expect($psql('SELECT 1;'))->toBe('1'));
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        throw new RuntimeException('Could not fork a PostgreSQL fixture contender.');
+    }
+    if ($pid === 0) {
+        exit(0);
+    }
+    pcntl_waitpid($pid, $status);
+    expect(pcntl_wexitstatus($status))->toBe(0);
+    postgres_statements_server(fn (Closure $psql) => expect($psql('SELECT 2;'))->toBe('2'));
+});
 
 it('applies PostgreSQL statements with builtin locale, owner and current and future reader grants on PG18', function (): void {
     postgres_statements_server(function (Closure $psql): void {
