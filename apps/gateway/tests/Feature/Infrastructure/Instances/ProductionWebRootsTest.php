@@ -54,7 +54,7 @@ describe('production web roots', function (): void {
         $agents = new FakeAgentCommandRunner()
             ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
             ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
-        $deployment = new RemoteProductionDeployment(prodweb_executor(new AppDevFakeSshExecutor([])), $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
+        $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $deployment->prepare($instance, 'main');
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
         $release = $deployment->prepare($instance, 'main');

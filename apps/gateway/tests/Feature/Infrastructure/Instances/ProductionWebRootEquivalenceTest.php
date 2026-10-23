@@ -132,7 +132,7 @@ function prod_equivalence_render(Node $node, array $instances): array
             ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
             ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
         $executor = prod_equivalence_executor(new AppDevFakeSshExecutor([]));
-        $deployment = new RemoteProductionDeployment($executor, $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
+        $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
         $runtime = static function (Closure $operation, array $results = []): array {

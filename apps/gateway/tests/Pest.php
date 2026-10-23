@@ -48,6 +48,7 @@ require_once __DIR__.'/Support/WebSocketWriteClock.php';
 require_once __DIR__.'/Helpers/MetricsRoleFixtures.php';
 require_once __DIR__.'/Helpers/WebSocketRoleFixtures.php';
 require_once __DIR__.'/Helpers/AgentViewFixtures.php';
+require_once __DIR__.'/Helpers/ProductionReleaseFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsRoleFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';

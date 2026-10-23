@@ -2,46 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\GitHub\GitReadEnvironment;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
-use App\Infrastructure\Instances\RemoteProductionDeployment;
-use App\Models\Instance;
-use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\Fleet\FleetTestSsh;
 
 // The Gateway's part of the release commands: the input it sends and how it reads each answer. The agent's Rust tests
 // in apps/agent/src/commands/production_tests.rs prove what each command does to a release home.
-
-/** @return array{RemoteProductionDeployment, FakeAgentCommandRunner, Instance} */
-function release_commands(?Closure $configure = null): array
-{
-    $node = Node::query()->create(['name' => 'deployment-node', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.219', 'wireguard_ip' => '10.44.0.219', 'user' => 'orbit']);
-    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $project = Project::query()->create(['name' => 'Deployment', 'slug' => 'deployment', 'repository_url' => 'https://example.test/deployment.git', 'default_branch' => 'main', 'root' => 'public']);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'production', 'environment' => 'production',
-        'source_layout' => 'release', 'checkout_path' => '/home/orbit-app-1/releases/initial', 'production_user' => 'orbit-app-1',
-        'production_home' => '/home/orbit-app-1', 'root' => 'public', 'branch' => 'main', 'provisioning_step' => 'active', 'status' => 'active',
-    ]);
-    $agents = new FakeAgentCommandRunner;
-    if ($configure !== null) {
-        $configure($agents);
-    }
-    $ssh = new ProductionSshExecutor(new AppDevFakeSshExecutor([]), new FleetTestSsh, new FleetTestSsh);
-    $deployment = new RemoteProductionDeployment($ssh, $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20260911-a1');
-
-    return [$deployment, $agents, $instance];
-}
 
 it('prepares a release of the branch from the home the Instance records', function (string $root, string $suffix, string $storage): void {
     [$deployment, $agents, $instance] = release_commands(fn (FakeAgentCommandRunner $agents) => $agents->answer('instances.prepare-release', ['name' => '20260911-a1', 'commit' => str_repeat('a', 40)]));

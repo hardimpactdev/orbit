@@ -412,6 +412,20 @@
       },
       "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
       "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.deploy_step_invalid",
+        "instances.deploy_step_start_failed"
+      ],
+      "mutates": true,
+      "name": "instances.run-deploy-step",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Run a production deploy step as the Instance user and publish its output live.",
+      "timeout_seconds": 3600
     }
   ],
   "common_errors": [

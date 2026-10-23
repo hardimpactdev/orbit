@@ -13,6 +13,7 @@ use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalText;
 use App\Support\Operations\OperationFollower;
+use App\Support\Operations\OperationOutputLine;
 use App\Support\Operations\OperationOutputTail;
 use App\Support\Operations\OperationStepLabels;
 use App\Support\Realtime\AuthorizedRealtimeChannel;
@@ -30,8 +31,8 @@ use Throwable;
 /**
  * Follows an operation that a command started until it ends (docs/reference/operations.md): over the operation's
  * Reverb channel when it can, by polling `operation:show` when it cannot. Ctrl-C stops following, not the operation.
- * Human output shows the steps as a progress tree, with new output of each step above it. `--json` prints only the
- * final operation.
+ * Human output shows the steps as a progress tree, with new output of each step above it: live while the Node agent
+ * publishes it, otherwise from each read. `--json` prints only the final operation.
  *
  * @phpstan-require-extends GatewayCommand
  */
@@ -50,6 +51,10 @@ trait FollowsOperations
         $follower = new OperationFollower(
             fn (int $afterSequence): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($started->id, $afterSequence), OperationResponse::class),
             $this->operationSubscriber($connector, $profile, $started->id),
+            $this->option('json') === true ? null : function (OperationOutputLine $output): void {
+                $this->outputTail?->printedLive($output->step);
+                $this->writeOperationOutputLine($output->step, $output->line);
+            },
         );
         $handlers = [];
         $async = null;
@@ -180,11 +185,16 @@ trait FollowsOperations
             $this->operationSteps[$step->name] = $step;
 
             foreach ($this->outputTail?->lines($step->name, $step->output) ?? [] as $line) {
-                $this->writeOperationOutput("{$step->name}: ".json_encode($line, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                $this->writeOperationOutputLine($step->name, $line);
             }
         }
 
         uasort($this->operationSteps, static fn (OperationStepResponse $left, OperationStepResponse $right): int => $left->position <=> $right->position);
+    }
+
+    private function writeOperationOutputLine(string $step, string $line): void
+    {
+        $this->writeOperationOutput("{$step}: ".json_encode($line, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
     /** The first step that runs or waits to run, if it has not settled yet. */

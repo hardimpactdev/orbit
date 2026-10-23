@@ -19,7 +19,8 @@ use Throwable;
  * Follows one operation until it changes (docs/reference/operations.md#follow-an-operation-over-reverb). While the
  * operation's channel is subscribed, an `operation.updated` event with a newer sequence starts a read, and the
  * follower also reads every 15 seconds in case an event was lost. Without Reverb, or while the socket is down, it
- * reads every `poll_after_seconds`. Each read asks only for the steps after the last sequence it saw.
+ * reads every `poll_after_seconds`. Each read asks only for the steps after the last sequence it saw. Each
+ * `client-output` line that the Node agent publishes while a deploy step runs goes to `$onOutput`.
  */
 final class OperationFollower
 {
@@ -42,10 +43,12 @@ final class OperationFollower
 
     /**
      * @param  Closure(int): OperationResponse  $read  reads the operation with the steps after this sequence
+     * @param  (Closure(OperationOutputLine): void)|null  $onOutput
      */
     public function __construct(
         private readonly Closure $read,
         private readonly ?RealtimeSubscriber $subscriber,
+        private readonly ?Closure $onOutput = null,
     ) {
         $this->subscriber?->connect();
     }
@@ -110,7 +113,10 @@ final class OperationFollower
         return $this->lastReadAt->diffInSeconds(CarbonImmutable::now(), absolute: true) >= $interval;
     }
 
-    /** Takes the newest sequence the channel announced, and tells whether the channel is subscribed. */
+    /**
+     * Takes the newest sequence the channel announced, hands on the live output lines, and tells whether the channel
+     * is subscribed.
+     */
     private function drainEvents(): bool
     {
         if ($this->subscriber === null) {
@@ -118,11 +124,23 @@ final class OperationFollower
         }
 
         try {
-            foreach ($this->subscriber->pollDecoded(static function (string $name, mixed $payload): ?RealtimeEvent {
+            foreach ($this->subscriber->pollDecoded(static function (string $name, mixed $payload): RealtimeEvent|OperationOutputLine|null {
+                if ($name === 'client-output') {
+                    return OperationOutputLine::fromPayload($payload);
+                }
+
                 $event = RealtimeEvent::fromChannelPayload($name, $payload);
 
                 return $event->type === 'operation.updated' ? $event : null;
             }) as $event) {
+                if ($event instanceof OperationOutputLine) {
+                    if ($this->onOutput !== null) {
+                        ($this->onOutput)($event);
+                    }
+
+                    continue;
+                }
+
                 $sequence = $event->data['sequence'] ?? null;
 
                 if (is_int($sequence)) {

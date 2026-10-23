@@ -105,17 +105,6 @@ final class VpStoreSshExecutor implements SshExecutor
                 $this->managedRuntimes = array_values(array_intersect($this->managedRuntimes, $keep));
             }
             $output = json_encode(['outcome' => 'pruned', 'data' => ['removed' => $removed]], JSON_THROW_ON_ERROR);
-        } elseif (str_contains($command->input ?? '', 'expected_selected=$7')) {
-            $operation = 'release-prune';
-            foreach ($this->removedReleases as $name) {
-                $output .= "PRUNED\t{$name}\n";
-            }
-            foreach ($this->busyReleases as $name) {
-                $output .= "IN_USE\t{$name}\n";
-            }
-        } elseif ($command->protectedInput !== null) {
-            $operation = 'build';
-            $exit = $this->buildFails ? 1 : 0;
         } else {
             throw new LogicException('Unexpected vp store SSH command: '.$text);
         }

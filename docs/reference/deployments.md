@@ -132,6 +132,8 @@ Production steps belong to an Instance and run before or after activation.
 | `command` | Non-empty UTF-8 of at most 16 KiB, without a NUL byte. |
 | `timeout_seconds` | 1 through 900. The default is 300. |
 
+A production step runs as the Instance owner at the release's repository root, through the Node agent's `instances.run-deploy-step`. Its output is redacted and streams live on the operation's channel, as [Live output](/reference/node-agent#live-output) describes.
+
 A new step goes to the end of its phase. `before` or `after` places it next to another step of the same phase. The two fields are exclusive. An Instance has at most 32 steps, and their timeouts add up to at most 3,600 seconds. The Gateway refuses a change that breaks a rule and stores nothing.
 
 | Request | Result |

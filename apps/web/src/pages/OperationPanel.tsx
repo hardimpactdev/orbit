@@ -33,7 +33,8 @@ const headline = (operation: Operation): string =>
 /**
  * The newest deploy or rollback of the Instance and its steps, followed live over the operation's own channel
  * (docs/reference/web-app.md). It shows while one runs, also one that another client started, and keeps showing
- * the result of one this page followed. The steps and the output tail come from the Gateway's record.
+ * the result of one this page followed. The steps come from the Gateway's record. While a step runs, its output
+ * comes live from the Node agent; once it ends, the output tail comes from the record.
  */
 export function OperationPanel({ instance }: { instance: Instance }) {
     const operations = useQuery({
@@ -48,7 +49,7 @@ export function OperationPanel({ instance }: { instance: Instance }) {
             setTracked(newest.id);
         }
     }, [newest]);
-    const operation = useOperation(tracked);
+    const { operation, lines: live } = useOperation(tracked);
 
     if (operation === null) {
         return null;
@@ -56,7 +57,13 @@ export function OperationPanel({ instance }: { instance: Instance }) {
 
     const step = focusStep(operation);
     const lines =
-        step?.output === null || step === null ? [] : step.output.replace(/\n$/, "").split("\n");
+        step === null
+            ? []
+            : step.status === "running" && live[step.name] !== undefined
+              ? live[step.name]
+              : step.output === null
+                ? []
+                : step.output.replace(/\n$/, "").split("\n");
 
     return (
         <div

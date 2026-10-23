@@ -1,6 +1,7 @@
 //! The named commands this binary implements, by area.
 
 pub mod agent;
+pub mod deploy_step;
 pub mod dev_source;
 pub mod instances;
 pub mod production;
@@ -66,5 +67,6 @@ pub fn all() -> Vec<Entry> {
         entry::<production::PruneReleases>(),
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
+        entry::<deploy_step::RunDeployStep>(),
     ]
 }

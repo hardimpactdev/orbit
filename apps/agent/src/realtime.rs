@@ -26,7 +26,19 @@ pub struct Discovery {
 #[derive(Deserialize)]
 pub struct Auth {
     pub auth: String,
-    pub channel_data: String,
+    /// The member data of a presence channel; a private channel has none.
+    #[serde(default)]
+    pub channel_data: Option<String>,
+}
+
+impl Auth {
+    /// The `pusher:subscribe` data for this authorization.
+    pub fn subscription(&self, channel: &str) -> Value {
+        match &self.channel_data {
+            Some(data) => json!({"channel": channel, "auth": self.auth, "channel_data": data}),
+            None => json!({"channel": channel, "auth": self.auth}),
+        }
+    }
 }
 pub async fn discover(
     client: &reqwest::Client,
@@ -84,12 +96,7 @@ pub async fn protocol_handshake(
         .ok_or("missing socket id")?
         .to_owned();
     let auth = channel_auth(client, auth_url, &socket_id, channel, version).await?;
-    send_control(
-        &mut socket,
-        "pusher:subscribe",
-        json!({"channel":channel,"auth":auth.auth,"channel_data":auth.channel_data}),
-    )
-    .await?;
+    send_control(&mut socket, "pusher:subscribe", auth.subscription(channel)).await?;
     loop {
         let message = socket
             .next()

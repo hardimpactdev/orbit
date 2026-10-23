@@ -305,7 +305,7 @@ async fn connected_session(
                 send_control(
                     &mut socket,
                     "pusher:subscribe",
-                    json!({"channel":log_channel,"auth":auth.auth,"channel_data":auth.channel_data}),
+                    auth.subscription(log_channel),
                 )
                 .await?;
                 log_pending = true;

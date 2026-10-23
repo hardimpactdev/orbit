@@ -154,14 +154,7 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
     /** @return array{ok: true, data: array<string, mixed>}|array{ok: false, error: array{code: string, message: string, details: array<string, mixed>}} */
     private function decode(string $command, CommandResult $result): array
     {
-        $line = null;
-        foreach (array_reverse(preg_split('/\R/', $result->stdout) ?: []) as $candidate) {
-            if (trim($candidate) !== '') {
-                $line = $candidate;
-                break;
-            }
-        }
-
+        $line = array_find(array_reverse(preg_split('/\R/', $result->stdout) ?: []), fn ($candidate) => trim($candidate) !== '');
         if ($line === null) {
             $kind = $result->exitCode === 255 ? AgentRunnerFailure::Transport : AgentRunnerFailure::MissingResult;
 

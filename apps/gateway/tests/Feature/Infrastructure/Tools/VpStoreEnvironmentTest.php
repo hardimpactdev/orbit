@@ -30,7 +30,6 @@ use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\VersionConstraint;
 use App\Domain\Tools\VpEnvironment;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
@@ -88,8 +87,14 @@ function vp_store_fixture(): array
     $catalog = new RemoteProgramCatalog;
     $prepare = new PrepareVpEnvironmentAction($vp, new SshProgramRunner($ssh, $keys, $hosts, $catalog), app(ToolManagerScopeLock::class), $catalog);
     // Pruning reports what the scripted Node removed or found in use.
-    $agents = new FakeAgentCommandRunner()->answer('instances.prune-releases', static fn (): array => ['removed' => $ssh->removedReleases, 'in_use' => $ssh->busyReleases]);
-    $deployment = new RemoteProductionDeployment(new ProductionSshExecutor($ssh, $keys, $hosts), $agents, app(RepositoryReadAccess::class), $prepare);
+    $agents = new FakeAgentCommandRunner()
+        ->answer('instances.prune-releases', static fn (): array => ['removed' => $ssh->removedReleases, 'in_use' => $ssh->busyReleases])
+        ->answer('instances.run-deploy-step', static function () use ($ssh): array {
+            $ssh->operations[] = 'build';
+
+            return ['exit_code' => $ssh->buildFails ? 1 : 0, 'output' => [], 'truncated' => false];
+        });
+    $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), $prepare);
 
     return [$prepare, $ssh, $instance, $deployment, $vp];
 }

@@ -138,7 +138,7 @@ function rebind_instance(string $repository): array
 
     return [
         $instance,
-        new RemoteProductionDeployment($executor, $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), null, $binding),
+        new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), null, $binding),
         $binding,
         $agents,
     ];

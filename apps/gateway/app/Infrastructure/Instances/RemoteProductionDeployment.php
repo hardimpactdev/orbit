@@ -17,17 +17,13 @@ use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessOutput;
-use App\Infrastructure\Processes\ProcessOutputStream;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Closure;
 
@@ -38,7 +34,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     /** @param (Closure(): string)|null $releaseName */
     public function __construct(
-        private ProductionSshExecutor $ssh,
         private AgentCommandRunner $agents,
         private RepositoryReadAccess $access,
         private PrepareVpEnvironmentAction $environments,
@@ -96,104 +91,42 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     ): CommandResult {
         [, $user, $home] = $this->identity($instance);
         $this->assertRelease($release, $home);
-        $stepName = $step->name;
-        $command = $this->environments->command($instance, $release->path, $stepName, $step->command);
-        $protectedInput = ProtectedInput::fromString(str_replace(
-            '__COMMAND__',
-            base64_encode($command),
-            <<<'BASH'
-                user=$1
-                home=$2
-                release=$3
-                test "$home" = "/home/$user"
-                releases="$home/releases"
-                case "$release" in "$releases"/*) ;; *) exit 1 ;; esac
-                sudo -u "$user" -H test -d "$release"
-                sudo -u "$user" -H test ! -L "$release"
-                test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release"
-                command_file=$(sudo -u "$user" -H mktemp "$home/.orbit-deploy.XXXXXXXX")
-                supervisor=
-                process_group=
-                watchdog=
-                expected_uid=$(id -u "$user")
-                discover_process_group() {
-                    for attempt in $(seq 1 100); do
-                        candidate=$(pgrep -P "$supervisor" 2>/dev/null || true)
-                        case "$candidate" in ''|*[!0-9]*) ;; *)
-                            identity=$(ps -o ppid=,pgid=,uid= -p "$candidate" 2>/dev/null || true)
-                            set -- $identity
-                            if [ "$#" -eq 3 ] && [ "$1" = "$supervisor" ] && [ "$2" = "$candidate" ] && [ "$3" = "$expected_uid" ]; then
-                                printf '%s' "$candidate"
-                                return 0
-                            fi
-                        esac
-                        if ! kill -0 "$supervisor" 2>/dev/null; then return 1; fi
-                        sleep 0.01
-                    done
-                    return 1
-                }
-                terminate_step() {
-                    if [ -z "$process_group" ]; then return; fi
-                    sudo -u "$user" -H kill -TERM -- "-$process_group" 2>/dev/null || true
-                    sleep 0.1
-                    sudo -u "$user" -H kill -KILL -- "-$process_group" 2>/dev/null || true
-                }
-                cleanup() {
-                    status=$?
-                    terminate_step
-                    if [ -n "$supervisor" ]; then
-                        wait "$supervisor" 2>/dev/null || true
-                    fi
-                    if [ -n "$watchdog" ]; then
-                        wait "$watchdog" 2>/dev/null || true
-                    fi
-                    sudo -u "$user" -H rm -f -- "$command_file"
-                    exit "$status"
-                }
-                trap cleanup EXIT HUP INT TERM
-                printf '%s' '__COMMAND__' | base64 --decode | sudo -u "$user" -H tee "$command_file" >/dev/null
-                sudo -u "$user" -H chmod 0600 -- "$command_file"
-                owner=$PPID
-                sudo -u "$user" -H setsid --wait bash -eu -c 'umask 077; cd -- "$1"; exec bash -eu "$2"' bash "$release" "$command_file" &
-                supervisor=$!
-                (
-                    watched_group=$(discover_process_group) || exit 0
-                    while kill -0 "$owner" 2>/dev/null && kill -0 "$supervisor" 2>/dev/null; do sleep 0.1; done
-                    if kill -0 "$owner" 2>/dev/null; then exit 0; fi
-                    sudo -u "$user" -H kill -TERM -- "-$watched_group" 2>/dev/null || true
-                    sleep 0.1
-                    sudo -u "$user" -H kill -KILL -- "-$watched_group" 2>/dev/null || true
-                ) &
-                watchdog=$!
-                process_group=$(discover_process_group) || true
-                if wait "$supervisor"; then status=0; else status=$?; fi
-                supervisor=
-                process_group=
-                wait "$watchdog" 2>/dev/null || true
-                watchdog=
-                exit "$status"
-                BASH,
-        ));
+        $instance->loadMissing('environmentValues');
+        $stepName = "deployment-step-{$step->name}";
+        // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
+        $result = AgentStep::run($this->agents, $instance->node, 'instances.run-deploy-step', [
+            'user' => $user,
+            'home' => $home,
+            'release' => $release->name,
+            'script' => $this->environments->command($instance, $release->path, $step->name, $step->command),
+            'operation' => $request->operation,
+            'step' => $step->name,
+            'secrets' => app(LogRedactor::class)->valuesFor($instance),
+        ], $stepName, 'deployment.step_failed', 'App production', deadlineSeconds: $step->timeoutSeconds);
+        $streams = ['stdout' => '', 'stderr' => ''];
 
-        return $this->execute(
-            $instance,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $home, $release->path],
-                protectedInput: $protectedInput,
-                output: static function (ProcessOutput $output) use ($request, $stepName): void {
-                    $request->emit(new DeploymentEvent(
-                        step: $stepName,
-                        stream: $output->stream === ProcessOutputStream::Stdout
-                            ? DeploymentOutputStream::Stdout
-                            : DeploymentOutputStream::Stderr,
-                        value: $output->value,
-                    ));
-                },
-                timeout: $step->timeoutSeconds,
-            ),
-            "deployment-step-{$stepName}",
-            'deployment.step_failed',
-        );
+        foreach (is_array($result['output'] ?? null) ? $result['output'] : [] as $chunk) {
+            $stream = is_array($chunk) ? ($chunk['stream'] ?? null) : null;
+            $value = is_array($chunk) ? ($chunk['value'] ?? null) : null;
+            if (! is_string($value) || ! in_array($stream, ['stdout', 'stderr'], true)) {
+                throw $this->invalidReceipt();
+            }
+            $streams[$stream] .= $value;
+            $request->emit(new DeploymentEvent(
+                step: $step->name,
+                stream: $stream === 'stdout' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
+                value: $value,
+            ));
+        }
+
+        $exitCode = is_int($result['exit_code'] ?? null) ? $result['exit_code'] : throw $this->invalidReceipt();
+        $output = new CommandResult($exitCode, $streams['stdout'], $streams['stderr'], 0, ($result['truncated'] ?? false) === true);
+
+        if ($exitCode !== 0) {
+            throw AgentStep::failed($instance->node, $stepName, 'deployment.step_failed', 'App production', $output);
+        }
+
+        return $output;
     }
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
@@ -337,15 +270,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         }
 
         return [$repository, $user, $home, $root];
-    }
-
-    private function execute(
-        Instance $instance,
-        RemoteCommand $command,
-        string $step,
-        string $errorCode,
-    ): CommandResult {
-        return $this->ssh->execute($instance->node, $command, $step, $errorCode);
     }
 
     /**
