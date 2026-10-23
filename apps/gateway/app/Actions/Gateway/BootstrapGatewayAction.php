@@ -12,6 +12,7 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -40,6 +41,7 @@ final readonly class BootstrapGatewayAction
         private GatewaySelfAccessConverger $selfAccess,
         private PrivateDnsManager $dns,
         private string $orbitHome,
+        private NodeAgentRuntime $agent,
         private ?GatewayServingHost $servingHost = null,
     ) {}
 
@@ -94,6 +96,25 @@ final readonly class BootstrapGatewayAction
             $this->vpn->converge($node, $data);
             $this->web->converge($node, "{$data->name}.{$data->domain}", $data->wireguardIp);
             $this->dns->converge($node);
+            $active = [
+                'status' => LifecycleStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
+            ];
+            $node->update($active);
+            $node->roles()->whereIn('role', self::OwnedRoles)->update($active);
+            ($this->servingHost ?? app(GatewayServingHost::class))->remember($node);
+            try {
+                $this->agent->converge($node);
+            } catch (Throwable $exception) {
+                throw new NodeProvisioningException(
+                    step: 'agent-install',
+                    errorCode: 'agent.install_failed',
+                    message: 'The Gateway observer could not be configured.',
+                    previous: $exception,
+                );
+            }
+
         } catch (RuntimeConvergenceException $exception) {
             $failure = new NodeProvisioningException(
                 step: $exception->step,
@@ -118,15 +139,6 @@ final readonly class BootstrapGatewayAction
 
             throw $failure;
         }
-
-        $active = [
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ];
-        $node->update($active);
-        $node->roles()->whereIn('role', self::OwnedRoles)->update($active);
-        ($this->servingHost ?? app(GatewayServingHost::class))->remember($node);
 
         return $node->load('roles');
     }

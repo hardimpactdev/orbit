@@ -11,6 +11,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
@@ -43,6 +44,7 @@ it('reports typed gateway provisioning failures without leaking command output',
     );
 
     app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
@@ -110,6 +112,7 @@ it('persists and resolves an implicit endpoint with the public host bytes and IP
     $filesystem->put($osReleasePath, "ID=ubuntu\nVERSION_CODENAME=resolute\n");
 
     app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),

@@ -13,6 +13,7 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -35,6 +36,33 @@ use Tests\Support\RootCaFixture;
 beforeAll(function (): void {
     RootCaFixture::prepare();
     RootCaFixture::prepare('alternate');
+});
+
+it('records an observer failure and retries it through the same Gateway identity', function (): void {
+    $home = bootstrap_gateway_ca_home();
+    $agent = app(NodeAgentRuntime::class);
+    $agent->failure = static function (Node $node): void {
+        expect($node->status)->toBe(LifecycleStatus::Active)
+            ->and(app(GatewayServingHost::class)->nodeId())->toBe($node->id);
+        throw new RuntimeException('observer refused');
+    };
+
+    try {
+        $action = bootstrap_gateway_action($home);
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->step)->toBe('agent-install')->and($exception->errorCode)->toBe('agent.install_failed');
+        });
+        $node = Node::query()->where('name', 'gateway')->sole();
+        expect($node->status)->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)->toBe('agent-install');
+        $agent->failure = null;
+        $recovered = $action->execute(bootstrap_gateway_action_data());
+        expect($recovered->id)->toBe($node->id)
+            ->and($recovered->status)->toBe(LifecycleStatus::Active)
+            ->and($agent->nodeIds)->toBe([$node->id, $node->id]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
 });
 
 function bootstrap_gateway_ca_home(): string
@@ -71,6 +99,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
         }
     };
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -96,6 +125,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
     try {
         $first = $action->execute($data);
         $second = $action->execute($data);
+        expect(app(NodeAgentRuntime::class)->nodeIds)->toBe([$first->id, $second->id]);
         $rootCertificate = file_get_contents($orbitHome.'/ca/root.pem');
         $rootPublicKey = is_string($rootCertificate)
             ? openssl_pkey_get_public($rootCertificate)
@@ -336,6 +366,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
         }
     };
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -401,6 +432,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
     $originalKey = file_get_contents($ca.'/root.key');
     $originalCertificate = file_get_contents($ca.'/root.pem');
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -472,6 +504,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         'keyUsage=critical,keyCertSign,cRLSign',
     ]));
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -520,6 +553,7 @@ it('rejects an invalid static identity before persistence or host side effects',
         }
     };
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -630,6 +664,7 @@ it('records provisioning and failed host convergence state and activates an idem
         }
     };
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -764,6 +799,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
         'error_code' => 'metrics.runtime_failed',
     ]);
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),
@@ -1070,6 +1106,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
         }
     };
     $action = new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
@@ -1126,6 +1163,7 @@ function bootstrap_gateway_action(
     ?PrivateDnsManager $dns = null,
 ): BootstrapGatewayAction {
     return new BootstrapGatewayAction(
+        agent: app(NodeAgentRuntime::class),
         assignRole: app(AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
         operatingSystem: bootstrap_gateway_resolute_guard(),

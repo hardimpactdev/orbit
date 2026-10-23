@@ -897,6 +897,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->singleton(
             BootstrapGatewayAction::class,
             static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
+                agent: app(NodeAgentRuntime::class),
                 assignRole: app(AssignRoleAction::class),
                 identity: app(GatewayBootstrapIdentityValidator::class),
                 operatingSystem: app(GatewayOperatingSystemGuard::class),
