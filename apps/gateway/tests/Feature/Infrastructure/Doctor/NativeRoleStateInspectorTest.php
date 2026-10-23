@@ -14,8 +14,6 @@ use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -27,6 +25,7 @@ use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('inspects each role with exact package service and firewall requirements', function (
     RoleName $role,
@@ -287,8 +286,11 @@ it('accepts only a complete healthy Docker CE stack as the Docker prerequisite',
     }
 });
 
-function role_state_inspector(RoleInspectorSshExecutor $ssh): NativeRoleStateInspector
+function role_state_inspector(RoleInspectorSshExecutor $ssh, string $ciOutcome = 'matches', ?FakeAgentCommandRunner $agents = null): NativeRoleStateInspector
 {
+    $agents ??= new FakeAgentCommandRunner;
+    $agents->answer('ci-runners.host', ['outcome' => $ciOutcome]);
+
     return new NativeRoleStateInspector(
         $ssh,
         new RoleInspectorKeys,
@@ -297,7 +299,7 @@ function role_state_inspector(RoleInspectorSshExecutor $ssh): NativeRoleStateIns
         new NodeRoleServiceCatalog,
         new NodeFirewallRuleCatalog,
         new CommandDeadline,
-        ciRunner: new CiRunnerHostProgram(new SshProgramRunner($ssh, new RoleInspectorKeys, new RoleInspectorKnownHosts, new RemoteProgramCatalog), new RemoteProgramCatalog),
+        ciRunner: new CiRunnerHostProgram($agents),
     );
 }
 
@@ -462,20 +464,19 @@ final readonly class RoleInspectorKnownHosts implements KnownHostsStore
     public function put(string $host, int $port, HostKey $key): void {}
 }
 
-it('observes CI host projection with the read-only program action', function (string $output, bool $matches): void {
+it('observes CI host projection with the read-only inspect action', function (string $outcome, bool $matches): void {
     $assignment = role_inspector_assignment(RoleName::CiRunner);
     $ssh = new RoleInspectorSshExecutor([
         role_inspector_result("1\n"), role_inspector_result("1\n"),
         role_inspector_result("Status: active\n[ 1] Anywhere ALLOW FWD Anywhere on orbitci0 # orbit-ci-runners\n[ 2] Anywhere (v6) ALLOW FWD Anywhere (v6) on orbitci0 # orbit-ci-runners\n"),
-        role_inspector_result($output),
     ]);
+    $agents = new FakeAgentCommandRunner;
 
-    $state = role_state_inspector($ssh)->inspect($assignment);
+    $state = role_state_inspector($ssh, $outcome, $agents)->inspect($assignment);
 
     expect($state->ciRunnerHostMatches)->toBe($matches)
         ->and($state->firewallProjectionMatches)->toBeTrue()
         ->and($ssh->calls[0]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus', 'incus-base', 'incus-client'])
         ->and($ssh->calls[1]['command']->arguments)->toBe(['bash', '-seu', '--', 'incus'])
-        ->and($ssh->calls[3]['command']->arguments)->toContain('sudo', 'root', 'python3', '-I', 'ci-runners.host')
-        ->and(json_decode(explode("\0", $ssh->calls[3]['command']->input)[1], true)['action'])->toBe('inspect');
-})->with([["{\"outcome\":\"matches\",\"data\":{}}\n", true], ["{\"outcome\":\"drift\",\"data\":{}}\n", false]]);
+        ->and($agents->calls[0]['input'])->toBe(['action' => 'inspect']);
+})->with([['matches', true], ['drift', false]]);

@@ -124,9 +124,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     private function ciRunnerHostMatches(Node $node): bool
     {
-        $result = ($this->ciRunner ?? app(CiRunnerHostProgram::class))->run($node, 'inspect');
-
-        return match ($result->outcome) {
+        return match (($this->ciRunner ?? app(CiRunnerHostProgram::class))->run($node, 'inspect')) {
             'matches' => true,
             'drift' => false,
             default => throw new DoctorInspectionException,

@@ -75,7 +75,6 @@ use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -1621,20 +1620,18 @@ it('holds back fleet reconciliation during a deferral and reports that one was r
 
 function ci_role_baseline(array &$events): CiRunnerRoleBaseline
 {
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->andReturnUsing(function ($node, $program, $input) use (&$events): ProgramResult {
-        expect($program->name)->toBe('ci-runners.host');
+    $agents = (new FakeAgentCommandRunner)->answer('ci-runners.host', static function (array $input) use (&$events): array {
         expect($input)->toBe(['action' => 'converge']);
         $events[] = 'program:ci-runners.host';
 
-        return new ProgramResult('converged', [], '');
+        return ['outcome' => 'converged'];
     });
 
     return new CiRunnerRoleBaseline(
         baseline_prerequisites($events),
         baseline_account_resolver(),
         baseline_firewall($events),
-        new CiRunnerHostProgram($runner, new RemoteProgramCatalog),
+        new CiRunnerHostProgram($agents),
     );
 }
 

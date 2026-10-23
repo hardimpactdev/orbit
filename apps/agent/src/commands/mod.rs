@@ -6,6 +6,7 @@ pub mod agent_footprint;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
+pub mod ci_runner;
 pub mod cli;
 pub mod clone_candidate;
 pub mod database_server;
@@ -82,6 +83,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<ci_runner::CiRunnerHost>(),
         entry::<horizon_queue::ReadQueue>(),
         entry::<valkey_acl::WriteValkeyAcl>(),
         entry::<cli::InspectCli>(),

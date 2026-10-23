@@ -85,6 +85,19 @@
       ]
     },
     {
+      "name": "ci-runners.host",
+      "summary": "Converge, inspect, or remove the CI role's reserved Incus host resources.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "ci_runners.host_failed"
+      ]
+    },
+    {
       "name": "instances.read-queue",
       "summary": "Report an Instance's Horizon queue, without job payloads.",
       "mutates": false,

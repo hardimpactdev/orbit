@@ -9,7 +9,8 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -42,12 +43,12 @@ final readonly class CiRunnerRoleBaseline implements RoleBaseline
     private function host(Node $node, string $action): void
     {
         try {
-            $result = $this->program->run($node, $action);
-        } catch (RemoteProgramFailed $exception) {
+            $outcome = $this->program->run($node, $action);
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new RuntimeConvergenceException('ci-runner-host', 'ci-runner.host_failed',
                 "CI runner host program failed on node [{$node->name}].", previous: $exception);
         }
-        if ($result->outcome === 'occupied') {
+        if ($outcome === 'occupied') {
             throw new RuntimeConvergenceException('ci-runner-host', 'ci-runner.host_failed',
                 'Remove the CI runner containers and their GitHub registrations before removing the ci-runner role.');
         }
@@ -56,9 +57,9 @@ final readonly class CiRunnerRoleBaseline implements RoleBaseline
             'purge' => 'removed',
             default => 'retained',
         };
-        if ($result->outcome !== $expected) {
+        if ($outcome !== $expected) {
             throw new RuntimeConvergenceException('ci-runner-host', 'ci-runner.host_failed',
-                "CI runner host program ended with [{$result->outcome}] on node [{$node->name}].");
+                "CI runner host program ended with [{$outcome}] on node [{$node->name}].");
         }
     }
 }
