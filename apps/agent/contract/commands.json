@@ -85,6 +85,20 @@
       ]
     },
     {
+      "name": "databases.write-valkey-acl",
+      "summary": "Write the ACL file into a Valkey Database server's volume.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "databases.valkey_acl_invalid",
+        "databases.valkey_acl_failed"
+      ]
+    },
+    {
       "name": "cli.inspect",
       "summary": "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.",
       "mutates": false,

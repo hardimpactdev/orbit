@@ -37,6 +37,7 @@ pub mod sqlite_seed;
 pub mod storage_root;
 pub mod tls_check;
 pub mod transfer_source;
+pub mod valkey_acl;
 pub mod vite;
 pub mod wireguard;
 
@@ -80,6 +81,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<valkey_acl::WriteValkeyAcl>(),
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),

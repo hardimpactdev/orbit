@@ -78,7 +78,7 @@ Doctor reports `database_server.publication_mismatch`, `database_server.login_fa
 The Gateway creates a Valkey server in this order:
 
 1. It generates a random admin password and stores it encrypted on the server record.
-2. It writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
+2. The agent's `databases.write-valkey-acl` writes the ACL file `/data/users.acl` into the volume `orbit-<slug>-data` with a short-lived container, reading the file from standard input. The file has one line, `user default on #<sha256 of the admin password> ~* &* +@all`.
 3. It creates and starts a Docker Node Process named `<slug>` with image `valkey/valkey:<tag>`, the volume at `/data`, and no environment.
 4. It waits until the user `default` can log in with the admin password.
 

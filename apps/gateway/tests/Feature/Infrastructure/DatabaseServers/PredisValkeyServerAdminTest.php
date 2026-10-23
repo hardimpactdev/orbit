@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseServers\ConvergeValkeyServerAction;
-use App\Actions\DatabaseServers\WriteValkeyAclFileAction;
 use App\Actions\Doctor\DatabaseServerDoctorProbe;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -14,18 +13,13 @@ use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgram;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\RemotePrograms\SshProgramRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -34,6 +28,7 @@ use Illuminate\Support\Sleep;
 use Predis\Client;
 use Predis\Connection\ConnectionException;
 use Symfony\Component\Process\Process as LocalProcess;
+use Tests\Support\LocalAgentBinary;
 
 /**
  * Runs the Valkey Database server code against a real Valkey in Docker. Each test starts a disposable server as Orbit
@@ -44,21 +39,6 @@ use Symfony\Component\Process\Process as LocalProcess;
  * so no extra inspect/log-follow clients or retry sleep are needed. Containers and volumes are private to each case.
  */
 pest()->group('privileged');
-
-/** Runs remote programs on this host, as SshProgramRunner runs them on a Node. */
-final readonly class ValkeyDockerTestProgramRunner implements RemoteProgramRunner
-{
-    public function run(
-        Node $node,
-        RemoteProgram $program,
-        array $input = [],
-        #[SensitiveParameter] ?GitReadEnvironment $gitRead = null,
-        ?float $timeoutSeconds = null,
-        ?Closure $cancelled = null,
-    ): ProgramResult {
-        return valkey_docker_program($program, app(RemoteProgramCatalog::class)->bootstrap(), $input);
-    }
-}
 
 /** Only immutable ACL bytes and image metadata are shared; no live server or mutable volume survives preparation. */
 final class ValkeyDockerTestSeed
@@ -76,14 +56,10 @@ final class ValkeyDockerTestSeed
         $acl = array_find($fixture['closed'], static fn (string $line): bool => str_starts_with($line, 'user default '))."\n";
         $image = DatabaseServerProcess::valkeyImage(self::TAG);
         $volume = 'orbit-test-valkey-seed-'.bin2hex(random_bytes(6));
-        $catalog = new RemoteProgramCatalog(__DIR__.'/../../../../resources/remote');
         try {
-            $result = valkey_docker_program($catalog->program(WriteValkeyAclFileAction::PROGRAM), $catalog->bootstrap(), [
+            valkey_agent()->run(new Node(['name' => 'valkey-seed', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1']), 'databases.write-valkey-acl', [
                 'volume' => $volume, 'image' => $image, 'acl' => $acl,
             ]);
-            if ($result->outcome !== 'written') {
-                throw new RuntimeException('Could not prepare the immutable Valkey ACL seed.');
-            }
             $written = valkey_docker([
                 'run', '--rm', '--network', 'none', '--mount', "type=volume,source=$volume,target=/data,readonly",
                 '--entrypoint', 'cat', $image, DatabaseServerProcess::VALKEY_ACL_FILE,
@@ -97,17 +73,10 @@ final class ValkeyDockerTestSeed
     }
 }
 
-/** @param array<string, mixed> $input */
-function valkey_docker_program(RemoteProgram $program, string $bootstrap, array $input): ProgramResult
+/** The built agent, run on this host with root's Docker as on a Node. */
+function valkey_agent(): NativeAgentCommandRunner
 {
-    $command = SshProgramRunner::pythonCommand($program, $bootstrap, $input);
-    $process = new LocalProcess($command->arguments);
-    $process->setInput($command->input)->setTimeout($command->timeout)->run();
-
-    return SshProgramRunner::pythonResult(
-        $program,
-        new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 0, false),
-    );
+    return LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-valkey-agent-'.bin2hex(random_bytes(6)));
 }
 
 /** Restarts the server's container and reads its state; a repair needs nothing else from the Process runtime. */
@@ -224,12 +193,12 @@ beforeEach(function (): void {
     $name = 'orbit-test-valkey-'.bin2hex(random_bytes(6));
     $this->container = $name;
     $this->volume = DatabaseServerProcess::volume($name);
-    app()->instance(RemoteProgramRunner::class, new ValkeyDockerTestProgramRunner);
+    app()->instance(AgentCommandRunner::class, valkey_agent());
     app()->instance(ProcessRuntimeManager::class, new ValkeyDockerTestRuntime($name));
 
     $this->node = Node::query()->create([
         'name' => 'valkey-docker', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1',
+        'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1', 'architecture' => 'x86_64',
     ]);
     $this->fixture = json_decode(file_get_contents(base_path('tests/Fixtures/valkey/acl-list.json')), true, flags: JSON_THROW_ON_ERROR);
     $this->server = DatabaseServer::query()->create([

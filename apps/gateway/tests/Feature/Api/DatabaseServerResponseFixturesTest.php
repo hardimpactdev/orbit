@@ -10,8 +10,8 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -25,7 +25,7 @@ use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Tests\Support\FakeDatabaseServerAdmin;
-use Tests\Support\FakeValkeyAclProgramRunner;
+use Tests\Support\FakeValkeyAclAgent;
 use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -132,7 +132,7 @@ it('records the database server and database user responses', function (): void 
     );
     $valkeyAdmin = new FakeValkeyServerAdmin;
     app()->instance(ValkeyServerAdmin::class, $valkeyAdmin);
-    app()->instance(RemoteProgramRunner::class, new FakeValkeyAclProgramRunner);
+    app()->instance(AgentCommandRunner::class, new FakeValkeyAclAgent(app(AgentCommandRunner::class)));
     record_fixture(
         $this->postJson('/api/v1/database-servers', ['slug' => 'beast-valkey', 'node_id' => $dbNode->id, 'driver' => 'redis'])->assertCreated(),
         'database-servers/database-server-create/valkey',
