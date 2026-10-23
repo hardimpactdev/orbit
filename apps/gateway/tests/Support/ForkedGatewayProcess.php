@@ -19,6 +19,7 @@ final class ForkedGatewayProcess
     /** @var resource|null */
     private mixed $socket = null;
 
+    /** @param Closure(resource): int $operation */
     public function __construct(
         private readonly string $database,
         private readonly string $output,
@@ -27,7 +28,11 @@ final class ForkedGatewayProcess
 
     public function start(): void
     {
-        [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+        if ($sockets === false) {
+            throw new RuntimeException('Could not open the Gateway barrier sockets.');
+        }
+        [$parent, $child] = $sockets;
         stream_set_timeout($parent, 5);
         stream_set_timeout($child, 5);
         $pid = pcntl_fork();
@@ -47,7 +52,7 @@ final class ForkedGatewayProcess
             try {
                 config([
                     'database.connections.concurrency_probe' => [
-                        ...config('database.connections.sqlite'), 'database' => $this->database,
+                        ...config()->array('database.connections.sqlite'), 'database' => $this->database,
                     ],
                     'queue.batching.database' => 'concurrency_probe',
                     'queue.failed.database' => 'concurrency_probe',
@@ -76,8 +81,10 @@ final class ForkedGatewayProcess
     public function wait(): void
     {
         if ($this->pid !== null && $this->exitCode === null) {
-            pcntl_waitpid($this->pid, $status);
-            $this->exitCode = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 128 + pcntl_wtermsig($status);
+            if (pcntl_waitpid($this->pid, $status) !== $this->pid) {
+                throw new RuntimeException('Could not reap the Gateway contender.');
+            }
+            $this->recordExit($status);
         }
     }
 
@@ -86,10 +93,14 @@ final class ForkedGatewayProcess
         if ($this->pid === null || $this->exitCode !== null) {
             return false;
         }
-        if (pcntl_waitpid($this->pid, $status, WNOHANG) === 0) {
+        $result = pcntl_waitpid($this->pid, $status, WNOHANG);
+        if ($result === 0) {
             return true;
         }
-        $this->exitCode = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 128 + pcntl_wtermsig($status);
+        if ($result !== $this->pid) {
+            throw new RuntimeException('Could not inspect the Gateway contender.');
+        }
+        $this->recordExit($status);
 
         return false;
     }
@@ -118,12 +129,12 @@ final class ForkedGatewayProcess
 
     public function send(string $message): void
     {
-        self::write($this->socket, $message);
+        self::write($this->socket(), $message);
     }
 
     public function receive(): string
     {
-        return self::read($this->socket);
+        return self::read($this->socket());
     }
 
     /** @param resource $socket */
@@ -147,7 +158,7 @@ final class ForkedGatewayProcess
 
     public function stop(): void
     {
-        if ($this->isRunning()) {
+        if ($this->pid !== null && $this->isRunning()) {
             posix_kill($this->pid, SIGKILL);
             $this->wait();
         }
@@ -155,5 +166,24 @@ final class ForkedGatewayProcess
             fclose($this->socket);
             $this->socket = null;
         }
+    }
+
+    /** @return resource */
+    private function socket(): mixed
+    {
+        if (! is_resource($this->socket)) {
+            throw new RuntimeException('The Gateway contender has no open barrier.');
+        }
+
+        return $this->socket;
+    }
+
+    private function recordExit(int $status): void
+    {
+        $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 128 + pcntl_wtermsig($status);
+        if ($code === false) {
+            throw new RuntimeException('The Gateway contender has no exit status.');
+        }
+        $this->exitCode = $code;
     }
 }
