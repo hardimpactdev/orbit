@@ -99,11 +99,7 @@ pub fn public_key(kind: &str, path: &Path) -> Option<Vec<u8>> {
 }
 
 pub fn group_id(name: &str) -> Option<u32> {
-    let name = std::ffi::CString::new(name).ok()?;
-    // SAFETY: getgrnam reads a NUL-terminated name and returns null or a pointer valid until the next call.
-    let group = unsafe { libc::getgrnam(name.as_ptr()) };
-    // SAFETY: a non-null result points at a group entry.
-    (!group.is_null()).then(|| unsafe { (*group).gr_gid })
+    crate::command::identity::group_id(name)
 }
 
 pub fn chown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {

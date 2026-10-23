@@ -74,11 +74,7 @@ struct Account {
 }
 
 fn user_id(name: &str) -> Option<u32> {
-    let name = std::ffi::CString::new(name).ok()?;
-    // SAFETY: getpwnam reads a NUL-terminated name and returns null or an entry valid until the next call.
-    let entry = unsafe { libc::getpwnam(name.as_ptr()) };
-    // SAFETY: a non-null result points at a passwd entry.
-    (!entry.is_null()).then(|| unsafe { (*entry).pw_uid })
+    crate::command::identity::passwd(name).map(|entry| entry.uid)
 }
 
 /// Runs a program and fails the step with its standard error.

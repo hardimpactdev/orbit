@@ -1,10 +1,10 @@
 //! `accounts.lookup`: a local account's name, primary group, home, and shell, as `getent passwd` and `id -gn` print
 //! them.
 
-use crate::command::{Command, Context, Platform, Privilege};
+use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
-use std::{ffi::CStr, time::Duration};
+use std::time::Duration;
 
 command_errors! {
     pub enum AccountError {
@@ -27,45 +27,15 @@ pub struct Account {
     pub shell: String,
 }
 
-fn text(pointer: *const libc::c_char) -> String {
-    if pointer.is_null() {
-        return String::new();
-    }
-    // SAFETY: a non-null field of a passwd or group entry is a NUL-terminated string.
-    unsafe { CStr::from_ptr(pointer) }
-        .to_string_lossy()
-        .into_owned()
-}
-
 pub fn lookup(input: &LookupInput) -> Result<Account, AccountError> {
-    let name = std::ffi::CString::new(input.user.as_str()).map_err(|_| AccountError::Missing {})?;
-    // SAFETY: getpwnam reads a NUL-terminated name and returns null or an entry valid until the next call.
-    let entry = unsafe { libc::getpwnam(name.as_ptr()) };
-    if entry.is_null() {
-        return Err(AccountError::Missing {});
-    }
-    // SAFETY: a non-null result points at a passwd entry, read before any other lookup.
-    let (uid, gid, home, shell) = unsafe {
-        (
-            (*entry).pw_uid,
-            (*entry).pw_gid,
-            text((*entry).pw_dir),
-            text((*entry).pw_shell),
-        )
-    };
-    // SAFETY: getgrgid returns null or a group entry valid until the next call.
-    let group = unsafe { libc::getgrgid(gid) };
-    if group.is_null() {
-        return Err(AccountError::Missing {});
-    }
-    // SAFETY: a non-null result points at a group entry.
-    let group = text(unsafe { (*group).gr_name });
+    let entry = identity::passwd(&input.user).ok_or(AccountError::Missing {})?;
+    let group = identity::group_name(entry.gid).ok_or(AccountError::Missing {})?;
     Ok(Account {
         user: input.user.clone(),
-        uid,
+        uid: entry.uid,
         group,
-        home,
-        shell,
+        home: entry.home,
+        shell: entry.shell,
     })
 }
 

@@ -4,7 +4,7 @@
 
 use std::{
     collections::BTreeMap,
-    ffi::{CStr, OsStr, OsString},
+    ffi::{OsStr, OsString},
     fs,
     io::Write,
     os::unix::{
@@ -119,29 +119,11 @@ pub fn owner(path: &Path) -> String {
 }
 
 pub fn user_name(uid: u32) -> String {
-    // SAFETY: getpwuid returns a pointer into static storage or null; the name is copied at once.
-    unsafe {
-        let entry = libc::getpwuid(uid);
-        if entry.is_null() {
-            return "UNKNOWN".into();
-        }
-        CStr::from_ptr((*entry).pw_name)
-            .to_string_lossy()
-            .into_owned()
-    }
+    crate::command::identity::user_name(uid).unwrap_or_else(|| "UNKNOWN".into())
 }
 
 pub fn group_name(gid: u32) -> String {
-    // SAFETY: getgrgid returns a pointer into static storage or null; the name is copied at once.
-    unsafe {
-        let entry = libc::getgrgid(gid);
-        if entry.is_null() {
-            return "UNKNOWN".into();
-        }
-        CStr::from_ptr((*entry).gr_name)
-            .to_string_lossy()
-            .into_owned()
-    }
+    crate::command::identity::group_name(gid).unwrap_or_else(|| "UNKNOWN".into())
 }
 
 /// `stat -c '%d:%i'` of the path itself, or `""` when it cannot be read.

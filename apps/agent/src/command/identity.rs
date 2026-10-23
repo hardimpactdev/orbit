@@ -44,24 +44,112 @@ pub fn effective_uid() -> u32 {
     rustix::process::geteuid().as_raw()
 }
 
+/// A passwd entry, read with the reentrant `getpwnam_r`, so parallel lookups never share a static buffer.
+pub struct Passwd {
+    pub uid: u32,
+    pub gid: u32,
+    pub home: String,
+    pub shell: String,
+}
+
+fn text(pointer: *const libc::c_char) -> String {
+    if pointer.is_null() {
+        return String::new();
+    }
+    // SAFETY: a non-null field of an entry is a NUL-terminated string inside the caller's buffer.
+    unsafe { std::ffi::CStr::from_ptr(pointer) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub fn passwd(user: &str) -> Option<Passwd> {
+    let name = std::ffi::CString::new(user).ok()?;
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: an all-zero passwd is a valid value for getpwnam_r to fill.
+    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result = std::ptr::null_mut();
+    // SAFETY: every pointer refers to live storage of the given size; the entry's fields point into `buffer`.
+    let status = unsafe {
+        libc::getpwnam_r(
+            name.as_ptr(),
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    (status == 0 && !result.is_null()).then(|| Passwd {
+        uid: entry.pw_uid,
+        gid: entry.pw_gid,
+        home: text(entry.pw_dir),
+        shell: text(entry.pw_shell),
+    })
+}
+
+/// The gid of a group name, or the name of a gid, with the reentrant group lookups.
+pub fn group_id(group: &str) -> Option<u32> {
+    let name = std::ffi::CString::new(group).ok()?;
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: an all-zero group is a valid value for getgrnam_r to fill.
+    let mut entry: libc::group = unsafe { std::mem::zeroed() };
+    let mut result = std::ptr::null_mut();
+    // SAFETY: every pointer refers to live storage of the given size.
+    let status = unsafe {
+        libc::getgrnam_r(
+            name.as_ptr(),
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    (status == 0 && !result.is_null()).then_some(entry.gr_gid)
+}
+
+pub fn group_name(gid: u32) -> Option<String> {
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: an all-zero group is a valid value for getgrgid_r to fill.
+    let mut entry: libc::group = unsafe { std::mem::zeroed() };
+    let mut result = std::ptr::null_mut();
+    // SAFETY: every pointer refers to live storage of the given size; the name points into `buffer`.
+    let status = unsafe {
+        libc::getgrgid_r(
+            gid,
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    (status == 0 && !result.is_null()).then(|| text(entry.gr_name))
+}
+
+pub fn user_name(uid: u32) -> Option<String> {
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: an all-zero passwd is a valid value for getpwuid_r to fill.
+    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result = std::ptr::null_mut();
+    // SAFETY: every pointer refers to live storage of the given size; the name points into `buffer`.
+    let status = unsafe {
+        libc::getpwuid_r(
+            uid,
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    (status == 0 && !result.is_null()).then(|| text(entry.pw_name))
+}
+
 /// The uid, gid, and home of a user.
 pub fn account(user: &str) -> Result<(u32, u32, String), String> {
-    let name =
-        std::ffi::CString::new(user).map_err(|_| "the user name holds a NUL byte".to_string())?;
-    // SAFETY: getpwnam returns a pointer into static storage or null; its fields are copied at once.
-    unsafe {
-        let entry = libc::getpwnam(name.as_ptr());
-        if entry.is_null() {
-            return Err(format!("the user {user} does not exist"));
-        }
-        Ok((
-            (*entry).pw_uid,
-            (*entry).pw_gid,
-            std::ffi::CStr::from_ptr((*entry).pw_dir)
-                .to_string_lossy()
-                .into_owned(),
-        ))
+    if user.contains('\0') {
+        return Err("the user name holds a NUL byte".to_string());
     }
+    passwd(user)
+        .map(|entry| (entry.uid, entry.gid, entry.home))
+        .ok_or_else(|| format!("the user {user} does not exist"))
 }
 
 /// Makes a child process run as `user`, with that user's groups, before project-controlled code starts. A process

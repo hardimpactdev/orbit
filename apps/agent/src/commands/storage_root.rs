@@ -40,11 +40,7 @@ pub struct StorageRootInput {
 pub struct StorageRoot {}
 
 fn user_id(name: &str) -> Option<u32> {
-    let name = std::ffi::CString::new(name).ok()?;
-    // SAFETY: getpwnam reads a NUL-terminated name and returns null or an entry valid until the next call.
-    let entry = unsafe { libc::getpwnam(name.as_ptr()) };
-    // SAFETY: a non-null result points at a passwd entry.
-    (!entry.is_null()).then(|| unsafe { (*entry).pw_uid })
+    crate::command::identity::passwd(name).map(|entry| entry.uid)
 }
 
 /// A directory that is no symlink and whose canonical path is itself.
@@ -126,17 +122,19 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn me() -> (String, String) {
-        let uid = rustix::process::getuid().as_raw();
-        let gid = rustix::process::getgid().as_raw();
-        // SAFETY: getpwuid and getgrgid return null or entries valid until the next call.
-        unsafe {
-            let user = std::ffi::CStr::from_ptr((*libc::getpwuid(uid)).pw_name);
-            let group = std::ffi::CStr::from_ptr((*libc::getgrgid(gid)).gr_name);
-            (
-                user.to_string_lossy().into_owned(),
-                group.to_string_lossy().into_owned(),
+        let id = |flag: &str| {
+            String::from_utf8(
+                std::process::Command::new("id")
+                    .arg(flag)
+                    .output()
+                    .unwrap()
+                    .stdout,
             )
-        }
+            .unwrap()
+            .trim()
+            .to_string()
+        };
+        (id("-un"), id("-gn"))
     }
 
     fn input(root: PathBuf, create_missing: bool) -> StorageRootInput {
