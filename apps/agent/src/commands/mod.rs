@@ -6,6 +6,7 @@ pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_deploy;
 pub mod dev_source;
+pub mod environment;
 pub mod instances;
 pub mod php_runtime;
 pub mod production;
@@ -77,6 +78,8 @@ pub fn all() -> Vec<Entry> {
         entry::<deploy_step::RunDeployStep>(),
         entry::<application_log::ReadApplicationLog>(),
         entry::<instances::CheckPathFree>(),
+        entry::<environment::ReadEnvironment>(),
+        entry::<environment::WriteEnvironment>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

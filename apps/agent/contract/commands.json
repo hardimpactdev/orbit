@@ -514,6 +514,32 @@
       ]
     },
     {
+      "name": "instances.read-environment",
+      "summary": "Read an Instance's .env, or check that it can be read or replaced.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
+      "name": "instances.write-environment",
+      "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.environment_input_invalid"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,
