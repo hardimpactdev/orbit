@@ -561,6 +561,7 @@ function transfer_api_node(string $name): Node
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => "{$name}.example.test",
         'wireguard_ip' => '10.44.10.'.(Node::query()->count() + 2),
         'user' => 'orbit',
