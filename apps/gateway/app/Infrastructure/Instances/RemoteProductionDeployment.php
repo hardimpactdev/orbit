@@ -20,9 +20,8 @@ use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessOutput;
@@ -68,7 +67,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 'git_read' => $this->access->for($input['repository'], $instance->project->source_access),
             ], 'deployment-prepare', 'deployment.prepare_failed');
         } catch (RuntimeConvergenceException $exception) {
-            if ($exception->getPrevious() instanceof AgentCommandRefused && $exception->getPrevious()->errorCode === 'instances.commit_not_on_branch') {
+            if (AgentStep::refusal($exception)?->errorCode === 'instances.commit_not_on_branch') {
                 throw new ResourceOperationException(
                     'deployment.commit_not_on_branch',
                     "The branch [{$branch}] does not contain the commit [{$commit}].",
@@ -350,27 +349,12 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     /**
-     * Runs a release command. A refusal, and a run without a result, fail the step with its error code; a timeout
-     * keeps its own failure, because it never proves that nothing changed.
-     *
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
     private function run(Instance $instance, string $command, array $input, string $step, string $errorCode): array
     {
-        try {
-            return $this->agents->run($instance->node, $command, $input);
-        } catch (AgentCommandRefused $refused) {
-            $result = new CommandResult(1, json_encode(['code' => $refused->errorCode, 'details' => (object) $refused->details], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n", $refused->getMessage(), 0, false);
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App production step [{$step}] failed on node [{$instance->node->name}].", $refused, $result);
-        } catch (AgentRunnerFailure $failure) {
-            if ($failure->kind === AgentRunnerFailure::Timeout) {
-                throw $failure;
-            }
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App production step [{$step}] failed on node [{$instance->node->name}].", $failure, $failure->result);
-        }
+        return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App production');
     }
 
     /**

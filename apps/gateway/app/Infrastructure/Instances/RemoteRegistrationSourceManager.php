@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Registration\RegistrationSourceFacts;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
@@ -14,10 +13,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
@@ -391,27 +388,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     }
 
     /**
-     * Runs a registration command. A refusal, and a run without a result, fail the step with its error code; a
-     * timeout keeps its own failure, because it never proves that nothing changed.
-     *
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
     private function run(Node $node, string $command, array $input, string $step, string $errorCode): array
     {
-        try {
-            return $this->agents->run($node, $command, $input);
-        } catch (AgentCommandRefused $refused) {
-            $result = new CommandResult(1, json_encode(['code' => $refused->errorCode, 'details' => (object) $refused->details], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n", $refused->getMessage(), 0, false);
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App development step [{$step}] failed on node [{$node->name}].", $refused, $result);
-        } catch (AgentRunnerFailure $failure) {
-            if ($failure->kind === AgentRunnerFailure::Timeout) {
-                throw $failure;
-            }
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App development step [{$step}] failed on node [{$node->name}].", $failure, $failure->result);
-        }
+        return AgentStep::run($this->agents, $node, $command, $input, $step, $errorCode, 'App development');
     }
 
     public function restoreOriginal(Instance $instance, RegistrationSourceFacts $facts): void

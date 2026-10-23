@@ -24,9 +24,8 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Instance;
@@ -449,7 +448,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             );
 
             if (($result['state'] ?? null) === 'cross_device') {
-                $this->stepFailed($node, 'app-instance-source-finalization', 'instance.removal_incomplete', new CommandResult(
+                throw AgentStep::failed($node, 'app-instance-source-finalization', 'instance.removal_incomplete', 'App development', new CommandResult(
                     exitCode: 1,
                     stdout: json_encode(['state' => 'cross_device'], JSON_THROW_ON_ERROR)."\n",
                     stderr: "cross-device: the checkout [{$member->checkout_path}] is on another filesystem than the removal state; Orbit does not move a checkout across a mount.\n",
@@ -1078,94 +1077,35 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         bool $force,
     ): array {
         try {
-            return $this->agents->run($instance->node, $command, $input);
-        } catch (AgentCommandRefused $refused) {
-            $mismatch = self::CommandMismatches[$refused->errorCode] ?? null;
+            return $this->runStep($instance->node, $command, $input, $step, $this->failureCode($force));
+        } catch (RuntimeConvergenceException $exception) {
+            $refused = AgentStep::refusal($exception);
+            $mismatch = $refused === null ? null : (self::CommandMismatches[$refused->errorCode] ?? null);
 
             if ($mismatch instanceof InstanceSourceMismatch) {
-                $this->mismatch($instance, $mismatch, $step, self::output($refused));
+                $this->mismatch($instance, $mismatch, $step, $exception->result);
             }
 
-            match ($refused->errorCode) {
-                'instances.unsafe_content' => $this->unsafeContent($instance, $step, self::output($refused)),
+            match ($refused?->errorCode) {
+                'instances.unsafe_content' => $this->unsafeContent($instance, $step, $exception->result),
                 'instances.source_changed' => throw new RuntimeConvergenceException(
                     step: $step,
                     errorCode: 'instance.removal_conflict',
                     message: "Instance [{$instance->name}] source changed after inspection.",
-                    result: self::output($refused),
+                    result: $exception->result,
                 ),
-                default => $this->stepFailed($instance->node, $step, $this->failureCode($force), self::output($refused), $refused),
+                default => throw $exception,
             };
-        } catch (AgentRunnerFailure $failure) {
-            $this->runnerFailed($instance->node, $step, $this->failureCode($force), $failure);
         }
     }
 
     /**
-     * Run a command on the Node. A refusal, and a run without a result, fail the step with its error code. A timeout
-     * keeps its own failure, because a lost result never proves that nothing changed.
-     *
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runStep(
-        Node $node,
-        string $command,
-        array $input,
-        string $step,
-        string $errorCode,
-    ): array {
-        try {
-            return $this->agents->run($node, $command, $input);
-        } catch (AgentCommandRefused $refused) {
-            $this->stepFailed($node, $step, $errorCode, self::output($refused), $refused);
-        } catch (AgentRunnerFailure $failure) {
-            $this->runnerFailed($node, $step, $errorCode, $failure);
-        }
-    }
-
-    private function runnerFailed(Node $node, string $step, string $errorCode, AgentRunnerFailure $failure): never
+    private function runStep(Node $node, string $command, array $input, string $step, string $errorCode): array
     {
-        if ($failure->kind === AgentRunnerFailure::Timeout) {
-            throw $failure;
-        }
-
-        $this->stepFailed($node, $step, $errorCode, $failure->result ?? new CommandResult(1, '', $failure->getMessage(), 0, false), $failure);
-    }
-
-    /**
-     * The step's failure with the command's output, so the Activity of the command keeps it, such as a line that starts
-     * with `cross-device:`.
-     */
-    private function stepFailed(
-        Node $node,
-        string $step,
-        string $errorCode,
-        CommandResult $output,
-        AgentCommandRefused|AgentRunnerFailure|null $previous = null,
-    ): never {
-        throw new RuntimeConvergenceException(
-            step: $step,
-            errorCode: $errorCode,
-            message: "App development step [{$step}] failed on node [{$node->name}].",
-            previous: $previous,
-            result: $output,
-        );
-    }
-
-    /**
-     * A refusal as command output: its code and details on standard output. The exit status is 1, because the step
-     * failed although the command ended normally.
-     */
-    private static function output(AgentCommandRefused $refused): CommandResult
-    {
-        return new CommandResult(
-            exitCode: 1,
-            stdout: json_encode(['code' => $refused->errorCode, 'details' => (object) $refused->details], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
-            stderr: $refused->getMessage(),
-            durationMs: 0,
-            truncated: false,
-        );
+        return AgentStep::run($this->agents, $node, $command, $input, $step, $errorCode, 'App development');
     }
 
     private function mismatch(

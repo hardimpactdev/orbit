@@ -21,7 +21,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
@@ -144,8 +144,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     }
 
     /**
-     * Runs a development source command. A refusal or a run without a result fails the step with its error code; a
-     * timeout keeps its own failure, because it never proves that nothing changed.
+     * Runs a development source command. With `busy`, a checkout another operation holds stays the refusal, for the
+     * caller to map.
      *
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
@@ -153,20 +153,10 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     private function run(Instance $instance, string $command, array $input, string $step, string $errorCode, bool $busy = false): array
     {
         try {
-            return $this->agents->run($instance->node, $command, $input);
-        } catch (AgentCommandRefused $refused) {
-            if ($busy && $refused->errorCode === 'instances.source_busy') {
-                throw $refused;
-            }
-            $result = new CommandResult(1, json_encode(['code' => $refused->errorCode, 'details' => (object) $refused->details], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n", $refused->getMessage(), 0, false);
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App development step [{$step}] failed on node [{$instance->node->name}].", $refused, $result);
-        } catch (AgentRunnerFailure $failure) {
-            if ($failure->kind === AgentRunnerFailure::Timeout) {
-                throw $failure;
-            }
-
-            throw new RuntimeConvergenceException($step, $errorCode, "App development step [{$step}] failed on node [{$instance->node->name}].", $failure, $failure->result);
+            return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App development');
+        } catch (RuntimeConvergenceException $exception) {
+            $refused = AgentStep::refusal($exception);
+            throw $busy && $refused?->errorCode === 'instances.source_busy' ? $refused : $exception;
         }
     }
 
