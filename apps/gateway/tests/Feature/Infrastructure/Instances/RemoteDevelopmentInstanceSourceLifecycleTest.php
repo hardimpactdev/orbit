@@ -39,11 +39,6 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\AgentCommands\AgentContract;
-use App\Infrastructure\AgentCommands\AgentTransport;
-use App\Infrastructure\AgentCommands\AgentTransports;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -94,22 +89,6 @@ beforeAll(function (): void {
 afterAll(function (): void {
     new Filesystem()->deleteDirectory(orb76_repository_seed());
 });
-
-/** The real agent runner over the test's SSH stand-in, which runs the built agent binary on this machine. */
-function orb76_agent_runner(SshExecutor $ssh, SshKeyProvider $keys, KnownHostsStore $knownHosts, string $sandbox): NativeAgentCommandRunner
-{
-    $transports = new class($ssh, $keys, $knownHosts) extends AgentTransports
-    {
-        public function __construct(private readonly SshExecutor $ssh, private readonly SshKeyProvider $keys, private readonly KnownHostsStore $knownHosts) {}
-
-        public function for(Node $node): AgentTransport
-        {
-            return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
-        }
-    };
-
-    return new NativeAgentCommandRunner(app(AgentContract::class), LocalAgentBinary::delivery($sandbox.'/agent-delivery'), $transports);
-}
 
 /** The immutable seed is private to this file's worker; each case changes only its copy. */
 function orb76_repository_seed(): string
@@ -175,7 +154,7 @@ beforeEach(function (): void {
     $ssh = new DevelopmentSshExecutor($this->transport, $keys, $knownHosts);
     $this->ssh = $ssh;
     $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
-    $this->agents = orb76_agent_runner($this->transport, $keys, $knownHosts, $this->sandbox);
+    $this->agents = LocalAgentBinary::runner($this->transport, $keys, $knownHosts, $this->sandbox.'/agent-delivery');
     $this->source = new RemoteDevelopmentInstanceSourceLifecycle(
         $ssh,
         $this->agents,
@@ -2782,7 +2761,9 @@ it('lets force finish an interrupted normal removal of a quarantined linked work
             $runtimeCleanupIds[] = $removed->instance_id;
         },
     );
-    $this->transport->interruptAfterSourceMove = true;
+    // Finalization moves the worktree into quarantine, and its result is lost.
+    $this->transport->beforeFinalization = static fn () => orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'move', $instance->checkout_path, orb180_quarantine_path($member)]);
+    $this->transport->loseFinalizationOnce = true;
 
     expect(fn () => $action->execute($instance->refresh(), false, runTeardown: false))
         ->toThrow(InstanceRemovalException::class);
@@ -3684,8 +3665,6 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?string $prepareFailure = null;
 
-    public bool $interruptAfterSourceMove = false;
-
     public bool $crossDeviceOnce = false;
 
     /** @var array<string, string> */
@@ -3767,19 +3746,6 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
                 return new CommandResult(0, json_encode(['ok' => true, 'data' => ['state' => 'cross_device', 'receipt' => null]], JSON_THROW_ON_ERROR)."\n", '', 1, false);
             }
 
-            if ($this->interruptAfterSourceMove) {
-                $this->interruptAfterSourceMove = false;
-                $input = json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input'];
-                $quarantine = "{$input['root']}/.orbit-removals/{$input['operation']}.{$input['member']}.quarantine";
-                $moved = $input['layout'] === 'worktree'
-                    ? orb76_run(['git', '--git-dir='.$input['common_repository'].'/.git', 'worktree', 'move', $input['checkout'], $quarantine])
-                    : orb76_run(['mv', '--', $input['checkout'], $quarantine]);
-                if (! $moved->succeeded()) {
-                    throw new LogicException('The interrupted finalization could not move the source.');
-                }
-
-                return new CommandResult(255, '', 'Connection closed', 1, false);
-            }
         }
 
         if ($arguments[2] === 'instances.prepare-development-source' && $this->prepareFailure !== null) {

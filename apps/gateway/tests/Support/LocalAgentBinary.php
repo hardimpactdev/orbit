@@ -4,7 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentTransport;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\SshAgentTransport;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use RuntimeException;
 
 /**
@@ -40,6 +49,22 @@ final class LocalAgentBinary
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return new AgentDelivery($manifest, $directory.'/artifacts');
+    }
+
+    /** The real runner over an SSH stand-in that runs this binary, with a delivery under `$directory`. */
+    public static function runner(SshExecutor $ssh, SshKeyProvider $keys, KnownHostsStore $knownHosts, string $directory): NativeAgentCommandRunner
+    {
+        $transports = new class($ssh, $keys, $knownHosts) extends AgentTransports
+        {
+            public function __construct(private readonly SshExecutor $ssh, private readonly SshKeyProvider $keys, private readonly KnownHostsStore $knownHosts) {}
+
+            public function for(Node $node): AgentTransport
+            {
+                return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
+            }
+        };
+
+        return new NativeAgentCommandRunner(app(AgentContract::class), self::delivery($directory), $transports);
     }
 
     /**

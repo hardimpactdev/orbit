@@ -8,11 +8,6 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentContract;
-use App\Infrastructure\AgentCommands\AgentTransport;
-use App\Infrastructure\AgentCommands\AgentTransports;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -877,16 +872,7 @@ function orb105_registration_manager(
             return new ManagedUserAccount($node->user, $this->managedGroup ?? orb105_primary_group(), '/tmp');
         }
     };
-    $transports = new class($executor, $keys, $knownHosts) extends AgentTransports
-    {
-        public function __construct(private readonly SshExecutor $ssh, private readonly SshKeyProvider $keys, private readonly KnownHostsStore $knownHosts) {}
-
-        public function for(Node $node): AgentTransport
-        {
-            return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
-        }
-    };
-    $agents = new NativeAgentCommandRunner(app(AgentContract::class), LocalAgentBinary::delivery(orb105_agent_directory().'/delivery'), $transports);
+    $agents = LocalAgentBinary::runner($executor, $keys, $knownHosts, orb105_agent_directory().'/delivery');
 
     return new RemoteRegistrationSourceManager($agents, $accounts);
 }
