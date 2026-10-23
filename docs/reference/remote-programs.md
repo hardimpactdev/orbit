@@ -4,7 +4,7 @@ description: "How the Gateway ships a program to a Node: one file per program, a
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,instances/refresh-environment-config.py}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,tools/inspect-vp-store.py}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
   - bin/node-scripts-ratchet
@@ -18,17 +18,17 @@ A remote program is a file that the Gateway runs on a Node to inspect or change 
 
 ## Program files
 
-Core programs live under `apps/gateway/resources/remote/<area>/<name>.py` or `<name>.sh`. An extension keeps its programs under `extensions/<name>/resources/remote/` and passes that directory to `RemoteProgramCatalog`. Both use the same loader and runner. Its name is `<area>.<name>`, such as `instances.refresh-environment-config`. Shared code lives in `apps/gateway/resources/remote/lib/`.
+Core programs live under `apps/gateway/resources/remote/<area>/<name>.py` or `<name>.sh`. An extension keeps its programs under `extensions/<name>/resources/remote/` and passes that directory to `RemoteProgramCatalog`. Both use the same loader and runner. Its name is `<area>.<name>`, such as `tools.inspect-vp-store`. Shared code lives in `apps/gateway/resources/remote/lib/`.
 
 A header of comment lines opens each program:
 
 ```python
-# Program: instances.refresh-environment-config
-# Uses: lib/program.py
-# Outcomes: config_cached config_uncached no_current_release failed
-# Timeout: 120
-# Input: {"user": production user, "home": persistent production home, "version": selected PHP version, "application": effective application directory under current}
-# Result: no data. Rebuild an existing current release config cache as the Instance user, or leave it uncached.
+# Program: tools.inspect-vp-store
+# Uses: lib/program.py lib/vp-store.py
+# Outcomes: inspected invalid
+# Timeout: 30
+# Input: {"environments": exact vp environment records}
+# Result: inspected: {"installed": booleans in input order}. invalid: no data.
 ```
 
 | Line | Meaning |
@@ -64,7 +64,7 @@ A short pass/fail script stays Bash. Its input is a list of strings, its positio
 `RemoteProgramRunner` is the only way to run a program:
 
 ```php
-$result = $runner->run($node, $catalog->program('instances.refresh-environment-config'), [...]);
+$result = $runner->run($node, $catalog->program('tools.inspect-vp-store'), [...]);
 ```
 
 It returns a `ProgramResult` with `outcome`, `data`, and `log`, the program's standard error. These cases raise `RemoteProgramFailed`, with a `reason`:
@@ -134,7 +134,6 @@ These programs run on Nodes now. Each one replaced an inline script, except `dat
 
 | Program | Purpose |
 | --- | --- |
-| `instances.refresh-environment-config` | Rebuilds an existing current release config cache as the production Instance user, verifies it through the application's Artisan bootstrap, and atomically replaces it before env-sync resets FPM opcache. |
 | `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
 | `docker.migrate` | Plans, prepares and reports the guarded [Docker provider migration](/reference/docker-provider-migration). Preparation uses a transient unit and a root-only recovery journal. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |

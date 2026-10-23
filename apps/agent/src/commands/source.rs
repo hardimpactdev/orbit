@@ -164,6 +164,30 @@ pub fn realpath(path: &Path) -> Option<PathBuf> {
     fs::canonicalize(path).ok()
 }
 
+/// `realpath -m`: links in the existing part resolve, `.` and `..` apply to the rest as written.
+pub fn realpath_missing(path: &Path) -> PathBuf {
+    let mut resolved = PathBuf::from("/");
+    for component in path.components() {
+        match component {
+            std::path::Component::RootDir
+            | std::path::Component::CurDir
+            | std::path::Component::Prefix(_) => {}
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::Normal(name) => {
+                resolved.push(name);
+                if exists(&resolved) {
+                    if let Some(real) = realpath(&resolved) {
+                        resolved = real;
+                    }
+                }
+            }
+        }
+    }
+    resolved
+}
+
 /// Whether `realpath -e` of the path is the path itself.
 pub fn canonical(path: &Path) -> bool {
     fs::canonicalize(path).is_ok_and(|resolved| resolved == path)

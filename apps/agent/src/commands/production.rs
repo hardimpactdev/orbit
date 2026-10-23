@@ -25,6 +25,7 @@ command_errors! {
         Invalid { check: String } => "instances.release_invalid", "The release home or the release does not pass its checks.";
         CommitNotOnBranch {} => "instances.commit_not_on_branch", "The branch does not contain the commit.";
         StepFailed { step: String } => "instances.release_step_failed", "A release step failed.";
+        ReleaseMissing {} => "instances.release_missing", "No release is selected yet.";
     }
 }
 
@@ -122,6 +123,33 @@ pub(super) fn as_user(
     identity::drop_to(&mut command, user).ok()?;
     let output = command.output().ok()?;
     output.status.success().then_some(output.stdout)
+}
+
+/// Runs a program as the production user with `input` on its standard input. Whether it succeeded.
+pub(super) fn as_user_with_input(
+    user: &str,
+    program: &str,
+    arguments: &[&OsStr],
+    input: &[u8],
+) -> bool {
+    use std::io::Write;
+    let mut command = Process::new(program);
+    command
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if identity::drop_to(&mut command, user).is_err() {
+        return false;
+    }
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+    let written = child
+        .stdin
+        .take()
+        .is_some_and(|mut stdin| stdin.write_all(input).is_ok());
+    child.wait().is_ok_and(|status| status.success()) && written
 }
 
 /// Git as the production user, without hooks or fsmonitor.
@@ -865,6 +893,120 @@ impl Command for PrepareRelease {
 
     fn run(input: PrepareInput, _: &Context) -> Result<Release, ReleaseError> {
         prepare(&input, &Layout::system())
+    }
+}
+
+// ---- served web roots ------------------------------------------------------------------------------------------
+
+/// The release that `current` selects, for a Route with a web root. Without `current`, nothing serves yet.
+fn selected_release(home: &ReleaseHome, layout: &Layout) -> Result<PathBuf, ReleaseError> {
+    home.check(layout, false)?;
+    check(
+        is_real_directory(&home.home)
+            && realpath(&home.home).as_deref() == Some(home.home.as_path()),
+        "the home is canonical",
+    )?;
+    if !is_symlink(&home.home.join("current")) {
+        return Err(ReleaseError::ReleaseMissing {});
+    }
+    let name = home.selected()?.ok_or(ReleaseError::ReleaseMissing {})?;
+    Ok(home.release(&name))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServedInput {
+    #[serde(flatten)]
+    pub home: ReleaseHome,
+}
+
+/// Links each served application's `.env` and grants Caddy each served web root in the selected release.
+pub fn prepare_served(input: &ServedInput, layout: &Layout) -> Result<Release, ReleaseError> {
+    let release = selected_release(&input.home, layout)?;
+    input.home.link_served_environments(&release)?;
+    input.home.grant_served_web_roots(&release)?;
+    let name = input.home.selected()?.unwrap_or_default();
+    let commit = git(
+        &input.home.user,
+        &release,
+        &["rev-parse", "--verify", "HEAD"],
+        &none(),
+    )
+    .ok_or_else(|| invalid("the release has a commit"))?;
+    Ok(Release { name, commit })
+}
+
+/// Checks without a change that each served web root and its application directory exist in the selected release,
+/// with no link on the way and only the public storage link below.
+pub fn check_served(input: &ServedInput, layout: &Layout) -> Result<(), ReleaseError> {
+    let release = selected_release(&input.home, layout)?;
+    for served in &input.home.served {
+        check(
+            served_path(&served.web_root),
+            "a served web root is a plain relative path",
+        )?;
+        let root = release.join(&served.web_root);
+        check(
+            super::source::realpath_missing(&root) == root && root.is_dir(),
+            "the selected release holds the web root as a directory",
+        )?;
+        input.home.check_web_root_links(&release, &root)?;
+        let application = if served.directory.is_empty() {
+            release.clone()
+        } else {
+            release.join(&served.directory)
+        };
+        check(
+            realpath(&application).as_deref() == Some(application.as_path()),
+            "the selected release holds the application directory",
+        )?;
+    }
+    Ok(())
+}
+
+pub struct PrepareServedWebRoots;
+
+impl Command for PrepareServedWebRoots {
+    const NAME: &'static str = "instances.prepare-served-web-roots";
+    const SUMMARY: &'static str =
+        "Link the environment and grant Caddy each Route web root in a production Instance's selected release.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(300);
+    type Input = ServedInput;
+    type Output = Release;
+    type Error = ReleaseError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn target(input: &ServedInput) -> Option<String> {
+        Some(format!("release-home:{}", input.home.instance))
+    }
+
+    fn run(input: ServedInput, _: &Context) -> Result<Release, ReleaseError> {
+        prepare_served(&input, &Layout::system())
+    }
+}
+
+pub struct CheckServedWebRoots;
+
+impl Command for CheckServedWebRoots {
+    const NAME: &'static str = "instances.check-served-web-roots";
+    const SUMMARY: &'static str =
+        "Check that a production Instance's selected release can serve each Route web root.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(120);
+    type Input = ServedInput;
+    type Output = serde_json::Value;
+    type Error = ReleaseError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn run(input: ServedInput, _: &Context) -> Result<serde_json::Value, ReleaseError> {
+        check_served(&input, &Layout::system()).map(|()| serde_json::json!({}))
     }
 }
 

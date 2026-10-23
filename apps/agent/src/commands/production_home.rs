@@ -4,10 +4,12 @@
 //! `RemoteProductionInstanceSourceLifecycle` sent, check for check, and keep its marker formats.
 
 use super::production::{
-    account, as_user, check, failed, git, invalid, none, relative_path, root_owned, setfacl, walk,
-    Layout, ReleaseError, ReleaseHome,
+    account, as_user, as_user_with_input, check, failed, git, invalid, none, relative_path,
+    root_owned, setfacl, walk, Layout, ReleaseError, ReleaseHome,
 };
-use super::source::{exists, is_real_directory, is_regular_file, is_symlink, realpath};
+use super::source::{
+    exists, is_real_directory, is_regular_file, is_symlink, realpath, realpath_missing,
+};
 use crate::command::{Command, Context, Platform, Privilege};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,7 @@ use std::{
     fs,
     io::Write,
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
 };
@@ -83,28 +85,6 @@ fn run(program: &str, arguments: &[&OsStr]) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
-}
-
-/// `realpath -m`: links in the existing part resolve, `.` and `..` apply to the rest as written.
-pub fn realpath_missing(path: &Path) -> PathBuf {
-    let mut resolved = PathBuf::from("/");
-    for component in path.components() {
-        match component {
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
-            Component::ParentDir => {
-                resolved.pop();
-            }
-            Component::Normal(name) => {
-                resolved.push(name);
-                if exists(&resolved) {
-                    if let Some(real) = realpath(&resolved) {
-                        resolved = real;
-                    }
-                }
-            }
-        }
-    }
-    resolved
 }
 
 /// Every file below the root belongs to the user and the user's group.
@@ -1015,6 +995,368 @@ impl Command for ClearCurrent {
 
     fn run(input: LayoutInput, _: &Context) -> Result<Selection, ReleaseError> {
         clear_current(&input, &Layout::system())
+    }
+}
+
+// ---- the APP_URL of a served directory ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectoryUrlInput {
+    pub user: String,
+    pub home: PathBuf,
+    /// The application directory relative to a release, or empty for the release itself.
+    pub directory: String,
+    pub url: String,
+    /// The `APP_KEY=` line a new file without a key takes.
+    pub app_key: String,
+    /// The `APP_NAME=` line a new file takes.
+    pub app_name: String,
+    /// Whether the name is the Instance's stored one, which replaces any template name.
+    pub app_name_stored: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Written {
+    pub written: bool,
+}
+
+/// The `KEY=` lines of an environment file.
+fn entries(text: &[u8], key: &str) -> Vec<std::ops::Range<usize>> {
+    regex::bytes::Regex::new(&format!(r"(?m)^{key}=[^\r\n]*"))
+        .map(|pattern| pattern.find_iter(text).map(|found| found.range()).collect())
+        .unwrap_or_default()
+}
+
+/// The value of the first line, without its quotes.
+fn plain<'a>(text: &'a [u8], found: &[std::ops::Range<usize>], key: &str) -> &'a [u8] {
+    let Some(range) = found.first() else {
+        return b"";
+    };
+    let value = text[range.start + key.len() + 1..range.end].trim_ascii();
+    if value.len() >= 2
+        && value[0] == value[value.len() - 1]
+        && (value[0] == b'"' || value[0] == b'\'')
+    {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
+}
+
+/// Replaces the first line, or appends one.
+fn put(text: &[u8], found: &[std::ops::Range<usize>], line: &[u8]) -> Vec<u8> {
+    if let Some(range) = found.first() {
+        return [&text[..range.start], line, &text[range.end..]].concat();
+    }
+    let mut updated = text.to_vec();
+    if !updated.is_empty() && !updated.ends_with(b"\n") {
+        updated.push(b'\n');
+    }
+    updated.extend_from_slice(line);
+    updated.push(b'\n');
+    updated
+}
+
+/// Writes `APP_URL` into the stable `.env` of another application directory, `<home>/env/<directory>/.env`, which
+/// each release links to. It reads `artisan` and `.env.example` from the selected release, and does nothing before
+/// the first release or for a directory without `artisan`. A new file gets its own key and name.
+pub fn write_directory_url(
+    input: &DirectoryUrlInput,
+    layout: &Layout,
+) -> Result<Written, ReleaseError> {
+    let (user, home) = (input.user.as_str(), input.home.as_path());
+    let (uid, _) = account(user)?;
+    let unchanged = Ok(Written { written: false });
+    check(
+        home == layout.home_root.join(user),
+        "the home is the user's",
+    )?;
+    check(
+        realpath(home).as_deref() == Some(home),
+        "the home is canonical",
+    )?;
+    check(
+        input.directory.is_empty() || relative_path(&input.directory),
+        "the directory is relative",
+    )?;
+    let current = home.join("current");
+    if !is_symlink(&current) {
+        return unchanged;
+    }
+    let release = realpath(&current).ok_or_else(|| invalid("current names a release"))?;
+    check(
+        release.parent() == Some(home.join("releases").as_path()),
+        "current names a release",
+    )?;
+    let application = if input.directory.is_empty() {
+        release.clone()
+    } else {
+        release.join(&input.directory)
+    };
+    check(
+        realpath(&application).as_deref() == Some(application.as_path()),
+        "the application directory is canonical",
+    )?;
+    let artisan = application.join("artisan");
+    if is_symlink(&artisan) || !artisan.is_file() {
+        return unchanged;
+    }
+
+    let mut stable = home.join("env");
+    let parts: Vec<&str> = if input.directory.is_empty() {
+        Vec::new()
+    } else {
+        input.directory.split('/').collect()
+    };
+    for (index, part) in std::iter::once("").chain(parts).enumerate() {
+        if index > 0 {
+            stable.push(part);
+        }
+        check(
+            !is_symlink(&stable) && (!exists(&stable) || stable.is_dir()),
+            "the stable environment directory is a real directory",
+        )?;
+        if !exists(&stable) {
+            as_user(
+                user,
+                "mkdir",
+                &[
+                    "-m".as_ref(),
+                    "0700".as_ref(),
+                    "--".as_ref(),
+                    stable.as_os_str(),
+                ],
+                &none(),
+            )
+            .ok_or_else(|| failed("create the stable environment directory"))?;
+        }
+        check(
+            fs::symlink_metadata(&stable).is_ok_and(|metadata| metadata.uid() == uid),
+            "the user owns the stable environment directory",
+        )?;
+    }
+    let environment = stable.join(".env");
+    check(
+        !is_symlink(&environment) && (!exists(&environment) || environment.is_file()),
+        "the stable environment is a regular file",
+    )?;
+    check(
+        fs::symlink_metadata(&environment).map_or(true, |metadata| metadata.uid() == uid),
+        "the user owns the stable environment",
+    )?;
+    let created = !exists(&environment);
+    let (original, mode) = if created {
+        let template = application.join(".env.example");
+        check(
+            !is_symlink(&template) && (!exists(&template) || template.is_file()),
+            "the environment template is a regular file",
+        )?;
+        (fs::read(&template).unwrap_or_default(), 0o600)
+    } else {
+        let metadata = fs::metadata(&environment)
+            .map_err(|_| invalid("the stable environment is readable"))?;
+        (
+            fs::read(&environment).map_err(|_| invalid("the stable environment is readable"))?,
+            metadata.mode() & 0o770,
+        )
+    };
+    let found = entries(&original, "APP_URL");
+    check(found.len() <= 1, "the environment names APP_URL once")?;
+    let mut updated = put(
+        &original,
+        &found,
+        format!("APP_URL={}", input.url).as_bytes(),
+    );
+    // Laravel cannot boot with an empty key. A new file keeps the template's key or takes the given one; an existing
+    // file only fills an empty key.
+    let found = entries(&updated, "APP_KEY");
+    if found.len() < 2
+        && (created || !found.is_empty())
+        && plain(&updated, &found, "APP_KEY").is_empty()
+    {
+        updated = put(&updated, &found, input.app_key.as_bytes());
+    }
+    let found = entries(&updated, "APP_NAME");
+    let name = plain(&updated, &found, "APP_NAME");
+    if created
+        && found.len() < 2
+        && (input.app_name_stored || name.is_empty() || name == b"Laravel")
+    {
+        updated = put(&updated, &found, input.app_name.as_bytes());
+    }
+    if updated != original || created {
+        let candidate = stable.join(format!(".orbit-url-{:016x}", rand::random::<u64>()));
+        let mode = format!("{mode:o}");
+        let written = as_user_with_input(
+            user,
+            "sh",
+            &[
+                "-c".as_ref(),
+                "umask 077 && cat > \"$1\" && chmod \"$2\" \"$1\" && mv -fT -- \"$1\" \"$3\""
+                    .as_ref(),
+                "sh".as_ref(),
+                candidate.as_os_str(),
+                mode.as_ref(),
+                environment.as_os_str(),
+            ],
+            &updated,
+        );
+        if !written {
+            let _ = fs::remove_file(&candidate);
+            return Err(failed("write the stable environment"));
+        }
+        return Ok(Written { written: true });
+    }
+    if fs::metadata(&environment).is_ok_and(|metadata| metadata.mode() & 0o007 != 0) {
+        as_user(
+            user,
+            "chmod",
+            &[
+                format!("{mode:o}").as_ref(),
+                "--".as_ref(),
+                environment.as_os_str(),
+            ],
+            &none(),
+        )
+        .ok_or_else(|| failed("restrict the stable environment"))?;
+    }
+    unchanged
+}
+
+pub struct WriteDirectoryUrl;
+
+impl Command for WriteDirectoryUrl {
+    const NAME: &'static str = "instances.write-directory-url";
+    const SUMMARY: &'static str =
+        "Write APP_URL into the stable .env of a production Instance's served application directory.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = DirectoryUrlInput;
+    type Output = Written;
+    type Error = ReleaseError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn target(input: &DirectoryUrlInput) -> Option<String> {
+        Some(format!("production-environment:{}", input.user))
+    }
+
+    fn run(input: DirectoryUrlInput, _: &Context) -> Result<Written, ReleaseError> {
+        write_directory_url(&input, &Layout::system())
+    }
+}
+
+// ---- the configuration cache --------------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigCacheInput {
+    pub user: String,
+    pub home: PathBuf,
+    pub version: String,
+    /// The effective application directory under `current`.
+    pub application: PathBuf,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigOutcome {
+    ConfigCached,
+    ConfigUncached,
+    NoCurrentRelease,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ConfigCache {
+    pub outcome: ConfigOutcome,
+}
+
+/// Rebuilds the Laravel configuration cache of the current release as the production user, into a private temporary
+/// file that replaces the cache only after Artisan boots against it. A release without a cache stays uncached. The
+/// application's output never leaves the Node, because a failed build can print environment values.
+pub fn refresh_config_cache(
+    input: &ConfigCacheInput,
+    php: &Path,
+) -> Result<ConfigCache, ReleaseError> {
+    let user = input.user.as_str();
+    account(user)?;
+    check(
+        super::php_runtime::valid_version(&input.version),
+        "the PHP version is valid",
+    )?;
+    let current = input.home.join("current");
+    if !current.exists() {
+        check(!is_symlink(&current), "current names a release")?;
+        return Ok(ConfigCache {
+            outcome: ConfigOutcome::NoCurrentRelease,
+        });
+    }
+    check(current.is_dir(), "current names a release")?;
+    if !input
+        .application
+        .join("bootstrap/cache/config.php")
+        .is_file()
+    {
+        return Ok(ConfigCache {
+            outcome: ConfigOutcome::ConfigUncached,
+        });
+    }
+    const REBUILD: &str = r#"cd -- "$1"
+cache="$PWD/bootstrap/cache/config.php"
+temporary=$(mktemp -d "$PWD/bootstrap/cache/.orbit-config-XXXXXXXX")
+trap 'rm -rf -- "$temporary"' EXIT
+export APP_CONFIG_CACHE="$temporary/config.php"
+"$2" artisan config:cache
+[ -f "$APP_CONFIG_CACHE" ]
+# Boot Artisan against the temporary cache using the application's own autoload context.
+"$2" artisan --version --no-interaction
+mv -f -- "$APP_CONFIG_CACHE" "$cache"
+"#;
+    let php = php.join(format!("php{}", input.version));
+    as_user(
+        user,
+        "bash",
+        &[
+            "-eu".as_ref(),
+            "-c".as_ref(),
+            REBUILD.as_ref(),
+            "--".as_ref(),
+            input.application.as_os_str(),
+            php.as_os_str(),
+        ],
+        &none(),
+    )
+    .ok_or_else(|| failed("rebuild the configuration cache"))?;
+    Ok(ConfigCache {
+        outcome: ConfigOutcome::ConfigCached,
+    })
+}
+
+pub struct RefreshConfigCache;
+
+impl Command for RefreshConfigCache {
+    const NAME: &'static str = "instances.refresh-config-cache";
+    const SUMMARY: &'static str =
+        "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(120);
+    type Input = ConfigCacheInput;
+    type Output = ConfigCache;
+    type Error = ReleaseError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn target(input: &ConfigCacheInput) -> Option<String> {
+        Some(format!("production-environment:{}", input.user))
+    }
+
+    fn run(input: ConfigCacheInput, _: &Context) -> Result<ConfigCache, ReleaseError> {
+        refresh_config_cache(&input, Path::new("/usr/bin"))
     }
 }
 

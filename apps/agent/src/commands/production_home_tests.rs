@@ -395,3 +395,191 @@ fn realpath_missing_resolves_existing_links_and_applies_dots() {
         PathBuf::from("/etc/x")
     );
 }
+
+/// A home whose `current` selects a release with an `apps/docs` Laravel application.
+fn served_home(fixture: &Fixture) -> PathBuf {
+    let docs = fixture.home.home.join("releases/r1/apps/docs");
+    fs::create_dir_all(&docs).unwrap();
+    fs::write(docs.join("artisan"), "").unwrap();
+    fs::write(
+        docs.join(".env.example"),
+        "APP_NAME=Laravel\nAPP_KEY=\nAPP_URL=http://localhost\n",
+    )
+    .unwrap();
+    symlink("releases/r1", fixture.home.home.join("current")).unwrap();
+    docs
+}
+
+fn url_input(fixture: &Fixture, directory: &str) -> DirectoryUrlInput {
+    DirectoryUrlInput {
+        user: fixture.home.user.clone(),
+        home: fixture.home.home.clone(),
+        directory: directory.into(),
+        url: "https://docs.example.com".into(),
+        app_key: "APP_KEY=base64:generated".into(),
+        app_name: "APP_NAME=\"Docs\"".into(),
+        app_name_stored: false,
+    }
+}
+
+#[test]
+fn writes_app_url_into_a_new_stable_environment_from_the_template() {
+    let fixture = Fixture::new();
+    served_home(&fixture);
+
+    assert_eq!(
+        write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout),
+        Ok(Written { written: true })
+    );
+
+    let environment = fixture.home.home.join("env/apps/docs/.env");
+    assert_eq!(
+        fs::read_to_string(&environment).unwrap(),
+        "APP_NAME=\"Docs\"\nAPP_KEY=base64:generated\nAPP_URL=https://docs.example.com\n"
+    );
+    assert_eq!(fs::metadata(&environment).unwrap().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::metadata(fixture.home.home.join("env/apps"))
+            .unwrap()
+            .mode()
+            & 0o777,
+        0o700
+    );
+}
+
+#[test]
+fn an_existing_stable_environment_keeps_its_key_and_name() {
+    let fixture = Fixture::new();
+    served_home(&fixture);
+    let environment = fixture.home.home.join("env/apps/docs/.env");
+    fs::create_dir_all(environment.parent().unwrap()).unwrap();
+    fs::write(
+        &environment,
+        "APP_NAME=Mine\nAPP_KEY=base64:kept\nAPP_URL=https://old.example.com",
+    )
+    .unwrap();
+    fs::set_permissions(&environment, fs::Permissions::from_mode(0o644)).unwrap();
+
+    write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&environment).unwrap(),
+        "APP_NAME=Mine\nAPP_KEY=base64:kept\nAPP_URL=https://docs.example.com"
+    );
+    assert_eq!(fs::metadata(&environment).unwrap().mode() & 0o777, 0o640);
+    assert_eq!(
+        write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout),
+        Ok(Written { written: false })
+    );
+}
+
+#[test]
+fn writes_nothing_before_a_release_or_for_a_directory_without_artisan_and_refuses_a_linked_environment(
+) {
+    let fixture = Fixture::new();
+    assert_eq!(
+        write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout),
+        Ok(Written { written: false })
+    );
+    let docs = served_home(&fixture);
+    fs::remove_file(docs.join("artisan")).unwrap();
+    assert_eq!(
+        write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout),
+        Ok(Written { written: false })
+    );
+    fs::write(docs.join("artisan"), "").unwrap();
+    fs::create_dir_all(fixture.home.home.join("env/apps/docs")).unwrap();
+    symlink(
+        "/etc/hostname",
+        fixture.home.home.join("env/apps/docs/.env"),
+    )
+    .unwrap();
+    assert_eq!(
+        write_directory_url(&url_input(&fixture, "apps/docs"), &fixture.layout),
+        Err(invalid("the stable environment is a regular file"))
+    );
+}
+
+/// A stub `php8.5` for Artisan: `config:cache` writes the cache that `APP_CONFIG_CACHE` names, and `--version` boots
+/// only against a cache that returns an array. `FAIL` picks a failure: 1 fails after writing, 2 writes a cache that
+/// cannot boot, 3 writes nothing.
+const ARTISAN: &str = r#"#!/bin/sh
+fail=$(cat "$(dirname "$0")/fail")
+if [ "$*" = "artisan --version --no-interaction" ]; then grep -q 'return \[' "$APP_CONFIG_CACHE"; exit; fi
+[ "$*" = "artisan config:cache" ] || exit 97
+[ "$APP_CONFIG_CACHE" != "$PWD/bootstrap/cache/config.php" ] || exit 98
+[ "$fail" = 3 ] && exit 0
+printf '<?php return [123];' > "$APP_CONFIG_CACHE"
+[ "$fail" = 1 ] && exit 96
+[ "$fail" = 2 ] && printf '<?php return false;' > "$APP_CONFIG_CACHE"
+exit 0
+"#;
+
+#[test]
+fn rebuilds_only_an_existing_configuration_cache_of_the_current_release() {
+    for suffix in ["", "/apps/site"] {
+        for (current, cached, fail) in [
+            (true, true, 0),
+            (true, false, 0),
+            (false, false, 0),
+            (true, true, 1),
+            (true, true, 2),
+            (true, true, 3),
+        ] {
+            let fixture = Fixture::new();
+            let php = fixture.base.join("php");
+            fs::create_dir_all(&php).unwrap();
+            fs::write(php.join("php8.5"), ARTISAN).unwrap();
+            fs::set_permissions(php.join("php8.5"), fs::Permissions::from_mode(0o755)).unwrap();
+            fs::write(php.join("fail"), fail.to_string()).unwrap();
+            let application = fixture.home.home.join(format!("releases/r1{suffix}"));
+            fs::create_dir_all(application.join("bootstrap/cache")).unwrap();
+            if current {
+                symlink("releases/r1", fixture.home.home.join("current")).unwrap();
+            }
+            let cache = application.join("bootstrap/cache/config.php");
+            if cached {
+                fs::write(&cache, "old config").unwrap();
+            }
+            let input = ConfigCacheInput {
+                user: fixture.home.user.clone(),
+                home: fixture.home.home.clone(),
+                version: "8.5".into(),
+                application: fixture.home.home.join(format!("current{suffix}")),
+            };
+
+            let result = refresh_config_cache(&input, &php);
+
+            let expected = match (current, cached, fail) {
+                (false, _, _) => Ok(ConfigCache {
+                    outcome: ConfigOutcome::NoCurrentRelease,
+                }),
+                (_, true, 0) => Ok(ConfigCache {
+                    outcome: ConfigOutcome::ConfigCached,
+                }),
+                (_, true, _) => Err(failed("rebuild the configuration cache")),
+                _ => Ok(ConfigCache {
+                    outcome: ConfigOutcome::ConfigUncached,
+                }),
+            };
+            assert_eq!(result, expected, "{suffix} {current} {cached} {fail}");
+            let content = fs::read_to_string(&cache).ok();
+            match (current, cached, fail) {
+                (true, true, 0) => assert_eq!(content.as_deref(), Some("<?php return [123];")),
+                (_, true, _) => assert_eq!(content.as_deref(), Some("old config")),
+                _ => assert_eq!(content, None),
+            }
+            let leftovers = fs::read_dir(application.join("bootstrap/cache"))
+                .unwrap()
+                .flatten()
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".orbit-config-")
+                })
+                .count();
+            assert_eq!(leftovers, 0);
+        }
+    }
+}

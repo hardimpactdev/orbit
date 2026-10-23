@@ -83,7 +83,7 @@ describe('RemoteProgramCatalog', function (): void {
             }
         }
 
-        expect($names)->toContain('instances.refresh-environment-config', 'gateway.install-start-hooks');
+        expect($names)->toContain('tools.inspect-vp-store', 'gateway.install-start-hooks');
         foreach ($names as $name) {
             expect($catalog->program($name)->name)->toBe($name);
         }

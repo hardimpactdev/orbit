@@ -254,7 +254,9 @@ A write that pulls edits from the Node would replace stored intent with changes 
 
 ### Synchronization runs no framework
 
-Development synchronization must work before dependencies are installed and before the application runs, so it only writes files. Production FPM disables opcache timestamp validation. Writing `.env` alone cannot make a cached Laravel configuration take effect there. A changed production sync therefore rebuilds an existing config cache before resetting opcache. It skips runtime work before the first release or PHP selection, and never creates a config cache where none existed. After refresh, running Instance Processes opted into `restart_on_deploy` restart so workers also see the new environment.
+Development synchronization must work before dependencies are installed and before the application runs, so it only writes files. Production FPM disables opcache timestamp validation. Writing `.env` alone cannot make a cached Laravel configuration take effect there. A changed production sync therefore rebuilds an existing config cache before resetting opcache.
+
+The Node agent's `instances.refresh-config-cache` rebuilds the cache as the production user into a temporary file, and replaces the cache only after Artisan boots against it. It skips runtime work before the first release or PHP selection, and never creates a config cache where none existed. After refresh, running Instance Processes opted into `restart_on_deploy` restart so workers also see the new environment.
 
 ### The Node role decides isolation
 

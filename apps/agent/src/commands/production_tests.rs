@@ -580,3 +580,55 @@ fn a_rebind_refuses_a_url_that_is_neither_the_expected_nor_the_target() {
         1
     );
 }
+
+#[test]
+fn a_route_web_root_is_prepared_and_checked_in_the_selected_release_only() {
+    let mut fixture = Fixture::new();
+    let input = |fixture: &Fixture| ServedInput {
+        home: fixture.home.clone(),
+    };
+    fixture.home.served = vec![ServedRoot {
+        web_root: "admin/public".into(),
+        directory: "admin".into(),
+    }];
+    assert_eq!(
+        prepare_served(&input(&fixture), &fixture.layout),
+        Err(ReleaseError::ReleaseMissing {})
+    );
+    assert_eq!(
+        check_served(&input(&fixture), &fixture.layout),
+        Err(ReleaseError::ReleaseMissing {})
+    );
+
+    // The release was activated before the Route existed, so it has no served `.env` link yet.
+    fixture.home.served = Vec::new();
+    let release = fixture.prepare("20260101000000-a1", None).unwrap();
+    fixture.activate(&release).unwrap();
+    fixture.home.served = vec![ServedRoot {
+        web_root: "admin/public".into(),
+        directory: "admin".into(),
+    }];
+    let link = fixture.home.release(&release.name).join("admin/.env");
+    assert!(fs::symlink_metadata(&link).is_err());
+
+    assert_eq!(check_served(&input(&fixture), &fixture.layout), Ok(()));
+    assert_eq!(
+        prepare_served(&input(&fixture), &fixture.layout),
+        Ok(Release {
+            name: release.name.clone(),
+            commit: release.commit.clone()
+        })
+    );
+    assert_eq!(
+        fs::read_link(&link).unwrap(),
+        Path::new("../../../env/admin/.env")
+    );
+
+    fixture.home.served[0].web_root = "missing/public".into();
+    assert_eq!(
+        check_served(&input(&fixture), &fixture.layout),
+        Err(invalid(
+            "the selected release holds the web root as a directory"
+        ))
+    );
+}

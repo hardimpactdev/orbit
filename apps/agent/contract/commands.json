@@ -312,7 +312,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.prepare-release",
@@ -327,7 +328,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.activate-release",
@@ -342,7 +344,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": false,
       "name": "instances.inspect-release",
@@ -357,7 +360,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": false,
       "name": "instances.list-releases",
@@ -372,7 +376,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.prune-releases",
@@ -387,7 +392,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": false,
       "name": "instances.inspect-repository-binding",
@@ -402,7 +408,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.rebind-repository",
@@ -412,6 +419,38 @@
       },
       "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
       "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ],
+      "mutates": true,
+      "name": "instances.prepare-served-web-roots",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Link the environment and grant Caddy each Route web root in a production Instance's selected release.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ],
+      "mutates": false,
+      "name": "instances.check-served-web-roots",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check that a production Instance's selected release can serve each Route web root.",
+      "timeout_seconds": 120
     },
     {
       "errors": [
@@ -431,7 +470,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.prepare-production-user",
@@ -446,7 +486,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.prepare-production-source",
@@ -461,7 +502,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.resolve-production-source",
@@ -476,7 +518,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": false,
       "name": "instances.inspect-production-profile",
@@ -491,7 +534,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.grant-production-caddy-access",
@@ -506,7 +550,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": false,
       "name": "instances.validate-release-layout",
@@ -521,7 +566,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.clear-current-release",
@@ -536,7 +582,8 @@
       "errors": [
         "instances.release_invalid",
         "instances.commit_not_on_branch",
-        "instances.release_step_failed"
+        "instances.release_step_failed",
+        "instances.release_missing"
       ],
       "mutates": true,
       "name": "instances.remove-production-home",
@@ -546,6 +593,38 @@
       },
       "summary": "Remove a production Instance's home, system account, and source state.",
       "timeout_seconds": 600
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ],
+      "mutates": true,
+      "name": "instances.write-directory-url",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Write APP_URL into the stable .env of a production Instance's served application directory.",
+      "timeout_seconds": 60
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed",
+        "instances.release_missing"
+      ],
+      "mutates": true,
+      "name": "instances.refresh-config-cache",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Rebuild the Laravel configuration cache of a production Instance's current release, if it has one.",
+      "timeout_seconds": 120
     },
     {
       "errors": [

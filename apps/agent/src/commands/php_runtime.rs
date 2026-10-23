@@ -283,7 +283,7 @@ fn valid_user(user: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-".contains(b))
 }
 
-fn valid_version(version: &str) -> bool {
+pub(super) fn valid_version(version: &str) -> bool {
     version.split_once('.').is_some_and(|(major, minor)| {
         [major, minor]
             .iter()
