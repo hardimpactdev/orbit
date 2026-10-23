@@ -1862,6 +1862,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
