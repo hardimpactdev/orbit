@@ -11,19 +11,15 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Shared\StoredValue;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
-use JsonException;
 
 final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntime
 {
     public function __construct(
-        private ProductionSshExecutor $ssh,
         private NodeCaddyBuilds $builds,
         private AgentCommandRunner $agents,
         private ServiceMetricsConfigRenderer $renderer = new ServiceMetricsConfigRenderer,
@@ -32,7 +28,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
 
     public function snapshot(ServiceMetricsNode $target): string
     {
-        $state = $this->program($target->node, ['operation' => 'snapshot']);
+        $state = $this->exporter($target->node, ['operation' => 'snapshot']);
         $pools = [];
         foreach ($target->instances as $instance) {
             $pools[(string) $instance->id] = $this->pool($target->node, ProductionPhpRuntimeIdentity::from($instance));
@@ -66,7 +62,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
                 ];
             }
         }
-        $this->program($target->node, ['operation' => 'apply', 'state' => [
+        $this->exporter($target->node, ['operation' => 'apply', 'state' => [
             'config' => $fpm ? $this->renderer->fpm($target).$fingerprints : null,
             'unit' => $fpm ? $this->renderer->unit() : null,
             'rules' => $rules,
@@ -102,7 +98,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
                 $pools[(string) $instance->id]['enabled'],
             );
         }
-        $this->program($target->node, ['operation' => 'apply', 'state' => $exporter]);
+        $this->exporter($target->node, ['operation' => 'apply', 'state' => $exporter]);
         $this->build($target->node);
     }
 
@@ -153,33 +149,9 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
      * @param  array<string, mixed>  $request
      * @return array<string, mixed>
      */
-    private function program(Node $node, array $request): array
+    private function exporter(Node $node, array $request): array
     {
-        $program = file_get_contents(resource_path('scripts/service-metrics.py'));
-        if (! is_string($program)) {
-            throw new ResourceOperationException('metrics.service_program_missing', 'Service metrics program is unavailable.', 500);
-        }
-        $result = $this->ssh->execute($node, new RemoteCommand(
-            ['sudo', 'python3', '-', base64_encode(json_encode($request, JSON_THROW_ON_ERROR))],
-            input: $program,
-            maxOutputBytes: 524288,
-            timeout: 180,
-        ), 'service-metrics', 'metrics.service_convergence_failed');
-        if ($request['operation'] !== 'snapshot') {
-            return [];
-        }
-        if ($result->truncated) {
-            throw new ResourceOperationException('metrics.service_inspection_failed', 'Service metrics inspection was truncated.', 502);
-        }
-        try {
-            $state = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new ResourceOperationException('metrics.service_inspection_failed', 'Service metrics inspection returned invalid data.', 502, $exception);
-        }
-        if (! is_array($state)) {
-            throw new ResourceOperationException('metrics.service_inspection_failed', 'Service metrics inspection returned invalid state.', 502);
-        }
-
-        return array_filter($state, is_string(...), ARRAY_FILTER_USE_KEY);
+        return AgentStep::run($this->agents, $node, 'metrics.service-runtime', $request,
+            'service-metrics', 'metrics.service_convergence_failed', 'Service metrics');
     }
 }

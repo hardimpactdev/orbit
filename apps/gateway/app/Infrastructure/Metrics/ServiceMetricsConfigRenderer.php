@@ -14,8 +14,6 @@ final readonly class ServiceMetricsConfigRenderer
 
     public const string FpmPort = '9114';
 
-    public const string FpmVersion = 'v3.1.1';
-
     public const string Directory = '/etc/orbit/service-metrics';
 
     public const string FpmBinary = '/usr/local/bin/orbit-fpm-exporter';
@@ -23,12 +21,6 @@ final readonly class ServiceMetricsConfigRenderer
     public const string FpmService = 'orbit-fpm-exporter';
 
     public const string Marker = '# Managed by Orbit: service-metrics';
-
-    /** @var array<string, string> */
-    public const array Checksums = [
-        'x86_64' => '570d2b3d3284179c47acff8efd8f73ea650e42a2c6bd08c0a8e95cb4b0e3ca98',
-        'aarch64' => 'd9773dfef3f6efbbbea0fe8be40ea79652d71ea24b20bfe89690ab026e205442',
-    ];
 
     /**
      * The scrape site only. Orbit's global options already collect per-host metrics on every Node.

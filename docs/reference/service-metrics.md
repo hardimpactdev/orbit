@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
   - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php
-  - apps/gateway/resources/scripts/service-metrics*.py
+  - apps/agent/src/commands/service_metrics*.rs
 ---
 
 # Service metrics
@@ -89,7 +89,9 @@ When the Metrics Node changes, the scrape access moves to the new Node. When a N
 
 FPM updates validate a candidate file. When the reload fails, Orbit restores the earlier pool file. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics never reads or writes Caddy files on a Node. It asks for a build of each `ingress` Node. When its own lifecycle fails, it restores the exporter and pool state and builds that Node again.
 
-Exporter and firewall updates keep a recovery journal, and a retry recovers an interrupted update. When convergence fails on one Node, Orbit tries to restore that Node's exporter and pool state before continuing on the other Nodes. If that recovery fails, the Node's degradation records the `restore` step and `metrics.service_rollback_failed`. An ownership conflict degrades the affected Node without changing unmanaged state.
+The Gateway calls `metrics.service-runtime` through the [Node agent command runner](/reference/node-agent#commands) to snapshot or apply exporter state. Rust owns the pinned exporter download, file ownership checks, service changes, scrape firewall rules, and recovery journal. Both operations use the same target lock because a snapshot first recovers an interrupted update. Invalid desired state is refused before any change. A retry restores the journaled state before applying the next change.
+
+When convergence fails on one Node, Orbit tries to restore that Node's exporter and pool state before continuing on the other Nodes. If that recovery fails, the Node's degradation records the `restore` step and `metrics.service_rollback_failed`. An ownership conflict degrades the affected Node without changing unmanaged state.
 
 A Prometheus publication failure still fails the reconcile and restores the changed services in reverse order. If that recovery fails, the reconcile returns `metrics.service_rollback_failed`. A service failure stays recorded until that Node's service reconciliation and publication succeed; successful exporter or cAdvisor snapshots do not clear it. Recording and clearing its step and error code are atomic.
 

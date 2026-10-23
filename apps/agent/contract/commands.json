@@ -1020,6 +1020,22 @@
       ]
     },
     {
+      "name": "metrics.service-runtime",
+      "summary": "Recover, snapshot, or apply the FPM exporter and service scrape firewall rules.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.service_invalid",
+        "metrics.service_ownership",
+        "metrics.service_failed",
+        "metrics.service_recovery_failed"
+      ]
+    },
+    {
       "name": "projects.update-source",
       "summary": "Check, change, or restore a development checkout's origin or default branch.",
       "mutates": true,

@@ -2930,6 +2930,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Role",
                 "Route"

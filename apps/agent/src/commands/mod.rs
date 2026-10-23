@@ -33,6 +33,7 @@ pub mod project_source;
 pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
+pub mod service_metrics;
 pub mod source;
 pub mod sqlite_copy;
 pub mod sqlite_seed;
@@ -144,6 +145,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
+        entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),
         entry::<hibernation::MarkHibernation>(),
