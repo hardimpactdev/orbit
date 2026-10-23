@@ -81,6 +81,8 @@ impl Fixture {
             fs::create_dir_all(base.join(directory)).unwrap();
         }
         fs::set_permissions(base.join("tmp"), fs::Permissions::from_mode(0o1777)).unwrap();
+        // As on a Node, no one else may write the parents of a runtime, whatever the umask.
+        fs::set_permissions(base.join("etc"), fs::Permissions::from_mode(0o755)).unwrap();
         fs::write(
             base.join("proc/sys/kernel/random/boot_id"),
             fs::read("/proc/sys/kernel/random/boot_id").unwrap(),
