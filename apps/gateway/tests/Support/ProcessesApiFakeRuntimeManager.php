@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Models\Process;
+use Closure;
 use RuntimeException;
 use SensitiveParameter;
 
@@ -43,6 +44,9 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
     public ?ProcessOperationException $lastConvergeFailure = null;
 
     public ?string $statusOverride = null;
+
+    /** @var (Closure(Process): void)|null */
+    public ?Closure $duringStatus = null;
 
     public function assertCanStart(Process $process): void {}
 
@@ -100,6 +104,10 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 
     public function status(Process $process): string
     {
+        if ($this->duringStatus !== null) {
+            ($this->duringStatus)($process);
+        }
+
         if (is_string($this->statusOverride)) {
             return $this->statusOverride;
         }

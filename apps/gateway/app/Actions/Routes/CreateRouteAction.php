@@ -17,6 +17,7 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -42,6 +43,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
+use Closure;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -65,19 +67,20 @@ final readonly class CreateRouteAction
         private ?ProductionWebRootManager $productionWebRoots = null,
         private ?InstanceEnvironmentOperationLock $environmentOperations = null,
         private ?ProductionPhpRuntimeManager $productionPhp = null,
+        private ?ProcessRuntimeLease $processLease = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
     {
-        return $this->run($data);
+        return $this->withProcessLease($data, fn (): array => $this->run($data));
     }
 
     /** @return array{route: Route, created: bool} */
     public function executeForRouteCreate(CreateRouteData $data): array
     {
         if ($data->isCustomProxy()) {
-            return ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(fn (): array => $this->run($data));
+            return $this->withProcessLease($data, fn (): array => ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(fn (): array => $this->run($data)));
         }
 
         if ($data->instanceId === null || $data->projectId !== null || $data->nodeId !== null || $data->clusterId !== null) {
@@ -93,6 +96,21 @@ final readonly class CreateRouteAction
         return $instance instanceof Instance && $instance->placedOnAppProd()
             ? ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run([$instance->id], $operation)
             : $operation();
+    }
+
+    /**
+     * @param  Closure(): array{route: Route, created: bool}  $operation
+     * @return array{route: Route, created: bool}
+     */
+    private function withProcessLease(CreateRouteData $data, Closure $operation): array
+    {
+        if ($data->processId === null) {
+            return $operation();
+        }
+
+        $process = Process::query()->findOrFail($data->processId);
+
+        return ($this->processLease ?? app(ProcessRuntimeLease::class))->run($process, $operation, wait: true);
     }
 
     /** @return array{route: Route, created: bool} */

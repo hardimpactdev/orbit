@@ -201,7 +201,7 @@ Doctor reports `process.crash_loop` as `drift`, with the Process ID and name and
 
 ## Locks
 
-The Gateway holds one runtime lock for each Process while it reads the record, changes the runtime, and writes the result. A competing request gets `process.runtime_lock_failed` and changes nothing.
+The Gateway holds one runtime lock for each Process while it reads the record, changes the runtime, and writes the result. A competing Process mutation gets `process.runtime_lock_failed` and changes nothing. Public and private Process Route creation takes the same lock before reading the current Process, resolving its listener, and reserving the Route. Route creation waits up to 30 seconds, bounded by the remaining command deadline, then returns `process.runtime_lock_failed` if the lock stays busy. It takes the Process lock before the projection lock, so it never waits for a Process while holding the projection lock.
 
 Create, update, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
