@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tools\PrepareVpEnvironmentAction;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
@@ -25,13 +26,14 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
  * Route. The fixture records their current production release layout: the workload Caddy
  * file, every PHP-FPM file, the release `.env` link, and each command, with its arguments, standard
- * input, and protected input, that deploys, activates, converges, monitors, removes, or refreshes the
- * runtime on the Node. Shared paths update only the deployment command baseline.
+ * input, and protected input, that converges, monitors, removes, or refreshes the runtime on the Node, and the agent
+ * command and input that deploys and activates a release. Shared paths update only the deployment command baseline.
  */
 it('renders existing production Instances against the release layout baseline', function (): void {
     $node = Node::query()->create([
@@ -126,9 +128,11 @@ function prod_equivalence_render(Node $node, array $instances): array
             }
         }
 
-        $ssh = new AppDevFakeSshExecutor(array_fill(0, 4, new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)));
-        $executor = prod_equivalence_executor($ssh);
-        $deployment = new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
+        $agents = new FakeAgentCommandRunner()
+            ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
+            ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
+        $executor = prod_equivalence_executor(new AppDevFakeSshExecutor([]));
+        $deployment = new RemoteProductionDeployment($executor, $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
         $runtime = static function (Closure $operation, array $results = []): array {
@@ -141,7 +145,11 @@ function prod_equivalence_render(Node $node, array $instances): array
         $rendered[$instance->production_user] = [
             'php_fpm' => $files,
             'release_environment_link' => ProductionApplicationPaths::render('__APPLICATION_SUFFIX__|__ENVIRONMENT_TARGET__|__ENVIRONMENT_PATH__', $instance->root),
-            'deployment_commands' => array_map(prod_equivalence_command(...), $ssh->commands),
+            // The agent commands and their typed input; the agent's Rust tests prove what each one does.
+            'deployment_commands' => array_map(static fn (array $call): array => [
+                'command' => $call['command'],
+                'input' => array_map(static fn (mixed $value): mixed => $value instanceof GitReadEnvironment ? $value->variables : $value, $call['input']),
+            ], $agents->calls),
             'php_fpm_converge_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->converge($instance)),
             'php_fpm_monitor_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->convergeMonitoring($instance, true)),
             'php_fpm_remove_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->remove($instance)),

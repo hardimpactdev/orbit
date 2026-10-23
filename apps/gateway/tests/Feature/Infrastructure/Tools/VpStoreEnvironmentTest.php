@@ -45,6 +45,7 @@ use App\Models\Node;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\UnsupportedPackageInventory;
 use Tests\Support\VpStoreSshExecutor;
 
@@ -86,7 +87,9 @@ function vp_store_fixture(): array
     $vp = new VpToolManager(new RemoteToolCommandRunner($ssh, $keys, $hosts, app(ToolCommandBudget::class)), new SemverVersionNormalizer);
     $catalog = new RemoteProgramCatalog;
     $prepare = new PrepareVpEnvironmentAction($vp, new SshProgramRunner($ssh, $keys, $hosts, $catalog), app(ToolManagerScopeLock::class), $catalog);
-    $deployment = new RemoteProductionDeployment(new ProductionSshExecutor($ssh, $keys, $hosts), app(RepositoryReadAccess::class), $prepare);
+    // Pruning reports what the scripted Node removed or found in use.
+    $agents = new FakeAgentCommandRunner()->answer('instances.prune-releases', static fn (): array => ['removed' => $ssh->removedReleases, 'in_use' => $ssh->busyReleases]);
+    $deployment = new RemoteProductionDeployment(new ProductionSshExecutor($ssh, $keys, $hosts), $agents, app(RepositoryReadAccess::class), $prepare);
 
     return [$prepare, $ssh, $instance, $deployment, $vp];
 }

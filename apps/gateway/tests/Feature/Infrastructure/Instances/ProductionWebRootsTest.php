@@ -30,6 +30,7 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\BufferedBashProgram;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ScriptedBashCommand;
 
 beforeEach(function (): void {
@@ -50,20 +51,20 @@ afterEach(function (): void {
 describe('production web roots', function (): void {
     it('passes the served web roots to release preparation and activation only when a Route has one', function (): void {
         [$instance] = prodweb_instance();
-        $ssh = new AppDevFakeSshExecutor(array_fill(0, 4, new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)));
-        $deployment = new RemoteProductionDeployment(prodweb_executor($ssh), app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
+        $agents = new FakeAgentCommandRunner()
+            ->answer('instances.prepare-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)])
+            ->answer('instances.activate-release', ['name' => '20261009-a1', 'commit' => str_repeat('b', 40)]);
+        $deployment = new RemoteProductionDeployment(prodweb_executor(new AppDevFakeSshExecutor([])), $agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $deployment->prepare($instance, 'main');
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
-        [$before, $prepare, $activate] = $ssh->commands;
 
-        expect(count($before->arguments))->toBe(10)
-            ->and(base64_decode(array_last($prepare->arguments), true))->toBe("apps/docs/public\tapps/docs\n")
-            ->and(base64_decode(array_last($activate->arguments), true))->toBe("apps/docs/public\tapps/docs\n")
-            ->and($prepare->input)->toContain('link_served_environments "$release"')
-            ->and(strpos((string) $activate->input, "grant_served_web_roots \"\$release\"\ntemporary="))->toBeInt()
-            ->and(strpos((string) $activate->input, "link_served_environments \"\$release\"\ngrant_served_web_roots"))->toBeInt();
+        expect(array_column(array_column($agents->calls, 'input'), 'served'))->toBe([
+            [],
+            [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']],
+            [['web_root' => 'apps/docs/public', 'directory' => 'apps/docs']],
+        ]);
     });
 
     it('links each served directory to its stable environment and grants Caddy each web root', function (): void {

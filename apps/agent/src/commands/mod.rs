@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod dev_source;
 pub mod instances;
+pub mod production;
 pub mod registration;
 pub mod source;
 
@@ -52,5 +53,12 @@ pub fn all() -> Vec<Entry> {
         entry::<registration::InspectRegistrationSource>(),
         entry::<registration::RelocateRegistrationSource>(),
         entry::<registration::LaravelRegistrationReceipt>(),
+        entry::<production::PrepareRelease>(),
+        entry::<production::ActivateRelease>(),
+        entry::<production::InspectRelease>(),
+        entry::<production::ListReleases>(),
+        entry::<production::PruneReleases>(),
+        entry::<production::InspectRepositoryBinding>(),
+        entry::<production::RebindRepository>(),
     ]
 }

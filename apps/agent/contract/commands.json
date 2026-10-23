@@ -307,6 +307,111 @@
       },
       "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
       "timeout_seconds": 30
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.prepare-release",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Clone a new production release of a branch and link its environment and shared paths.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.activate-release",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": false,
+      "name": "instances.inspect-release",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check and read the selected production release, or a named retained one.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": false,
+      "name": "instances.list-releases",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "List the production releases that pass their checks, and the selected one.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.prune-releases",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Remove production releases beyond the retained count that no process uses.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": false,
+      "name": "instances.inspect-repository-binding",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Read the repository URL that each production marker and release records.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.rebind-repository",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Move the repository URL that production markers and releases record to the Project's new URL.",
+      "timeout_seconds": 300
     }
   ],
   "common_errors": [
