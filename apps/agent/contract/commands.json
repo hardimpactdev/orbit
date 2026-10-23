@@ -1022,6 +1022,19 @@
       ]
     },
     {
+      "name": "doctor.inspect-private-route",
+      "summary": "Compare private Route projections without running application code or repairing state.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
       "name": "caddy.remove-certificate",
       "summary": "Remove a certificate directory that Caddy reads.",
       "mutates": true,

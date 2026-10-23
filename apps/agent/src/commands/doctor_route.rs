@@ -1,0 +1,193 @@
+//! Read-only private Route projection checks. No application code or HTTP request runs.
+use crate::command::{Command, Context, Platform, Privilege};
+use crate::command_errors;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+    process::{Command as Process, Stdio},
+    time::Duration,
+};
+
+command_errors! {
+    pub enum InspectionError {
+        Invalid {} => "doctor.projection_invalid", "The private Route inspection input is invalid.";
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionInput {
+    domain: String,
+    certificates: PathBuf,
+    projection: Projection,
+}
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum Projection {
+    Workload {
+        dns_address: Option<Ipv4Addr>,
+        laravel: Option<Laravel>,
+    },
+    Router {
+        upstreams: Vec<String>,
+    },
+}
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum Laravel {
+    Skip,
+    Check { environment: PathBuf, url: String },
+}
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Observed {
+    caddy: bool,
+    tls: bool,
+    firewall: bool,
+    dns: Option<bool>,
+    laravel: Option<bool>,
+    pool: Option<bool>,
+}
+trait Runtime {
+    fn dns(&mut self, domain: &str) -> Option<Ipv4Addr>;
+    fn firewall(&mut self) -> bool;
+}
+struct Native;
+impl Runtime for Native {
+    fn dns(&mut self, domain: &str) -> Option<Ipv4Addr> {
+        let result = Process::new("/usr/bin/getent")
+            .args(["ahostsv4", domain])
+            .stdin(Stdio::null())
+            .output()
+            .ok()?;
+        if !result.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&result.stdout)
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
+    }
+    fn firewall(&mut self) -> bool {
+        Process::new("/usr/sbin/ufw")
+            .arg("status")
+            .stdin(Stdio::null())
+            .output()
+            .is_ok_and(|result| {
+                result.status.success()
+                    && String::from_utf8_lossy(&result.stdout)
+                        .lines()
+                        .any(|line| line.starts_with("Status: active"))
+            })
+    }
+}
+fn absolute(path: &Path) -> bool {
+    path.is_absolute()
+        && !path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+}
+fn validate(input: &ProjectionInput) -> Result<(), InspectionError> {
+    let domain = &input.domain;
+    let valid = !domain.is_empty()
+        && domain.len() <= 253
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label.as_bytes()[0].is_ascii_alphanumeric()
+                && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
+        && absolute(&input.certificates)
+        && match &input.projection {
+            Projection::Workload {
+                laravel: Some(Laravel::Check { environment, url }),
+                ..
+            } => absolute(environment) && !url.is_empty() && !url.contains(['\n', '\r', '\0']),
+            Projection::Router { upstreams } => {
+                upstreams.len() <= 1024
+                    && upstreams.iter().all(|upstream| {
+                        !upstream.is_empty()
+                            && upstream.len() <= 512
+                            && !upstream.contains(['\n', '\r', '\0'])
+                    })
+            }
+            _ => true,
+        };
+    if valid {
+        Ok(())
+    } else {
+        Err(InspectionError::Invalid {})
+    }
+}
+fn url_matches(environment: &Path, url: &str) -> bool {
+    if !fs::symlink_metadata(environment).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    let Ok(bytes) = fs::read(environment) else {
+        return false;
+    };
+    let entries = super::laravel::entries(&bytes, "APP_URL");
+    entries.len() == 1 && super::laravel::plain(&bytes, &entries, "APP_URL") == url.as_bytes()
+}
+fn inspect(
+    input: &ProjectionInput,
+    live: &Path,
+    runtime: &mut impl Runtime,
+) -> Result<Observed, InspectionError> {
+    validate(input)?;
+    let content = fs::read_to_string(live).unwrap_or_default();
+    let domain = content.contains(&input.domain);
+    let mut result = Observed {
+        caddy: domain,
+        tls: input.certificates.join("cert.pem").is_file()
+            && input.certificates.join("key.pem").is_file(),
+        firewall: runtime.firewall(),
+        dns: None,
+        laravel: None,
+        pool: None,
+    };
+    match &input.projection {
+        Projection::Workload {
+            dns_address,
+            laravel,
+        } => {
+            result.dns = dns_address.map(|expected| runtime.dns(&input.domain) == Some(expected));
+            result.laravel = laravel.as_ref().map(|check| match check {
+                Laravel::Skip => true,
+                Laravel::Check { environment, url } => url_matches(environment, url),
+            });
+        }
+        Projection::Router { upstreams } => {
+            let matches = domain && upstreams.iter().all(|upstream| content.contains(upstream));
+            result.caddy = matches;
+            result.pool = Some(matches);
+        }
+    }
+    Ok(result)
+}
+pub struct InspectPrivateRoute;
+impl Command for InspectPrivateRoute {
+    const NAME: &'static str = "doctor.inspect-private-route";
+    const SUMMARY: &'static str =
+        "Compare private Route projections without running application code or repairing state.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = ProjectionInput;
+    type Output = Observed;
+    type Error = InspectionError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
+        inspect(&input, Path::new("/etc/caddy/Caddyfile"), &mut Native)
+    }
+}
+
+#[cfg(test)]
+#[path = "doctor_route_tests.rs"]
+mod tests;

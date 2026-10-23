@@ -16,6 +16,7 @@ pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
+mod doctor_route;
 pub mod environment;
 pub mod firewall;
 pub mod health;
@@ -146,6 +147,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_publication::Publish>(),
         entry::<caddy_publication::CheckAddresses>(),
         entry::<caddy_publication::ReadLive>(),
+        entry::<doctor_route::InspectPrivateRoute>(),
         entry::<caddy::RemoveCertificate>(),
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),

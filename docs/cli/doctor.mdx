@@ -57,6 +57,8 @@ Doctor selects only Nodes that the caller may address through an access grant. T
 
 ### How the Gateway inspects
 
+Private Route projections use the read-only `doctor.inspect-private-route` agent command. Rust checks the live Caddyfile, certificate files, system DNS answer, firewall state, and Laravel URL. The Gateway supplies the expected Route and returns only match results; environment contents never leave the Node. Router checks use the same command with the expected upstream addresses.
+
 The Gateway observes each Node once over SSH before it runs the family probes. The observation holds reachability, platform, architecture, and whether the WireGuard address is present. For managed Linux Nodes, it also holds the [Node agent](/reference/node-agent#doctor) binary, unit, state, and checksums, plus free space and free inodes on the filesystem holding the Orbit home or root. macOS inspection uses native platform and tunnel checks. A missing Linux agent, systemd unit, exporter, or Linux disk path is not drift and not unverifiable. macOS does check free space on the enrolled account's home volume, as [node.disk_low](#what-each-family-checks) describes.
 
 A failed SSH command makes the Node unreachable, and the `node` family reports `node.ssh_unreachable`. A malformed or truncated observation makes the `node` family report `node.inspection_failed` instead. In both cases the other families treat the Node as unreachable.

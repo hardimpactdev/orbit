@@ -11,43 +11,31 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('observes private Route projections without application HTTP checks', function (string $root, string $relative): void {
     [$instance, $route] = private_route_inspector_standalone();
     $instance->update(['root' => $root]);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
-    ]);
+    $agents = private_route_agents();
 
-    $observation = private_route_inspector($ssh)->inspect($instance, $route);
+    $observation = private_route_inspector($agents)->inspect($instance, $route);
 
     expect($observation)
         ->toEqual(new PrivateRouteProjectionObservation(true, true, true, true, true, true, true))
-        ->and($ssh->commands[0]->arguments)
-        ->toContain($route->domain, $instance->checkout_path.$relative.'/.env')
-        ->and(array_slice($ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu'])
-        ->and($ssh->commands[0]->input)
-        ->toContain('grep -qs -- "$domain" "$live"')
-        ->not->toContain('fragments')
-        ->toContain('getent ahostsv4')
-        ->toContain('APP_URL=')
-        ->not->toContain('curl')
-        ->not->toContain('wget')
-        ->not->toContain('http://')
-        ->not->toContain('https://127.0.0.1')
+        ->and($agents->calls[0]['command'])->toBe('doctor.inspect-private-route')
+        ->and($agents->calls[0]['input']['domain'])->toBe($route->domain)
+        ->and($agents->calls[0]['input']['projection'])->toBe([
+            'kind' => 'workload',
+            'dns_address' => $instance->node->wireguard_ip,
+            'laravel' => ['kind' => 'check', 'environment' => $instance->checkout_path.$relative.'/.env', 'url' => 'https://'.$route->domain],
+        ])
         ->and(json_encode($observation, JSON_THROW_ON_ERROR))
         ->not->toContain($route->domain)
         ->not->toContain((string) $instance->checkout_path);
@@ -55,11 +43,9 @@ it('observes private Route projections without application HTTP checks', functio
 
 it('reports a bounded private projection mismatch from remote observations', function (): void {
     [$instance, $route] = private_route_inspector_standalone();
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=0\ntls=0\ndns=0\nfirewall=1\nlaravel=0\n", '', 1, false),
-    ]);
+    $agents = private_route_agents(['caddy' => false, 'tls' => false, 'dns' => false, 'laravel' => false]);
 
-    $observation = private_route_inspector($ssh)->inspect($instance, $route);
+    $observation = private_route_inspector($agents)->inspect($instance, $route);
 
     expect($observation)->toEqual(new PrivateRouteProjectionObservation(
         true,
@@ -85,16 +71,14 @@ it('leaves the APP_URL of a Route with a web root to the application directory c
     ]);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
-    ]);
+    $agents = private_route_agents();
 
-    $observation = private_route_inspector($ssh)->inspect($instance, $route->fresh());
+    $observation = private_route_inspector($agents)->inspect($instance, $route->fresh());
 
     expect($observation->laravelUrlMatches)
         ->toBeTrue()
-        ->and(array_slice($ssh->commands[0]->arguments, 4, 5))
-        ->toBe([$route->domain, $ssh->commands[0]->arguments[5], '0', '', ''])
+        ->and($agents->calls[0]['input']['projection']['laravel'])
+        ->toBe(['kind' => 'skip'])
         ->and($own->hasWebRoot())
         ->toBeFalse();
 });
@@ -103,28 +87,28 @@ it('fails closed when private Route inspection cannot run', function (): void {
     [$instance, $route] = private_route_inspector_standalone();
 
     expect(fn (): PrivateRouteProjectionObservation => private_route_inspector(
-        new AppDevFakeSshExecutor([new CommandResult(1, '', 'permission denied', 1, false)]),
+        new FakeAgentCommandRunner()->refuse('doctor.inspect-private-route', 'doctor.projection_invalid'),
     )->inspect($instance, $route))->toThrow(DoctorInspectionException::class, '');
 });
 
 it('inspects Router Caddy on a selected Cluster Route', function (): void {
     [$instance, $route, $router] = private_route_inspector_cluster();
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
-        new CommandResult(0, "caddy=0\ntls=1\nfirewall=1\n", '', 1, false),
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-private-route', static fn (array $input): array => [
+        'caddy' => $input['projection']['kind'] === 'workload',
+        'tls' => true, 'firewall' => true, 'dns' => true, 'laravel' => true,
+        'pool' => $input['projection']['kind'] === 'router' ? false : null,
     ]);
 
-    $observation = private_route_inspector($ssh)->inspect($instance, $route);
+    $observation = private_route_inspector($agents)->inspect($instance, $route);
 
     expect($observation->routerCaddyMatches)
         ->toBeFalse()
         ->and($observation->workloadCaddyMatches)
         ->toBeTrue()
-        ->and($ssh->connections[1]->host)
-        ->toBe($router->wireguard_ip)
-        ->and($ssh->commands[1]->arguments)
-        ->toContain($route->domain)
-        ->and(array_slice($ssh->commands[1]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
+        ->and($observation->targetSetMatches)->toBeFalse()
+        ->and($agents->calls[1]['node'])->toBe($router->name)
+        ->and($agents->calls[1]['input']['domain'])->toBe($route->domain)
+        ->and($agents->calls[1]['input']['projection'])->toBe(['kind' => 'router', 'upstreams' => ['10.10.0.20']]);
 });
 
 /** @return array{Instance, Route} */
@@ -202,12 +186,17 @@ function private_route_inspector_cluster(): array
     return [$instance->fresh(['node', 'project']), $route->fresh(['cluster.routerAssignment.node']), $router];
 }
 
-function private_route_inspector(AppDevFakeSshExecutor $ssh): NativePrivateRouteProjectionInspector
+function private_route_inspector(FakeAgentCommandRunner $agents): NativePrivateRouteProjectionInspector
 {
-    return new NativePrivateRouteProjectionInspector(
-        new DevelopmentSshExecutor($ssh, private_route_inspector_keys(), private_route_inspector_hosts()),
-        new CommandDeadline,
-    );
+    return new NativePrivateRouteProjectionInspector($agents, new CommandDeadline);
+}
+
+/** @param array<string, ?bool> $overrides */
+function private_route_agents(array $overrides = []): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()->answer('doctor.inspect-private-route', array_replace([
+        'caddy' => true, 'tls' => true, 'dns' => true, 'firewall' => true, 'laravel' => true, 'pool' => null,
+    ], $overrides));
 }
 
 function private_route_inspector_address(): string
@@ -217,31 +206,29 @@ function private_route_inspector_address(): string
     return '10.44.8.'.($octet++);
 }
 
-function private_route_inspector_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/doctor-key';
-        }
+it('rejects incomplete private Route observations', function (): void {
+    [$instance, $route] = private_route_inspector_standalone();
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-private-route', ['caddy' => true]);
 
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-}
+    expect(fn () => private_route_inspector($agents)->inspect($instance, $route))->toThrow(DoctorInspectionException::class);
+});
 
-function private_route_inspector_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/doctor-known-hosts';
-        }
+it('checks the stable production environment with stored URL intent', function (): void {
+    [$instance, $route] = private_route_inspector_standalone();
+    $instance->node->roles()->delete();
+    $instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $instance->update(['production_home' => '/srv/production/app', 'checkout_path' => '/srv/production/app/releases/initial', 'environment' => 'production']);
+    $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}/base']);
+    $agents = private_route_agents();
 
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-}
+    private_route_inspector($agents)->inspect($instance->fresh(), $route);
+
+    expect($agents->calls[0]['input']['projection']['laravel'])->toBe([
+        'kind' => 'check', 'environment' => '/srv/production/app/.env', 'url' => 'https://'.$route->domain.'/base',
+    ]);
+});
+
+it('keeps private Route inspection behind agent commands', function (): void {
+    $source = file_get_contents(app_path('Infrastructure/Doctor/NativePrivateRouteProjectionInspector.php'));
+    expect($source)->not->toContain('SshExecutor', 'ProcessRunner', 'RemoteCommand', 'bash', '<<<');
+});
