@@ -2207,6 +2207,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Database server",
                 "Deployment",

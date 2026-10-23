@@ -151,6 +151,8 @@ The [Feature delivery merge gate](#full-suites-gate-merges) defines the required
 
 Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
+The WireGuard key and Instance environment concurrency proofs fork the booted test application, then open fresh connections to private, committed SQLite databases. Socket acknowledgements establish readiness and real lock contention before the holder can finish. The environment capacity race starts with 1,023 stored keys and makes two competing one-key writes, so it tests the 1,024-key boundary without doing bulk setup inside the race. Remote projection and environment I/O stay faked; SQLite transactions, file locks, HTTP middleware, and interrupted Activity finalization stay real.
+
 CLI and Docs limit each local test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
 
 The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
