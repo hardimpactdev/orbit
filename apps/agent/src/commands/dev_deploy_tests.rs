@@ -308,6 +308,28 @@ fn lifecycle_input(checkout: &Path, script: &str) -> LifecycleInput {
 
 #[test]
 fn a_lifecycle_step_runs_in_the_checkout_with_its_environment_and_reports_its_exit() {
+    // Run in a separate process so unrelated parallel tests cannot inherit this test's open flock
+    // between their fork and exec. The helper still asserts immediate reuse of the same checkout.
+    let output = Process::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "commands::dev_deploy::tests::lifecycle_repeat_helper",
+            "--nocapture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "runs in its own process from the lifecycle repeat test"]
+fn lifecycle_repeat_helper() {
     let checkout = lifecycle_checkout();
 
     let output = lifecycle_step(&lifecycle_input(

@@ -471,6 +471,28 @@ mod tests {
 
     #[test]
     fn waits_for_a_listener_and_gives_up_after_its_wait() {
+        // Other tests fork while holding their own fixtures. Keep this listener in a separate process
+        // so those children cannot keep its socket open after this test closes it.
+        let output = Process::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "commands::websocket_runtime::tests::listener_wait_helper",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    #[ignore = "runs in its own process from the listener wait test"]
+    fn listener_wait_helper() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(listening(port, Duration::from_secs(1)));
