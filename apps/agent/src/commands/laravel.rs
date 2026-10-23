@@ -178,11 +178,10 @@ fn cached_url(source: &[u8]) -> Option<std::ops::Range<usize>> {
             .first()
             .is_some_and(|first| *first == b'\'' || *first == b'"')
     };
-    let (mut stack, mut pending, mut matches): (
-        Vec<Vec<Vec<u8>>>,
-        Option<Vec<u8>>,
-        Vec<std::ops::Range<usize>>,
-    ) = (Vec::new(), None, Vec::new());
+    // The key path of each open array, the key that waits for its value, and each `app.url` string.
+    let mut stack: Vec<Vec<Vec<u8>>> = Vec::new();
+    let mut pending: Option<Vec<u8>> = None;
+    let mut matches: Vec<std::ops::Range<usize>> = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
         let value = token.as_bytes();
         match value {
