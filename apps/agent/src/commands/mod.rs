@@ -149,6 +149,8 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_publication::ReadLive>(),
         entry::<doctor_route::InspectPrivateRoute>(),
         entry::<doctor_route::InspectApplicationUrls>(),
+        entry::<doctor_route::InspectCustomProxy>(),
+        entry::<doctor_route::ResolveRouteDns>(),
         entry::<caddy::RemoveCertificate>(),
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),

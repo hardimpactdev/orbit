@@ -1048,6 +1048,32 @@
       ]
     },
     {
+      "name": "doctor.inspect-custom-proxy",
+      "summary": "Inspect a custom proxy's live site, certificate files, DNS and loopback reachability.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
+      "name": "doctor.resolve-route-dns",
+      "summary": "Compare the first system IPv4 DNS answer for a Route with its expected address.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
       "name": "caddy.remove-certificate",
       "summary": "Remove a certificate directory that Caddy reads.",
       "mutates": true,

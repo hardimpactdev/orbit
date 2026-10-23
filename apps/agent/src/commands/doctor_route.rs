@@ -89,9 +89,8 @@ fn absolute(path: &Path) -> bool {
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))
 }
-fn validate(input: &ProjectionInput) -> Result<(), InspectionError> {
-    let domain = &input.domain;
-    let valid = !domain.is_empty()
+fn valid_domain(domain: &str) -> bool {
+    !domain.is_empty()
         && domain.len() <= 253
         && domain.split('.').all(|label| {
             !label.is_empty()
@@ -102,6 +101,9 @@ fn validate(input: &ProjectionInput) -> Result<(), InspectionError> {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         })
+}
+fn validate(input: &ProjectionInput) -> Result<(), InspectionError> {
+    let valid = valid_domain(&input.domain)
         && absolute(&input.certificates)
         && match &input.projection {
             Projection::Workload {
@@ -243,6 +245,103 @@ impl Command for InspectApplicationUrls {
     }
     fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
         application_urls(&input)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyInput {
+    domain: String,
+    certificates: PathBuf,
+    upstream: std::net::SocketAddr,
+    dns_address: Option<Ipv4Addr>,
+}
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ProxyObserved {
+    caddy: bool,
+    tls: bool,
+    dns: Option<bool>,
+    upstream: bool,
+}
+fn reachable(address: std::net::SocketAddr) -> bool {
+    std::net::TcpStream::connect_timeout(&address, Duration::from_secs(1)).is_ok()
+}
+fn inspect_proxy(
+    input: &ProxyInput,
+    live: &Path,
+    runtime: &mut impl Runtime,
+) -> Result<ProxyObserved, InspectionError> {
+    if !valid_domain(&input.domain)
+        || !absolute(&input.certificates)
+        || !input.upstream.ip().is_loopback()
+        || input.upstream.port() == 0
+    {
+        return Err(InspectionError::Invalid {});
+    }
+    let content = fs::read_to_string(live).unwrap_or_default();
+    Ok(ProxyObserved {
+        caddy: content.contains(&input.domain) && content.contains(&input.upstream.to_string()),
+        tls: input.certificates.join("cert.pem").is_file()
+            && input.certificates.join("key.pem").is_file(),
+        dns: input
+            .dns_address
+            .map(|expected| runtime.dns(&input.domain) == Some(expected)),
+        upstream: reachable(input.upstream),
+    })
+}
+pub struct InspectCustomProxy;
+impl Command for InspectCustomProxy {
+    const NAME: &'static str = "doctor.inspect-custom-proxy";
+    const SUMMARY: &'static str =
+        "Inspect a custom proxy's live site, certificate files, DNS and loopback reachability.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = ProxyInput;
+    type Output = ProxyObserved;
+    type Error = InspectionError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
+        inspect_proxy(&input, Path::new("/etc/caddy/Caddyfile"), &mut Native)
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DnsInput {
+    domain: String,
+    address: Ipv4Addr,
+}
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DnsObserved {
+    matches: bool,
+}
+fn resolve_dns(
+    input: &DnsInput,
+    runtime: &mut impl Runtime,
+) -> Result<DnsObserved, InspectionError> {
+    if !valid_domain(&input.domain) {
+        return Err(InspectionError::Invalid {});
+    }
+    Ok(DnsObserved {
+        matches: runtime.dns(&input.domain) == Some(input.address),
+    })
+}
+pub struct ResolveRouteDns;
+impl Command for ResolveRouteDns {
+    const NAME: &'static str = "doctor.resolve-route-dns";
+    const SUMMARY: &'static str =
+        "Compare the first system IPv4 DNS answer for a Route with its expected address.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    type Input = DnsInput;
+    type Output = DnsObserved;
+    type Error = InspectionError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
+        resolve_dns(&input, &mut Native)
     }
 }
 

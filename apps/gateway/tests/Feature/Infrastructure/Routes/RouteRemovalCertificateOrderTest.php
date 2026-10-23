@@ -29,6 +29,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -64,6 +65,7 @@ use App\Models\RouteRemovalResidue;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
@@ -450,6 +452,7 @@ function certificate_order_bind_projectors(
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('doctor.resolve-route-dns', ['matches' => true]));
     $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
     app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader(new AgentUfw(new SshCommandAgents($nodes))));
     $sites = new DevelopmentSiteRepository;

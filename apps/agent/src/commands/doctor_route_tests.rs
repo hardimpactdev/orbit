@@ -299,3 +299,101 @@ fn batch_urls_refuse_invalid_directories_and_preserve_empty_checks() {
     };
     assert!(application_urls(&input).unwrap().matches.is_empty());
 }
+
+#[test]
+fn custom_proxy_reads_the_live_file_without_importing_fragments_and_checks_the_actual_listener() {
+    let fixture = Fixture::new();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let input = ProxyInput {
+        domain: "app.test".into(),
+        certificates: fixture.input.certificates.clone(),
+        upstream: listener.local_addr().unwrap(),
+        dns_address: Some("10.44.0.2".parse().unwrap()),
+    };
+    fs::write(
+        fixture.root.join("build"),
+        format!("https://app.test {{ reverse_proxy {} }}", input.upstream),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            inspect_proxy(&input, &fixture.live, &mut Fake::healthy()).unwrap(),
+            ProxyObserved {
+                caddy: true,
+                tls: true,
+                dns: Some(true),
+                upstream: true
+            }
+        );
+    }
+    fs::rename(fixture.root.join("build"), fixture.root.join("fragment")).unwrap();
+    fs::write(fixture.root.join("build"), "import fragment\n").unwrap();
+    drop(listener);
+    let result = inspect_proxy(&input, &fixture.live, &mut Fake::default()).unwrap();
+    assert_eq!(
+        result,
+        ProxyObserved {
+            caddy: false,
+            tls: true,
+            dns: Some(false),
+            upstream: false
+        }
+    );
+}
+
+#[test]
+fn custom_proxy_ipv6_uses_the_configured_address_and_refuses_non_loopback_targets() {
+    let fixture = Fixture::new();
+    let listener = std::net::TcpListener::bind("[::1]:0").unwrap();
+    let mut input = ProxyInput {
+        domain: "app.test".into(),
+        certificates: fixture.input.certificates.clone(),
+        upstream: listener.local_addr().unwrap(),
+        dns_address: None,
+    };
+    assert!(
+        inspect_proxy(&input, &fixture.live, &mut Fake::healthy())
+            .unwrap()
+            .upstream
+    );
+    for address in ["192.0.2.1:80", "127.0.0.1:0"] {
+        input.upstream = address.parse().unwrap();
+        let mut runtime = Fake::healthy();
+        assert_eq!(
+            inspect_proxy(&input, &fixture.live, &mut runtime),
+            Err(InspectionError::Invalid {})
+        );
+        assert_eq!(runtime.calls, 0);
+    }
+}
+
+#[test]
+fn dns_reads_match_mismatch_and_invalid_input_without_exposing_answers() {
+    let mut input = DnsInput {
+        domain: "app.test".into(),
+        address: "10.44.0.2".parse().unwrap(),
+    };
+    for _ in 0..2 {
+        assert_eq!(
+            resolve_dns(&input, &mut Fake::healthy()),
+            Ok(DnsObserved { matches: true })
+        );
+    }
+    assert_eq!(
+        resolve_dns(&input, &mut Fake::default()),
+        Ok(DnsObserved { matches: false })
+    );
+    input.domain = "--help".into();
+    let mut runtime = Fake::healthy();
+    assert_eq!(
+        resolve_dns(&input, &mut runtime),
+        Err(InspectionError::Invalid {})
+    );
+    assert_eq!(runtime.calls, 0);
+    input.domain = "localhost".into();
+    input.address = Ipv4Addr::LOCALHOST;
+    assert_eq!(
+        resolve_dns(&input, &mut Native),
+        Ok(DnsObserved { matches: true })
+    );
+}
