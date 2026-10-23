@@ -782,34 +782,44 @@ describe('MySQL removal against a real server', function () use ($mysqlRemovalCo
         if (getenv('ORBIT_TEST_DOCKER') !== '1') {
             $this->markTestSkipped('Set ORBIT_TEST_DOCKER=1 to run against MySQL in Docker.');
         }
-        $container = $mysqlRemovalContainer;
-        $mysql = static function (string $sql) use ($container): array {
-            $command = new SymfonyProcess(['docker', 'exec', '-i', $container, 'mysql', '--user=root', '--batch', '--skip-column-names']);
-            $output = trim($command->setInput($sql)->mustRun()->getOutput());
+        $port = trim((new SymfonyProcess(['docker', 'port', $mysqlRemovalContainer, '3306']))->mustRun()->getOutput());
+        $dsn = 'mysql:host=127.0.0.1;port='.substr($port, strrpos($port, ':') + 1);
+        $mysql = static function (string $sql) use ($dsn): array {
+            $connection = new PDO($dsn, 'root', options: [PDO::ATTR_STRINGIFY_FETCHES => true]);
+            $statement = $connection->query($sql);
+            $rows = [];
+            do {
+                if ($statement->columnCount() > 0) {
+                    array_push($rows, ...$statement->fetchAll(PDO::FETCH_COLUMN));
+                }
+            } while ($statement->nextRowset());
 
-            return $output === '' ? [] : explode("\n", $output);
+            return $rows;
         };
         try {
-            $port = trim((new SymfonyProcess(['docker', 'port', $container, '3306']))->mustRun()->getOutput());
             $admin = Mockery::mock(DatabaseServerAdmin::class);
             $admin->shouldReceive('execute')->andReturnUsing(static fn (DatabaseServer $server, string $sql): array => $mysql($sql));
             app()->instance(DatabaseServerAdmin::class, $admin);
             $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id])->assertCreated();
             DatabaseConnectionTarget::query()->delete();
             $mysql('CREATE DATABASE app_test_test_1; CREATE DATABASE app_test_test_2; CREATE DATABASE outside; CREATE TABLE outside.source (id int PRIMARY KEY); CREATE VIEW outside.unrelated AS SELECT * FROM outside.source;');
+            expect($mysql("SELECT 'first'; SELECT 'second';"))->toBe(['first', 'second']);
+            expect(fn () => $mysql('SELECT 1; SELECT * FROM outside.missing;'))->toThrow(PDOException::class);
+            $mysql('USE outside; SET @orbit_removal_fixture = 1;');
+            expect($mysql('SELECT DATABASE() IS NULL AND @orbit_removal_fixture IS NULL;'))->toBe(['1']);
             $assertIntact = function () use ($mysql): void {
                 expect($mysql("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('app', 'app_test', 'app_test_test_1', 'app_test_test_2');"))->toBe(['4']);
                 expect($mysql("SELECT COUNT(*) FROM mysql.user WHERE User = 'dlf_feature_x';"))->toBe(['1']);
                 $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
             };
-            $session = new PDO('mysql:host=127.0.0.1;port='.substr($port, strrpos($port, ':') + 1).';dbname=app_test_test_2', 'root');
+            $session = new PDO($dsn.';dbname=app_test_test_2', 'root');
 
             $this->deleteJson('/api/v1/database-connections/app')->assertConflict()
                 ->assertJsonPath('error.code', 'database.in_use')->assertJsonPath('error.details.blockers', ['app_test_test_2']);
             $assertIntact();
             $session = null;
             $mysql('CREATE TABLE app_test_test_2.locked_table (id int);');
-            $session = new PDO('mysql:host=127.0.0.1;port='.substr($port, strrpos($port, ':') + 1), 'root');
+            $session = new PDO($dsn, 'root');
             $session->beginTransaction();
             $session->query('SELECT * FROM app_test_test_2.locked_table')->fetchAll();
 
@@ -843,7 +853,6 @@ describe('MySQL removal against a real server', function () use ($mysqlRemovalCo
             $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
         } finally {
             $session = null;
-
         }
     });
 })->group('privileged');
