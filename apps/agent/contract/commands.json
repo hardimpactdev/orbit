@@ -706,6 +706,45 @@
       ]
     },
     {
+      "name": "firewall.status",
+      "summary": "Read the numbered UFW status and, on request, the stored rule tuples.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.ufw_failed"
+      ]
+    },
+    {
+      "name": "firewall.ufw",
+      "summary": "Run one UFW change.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.ufw_failed"
+      ]
+    },
+    {
+      "name": "routes.verify-certificate",
+      "summary": "Check that a workload serves a trusted certificate for a Route's domain.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "routes.certificate_invalid"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

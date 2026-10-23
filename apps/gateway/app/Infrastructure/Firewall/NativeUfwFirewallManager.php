@@ -10,20 +10,13 @@ use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
 use App\Domain\Firewall\FirewallSource;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\FirewallRule;
 use App\Models\Node;
 
 final readonly class NativeUfwFirewallManager implements FirewallManager
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentUfw $ufw,
         private UfwStatusParser $parser,
         private UfwManagedCommentCounter $commentCounter = new UfwManagedCommentCounter,
     ) {}
@@ -117,10 +110,8 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
     /** @return array{backend: FirewallBackendStatus, output: string} */
     private function status(Node $node): array
     {
-        $result = $this->ssh->execute(
-            $this->connection($node),
-            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-        );
+        $this->requireAddress($node);
+        $result = $this->ufw->status($node);
 
         if (! $result->succeeded()) {
             throw new FirewallOperationException(
@@ -247,8 +238,6 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
     private function applyArguments(FirewallRule $rule): array
     {
         return [
-            'sudo',
-            'ufw',
             ...($rule->action === FirewallAction::Allow ? ['prepend'] : []),
             $rule->action->value,
             'in',
@@ -269,8 +258,6 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
     private function deleteArguments(FirewallRule $rule): array
     {
         return [
-            'sudo',
-            'ufw',
             'delete',
             $rule->action->value,
             'in',
@@ -300,8 +287,6 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
         };
 
         return [
-            'sudo',
-            'ufw',
             'delete',
             $observed['action'],
             'in',
@@ -318,14 +303,15 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
         ];
     }
 
-    /** @param non-empty-list<string> $arguments */
+    /** @param non-empty-list<string> $arguments  The arguments after `ufw`. */
     private function executeMutation(
         Node $node,
         array $arguments,
         string $step,
         string $errorCode,
     ): void {
-        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments));
+        $this->requireAddress($node);
+        $result = $this->ufw->change($node, $arguments);
 
         if ($result->succeeded()) {
             return;
@@ -368,7 +354,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
         return $node;
     }
 
-    private function connection(Node $node): SshConnection
+    private function requireAddress(Node $node): void
     {
         $host = $node->wireguard_ip;
 
@@ -379,14 +365,6 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
                 message: "Node [{$node->name}] has no WireGuard address.",
             );
         }
-
-        return new SshConnection(
-            host: $host,
-            user: $node->user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
     }
 
     private function comment(FirewallRule $rule): string

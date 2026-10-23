@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -12,6 +13,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Tests\Support\SshCommandAgents;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -124,7 +126,7 @@ function live_firewall_ssh(string $stdout = '', bool $throws = false): void
     $nodeId = test()->node->id;
     $stdout = str_replace('NODE', (string) $nodeId, $stdout);
 
-    app()->instance(SshExecutor::class, new class($stdout, $throws) implements SshExecutor
+    app()->instance(SshExecutor::class, $ssh = new class($stdout, $throws) implements SshExecutor
     {
         public function __construct(
             private string $stdout,
@@ -140,4 +142,5 @@ function live_firewall_ssh(string $stdout = '', bool $throws = false): void
             return new CommandResult(0, $this->stdout, '', 1, false);
         }
     });
+    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh));
 }

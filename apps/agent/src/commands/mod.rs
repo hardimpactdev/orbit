@@ -9,6 +9,7 @@ pub mod deploy_step;
 pub mod dev_deploy;
 pub mod dev_source;
 pub mod environment;
+pub mod firewall;
 pub mod instances;
 pub mod laravel;
 pub mod php_runtime;
@@ -18,6 +19,7 @@ pub mod registration;
 pub mod source;
 pub mod sqlite_copy;
 pub mod sqlite_seed;
+pub mod tls_check;
 pub mod transfer_source;
 pub mod vite;
 
@@ -98,6 +100,9 @@ pub fn all() -> Vec<Entry> {
         entry::<vite::SelectVitePort>(),
         entry::<vite::CheckViteListener>(),
         entry::<vite::SetViteTraffic>(),
+        entry::<firewall::FirewallStatus>(),
+        entry::<firewall::ChangeFirewall>(),
+        entry::<tls_check::VerifyCertificate>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

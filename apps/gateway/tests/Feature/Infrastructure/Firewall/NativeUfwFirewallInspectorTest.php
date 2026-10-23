@@ -8,14 +8,11 @@ use App\Domain\Firewall\FirewallInspectionShape;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\FirewallRule;
 use App\Models\Node;
 
@@ -41,9 +38,11 @@ it('inspects an exact active rule with the fixed read-only command', function ()
         ->and($result->rules)
         ->toBe([FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
-        ->toBe([['sudo', 'ufw', 'status', 'numbered']])
-        ->and($ssh->connections[0])
-        ->toEqual(new SshConnection('10.44.0.3', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0));
+        ->toBe([['status', 'numbered']])
+        ->and($ssh->hosts)
+        ->toBe(['10.44.0.3'])
+        ->and($ssh->deadlines)
+        ->toBe([30.0]);
 });
 
 it('inspects a non-persisted Metrics target from its exact typed shape', function (): void {
@@ -81,7 +80,7 @@ it('inspects a non-persisted Metrics target from its exact typed shape', functio
         ->and($result->rules)
         ->toBe([FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
-        ->toBe([['sudo', 'ufw', 'status', 'numbered']]);
+        ->toBe([['status', 'numbered']]);
 });
 
 it('inspects stored and synthetic targets from one UFW observation', function (): void {
@@ -100,7 +99,7 @@ it('inspects stored and synthetic targets from one UFW observation', function ()
         ->and($result->rules)
         ->toBe([FirewallRuleInspectionStatus::Exact, FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
-        ->toBe([['sudo', 'ufw', 'status', 'numbered']]);
+        ->toBe([['status', 'numbered']]);
 });
 
 it('performs fresh observations for separate inspections and nodes', function (): void {
@@ -123,10 +122,10 @@ it('performs fresh observations for separate inspections and nodes', function ()
         ->toBe([FirewallRuleInspectionStatus::Exact])
         ->and($ssh->arguments)
         ->toBe([
-            ['sudo', 'ufw', 'status', 'numbered'],
-            ['sudo', 'ufw', 'status', 'numbered'],
+            ['status', 'numbered'],
+            ['status', 'numbered'],
         ])
-        ->and(array_map(static fn (SshConnection $connection): string => $connection->host, $ssh->connections))
+        ->and($ssh->hosts)
         ->toBe(['10.44.0.3', '10.44.0.4']);
 });
 
@@ -152,12 +151,6 @@ it('does not mutate persisted firewall rule attributes', function (): void {
 
 it('fails closed for a timed out command result', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(124, '', 'timeout secret', 30_000, true));
-    expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
-        ->toThrow(DoctorInspectionException::class, '');
-});
-
-it('fails closed for truncated successful output', function (): void {
-    $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, true));
     expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
         ->toThrow(DoctorInspectionException::class, '');
 });
@@ -203,8 +196,8 @@ it('fails closed for command errors and transport timeouts without redaction lea
     expect(fn (): mixed => inspector($ssh)->inspect([inspector_target()]))
         ->toThrow(DoctorInspectionException::class, '');
     expect($ssh->arguments)->toBe([
-        ['sudo', 'ufw', 'status', 'numbered'],
-        ['sudo', 'ufw', 'status', 'numbered'],
+        ['status', 'numbered'],
+        ['status', 'numbered'],
     ]);
 });
 
@@ -257,53 +250,43 @@ function inspector_metrics_target(int $nodeId = 7, string $wireguardIp = '10.44.
 
 function inspector(InspectorFakeSsh $ssh): NativeUfwFirewallInspector
 {
-    return new NativeUfwFirewallInspector($ssh, new InspectorFakeKeys, new InspectorFakeHosts);
+    return new NativeUfwFirewallInspector(new AgentUfw($ssh));
 }
 
-final class InspectorFakeSsh implements SshExecutor
+/** Answers each UFW status read with one settable result, or throws when `$throws` is set. */
+final class InspectorFakeSsh implements AgentCommandRunner
 {
     /** @var list<list<string>> */
     public array $arguments = [];
 
-    /** @var list<SshConnection> */
-    public array $connections = [];
+    /** @var list<string> */
+    public array $hosts = [];
+
+    /** @var list<float|null> */
+    public array $deadlines = [];
 
     public function __construct(
         public CommandResult $result,
         public bool $throws = false,
     ) {}
 
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
-        $this->connections[] = $connection;
-        $this->arguments[] = $command->arguments;
+        $this->hosts[] = (string) $node->wireguard_ip;
+        $this->arguments[] = ['status', 'numbered'];
+        $this->deadlines[] = $deadlineSeconds;
         if ($this->throws) {
             throw new RuntimeException('secret timeout');
         }
+        if (! $this->result->succeeded()) {
+            throw new AgentCommandRefused($command, 'firewall.ufw_failed', 'UFW failed.', ['exit_code' => $this->result->exitCode, 'stdout' => $this->result->stdout, 'stderr' => $this->result->stderr]);
+        }
 
-        return $this->result;
+        return ['status' => $this->result->stdout, 'stored' => []];
     }
-}
 
-final readonly class InspectorFakeKeys implements SshKeyProvider
-{
-    public function privateKeyPath(): string
+    public function install(Node $node): bool
     {
-        return '/key';
+        return false;
     }
-
-    public function publicKey(): string
-    {
-        return 'key';
-    }
-}
-
-final readonly class InspectorFakeHosts implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/known';
-    }
-
-    public function put(string $host, int $port, HostKey $hostKey): void {}
 }

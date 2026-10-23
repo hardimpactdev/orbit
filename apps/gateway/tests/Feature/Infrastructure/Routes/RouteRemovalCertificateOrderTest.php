@@ -38,6 +38,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
@@ -64,6 +65,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
 /*
@@ -449,7 +451,7 @@ function certificate_order_bind_projectors(
         public function put(string $host, int $port, HostKey $key): void {}
     };
     $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
-    app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($nodes, $keys, $knownHosts));
+    app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader(new AgentUfw(new SshCommandAgents($nodes))));
     $sites = new DevelopmentSiteRepository;
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
     $certificates = new RemoteAppDevCertificateManager(
@@ -476,7 +478,7 @@ function certificate_order_bind_projectors(
     );
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
-    $firewall = new RemoteAppDevRouteFirewallManager($executor);
+    $firewall = new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($nodes)));
     app()->instance(DevelopmentSshExecutor::class, $executor);
     app()->instance(DnsmasqPrivateDnsManager::class, $dns);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
@@ -530,6 +532,7 @@ function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $no
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->publishSites();
     $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}");
+    $nodes->lanRules[(string) $node->wireguard_ip] = ["orbit:route-{$route->id}-lan"];
     certificate_order_caddy()->converge($node);
 
     return [$route, $instance];
@@ -581,6 +584,9 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var list<string> */
     public array $firewallRemovals = [];
 
+    /** @var array<string, list<string>> The comments of each host's Route LAN rules. */
+    public array $lanRules = [];
+
     /**
      * Hosts whose SSH does not connect.
      *
@@ -618,7 +624,24 @@ final class CertificateOrderNodes implements SshExecutor
         if ($command->arguments === ['sudo', 'ufw', 'status', 'numbered']) {
             $this->firewallReads[] = $host;
 
-            return new CommandResult(0, $this->firewallStatuses[$host] ?? "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n", '', 1, false);
+            $lan = '';
+            foreach (array_values($this->lanRules[$host] ?? []) as $index => $comment) {
+                $number = $index + 2;
+                $lan .= "[ {$number}] {$host} 443/tcp ALLOW IN 10.0.0.1 # {$comment}\n";
+            }
+
+            return new CommandResult(0, $this->firewallStatuses[$host] ?? "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n{$lan}", '', 1, false);
+        }
+
+        if (array_slice($command->arguments, 0, 4) === ['sudo', 'ufw', '--force', 'delete']) {
+            $rules = array_values($this->lanRules[$host] ?? []);
+            $comment = $rules[(int) $command->arguments[4] - 2] ?? null;
+            if (is_string($comment)) {
+                $this->firewallRemovals[] = "{$host}:{$comment}";
+                $this->lanRules[$host] = array_values(array_diff($rules, [$comment]));
+            }
+
+            return new CommandResult(0, '', '', 1, false);
         }
 
         if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
@@ -647,10 +670,6 @@ final class CertificateOrderNodes implements SshExecutor
             }
 
             unset($this->certificates[$host][$scope]);
-        }
-
-        if (str_contains($input, 'sudo ufw --force delete')) {
-            $this->firewallRemovals[] = "{$host}:{$command->arguments[3]}";
         }
 
         return new CommandResult(0, '', '', 1, false);

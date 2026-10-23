@@ -33,7 +33,7 @@ The Gateway serves three read-only lists. The CLI has no command for them. The w
 | --- | --- |
 | `GET /api/v1/firewall-rules` | The operator rules of every Node the caller may address. |
 | `GET /api/v1/nodes/{node}/managed-firewall-rules` | The `orbit:` rules that Orbit intends on one Node: WireGuard member trust, public SSH recovery while the Node has no active role, then each active role's rules and the Metrics rules, with the role named. It uses no SSH. |
-| `GET /api/v1/nodes/{node}/live-firewall-rules` | Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the managed rules and the operator rules. |
+| `GET /api/v1/nodes/{node}/live-firewall-rules` | Reads `ufw status numbered` through the Node agent's `firewall.status` and classifies each IPv4 rule against the managed rules and the operator rules. |
 
 Role convergence replaces a prior single-port shape only when the catalog record declares its port mutable. The Analytics local PostgreSQL and ClickHouse records declare this because their ports come from the selected storage Processes. The exact `orbit:` comment identifies the managed rule: it deletes the old numbered rules, applies the desired rule, and verifies the exact result. A replaceable old rule must keep the catalog record’s action, direction, source, destination, protocol, interfaces, and address families, with one valid single port per family. Fixed-port drift, unreadable rules, duplicate families, port ranges, and operator comments are refused. The comment and the catalog’s declared mutable field form the ownership contract; Orbit does not keep applied-shape history. Doctor still reports the old port as drift until convergence replaces it.
 

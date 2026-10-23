@@ -23,6 +23,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -37,6 +38,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
 beforeEach(function (): void {
@@ -301,7 +303,7 @@ describe('analytics tracking Route removal', function (): void {
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
             new RemoteAppDevCertificateManager($executor, $signer, $accounts),
             new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
-            new RemoteAppDevRouteFirewallManager($executor),
+            new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
         );
 
         $projector->cleanupCertificates($this->route);

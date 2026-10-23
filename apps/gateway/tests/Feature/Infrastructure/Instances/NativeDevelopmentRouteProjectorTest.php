@@ -44,6 +44,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -71,6 +72,7 @@ use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
@@ -279,12 +281,9 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
             ['10.44.0.10', 'route-999'],
             ['10.44.0.20', 'route-999-router'],
         ]);
-        $firewall = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_starts_with($command->arguments[3] ?? '', 'orbit:route-'));
-        expect($firewall->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
-            ['10.44.0.10', "orbit:route-{$route->id}-lan"],
-            ['10.44.0.10', "orbit:route-{$docs->id}-lan"],
-            ['10.44.0.10', 'orbit:route-999-lan'],
-        ]);
+        // Each recorded Route's LAN rules are looked up and the lookup confirmed on the workload.
+        $firewall = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'ufw', 'status', 'numbered']);
+        expect($firewall->map(fn (RemoteCommand $command, int $index): string => $ssh->hosts[$index])->values()->all())->toBe(array_fill(0, 6, '10.44.0.10'));
         expect(new DevelopmentSiteRepository()->forNode($destinationRouter)->map->certificateDirectory()->all())
             ->toBe([
                 "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
@@ -1768,7 +1767,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         $certificates,
         $caddy,
         $dns,
-        $executor,
+        new SshCommandAgents($ssh, $agents),
         $sourceAccess,
     );
     app()->instance(DevelopmentSourceAccess::class, $sourceAccess);
@@ -1777,7 +1776,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         new NativeClusterRouterReplacementProjector(
             $certificates,
             $caddy,
-            new RemoteAppDevRouteFirewallManager($executor),
+            new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
             $dns,
             $executor,
         ),

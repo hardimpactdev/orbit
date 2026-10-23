@@ -31,6 +31,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -53,6 +54,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
 afterEach(function (): void {
@@ -84,14 +86,9 @@ it('serves the exact transient development 503 without an upstream then deletes 
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
         ->toBeNull()
+        // The Route's LAN rules are looked up on the workload, where none remain.
         ->and(collect($ssh->commands)
-            ->contains(
-                static fn (RemoteCommand $command): bool => in_array(
-                    "orbit:route-{$route->id}-lan",
-                    $command->arguments,
-                    true,
-                ),
-            ))
+            ->contains(static fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'ufw', 'status', 'numbered']))
         ->toBeTrue()
         ->and(
             collect(orb181_caddy_configurations($ssh->commands))
@@ -635,7 +632,7 @@ function orb181_removal_projector(
                 new RemotePhpPackageManager,
             ),
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevRouteFirewallManager($executor),
+            new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
             $productionPhp,
             $publicEdge,
         ),

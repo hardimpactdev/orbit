@@ -305,6 +305,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Role",
                 "Route",

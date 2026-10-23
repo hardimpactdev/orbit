@@ -6,20 +6,13 @@ namespace App\Infrastructure\Firewall;
 
 use App\Domain\Firewall\LiveFirewallBackendStatus;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Throwable;
 
 final readonly class NativeLiveUfwReader
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentUfw $ufw,
         private CommandDeadline $deadline = new CommandDeadline,
     ) {}
 
@@ -35,17 +28,7 @@ final readonly class NativeLiveUfwReader
         }
 
         try {
-            $result = $this->ssh->execute(
-                new SshConnection(
-                    $host,
-                    $node->user,
-                    22,
-                    $this->keys->privateKeyPath(),
-                    $this->knownHosts->path(),
-                    commandTimeout: $this->deadline->cap(30.0),
-                ),
-                new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            );
+            $result = $this->ufw->status($node, deadlineSeconds: $this->deadline->cap(30.0));
         } catch (Throwable) {
             return ['backend' => LiveFirewallBackendStatus::Unreachable, 'stdout' => ''];
         }

@@ -91,6 +91,7 @@ use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\SshCommandAgents;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -2508,7 +2509,8 @@ it('rejects repository execution and unsupported transport keys', function (): v
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
-    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+    app()->instance(SshExecutor::class, $ssh = new AppDevFakeSshExecutor);
+    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, app(AgentCommandRunner::class)));
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
     app()->instance(ProcessRunner::class, $processes);
