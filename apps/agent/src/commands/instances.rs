@@ -44,10 +44,6 @@ const ORIGIN: fn() -> SourceError = || SourceError::OriginMismatch {};
 const BRANCH: fn() -> SourceError = || SourceError::BranchMismatch {};
 const REFUSED: fn() -> SourceError = || SourceError::Refused {};
 
-fn account_only(platform: Platform) -> Option<Privilege> {
-    (platform == Platform::Linux).then_some(Privilege::Account)
-}
-
 fn short_branch(directory: &Path) -> Vec<u8> {
     git_output(
         directory,
@@ -113,7 +109,7 @@ impl Command for InspectSource {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn run(input: InspectSourceInput, _: &Context) -> Result<InspectSourceOutput, SourceError> {
@@ -355,7 +351,7 @@ impl Command for RemoveSource {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &RemoveSourceInput) -> Option<String> {
@@ -532,7 +528,7 @@ impl Command for PrepareRemoval {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &PrepareRemovalInput) -> Option<String> {
@@ -686,7 +682,7 @@ impl Command for FinalizeRemoval {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &FinalizeRemovalInput) -> Option<String> {
@@ -1298,7 +1294,7 @@ impl Command for ReadReceipt {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn run(input: ReceiptInput, _: &Context) -> Result<StateOutput, SourceError> {
@@ -1419,7 +1415,7 @@ impl Command for CleanReceipt {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &ReceiptInput) -> Option<String> {
@@ -1591,7 +1587,7 @@ impl Command for ReadRemovalState {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &ReadRemovalStateInput) -> Option<String> {
@@ -1745,7 +1741,7 @@ impl Command for CheckPublication {
     type Error = SourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn run(input: CheckPublicationInput, _: &Context) -> Result<PublicationOutput, SourceError> {

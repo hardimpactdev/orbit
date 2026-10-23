@@ -3,6 +3,7 @@
 //! marker first. It runs as root, and Git and every file it writes in the home run as the production user, so the
 //! release stays the user's alone. These replace the Bash that `RemoteProductionDeployment` sent, check for check.
 
+use super::source::{is_real_directory, is_symlink, realpath};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
@@ -45,10 +46,6 @@ fn failed(step: &str) -> ReleaseError {
     ReleaseError::StepFailed { step: step.into() }
 }
 
-fn owner_only(platform: Platform) -> Option<Privilege> {
-    (platform == Platform::Linux).then_some(Privilege::Owner)
-}
-
 pub fn valid_name(name: &str) -> bool {
     let bytes = name.as_bytes();
     !bytes.is_empty()
@@ -57,18 +54,6 @@ pub fn valid_name(name: &str) -> bool {
         && bytes
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(byte))
-}
-
-fn is_link(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
-}
-
-fn is_real_directory(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
-}
-
-fn realpath(path: &Path) -> Option<PathBuf> {
-    fs::canonicalize(path).ok()
 }
 
 /// A Route web root that the Instance serves besides its own root, and the application directory under it.
@@ -256,7 +241,7 @@ impl ReleaseHome {
         if fs::symlink_metadata(&current).is_err() {
             return Ok(None);
         }
-        check(is_link(&current), "current is a link")?;
+        check(is_symlink(&current), "current is a link")?;
         let target = realpath(&current).ok_or_else(|| invalid("current names a release"))?;
         let name = target
             .strip_prefix(self.releases())
@@ -288,7 +273,7 @@ impl ReleaseHome {
             "the release has its Git directory",
         )?;
         check(
-            !is_link(&release) && realpath(&release).as_deref() == Some(release.as_path()),
+            !is_symlink(&release) && realpath(&release).as_deref() == Some(release.as_path()),
             "the release is canonical",
         )?;
         let origin = git(
@@ -303,7 +288,7 @@ impl ReleaseHome {
         )?;
         let environment = self.application(&release).join(".env");
         check(
-            is_link(&environment)
+            is_symlink(&environment)
                 && realpath(&environment).as_deref() == Some(self.environment().as_path()),
             "the release links the stable environment",
         )?;
@@ -409,7 +394,7 @@ impl ReleaseHome {
     }
 
     fn grant_public_storage(&self, release: &Path, web_root: &Path) -> Result<(), ReleaseError> {
-        if !is_link(&web_root.join("storage")) {
+        if !is_symlink(&web_root.join("storage")) {
             return Ok(());
         }
         self.check_web_root_links(release, web_root)?;
@@ -459,7 +444,7 @@ impl ReleaseHome {
             )?;
             let target = format!("{}{stable}", "../".repeat(depth));
             let environment = application.join(".env");
-            if is_link(&environment) {
+            if is_symlink(&environment) {
                 check(
                     fs::read_link(&environment).is_ok_and(|actual| actual == Path::new(&target)),
                     "a served environment links the stable file",
@@ -816,7 +801,7 @@ fn link_shared_paths(
     }
     let application = home.application(release);
     let storage = application.join("storage");
-    if is_link(&storage) && application.join("public").is_dir() {
+    if is_symlink(&storage) && application.join("public").is_dir() {
         let relative = application.strip_prefix(release).unwrap_or(Path::new(""));
         let target = home.home.join(relative).join("storage/app/public");
         check(
@@ -853,7 +838,7 @@ fn no_link_on_the_way(base: &Path, path: &Path) -> bool {
     let mut current = base.to_path_buf();
     relative.components().all(|component| {
         current.push(component);
-        !is_link(&current)
+        !is_symlink(&current)
     })
 }
 
@@ -868,7 +853,7 @@ impl Command for PrepareRelease {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn target(input: &PrepareInput) -> Option<String> {
@@ -957,7 +942,7 @@ impl Command for ActivateRelease {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn target(input: &ActivateInput) -> Option<String> {
@@ -1017,7 +1002,7 @@ impl Command for InspectRelease {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn run(input: InspectInput, _: &Context) -> Result<InspectOutput, ReleaseError> {
@@ -1078,7 +1063,7 @@ impl Command for ListReleases {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn run(input: ListInput, _: &Context) -> Result<ListOutput, ReleaseError> {
@@ -1279,7 +1264,7 @@ impl Command for PruneReleases {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn target(input: &PruneInput) -> Option<String> {
@@ -1374,7 +1359,7 @@ pub fn inspect_binding(
         names.sort();
         for name in names {
             let release = releases_directory.join(&name);
-            if is_link(&release) || !is_real_directory(&release.join(".git")) {
+            if is_symlink(&release) || !is_real_directory(&release.join(".git")) {
                 continue;
             }
             let origin = git(
@@ -1402,7 +1387,7 @@ impl Command for InspectRepositoryBinding {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn run(input: BindingHome, _: &Context) -> Result<BindingOutput, ReleaseError> {
@@ -1506,7 +1491,7 @@ fn rebind_release(binding: &BindingHome, change: &BindingChange) -> Result<(), R
         .ok_or_else(|| invalid("the release name is valid"))?;
     let release = binding.home.join("releases").join(name);
     check(
-        !is_link(&release) && is_real_directory(&release.join(".git")),
+        !is_symlink(&release) && is_real_directory(&release.join(".git")),
         "the release has its Git directory",
     )?;
     check(
@@ -1564,7 +1549,7 @@ impl Command for RebindRepository {
     type Error = ReleaseError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        owner_only(platform)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn target(input: &RebindInput) -> Option<String> {

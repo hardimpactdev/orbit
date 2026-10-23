@@ -377,7 +377,7 @@ fn an_unsafe_shared_path_is_refused_before_the_release_loses_it() {
             "{variant}"
         );
         assert_eq!(
-            is_link(&release.join(path)),
+            is_symlink(&release.join(path)),
             variant == "source link",
             "{variant}"
         );

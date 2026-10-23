@@ -36,6 +36,14 @@ fn invalid(check: &str) -> impl FnOnce() -> DevSourceError + '_ {
     }
 }
 
+fn check(condition: bool, what: &str) -> Result<(), DevSourceError> {
+    if condition {
+        Ok(())
+    } else {
+        Err(invalid(what)())
+    }
+}
+
 fn git_failed(step: &str) -> DevSourceError {
     DevSourceError::GitFailed { step: step.into() }
 }
@@ -67,18 +75,16 @@ impl Source {
     /// Every existing component of the checkout's parent is a real directory under the apps root.
     fn guard_parent_chain(&self) -> Result<(), DevSourceError> {
         let parent = dirname(&self.checkout);
-        require(
+        check(
             parent == self.root || starts_inside(&parent, &self.root),
-            invalid("the checkout is inside the apps root"),
             "the checkout is inside the apps root",
         )?;
         let mut current = PathBuf::from("/");
         for segment in parent.components().skip(1) {
             current.push(segment);
             if exists(&current) {
-                require(
+                check(
                     is_real_directory(&current) && canonical(&current),
-                    invalid("each parent is a real directory"),
                     "each parent is a real directory",
                 )?;
             }
@@ -91,26 +97,16 @@ impl Source {
     fn inspect(&self, verify_origin: bool) -> Result<PathBuf, DevSourceError> {
         let checkout = &self.checkout;
         let account = self.account();
-        require(
+        check(
             is_real_directory(checkout) && canonical(checkout),
-            invalid("the checkout is a real directory"),
             "the checkout is a real directory",
         )?;
-        require(
-            owner(checkout) == account,
-            invalid("the account owns the checkout"),
-            "the account owns the checkout",
-        )?;
+        check(owner(checkout) == account, "the account owns the checkout")?;
         let dot_git = checkout.join(".git");
-        require(
-            !is_symlink(&dot_git),
-            invalid("the Git link is not a symlink"),
-            "the Git link is not a symlink",
-        )?;
+        check(!is_symlink(&dot_git), "the Git link is not a symlink")?;
         let top = git_output(checkout, &["rev-parse", "--show-toplevel"], true);
-        require(
+        check(
             top.as_deref() == Some(bytes(checkout)),
-            invalid("Git sees the checkout"),
             "Git sees the checkout",
         )?;
         let git_directory = path_from(
@@ -126,64 +122,49 @@ impl Source {
             .ok_or_else(invalid("the common Git directory"))?,
         );
         for directory in [&git_directory, &common] {
-            require(
-                is_real_directory(directory),
-                invalid("the Git directories are real"),
-                "the Git directories are real",
-            )?;
-            require(
+            check(is_real_directory(directory), "the Git directories are real")?;
+            check(
                 owner(directory) == account,
-                invalid("the account owns the Git directories"),
                 "the account owns the Git directories",
             )?;
         }
         let expected_common = self.seed_repository.as_ref().map(|seed| seed.join(".git"));
         if let Some(expected) = &expected_common {
-            require(
-                &common == expected,
-                invalid("the worktree belongs to its seed"),
-                "the worktree belongs to its seed",
-            )?;
+            check(&common == expected, "the worktree belongs to its seed")?;
         }
         if dot_git.is_file() {
-            require(
+            check(
                 expected_common.is_some()
                     && starts_inside(&git_directory, &common.join("worktrees")),
-                invalid("a linked worktree has a seed"),
                 "a linked worktree has a seed",
             )?;
-            require(
+            check(
                 holds(&git_directory.join("gitdir"), bytes(&dot_git)),
-                invalid("the worktree points back at the checkout"),
                 "the worktree points back at the checkout",
             )?;
         } else {
-            require(
+            check(
                 git_directory == dot_git && common == dot_git,
-                invalid("the checkout owns its Git directory"),
                 "the checkout owns its Git directory",
             )?;
         }
         if verify_origin {
-            require(
+            check(
                 origin_url(checkout).as_deref() == Some(self.repository.as_str()),
-                invalid("the origin is the Project repository"),
                 "the origin is the Project repository",
             )?;
         }
         if let Some(prepare_id) = &self.prepare_id {
             let receipt = git_directory.join(PREPARE_RECEIPT);
-            require(
+            check(
                 is_regular_file(&receipt) && owner(&receipt) == account,
-                invalid("the prepare receipt"),
                 "the prepare receipt",
             )?;
-            require(
+            check(
                 holds(
                     &receipt,
                     format!("{prepare_id}:{}", identity(checkout)).as_bytes(),
                 ),
-                invalid("the prepare receipt names this attempt"),
                 "the prepare receipt names this attempt",
             )?;
         }
@@ -191,18 +172,10 @@ impl Source {
     }
 }
 
-fn account_only(platform: Platform) -> Option<Privilege> {
-    (platform == Platform::Linux).then_some(Privilege::Account)
-}
-
 /// An existing directory must be a real one; a missing one is created with mode 0755, parents included.
 fn create_directory(path: &Path) -> Result<(), DevSourceError> {
     if exists(path) {
-        return require(
-            is_real_directory(path),
-            invalid("the directory is real"),
-            "the directory is real",
-        );
+        return check(is_real_directory(path), "the directory is real");
     }
     std::os::unix::fs::DirBuilderExt::mode(fs::DirBuilder::new().recursive(true), 0o755)
         .create(path)
@@ -258,7 +231,7 @@ impl Command for PrepareDevelopmentSource {
     type Error = DevSourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &PrepareInput) -> Option<String> {
@@ -272,11 +245,7 @@ impl Command for PrepareDevelopmentSource {
         create_directory(&source.root)?;
         create_directory(&dirname(checkout))?;
         if exists(checkout) {
-            require(
-                input.allow_existing,
-                invalid("an existing checkout is allowed"),
-                "an existing checkout is allowed",
-            )?;
+            check(input.allow_existing, "an existing checkout is allowed")?;
             source.inspect(true)?;
             return Ok(PrepareOutput { created: false });
         }
@@ -286,14 +255,9 @@ impl Command for PrepareDevelopmentSource {
         let none = BTreeMap::new();
         match (&source.seed_repository, &input.seed_commit) {
             (Some(seed), Some(commit)) => {
-                require(
-                    !is_symlink(seed),
-                    invalid("the seed is not a symlink"),
-                    "the seed is not a symlink",
-                )?;
-                require(
+                check(!is_symlink(seed), "the seed is not a symlink")?;
+                check(
                     origin_url(seed).as_deref() == Some(source.repository.as_str()),
-                    invalid("the seed's origin is the Project repository"),
                     "the seed's origin is the Project repository",
                 )?;
                 run_git(
@@ -405,7 +369,7 @@ impl Command for InspectDevelopmentSource {
     type Error = DevSourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn run(input: InspectInput, _: &Context) -> Result<InspectOutput, DevSourceError> {
@@ -508,7 +472,7 @@ impl Command for ResolveDevelopmentSource {
     type Error = DevSourceError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &ResolveInput) -> Option<String> {

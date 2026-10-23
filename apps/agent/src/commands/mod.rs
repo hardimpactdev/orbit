@@ -8,6 +8,12 @@ pub mod registration;
 pub mod source;
 
 use crate::command::registry::{entry, Entry};
+use crate::command::{Platform, Privilege};
+
+/// A privilege on Linux, and no support elsewhere: the rule of every Node-only command.
+pub fn linux_only(platform: Platform, privilege: Privilege) -> Option<Privilege> {
+    (platform == Platform::Linux).then_some(privilege)
+}
 
 /// Declares a command's error enum: each variant has its code, its message, and the fields that become
 /// its `details`.

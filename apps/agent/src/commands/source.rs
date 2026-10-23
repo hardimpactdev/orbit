@@ -159,6 +159,11 @@ pub fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
 
+/// The path with every link resolved, as `realpath -e` prints it, or `None` when it does not exist.
+pub fn realpath(path: &Path) -> Option<PathBuf> {
+    fs::canonicalize(path).ok()
+}
+
 /// Whether `realpath -e` of the path is the path itself.
 pub fn canonical(path: &Path) -> bool {
     fs::canonicalize(path).is_ok_and(|resolved| resolved == path)

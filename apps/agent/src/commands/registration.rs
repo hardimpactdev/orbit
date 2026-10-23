@@ -3,7 +3,7 @@
 //! directory and resumes from any interruption; the Laravel receipt keeps the URL files that registration rewrites.
 //! These replace the Python that `RemoteRegistrationSourceManager` sent, step for step.
 
-use super::source::{group_name, user_name};
+use super::source::{canonical, group_name, is_symlink, realpath, user_name};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
@@ -38,28 +38,10 @@ fn check(condition: bool, what: &str) -> Result<(), RegistrationError> {
     }
 }
 
-fn account_only(platform: Platform) -> Option<Privilege> {
-    (platform == Platform::Linux).then_some(Privilege::Account)
-}
-
-/// Git without hooks, fsmonitor, or optional locks, in `path`. Its full standard output, success or not.
+/// Git in `path`, without hooks, fsmonitor, or optional locks: whether it succeeded, and its full standard output.
 fn git_raw(path: &Path, arguments: &[&str]) -> (bool, Vec<u8>) {
-    Process::new("git")
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-            "-C",
-        ])
-        .arg(path)
-        .args(arguments)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .map(|output| (output.status.success(), output.stdout))
-        .unwrap_or((false, Vec::new()))
+    let output = super::source::git_in(path, arguments, true);
+    (output.status.success(), output.stdout)
 }
 
 /// Git's trimmed output, or a failure that names the step.
@@ -70,18 +52,6 @@ fn git(path: &Path, arguments: &[&str]) -> Result<String, RegistrationError> {
             step: arguments.join(" "),
         }),
     }
-}
-
-fn realpath(path: &Path) -> Option<PathBuf> {
-    fs::canonicalize(path).ok()
-}
-
-fn is_canonical(path: &Path) -> bool {
-    realpath(path).as_deref() == Some(path)
-}
-
-fn is_link(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
 
 /// A digest of everything a registration must keep: `HEAD`, its branch, the content status, the local Git
@@ -207,7 +177,7 @@ fn safe_metadata(
     user: &str,
     group: &str,
 ) -> Result<(), RegistrationError> {
-    check(!is_link(path), "the entry is not a link")?;
+    check(!is_symlink(path), "the entry is not a link")?;
     let metadata = fs::metadata(path).map_err(|_| invalid("the entry exists"))?;
     check(
         if directory {
@@ -254,7 +224,7 @@ pub fn inspect(input: &InspectInput) -> Result<Vec<SourceRow>, RegistrationError
     let (user, group) = (input.user.as_str(), input.group.as_str());
     let top = PathBuf::from(git(&input.path, &["rev-parse", "--show-toplevel"])?);
     check(
-        top.is_absolute() && is_canonical(&top) && top.is_dir(),
+        top.is_absolute() && canonical(&top) && top.is_dir(),
         "the checkout's top is canonical",
     )?;
     let origin = git(&top, &["config", "--get", "remote.origin.url"])?;
@@ -287,19 +257,19 @@ pub fn inspect(input: &InspectInput) -> Result<Vec<SourceRow>, RegistrationError
     for path in paths {
         let directory = PathBuf::from(&path);
         check(
-            git(&directory, &["rev-parse", "--show-toplevel"])? == path && is_canonical(&directory),
+            git(&directory, &["rev-parse", "--show-toplevel"])? == path && canonical(&directory),
             "each worktree is canonical",
         )?;
         safe_metadata(&directory, true, user, group)?;
         let dot_git = directory.join(".git");
-        let layout = if dot_git.is_dir() && !is_link(&dot_git) {
+        let layout = if dot_git.is_dir() && !is_symlink(&dot_git) {
             "checkout"
         } else {
             "worktree"
         };
         if layout == "worktree" {
             check(
-                dot_git.is_file() && !is_link(&dot_git),
+                dot_git.is_file() && !is_symlink(&dot_git),
                 "a worktree has a Git link file",
             )?;
         }
@@ -340,7 +310,7 @@ impl Command for InspectRegistrationSource {
     type Error = RegistrationError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn run(input: InspectInput, _: &Context) -> Result<InspectOutput, RegistrationError> {
@@ -413,7 +383,7 @@ pub struct RelocateOutput {
 /// The path holds the member's recorded source: the same commit, branch, and digest.
 pub fn verify(path: &Path, member: &Member) -> Result<(), RegistrationError> {
     check(
-        path.is_dir() && is_canonical(path),
+        path.is_dir() && canonical(path),
         "the source is a canonical directory",
     )?;
     check(
@@ -432,7 +402,7 @@ pub fn verify(path: &Path, member: &Member) -> Result<(), RegistrationError> {
 }
 
 fn remove_stage(path: &Path) -> std::io::Result<()> {
-    if is_link(path) || path.is_file() {
+    if is_symlink(path) || path.is_file() {
         fs::remove_file(path)
     } else {
         fs::remove_dir_all(path)
@@ -441,7 +411,7 @@ fn remove_stage(path: &Path) -> std::io::Result<()> {
 
 fn source_identity(path: &Path) -> Result<(u64, u64), RegistrationError> {
     check(
-        path.is_dir() && !is_link(path) && is_canonical(path),
+        path.is_dir() && !is_symlink(path) && canonical(path),
         "the original is a canonical directory",
     )?;
     let metadata = fs::symlink_metadata(path).map_err(|_| invalid("the original exists"))?;
@@ -631,7 +601,7 @@ fn remove_original(member: &Member) -> Result<(), RegistrationError> {
 fn close_environment(members: &[Member]) -> Result<(), RegistrationError> {
     for member in members {
         check(
-            is_canonical(&member.application),
+            canonical(&member.application),
             "the application directory is canonical",
         )?;
         let environment = member.application.join(".env");
@@ -713,7 +683,7 @@ impl Command for RelocateRegistrationSource {
     type Error = RegistrationError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &RelocateInput) -> Option<String> {
@@ -775,7 +745,7 @@ struct Receipt {
 impl Receipt {
     fn new(input: &ReceiptInput) -> Result<Self, RegistrationError> {
         check(
-            is_canonical(&input.application),
+            canonical(&input.application),
             "the application directory is canonical",
         )?;
         let parent = input
@@ -799,12 +769,12 @@ impl Receipt {
 
     fn validate(&self) -> Result<Manifest, RegistrationError> {
         check(
-            self.directory.is_dir() && !is_link(&self.directory),
+            self.directory.is_dir() && !is_symlink(&self.directory),
             "the receipt is a directory",
         )?;
         let manifest = self.directory.join("manifest");
         check(
-            manifest.is_file() && !is_link(&manifest),
+            manifest.is_file() && !is_symlink(&manifest),
             "the receipt has its manifest",
         )?;
         let manifest: Manifest = fs::read(&manifest)
@@ -819,7 +789,7 @@ impl Receipt {
         for (index, kept) in manifest.files.iter().enumerate() {
             let backup = self.directory.join(index.to_string());
             check(
-                *kept == (backup.is_file() && !is_link(&backup)),
+                *kept == (backup.is_file() && !is_symlink(&backup)),
                 "each kept file has its copy",
             )?;
         }
@@ -878,7 +848,7 @@ pub fn receipt(input: &ReceiptInput) -> Result<(), RegistrationError> {
                 directories: Vec::new(),
             };
             for (index, path) in receipt.files.iter().enumerate() {
-                let kept = path.is_file() && !is_link(path);
+                let kept = path.is_file() && !is_symlink(path);
                 manifest.files.push(kept);
                 if kept {
                     copy_with_times(path, &preparing.join(index.to_string()))
@@ -889,7 +859,7 @@ pub fn receipt(input: &ReceiptInput) -> Result<(), RegistrationError> {
                 manifest.directories.push(
                     fs::metadata(path)
                         .ok()
-                        .filter(|_| path.is_dir() && !is_link(path))
+                        .filter(|_| path.is_dir() && !is_symlink(path))
                         .map(|metadata| {
                             [
                                 nanoseconds(metadata.atime(), metadata.atime_nsec()),
@@ -918,13 +888,13 @@ pub fn receipt(input: &ReceiptInput) -> Result<(), RegistrationError> {
                     }
                     copy_with_times(&receipt.directory.join(index.to_string()), path)
                         .map_err(io("restore a file"))?;
-                } else if path.exists() && !is_link(path) {
+                } else if path.exists() && !is_symlink(path) {
                     fs::remove_file(path).map_err(io("remove a new file"))?;
                 }
             }
             for (path, times) in receipt.directories.iter().zip(&manifest.directories).rev() {
                 if let Some([access, modification]) = times {
-                    if path.is_dir() && !is_link(path) {
+                    if path.is_dir() && !is_symlink(path) {
                         set_times(path, *access, *modification)
                             .map_err(io("restore a directory time"))?;
                     }
@@ -953,7 +923,7 @@ impl Command for LaravelRegistrationReceipt {
     type Error = RegistrationError;
 
     fn privilege(platform: Platform) -> Option<Privilege> {
-        account_only(platform)
+        super::linux_only(platform, Privilege::Account)
     }
 
     fn target(input: &ReceiptInput) -> Option<String> {
