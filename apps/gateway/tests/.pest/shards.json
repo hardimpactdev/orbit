@@ -500,7 +500,7 @@
         "Tests\\Feature\\Infrastructure\\InstanceOperationPreflightTest": 2.0606,
         "Tests\\Feature\\Infrastructure\\Instances\\CheckoutProcessOwnUnitsTest": 0.1044,
         "Tests\\Feature\\Infrastructure\\Instances\\ConfiguredOriginReadTest": 0.0862,
-        "Tests\\Feature\\Infrastructure\\Instances\\DevelopmentCaddyAccessCommandTest": 43.277,
+        "Tests\\Feature\\Infrastructure\\Instances\\GrantDevelopmentCaddyAccessTest": 43.277,
         "Tests\\Feature\\Infrastructure\\Instances\\DevelopmentDeploymentTest": 11.3899,
         "Tests\\Feature\\Infrastructure\\Instances\\LaravelUrlConfigurationTest": 5.3415,
         "Tests\\Feature\\Infrastructure\\Instances\\NativeDevelopmentRouteProjectorTest": 9.892,

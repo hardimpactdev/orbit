@@ -298,21 +298,21 @@ This preparation walks only the Instance's checkout and served checkouts nested 
 
 #### Caddy access
 
-Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The managed user runs it with plain ACL tools, in this order:
+Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The Node agent's `instances.grant-development-caddy-access` runs it. Its ACL tools run as the managed user, in this order:
 
 1. Deny Caddy the whole checkout and its Git directory, including the default ACL of every directory, so new files stay closed too.
 2. Grant Caddy read access to the web root and to the Laravel public storage target.
 3. Grant Caddy execute access on each directory above the web root that it cannot enter yet. Caddy can pass through those directories but cannot list them.
 
-Every deny comes before any grant, so a served checkout nested in another keeps its own web root. No change follows a symlink. The managed user changes its own entries. An entry that the managed user does not own fails the preparation with "Operation not permitted"; the walk never skips it. Root acts only through `sudo -n` on a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent. Root never changes anything at or below a checkout.
+Every deny comes before any grant, so a served checkout nested in another keeps its own web root. No change follows a symlink. The managed user changes its own entries. An entry that the managed user does not own fails the preparation with "Operation not permitted"; the walk never skips it. The agent acts as root only on a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent. Root never changes anything at or below a checkout.
 
-The grants keep each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy even when it lies in the web root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the web root or the public storage target, the preparation fails and names it. When Caddy cannot read some entries in them, the preparation succeeds and warns, naming up to five of those entries.
+The grants keep each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy even when it lies in the web root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the web root or the public storage target, the preparation fails with `instances.caddy_access_failed` and names it. When Caddy cannot read some entries in them, the preparation succeeds, and the agent's result lists up to 100 of those entries.
 
 Setup can run while the walk runs, for a task VM workspace whose Route follows its baseline start. An entry that vanishes during the walk needs no change, and the walk does not fail for it. A new entry inherits the default ACL of its directory.
 
 Before it changes access, the walk saves the ACLs of what it grants: the web root, the public storage target, the directories above them, and the Git directory. The saved ACLs live in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory. Root-owned directories go in a separate file that only root restores.
 
-When the preparation fails, the walk restores the saved ACLs, and the deny on the rest of the checkout stays. So a failure never widens access. When the restore fails, the saved directory stays and the error names it. The next walk removes the managed user's saved directories that are older than three days.
+When the preparation fails, the walk restores the saved ACLs, and the deny on the rest of the checkout stays. So a failure never widens access. When the restore fails, the saved directory stays, and the error `instances.caddy_access_recovery_failed` names it in `snapshots`. The next walk removes the managed user's saved directories that are older than three days.
 
 ### Cluster scope
 

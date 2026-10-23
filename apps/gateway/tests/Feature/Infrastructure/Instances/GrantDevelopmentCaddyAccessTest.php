@@ -3,11 +3,12 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AppDev\DevelopmentSite;
-use App\Infrastructure\Instances\DevelopmentCaddyAccessCommand;
+use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
+use Tests\Support\LocalAgentBinary;
 
 pest()->group('privileged');
 
@@ -23,15 +24,14 @@ it('leaves out sites that have no checkout to grant access to', function (): voi
         localHttpUpstream: $localHttpUpstream,
     );
 
-    $command = new DevelopmentCaddyAccessCommand()->command(collect([
+    $walked = NativeDevelopmentSourceAccess::walkedSites(collect([
         $site('/apps/served'),
         $site(''),
         $site('/apps/proxied', 'http://127.0.0.1:4788'),
     ]));
 
     expect($site('/apps/proxied', 'http://127.0.0.1:4788')->isProxy())->toBeTrue()
-        ->and($command->arguments)->toContain('/apps/served')
-        ->and($command->arguments)->not->toContain('/apps/proxied', '');
+        ->and($walked->pluck('checkoutPath')->all())->toBe(['/apps/served']);
 });
 
 it('serves a nested Web root while protecting source and preserving shared parent modes', function (): void {
@@ -44,10 +44,9 @@ it('serves a nested Web root while protecting source and preserving shared paren
     try {
         $homeMode = fileperms($root) & 0o777;
         $sourceMode = fileperms("$root/checkout/.env") & 0o777;
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
-        $process = new Process($command->arguments)->setInput($command->input);
-        $process->mustRun();
-        $process->mustRun();
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", 'web/site')]);
+        development_caddy_access_granted($process);
+        development_caddy_access_granted($process);
 
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())
             ->toBe('first page');
@@ -81,10 +80,10 @@ it('grants a default release access without exposing shared Git metadata or the 
         file_put_contents("$home/.git/orbit-development-releases/release-initial", 'fixture:initial');
         symlink('releases/initial', "$home/current");
         $checkout = $selected ? "$home/current" : "$home/releases/initial";
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')]);
         $gitMode = fileperms("$home/.git") & 0o777;
-        new Process($command->arguments)->setInput($command->input)->mustRun();
-        new Process($command->arguments)->setInput($command->input)->mustRun();
+        development_caddy_access_granted($process);
+        development_caddy_access_granted($process);
 
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$home/current/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
         foreach (["$home/.git/config", "$home/.git/worktrees/initial/HEAD", "$home/current/.env", "$home/current/source.txt"] as $private) {
@@ -116,9 +115,9 @@ it('refuses unsafe Web root links before changing file access', function (string
             symlink("$root/outside/private", "$root/checkout/web/site/leak");
         }
         $before = new Process(['getfacl', '-cp', "$root/checkout", "$root/outside"])->mustRun()->getOutput();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", 'web/site')]);
 
-        expect(new Process($command->arguments)->setInput($command->input)->run())->not->toBe(0);
+        expect(development_caddy_access_refusal($process)['code'])->toBe('instances.caddy_access_invalid');
         expect(new Process(['getfacl', '-cp', "$root/checkout", "$root/outside"])->mustRun()->getOutput())->toBe($before);
     } finally {
         new Filesystem()->deleteDirectory($root);
@@ -140,8 +139,8 @@ it('permits only Laravel public storage without exposing private storage', funct
         file_put_contents("$application/storage/app/public/photo.txt", 'public photo');
         file_put_contents("$application/storage/app/private.txt", 'private photo');
         symlink('../storage/app/public', "$application/public/storage");
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", ltrim($relative.'/public', '/'))]));
-        new Process($command->arguments)->setInput($command->input)->mustRun();
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", ltrim($relative.'/public', '/'))]);
+        development_caddy_access_granted($process);
 
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$application/public/storage/photo.txt"])->mustRun()->getOutput())
             ->toBe('public photo');
@@ -166,11 +165,11 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
         new Process(['git', 'init', '--quiet', $nested])->mustRun();
         file_put_contents("$nested/public/index.html", 'nested page');
         file_put_contents("$nested/.env", 'nested secret');
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([
+        $process = development_caddy_access([
             development_caddy_access_site($nested, 'public'),
             development_caddy_access_site("$root/checkout", 'web/site'),
-        ]));
-        new Process($command->arguments)->setInput($command->input)->mustRun();
+        ]);
+        development_caddy_access_granted($process);
 
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$nested/public/index.html"])->mustRun()->getOutput())
             ->toBe('nested page');
@@ -206,7 +205,7 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
             #!/bin/bash
             for argument in "\$@"; do
                 if [ "\$argument" = 'u:caddy:r-X' ]; then exit 1; fi
-                case "\$argument" in --restore=*) {$failRestore} ;; esac
+                case "\$argument" in --restore) {$failRestore} ;; esac
             done
             exec /usr/bin/setfacl "\$@"
             BASH);
@@ -219,15 +218,11 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
         $granted = static fn (): string => new Process(['getfacl', '-R', '-p', "$checkout/web/site"])->mustRun()->getOutput()
             .new Process(['getfacl', '-p', ...$ancestors, "$root/checkout/.git"])->mustRun()->getOutput();
         $before = $granted();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([
-            development_caddy_access_site($checkout, 'web/site'),
-        ]));
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0);
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')], "$root/bin");
+        expect(development_caddy_access_refusal($process)['code'])->toBe($failRecovery ? 'instances.caddy_access_recovery_failed' : 'instances.caddy_access_failed');
         // Nothing lands in the Git directory, which the checkout's own programs can write.
         expect(new Filesystem()->glob("$root/checkout/.git/orbit-caddy-acl.*"))->toBe([]);
-        $retained = development_caddy_access_retained($process);
+        $retained = development_caddy_access_refusal($process)['details']['snapshots'] ?? null;
         if ($failRecovery) {
             expect($retained)->toStartWith('/var/tmp/orbit-caddy-acl.')
                 ->and(fileowner($retained))->toBe(posix_geteuid())
@@ -278,7 +273,7 @@ it('finishes paired walks while setup removes and replaces files under the check
                 esac
             done
             if [ -n "\$phase" ]; then
-                printf 'acl-walk:%s\\n' "\$phase"
+                printf 'acl-walk:%s\\n' "\$phase" >> "$root/walk-phases"
                 IFS= read -r acknowledgement < "$root/walk-continue"
                 test "\$acknowledgement" = continue || exit 1
             fi
@@ -296,15 +291,16 @@ it('finishes paired walks while setup removes and replaces files under the check
                     file_put_contents("$directory/$entry/file", 'old');
                 }
             }
-            $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-            $processes[$root] = $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-            $process->setInput($command->input)->start();
+            $processes[$root] = $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')], "$root/bin");
+            $process->start();
         }
         foreach (['checkout' => 'vendor', 'web' => 'web/site/build'] as $phase => $relative) {
             foreach ($processes as $root => $process) {
                 $directory = "$root/checkout/$relative";
-                expect($process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "acl-walk:$phase\n")))
-                    ->toBeTrue($process->getErrorOutput());
+                while (! str_contains((string) @file_get_contents("$root/walk-phases"), "acl-walk:$phase\n")) {
+                    expect($process->isRunning())->toBeTrue($process->getOutput().$process->getErrorOutput());
+                    usleep(10_000);
+                }
                 new Filesystem()->deleteDirectory("$directory/vanished");
                 new Filesystem()->deleteDirectory("$directory/replaced");
                 mkdir("$directory/replaced", 0o755);
@@ -313,8 +309,10 @@ it('finishes paired walks while setup removes and replaces files under the check
             }
         }
         foreach ($processes as $process) {
-            if ($process->wait() !== 0) {
-                $failures[] = $process->getErrorOutput();
+            $process->wait();
+            $result = development_caddy_access_result($process);
+            if ($result['ok'] !== true) {
+                $failures[] = $result['error'];
             }
             $completedWalks++;
         }
@@ -370,16 +368,15 @@ it('treats only a vanished entry as harmless, and fails on any other walk error'
             done
             BASH);
         chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        $process->setInput($command->input)->run();
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", 'web/site')], "$root/bin");
+        $result = development_caddy_access_result($process);
 
-        expect($process->getExitCode() === 0)->toBe($succeeds, $process->getErrorOutput());
+        expect($result['ok'])->toBe($succeeds, json_encode($result, JSON_THROW_ON_ERROR));
         if ($succeeds) {
             expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
                 ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/source.txt"])->run())->toBe(1);
         } else {
-            expect($process->getErrorOutput())->toContain($error);
+            expect($result['error']['details']['reason'])->toContain($error);
         }
     } finally {
         new Filesystem()->deleteDirectory($root);
@@ -404,14 +401,12 @@ it('fails loudly on an entry the managed user does not own and restores what it 
         $granted = static fn (): string => new Process(['getfacl', '-R', '-p', "$checkout/web/site"])->mustRun()->getOutput()
             .new Process(['getfacl', '-p', "$checkout/web", $checkout, $root])->mustRun()->getOutput();
         $before = $granted();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("$checkout/$entry: Operation not permitted")
-            ->and(new Process(['getfacl', '-p', "$checkout/$entry"])->mustRun()->getOutput())->toBe($foreign);
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')]);
+        $error = development_caddy_access_refusal($process);
         // The walk failed after it changed ACLs, so recovery put back the saved ones.
-        expect(development_caddy_access_retained($process))->toBeNull($process->getErrorOutput())
+        expect($error['code'])->toBe('instances.caddy_access_failed')
+            ->and($error['details']['reason'])->toContain("$checkout/$entry: Operation not permitted")
+            ->and(new Process(['getfacl', '-p', "$checkout/$entry"])->mustRun()->getOutput())->toBe($foreign)
             ->and($granted())->toBe($before);
     } finally {
         new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
@@ -443,16 +438,11 @@ it('restores the root directory above the checkout after a failed walk', functio
             exec /usr/bin/setfacl "$@"
             BASH);
         chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0)
-            ->and(development_caddy_access_retained($process))->toBeNull($process->getErrorOutput())
+        $failing = development_caddy_access([development_caddy_access_site($checkout, 'web/site')], "$root/bin");
+        expect(development_caddy_access_refusal($failing)['code'])->toBe('instances.caddy_access_failed')
             ->and($granted())->toBe($before);
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->toBe(0, $process->getErrorOutput())
-            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
+        development_caddy_access_granted(development_caddy_access([development_caddy_access_site($checkout, 'web/site')]));
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
             ->and(new Process(['getfacl', '-cp', $base])->mustRun()->getOutput())->toContain('user:caddy:--x')
             ->and(fileowner($base))->toBe(0)
             ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/source.txt"])->run())->toBe(1);
@@ -473,12 +463,11 @@ it('checks what Caddy can pass with its ACL entry, not only the mode', function 
         foreach (["$root", "$root/checkout", "$root/checkout/web"] as $directory) {
             chmod($directory, 0o755);
         }
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", 'web/site')]);
 
         foreach ([1, 2] as $run) {
-            $process = new Process($command->arguments)->setInput($command->input);
-            expect($process->run())->toBe(0, $process->getErrorOutput())
-                ->and(new Process(['getfacl', '-cp', "$root/checkout"])->mustRun()->getOutput())->toContain('user:caddy:--x')
+            development_caddy_access_granted($process);
+            expect(new Process(['getfacl', '-cp', "$root/checkout"])->mustRun()->getOutput())->toContain('user:caddy:--x')
                 ->and(new Process(['getfacl', '-cp', "$root/checkout/web"])->mustRun()->getOutput())->toContain('user:caddy:--x')
                 ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
                 ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/private.txt"])->run())->toBe(1);
@@ -499,10 +488,8 @@ it('keeps a mode 0600 file in the Web root hidden from Caddy', function (): void
         $checkout = "$root/checkout";
         chmod("$checkout/.env", 0o600);
         rename("$checkout/.env", "$checkout/web/site/leak.txt");
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->toBe(0, $process->getErrorOutput());
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')]);
+        expect(development_caddy_access_granted($process)['unreadable'])->toBe(["$checkout/web/site/leak.txt"]);
         $acl = new Process(['getfacl', '-cp', "$checkout/web/site/leak.txt"])->mustRun()->getOutput();
 
         clearstatcache();
@@ -525,12 +512,10 @@ it('fails and restores access when the mode of the Web root hides it from Caddy'
     try {
         chmod("$root/checkout/web/site", 0o700);
         $before = new Process(['getfacl', '-R', '-p', "$root/checkout/web/site"])->mustRun()->getOutput();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("Caddy cannot read the Web root $root/checkout/web/site")
-            ->and(development_caddy_access_retained($process))->toBeNull()
+        $process = development_caddy_access([development_caddy_access_site("$root/checkout", 'web/site')]);
+        $error = development_caddy_access_refusal($process);
+        expect($error['code'])->toBe('instances.caddy_access_failed')
+            ->and($error['details']['reason'])->toContain("Caddy cannot read the Web root $root/checkout/web/site")
             ->and(new Process(['getfacl', '-R', '-p', "$root/checkout/web/site"])->mustRun()->getOutput())->toBe($before);
     } finally {
         new Filesystem()->deleteDirectory($root);
@@ -554,13 +539,8 @@ it('names the served entries that Caddy cannot read', function (): void {
         chmod("$checkout/public/secret.txt", 0o600);
         file_put_contents("$checkout/storage/app/public/hidden.txt", 'hidden');
         chmod("$checkout/storage/app/public/hidden.txt", 0o600);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'public')]));
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->toBe(0, $process->getErrorOutput())
-            ->and($process->getErrorOutput())->toContain('Warning: Caddy cannot read 2 of the entries it serves')
-            ->and($process->getErrorOutput())->toContain("$checkout/public/secret.txt")
-            ->and($process->getErrorOutput())->toContain("$checkout/storage/app/public/hidden.txt")
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'public')]);
+        expect(development_caddy_access_granted($process)['unreadable'])->toEqualCanonicalizing(["$checkout/public/secret.txt", "$checkout/storage/app/public/hidden.txt"])
             ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/public/index.html"])->mustRun()->getOutput())->toBe('page');
     } finally {
         new Filesystem()->deleteDirectory($root);
@@ -580,22 +560,72 @@ it('fails and restores access when the mode of the public storage hides it from 
         mkdir("$checkout/storage/app/public", 0o700, true);
         symlink('../storage/app/public', "$checkout/public/storage");
         $before = new Process(['getfacl', '-R', '-p', "$checkout/public", "$checkout/storage/app/public"])->mustRun()->getOutput();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'public')]));
-
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("Caddy cannot read the public storage $checkout/storage/app/public")
-            ->and(development_caddy_access_retained($process))->toBeNull()
+        $process = development_caddy_access([development_caddy_access_site($checkout, 'public')]);
+        $error = development_caddy_access_refusal($process);
+        expect($error['code'])->toBe('instances.caddy_access_failed')
+            ->and($error['details']['reason'])->toContain("Caddy cannot read the public storage $checkout/storage/app/public")
             ->and(new Process(['getfacl', '-R', '-p', "$checkout/public", "$checkout/storage/app/public"])->mustRun()->getOutput())->toBe($before);
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
 });
 
-/** The snapshot directory that a failed recovery retained and named, or null. */
-function development_caddy_access_retained(Process $process): ?string
+/**
+ * The built agent's `instances.grant-development-caddy-access` for these sites, run as root for the test account, as
+ * the Gateway sends it to a Node. `$bin` goes first on the agent's `PATH` to stand in for a walk tool.
+ *
+ * @param  list<DevelopmentSite>  $sites
+ */
+function development_caddy_access(array $sites, ?string $bin = null): Process
 {
-    return preg_match('/retained ACL snapshots: (\S+)/', $process->getErrorOutput(), $match) === 1 ? $match[1] : null;
+    static $locks = null;
+    if ($locks === null) {
+        $locks = trim(new Process(['sudo', '-n', 'mktemp', '-d', '-p', '/var/tmp', 'orbit-agent-locks.XXXXXX'])->mustRun()->getOutput());
+        register_shutdown_function(static fn () => new Process(['sudo', '-n', 'rm', '-rf', '--', $locks])->run());
+    }
+    $binary = LocalAgentBinary::path();
+    $envelope = json_encode(['agent_sha256' => hash_file('sha256', $binary), 'deadline_ms' => 600_000, 'input' => [
+        'user' => posix_getpwuid(posix_geteuid())['name'],
+        'sites' => NativeDevelopmentSourceAccess::walkedSites(collect($sites))->map(static fn (DevelopmentSite $site): array => [
+            'checkout' => $site->checkoutPath,
+            'relative_root' => $site->documentRoot,
+            'application' => $site->applicationDirectory(),
+        ])->all(),
+    ]], JSON_THROW_ON_ERROR);
+    $path = ($bin === null ? '' : "$bin:").getenv('PATH');
+
+    return new Process(['sudo', '-n', 'env', "PATH=$path", 'ORBIT_AGENT_SUPERVISED=1', "ORBIT_AGENT_LOCK_DIR=$locks", $binary, 'command', 'instances.grant-development-caddy-access'], timeout: 600)
+        ->setInput($envelope);
+}
+
+/** @return array{ok: bool, data?: array<string, mixed>, error?: array{code: string, message: string, details: array<string, mixed>}} */
+function development_caddy_access_result(Process $process): array
+{
+    if (! $process->isStarted()) {
+        $process->run();
+    }
+
+    return json_decode(trim($process->getOutput()), true, flags: JSON_THROW_ON_ERROR);
+}
+
+/** @return array<string, mixed> */
+function development_caddy_access_granted(Process $process): array
+{
+    $process->run();
+    $result = development_caddy_access_result($process);
+    expect($result['ok'])->toBeTrue(json_encode($result, JSON_THROW_ON_ERROR));
+
+    return $result['data'];
+}
+
+/** @return array{code: string, message: string, details: array<string, mixed>} */
+function development_caddy_access_refusal(Process $process): array
+{
+    $process->run();
+    $result = development_caddy_access_result($process);
+    expect($result['ok'])->toBeFalse(json_encode($result, JSON_THROW_ON_ERROR));
+
+    return $result['error'];
 }
 
 /** @param list<string> $paths

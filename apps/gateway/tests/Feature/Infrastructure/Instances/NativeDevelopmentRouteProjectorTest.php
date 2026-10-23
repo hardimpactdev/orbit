@@ -30,6 +30,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -68,6 +69,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -1135,12 +1137,12 @@ it('grants source access only to the converging checkout and checkouts nested in
     route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other', releases: true);
     route_access_served_instance($instance, $route, $node, 'prefix', '/home/orbit/apps/acme/feature-two');
     route_access_served_instance($instance, $route, $node, 'nested', '/home/orbit/apps/acme/feature/.worktrees/nested');
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, , , $home, $agents] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
 
-        expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/feature', '/home/orbit/apps/acme/feature/.worktrees/nested']);
+        expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/feature', '/home/orbit/apps/acme/feature/.worktrees/nested']);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -1152,13 +1154,13 @@ describe('setting a development Route target', function (): void {
         $route->publishSites();
         route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other');
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home] = orb127_route_projector();
+        [, , , $home, $agents] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
 
             expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
-                ->and(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+                ->and(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
         } finally {
             new Filesystem()->deleteDirectory($home);
         }
@@ -1168,20 +1170,22 @@ describe('setting a development Route target', function (): void {
         [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $route->publishSites();
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home] = orb127_route_projector();
+        [, $ssh, , $home, $agents] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
-            $ssh->commands = [];
+            $agents->calls = [];
             app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
 
-            expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+            expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
 
             $route->update(['status' => RouteStatus::Active]);
             $ssh->commands = [];
+            $agents->calls = [];
             app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
 
-            expect($ssh->commands)->toBe([]);
+            expect($ssh->commands)->toBe([])
+                ->and($agents->calls)->toBe([]);
         } finally {
             new Filesystem()->deleteDirectory($home);
         }
@@ -1190,13 +1194,14 @@ describe('setting a development Route target', function (): void {
     it('walks nothing while the Route sites are unpublished', function (): void {
         [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $ssh, , $home] = orb127_route_projector();
+        [, $ssh, , $home, $agents] = orb127_route_projector();
 
         try {
             app(SetRouteTargetAction::class)->execute($route, $added->id);
 
             expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
-                ->and($ssh->commands)->toBe([]);
+                ->and($ssh->commands)->toBe([])
+                ->and($agents->calls)->toBe([]);
         } finally {
             new Filesystem()->deleteDirectory($home);
         }
@@ -1240,8 +1245,8 @@ describe('setting a development Route target', function (): void {
         $route->publishSites();
         $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
         $fail = true;
-        [, $ssh, , $home] = orb127_route_projector(static function (RemoteCommand $command) use (&$fail): bool {
-            return $fail && str_contains($command->input ?? '', 'u:caddy:r-X');
+        [, , , $home, $agents] = orb127_route_projector(failAccess: static function () use (&$fail): bool {
+            return $fail;
         });
         Event::fake([RecordBroadcast::class]);
 
@@ -1258,10 +1263,10 @@ describe('setting a development Route target', function (): void {
             );
 
             $fail = false;
-            $ssh->commands = [];
+            $agents->calls = [];
             app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
 
-            expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+            expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
         } finally {
             new Filesystem()->deleteDirectory($home);
         }
@@ -1389,10 +1394,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         phpVersion: $boundary === 'runtime' ? '8.5' : null,
     );
     $failure = match ($boundary) {
-        // The access walk's arguments are each checkout, Web root, and application directory.
-        'source-access' => static fn (RemoteCommand $command): bool => (
-            ($command->arguments[3] ?? null) === $instance->checkout_path
-        ),
+        'source-access' => null,
         'runtime' => static fn (RemoteCommand $command): bool => str_contains(
             $command->input ?? '',
             'for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf',
@@ -1403,7 +1405,11 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         'firewall' => static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
         'dns' => null,
     };
-    [$projector, $ssh, $processes, $home] = orb127_route_projector($failure, failDns: $boundary === 'dns');
+    [$projector, $ssh, $processes, $home] = orb127_route_projector(
+        $failure,
+        failDns: $boundary === 'dns',
+        failAccess: $boundary === 'source-access' ? static fn (array $input): bool => $input['sites'][0]['checkout'] === $instance->checkout_path : null,
+    );
 
     try {
         expect(fn () => $projector->converge($instance, $route))
@@ -1416,7 +1422,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         expect($processes->invocations)->toHaveCount($boundary === 'dns' ? 1 : 0);
         if ($boundary === 'source-access') {
             // The certificate request and its publication come first.
-            expect($ssh->commands)->toHaveCount(3);
+            expect($ssh->commands)->toHaveCount(2);
         }
         // The Route is published only once its certificate exists, so a failed certificate step
         // leaves every other build on the Node without its site.
@@ -1683,10 +1689,20 @@ function orb_pending_domain_change(Route $route, Instance $instance, RouteReplac
     return $replacement;
 }
 
-/** @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string} */
-function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false): array
+/**
+ * @param  (Closure(array<string, mixed>): bool)|null  $failAccess  refuses the agent's source-access walk for this input
+ * @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string, FakeAgentCommandRunner}
+ */
+function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false, ?Closure $failAccess = null): array
 {
     $ssh = new Orb127RouteSshExecutor($failSsh);
+    $agents = new FakeAgentCommandRunner()->answer('instances.grant-development-caddy-access', static function (array $input) use ($failAccess): array {
+        if ($failAccess instanceof Closure && $failAccess($input)) {
+            throw new AgentCommandRefused('instances.grant-development-caddy-access', 'instances.caddy_access_failed', 'Caddy cannot read the Web root.');
+        }
+
+        return ['unreadable' => []];
+    });
     $keys = new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
@@ -1740,7 +1756,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     $certificates = new RemoteAppDevCertificateManager($executor, $signer, $accounts);
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor);
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
-    $sourceAccess = new NativeDevelopmentSourceAccess($executor);
+    $sourceAccess = new NativeDevelopmentSourceAccess($agents, $accounts);
     $projector = new NativeDevelopmentRouteProjector(
         new RemoteAppDevPhpFpmManager(
             $sites,
@@ -1767,7 +1783,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
         ),
     );
 
-    return [$projector, $ssh, $processes, $home];
+    return [$projector, $ssh, $processes, $home, $agents];
 }
 
 /**
@@ -1805,12 +1821,12 @@ function route_access_served_instance(
     return $other;
 }
 
-/** @return list<mixed> The checkouts of the one source-access walk the SSH executor recorded. */
-function route_access_walked_checkouts(Orb127RouteSshExecutor $ssh): array
+/** @return list<mixed> The checkouts of the one source-access walk the agent ran. */
+function route_access_walked_checkouts(FakeAgentCommandRunner $agents): array
 {
-    $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
+    $access = collect($agents->calls)->sole(static fn (array $call): bool => $call['command'] === 'instances.grant-development-caddy-access');
 
-    return collect(array_slice($access->arguments, 3))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
+    return array_column($access['input']['sites'], 'checkout');
 }
 
 function orb368_projection_transfer(

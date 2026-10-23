@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod application_log;
+pub mod caddy_access;
 pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_deploy;
@@ -83,6 +84,7 @@ pub fn all() -> Vec<Entry> {
         entry::<environment::WriteEnvironment>(),
         entry::<laravel::InspectProfile>(),
         entry::<laravel::WriteUrl>(),
+        entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

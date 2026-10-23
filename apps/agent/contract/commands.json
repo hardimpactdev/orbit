@@ -572,6 +572,21 @@
       ]
     },
     {
+      "name": "instances.grant-development-caddy-access",
+      "summary": "Deny Caddy development checkouts and grant it each Web root and the passage to it.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instances.caddy_access_invalid",
+        "instances.caddy_access_failed",
+        "instances.caddy_access_recovery_failed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,
