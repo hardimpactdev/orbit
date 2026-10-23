@@ -1,7 +1,7 @@
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
-    docker_container_name, docker_status, frame, gateway_client, iso_now, lock_single_instance,
+    docker_container_name, docker_status, gateway_client, iso_now, lock_single_instance,
     logs::{
         controller::{run_controller, spawn_stream, GatewayList, LogHub},
         limits::BATCH_INTERVAL,
@@ -11,22 +11,16 @@ use orbit_agent::{
         configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
     },
     workspace_frame, workspaces_frames, AgentSecret, ChangeBatch, Config, Envelope, HeartbeatData,
-    Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, JOIN_TIMEOUT, LOCK_PATH,
-    SECRET_PATH, SNAPSHOT_INTERVAL,
+    Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, LOCK_PATH, SECRET_PATH,
+    SNAPSHOT_INTERVAL,
 };
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
 use tokio::{
-    net::TcpStream,
     sync::{mpsc, watch},
     time::{Instant, Interval},
 };
-use tokio_tungstenite::{
-    client_async_tls_with_config,
-    tungstenite::{client::IntoClientRequest, Message},
-    Connector, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::tungstenite::Message;
 use zbus::{
     message::Type as MessageType, zvariant::OwnedObjectPath, Connection, MatchRule, MessageStream,
     Proxy,
@@ -36,26 +30,11 @@ const SYSTEMD_DEST: &str = "org.freedesktop.systemd1";
 const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
 #[cfg(test)]
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+use orbit_agent::realtime::{
+    channel_auth, discover, send_client, send_control, send_raw_frame, socket_write, Discovery,
+    Socket,
+};
 
-#[derive(Deserialize)]
-struct DiscoveryEnvelope {
-    data: Discovery,
-}
-#[derive(Deserialize)]
-struct Discovery {
-    url: Option<String>,
-    address: Option<String>,
-    key: Option<String>,
-    channel: String,
-    log_channel: String,
-    member: String,
-}
-#[derive(Deserialize)]
-struct Auth {
-    auth: String,
-    channel_data: String,
-}
 #[derive(Debug)]
 enum DockerUpdate {
     Connected(Vec<Unit>),
@@ -260,23 +239,6 @@ fn accepted_log_channel(discovery: &Discovery) -> Option<String> {
     }
 }
 
-async fn discover(
-    client: &reqwest::Client,
-    gateway: &str,
-) -> Result<Discovery, Box<dyn Error + Send + Sync>> {
-    Ok(client
-        .get(format!(
-            "{}/api/v1/agent/realtime",
-            gateway.trim_end_matches('/')
-        ))
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<DiscoveryEnvelope>()
-        .await?
-        .data)
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn connected_session(
     client: &reqwest::Client,
@@ -302,41 +264,12 @@ async fn connected_session(
     shutdown: &mut watch::Receiver<bool>,
     joined_at: &mut Option<Instant>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut parsed = reqwest::Url::parse(ws_url)?;
-    if parsed.scheme() != "wss"
-        || parsed.host_str() != Some("reverb.orbit")
-        || parsed.port_or_known_default() != Some(443)
-    {
-        return Err("realtime discovery must use wss://reverb.orbit".into());
-    }
-    parsed.set_path(&format!("/app/{key}"));
-    parsed.set_query(Some(&format!(
-        "protocol=7&client=orbit-agent&version={}&flash=false",
-        orbit_agent::reported_version()
-    )));
-    let address = ws_address.parse::<std::net::IpAddr>()?;
-    let request = parsed.as_str().into_client_request()?;
     let auth_url = format!(
         "{}/api/v1/agent/broadcasting/auth",
         gateway.trim_end_matches('/')
     );
-    let join = async {
-        let stream = connect_by_address(address, 443).await?;
-        let (socket, _) =
-            client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls)))
-                .await?;
-        protocol_handshake(
-            socket,
-            client,
-            &auth_url,
-            channel,
-            orbit_agent::reported_version(),
-        )
-        .await
-    };
-    let (mut socket, socket_id) = tokio::time::timeout(JOIN_TIMEOUT, join)
-        .await
-        .map_err(|_| "joining the Reverb channel timed out")??;
+    let (mut socket, socket_id) =
+        orbit_agent::realtime::join(client, gateway, ws_url, ws_address, key, channel, tls).await?;
     // The caller starts the backoff again only when this session stays joined long enough.
     *joined_at = Some(Instant::now());
     // Re-read both runtimes for every successful join.
@@ -516,102 +449,6 @@ fn error_code(value: &Value) -> Option<i64> {
     }
 }
 
-async fn connect_by_address(
-    address: std::net::IpAddr,
-    port: u16,
-) -> Result<TcpStream, std::io::Error> {
-    TcpStream::connect(std::net::SocketAddr::new(address, port)).await
-}
-
-async fn protocol_handshake(
-    mut socket: Socket,
-    client: &reqwest::Client,
-    auth_url: &str,
-    channel: &str,
-    version: &str,
-) -> Result<(Socket, String), Box<dyn Error + Send + Sync>> {
-    let established = loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or("WebSocket closed before connection_established")??;
-        if let Message::Text(text) = message {
-            let value: Value = serde_json::from_str(&text)?;
-            if value["event"] == "pusher:error" {
-                return Err("Pusher connection error".into());
-            }
-            if value["event"] == "pusher:connection_established" {
-                break value;
-            }
-        }
-    };
-    let data: Value = serde_json::from_str(
-        established["data"]
-            .as_str()
-            .ok_or("missing connection data")?,
-    )?;
-    let socket_id = data["socket_id"]
-        .as_str()
-        .ok_or("missing socket id")?
-        .to_owned();
-    let auth = channel_auth(client, auth_url, &socket_id, channel, version).await?;
-    send_control(
-        &mut socket,
-        "pusher:subscribe",
-        json!({"channel":channel,"auth":auth.auth,"channel_data":auth.channel_data}),
-    )
-    .await?;
-    loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or("WebSocket closed before subscription_succeeded")??;
-        match message {
-            Message::Text(text) => {
-                let value: Value = serde_json::from_str(&text)?;
-                match value["event"].as_str().unwrap_or("") {
-                    "pusher_internal:subscription_succeeded" if value["channel"] == channel => {
-                        return Ok((socket, socket_id));
-                    }
-                    "pusher:error" | "pusher_internal:subscription_error" => {
-                        return Err(
-                            format!("Pusher rejected subscription: {}", value["data"]).into()
-                        )
-                    }
-                    "pusher:ping" => send_control(&mut socket, "pusher:pong", json!({})).await?,
-                    _ => {}
-                }
-            }
-            Message::Ping(data) => socket_write(socket.send(Message::Pong(data))).await?,
-            Message::Close(_) => return Err("Pusher closed before subscription_succeeded".into()),
-            _ => {}
-        }
-    }
-}
-
-async fn channel_auth(
-    client: &reqwest::Client,
-    auth_url: &str,
-    socket_id: &str,
-    channel: &str,
-    version: &str,
-) -> Result<Auth, Box<dyn Error + Send + Sync>> {
-    Ok(client
-        .post(auth_url)
-        .form(&[
-            ("socket_id", socket_id),
-            ("channel_name", channel),
-            ("version", version),
-        ])
-        .send()
-        .await
-        .map_err(reqwest::Error::without_url)?
-        .error_for_status()
-        .map_err(reqwest::Error::without_url)?
-        .json()
-        .await?)
-}
-
 async fn send_snapshots(
     socket: &mut Socket,
     channel: &str,
@@ -641,47 +478,6 @@ async fn send_workspaces(
     }
     Ok(())
 }
-async fn send_client(
-    socket: &mut Socket,
-    channel: &str,
-    event: &str,
-    data: Value,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    send_raw_frame(socket, frame(channel, event, data)).await
-}
-async fn send_control(
-    socket: &mut Socket,
-    event: &str,
-    data: Value,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    socket_write(socket.send(Message::Text(
-        json!({"event":event,"data":data}).to_string().into(),
-    )))
-    .await?;
-    Ok(())
-}
-async fn send_raw_frame(
-    socket: &mut Socket,
-    event: orbit_agent::ClientFrame,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let text = serde_json::to_string(&event)?;
-    if text.len() > orbit_agent::PUSHER_FRAME_LIMIT {
-        return Err("Pusher client event exceeded the frame size limit".into());
-    }
-    socket_write(socket.send(Message::Text(text.into()))).await?;
-    Ok(())
-}
-/// Bound writes so a peer that stops reading cannot hold the receive loop past its ping deadline.
-/// A timed-out write ends this session; its sink is never reused.
-async fn socket_write<T>(
-    write: impl std::future::Future<Output = Result<T, tokio_tungstenite::tungstenite::Error>>,
-) -> Result<T, Box<dyn Error + Send + Sync>> {
-    tokio::time::timeout(orbit_agent::PONG_TIMEOUT, write)
-        .await
-        .map_err(|_| "Reverb WebSocket write timed out")?
-        .map_err(Into::into)
-}
-
 fn queue_changes(
     batch: &mut ChangeBatch,
     changes: impl IntoIterator<Item = Unit>,
@@ -904,11 +700,14 @@ mod protocol_tests {
         routing::{get, post},
         Json, Router,
     };
+    use orbit_agent::frame;
+    use orbit_agent::realtime::{connect_by_address, protocol_handshake};
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
     use tokio_tungstenite::connect_async;
+    use tokio_tungstenite::WebSocketStream;
     const TEST_SECRET: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     #[derive(Clone)]
     struct FakeState {

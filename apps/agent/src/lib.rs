@@ -10,6 +10,7 @@ use std::{
 pub mod command;
 pub mod commands;
 pub mod logs;
+pub mod realtime;
 pub mod workspace;
 use workspace::WorkspaceState;
 
