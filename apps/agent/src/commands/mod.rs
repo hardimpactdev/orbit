@@ -17,6 +17,7 @@ pub mod production_home;
 pub mod registration;
 pub mod source;
 pub mod sqlite_copy;
+pub mod sqlite_seed;
 
 use crate::command::registry::{entry, Entry};
 use crate::command::{Platform, Privilege};
@@ -89,6 +90,8 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),
         entry::<sqlite_copy::CopySqlite>(),
+        entry::<sqlite_seed::PrepareSqliteSeed>(),
+        entry::<sqlite_seed::InstallSqliteSeed>(),
         entry::<dependencies::ReadFiles>(),
         entry::<dependencies::ReadReleaseFiles>(),
         entry::<dependencies::ProbeUpdate>(),

@@ -579,11 +579,6 @@ it('fails and restores access when the mode of the public storage hides it from 
  */
 function development_caddy_access(array $sites, ?string $bin = null): Process
 {
-    static $locks = null;
-    if ($locks === null) {
-        $locks = trim(new Process(['sudo', '-n', 'mktemp', '-d', '-p', '/var/tmp', 'orbit-agent-locks.XXXXXX'])->mustRun()->getOutput());
-        register_shutdown_function(static fn () => new Process(['sudo', '-n', 'rm', '-rf', '--', $locks])->run());
-    }
     $binary = LocalAgentBinary::path();
     $envelope = json_encode(['agent_sha256' => hash_file('sha256', $binary), 'deadline_ms' => 600_000, 'input' => [
         'user' => posix_getpwuid(posix_geteuid())['name'],
@@ -594,8 +589,9 @@ function development_caddy_access(array $sites, ?string $bin = null): Process
         ])->all(),
     ]], JSON_THROW_ON_ERROR);
     $path = ($bin === null ? '' : "$bin:").getenv('PATH');
+    $arguments = LocalAgentBinary::rootArguments(['sudo', '-n', 'orbit-agent', 'command', 'instances.grant-development-caddy-access'], ['PATH' => $path]);
 
-    return new Process(['sudo', '-n', 'env', "PATH=$path", 'ORBIT_AGENT_SUPERVISED=1', "ORBIT_AGENT_LOCK_DIR=$locks", $binary, 'command', 'instances.grant-development-caddy-access'], timeout: 600)
+    return new Process($arguments ?? [], timeout: 600)
         ->setInput($envelope);
 }
 

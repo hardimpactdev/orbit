@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
 use App\Infrastructure\Instances\RemoteInstanceTransferSource;
@@ -18,6 +19,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use Closure;
 use Symfony\Component\Process\Process;
 
@@ -31,8 +33,6 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     public array $stagedModes = [];
 
     public ?string $failure = null;
-
-    public ?string $targetBase = null;
 
     public int $snapshotCopyFailures = 0;
 
@@ -82,9 +82,57 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         );
     }
 
+    /** The real seeder, whose agent commands run as root through `sudo`, so only a privileged test host runs it. */
     public function seeder(): RemoteInstanceSqliteSeeder
     {
-        return new RemoteInstanceSqliteSeeder($this, $this, $this->keys(), $this->knownHosts());
+        $transport = $this;
+        $agents = LocalAgentBinary::localRunner($this->sandbox.'/agent');
+
+        return new RemoteInstanceSqliteSeeder(new class($transport, $agents) implements AgentCommandRunner
+        {
+            public function __construct(private readonly LocalInstanceTransferTransport $transport, private readonly AgentCommandRunner $agents) {}
+
+            public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+            {
+                return $this->transport->seedCommand($command, $input, fn (): array => $this->agents->run($node, $command, $input, $deadlineSeconds));
+            }
+
+            public function install(Node $node): bool
+            {
+                return $this->agents->install($node);
+            }
+        }, $this);
+    }
+
+    /**
+     * Runs one seed command and applies the injected cleanup failures and lost responses.
+     *
+     * @param  array<string, mixed>  $input
+     * @param  Closure(): array<string, mixed>  $run
+     * @return array<string, mixed>
+     */
+    public function seedCommand(string $command, array $input, Closure $run): array
+    {
+        $source = $command === 'instances.prepare-sqlite-seed';
+        $cleanup = ($input['mode'] ?? null) === 'cleanup';
+        if ($cleanup && ($source ? $this->failSourceCleanup : $this->failTargetCleanup)) {
+            throw new \RuntimeException('Injected seed cleanup failure.');
+        }
+        $output = $run();
+        if ($source && is_string($output['snapshot'] ?? null)) {
+            $this->snapshots[$output['snapshot']] = $output['snapshot'];
+        }
+        if (! $source && ($output['state'] ?? null) === 'ready' && is_string($output['incoming'] ?? null)) {
+            $this->incomingPaths[] = $output['incoming'];
+        }
+        $lost = $cleanup && ($source ? $this->lostSourceCleanupResponse : $this->lostTargetCleanupResponse);
+        if ($lost) {
+            $source ? $this->lostSourceCleanupResponse = false : $this->lostTargetCleanupResponse = false;
+
+            throw new \RuntimeException('Injected lost response after successful cleanup.');
+        }
+
+        return $output;
     }
 
     private function keys(): SshKeyProvider
@@ -146,31 +194,6 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         if (str_contains($command->input ?? '', 'archive=$1'."\n")) {
             $arguments[3] = $this->localPath($arguments[3]);
         }
-        $snapshot = null;
-        $actualSnapshot = null;
-        $role = null;
-        $mode = null;
-
-        if ($arguments[0] === 'sudo') {
-            $arguments = array_slice($arguments, 3);
-            $source = str_contains($arguments[2], 'source.backup(destination');
-            $role = $source ? 'source' : 'target';
-            $mode = $arguments[3];
-            if ($mode === 'cleanup' && ($source ? $this->failSourceCleanup : $this->failTargetCleanup)) {
-                return new CommandResult(1, '', 'Injected seed cleanup failure.', 1, false);
-            }
-            $stateIndex = $source ? 9 : 8;
-            $arguments[$stateIndex] = $this->sandbox.'/state/'.basename($arguments[$stateIndex]);
-
-            if ($source) {
-                $snapshot = $arguments[10];
-                $actualSnapshot = $this->sandbox.'/snapshots/'.basename($snapshot);
-                $this->snapshots[$snapshot] = $actualSnapshot;
-                $arguments[10] = $actualSnapshot;
-            } else {
-                $this->targetBase = $arguments[4];
-            }
-        }
 
         if ($command->output !== null || $command->cancelled !== null || $command->protectedInput !== null) {
             throw new \LogicException('Finite transfer proofs do not replace streaming, cancellation, or protected-input transports.');
@@ -187,33 +210,16 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
             $process->run();
             $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
         }
-        $stdout = $result->stdout;
-
-        if ($snapshot !== null && $actualSnapshot !== null) {
-            $stdout = str_replace($actualSnapshot, $snapshot, $stdout);
-        }
-
-        if ($role === 'target' && $mode === 'prepare' && str_starts_with($stdout, "READY\t")) {
-            $this->incomingPaths[] = trim(substr($stdout, 6));
-        }
         if ($result->exitCode === 0 && str_contains($command->input ?? '', 'destination=$1')) {
             ($this->onDiscard)?->__invoke();
         }
-        $lostCleanupResponse = $mode === 'cleanup' && ($role === 'source' ? $this->lostSourceCleanupResponse : $this->lostTargetCleanupResponse);
-        $lostDiscardResponse = $this->lostDiscardResponse && str_contains($command->input ?? '', 'destination=$1');
-        if ($result->exitCode === 0 && ($lostCleanupResponse || $lostDiscardResponse)) {
-            if ($lostDiscardResponse) {
-                $this->lostDiscardResponse = false;
-            } elseif ($role === 'source') {
-                $this->lostSourceCleanupResponse = false;
-            } else {
-                $this->lostTargetCleanupResponse = false;
-            }
+        if ($result->exitCode === 0 && $this->lostDiscardResponse && str_contains($command->input ?? '', 'destination=$1')) {
+            $this->lostDiscardResponse = false;
 
             return new CommandResult(1, '', 'Injected lost response after successful cleanup.', 1, false);
         }
 
-        return new CommandResult($result->exitCode, $stdout, $result->stderr, $result->durationMs, $result->truncated);
+        return $result;
     }
 
     private function localPath(string $path): string

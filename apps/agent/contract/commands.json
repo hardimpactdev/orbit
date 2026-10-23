@@ -621,6 +621,36 @@
       ]
     },
     {
+      "name": "instances.prepare-sqlite-seed",
+      "summary": "Take or clean up the source snapshot of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_seed_refused",
+        "instances.sqlite_seed_failed",
+        "instances.sqlite_seed_unconfirmed"
+      ]
+    },
+    {
+      "name": "instances.install-sqlite-seed",
+      "summary": "Prepare, install, or clean up the target of a SQLite seed.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "instances.sqlite_seed_refused",
+        "instances.sqlite_seed_failed",
+        "instances.sqlite_seed_unconfirmed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

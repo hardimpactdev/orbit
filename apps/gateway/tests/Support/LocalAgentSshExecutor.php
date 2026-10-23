@@ -14,8 +14,8 @@ use App\Infrastructure\Ssh\SshExecutor;
 use RuntimeException;
 
 /**
- * Runs each agent command that the runner sends with the agent binary built from this checkout, locally, as the
- * current user. Only account commands run so: an owner or root command needs root.
+ * Runs each agent command that the runner sends with the agent binary built from this checkout, locally: an account
+ * command as the current user, and an owner or root command through `sudo`, which only a privileged test host allows.
  */
 final class LocalAgentSshExecutor implements SshExecutor
 {
@@ -24,7 +24,8 @@ final class LocalAgentSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        $arguments = LocalAgentBinary::localArguments($command->arguments)
+        $root = LocalAgentBinary::rootArguments($command->arguments, $this->environment);
+        $arguments = $root ?? LocalAgentBinary::localArguments($command->arguments)
             ?? throw new RuntimeException('Only agent commands reach a development Node in this fixture.');
 
         return new NativeProcessRunner()->run(new ProcessInvocation(
@@ -32,7 +33,7 @@ final class LocalAgentSshExecutor implements SshExecutor
             timeout: $command->timeout ?? 30,
             protectedInput: $command->protectedInput ?? ProtectedInput::fromString(''),
             maxOutputBytes: $command->maxOutputBytes,
-            environment: LocalAgentBinary::environment($this->sandbox, $this->environment),
+            environment: $root === null ? LocalAgentBinary::environment($this->sandbox, $this->environment) : [],
         ));
     }
 }

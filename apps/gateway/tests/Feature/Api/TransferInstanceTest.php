@@ -292,7 +292,7 @@ it('transfers a selected SQLite file inside the checkout using the real archive 
         }
         // The materializer removes this on success; a failed upload can leave it behind.
     }
-})->with(['checkout', 'worktree', 'checkout after finished rollback' => ['checkout', true]]);
+})->group('privileged')->with(['checkout', 'worktree', 'checkout after finished rollback' => ['checkout', true]]);
 
 it('preserves post-restore SQLite writes on an identical retry after a copy failure and lost destination rollback response', function (): void {
     [$sandbox, $database, $transport] = transfer_api_sqlite_recovery_fixture($this->instance, $this->sourceNode, $this->destinationNode);
@@ -329,7 +329,7 @@ it('preserves post-restore SQLite writes on an identical retry after a copy fail
         unset($database, $target);
         transfer_api_clean_sqlite_recovery_fixture($this->instance, $sandbox, $transport);
     }
-});
+})->group('privileged');
 
 it('closes a failed SQLite transfer only after removing its owned snapshot and incoming payload', function (): void {
     [$sandbox, $database, $transport] = transfer_api_sqlite_recovery_fixture($this->instance, $this->sourceNode, $this->destinationNode);
@@ -357,7 +357,7 @@ it('closes a failed SQLite transfer only after removing its owned snapshot and i
         unset($database);
         transfer_api_clean_sqlite_recovery_fixture($this->instance, $sandbox, $transport);
     }
-});
+})->group('privileged');
 
 it('finishes persisted rollback before fresh capture after interruption at a forward SQLite checkpoint', function (string $boundary): void {
     [$sandbox, $database, $transport] = transfer_api_sqlite_recovery_fixture($this->instance, $this->sourceNode, $this->destinationNode);
@@ -423,7 +423,7 @@ it('finishes persisted rollback before fresh capture after interruption at a for
         unset($database, $target);
         transfer_api_clean_sqlite_recovery_fixture($this->instance, $sandbox, $transport);
     }
-})->with(['source restored', 'destination deleted']);
+})->group('privileged')->with(['source restored', 'destination deleted']);
 
 it('keeps failed seed cleanup open and blocks recapture until an identical retry confirms cleanup', function (string $side): void {
     [$sandbox, $database, $transport] = transfer_api_sqlite_recovery_fixture($this->instance, $this->sourceNode, $this->destinationNode);
@@ -462,7 +462,7 @@ it('keeps failed seed cleanup open and blocks recapture until an identical retry
         unset($database, $target);
         transfer_api_clean_sqlite_recovery_fixture($this->instance, $sandbox, $transport);
     }
-})->with(['source', 'target']);
+})->group('privileged')->with(['source', 'target']);
 
 it('repeats seed cleanup safely after its successful response is lost without recopying stale data', function (string $side): void {
     [$sandbox, $database, $transport] = transfer_api_sqlite_recovery_fixture($this->instance, $this->sourceNode, $this->destinationNode);
@@ -492,7 +492,7 @@ it('repeats seed cleanup safely after its successful response is lost without re
         unset($database, $target);
         transfer_api_clean_sqlite_recovery_fixture($this->instance, $sandbox, $transport);
     }
-})->with(['source', 'target']);
+})->group('privileged')->with(['source', 'target']);
 
 it('starts a new transfer with different input after a failed pre-cutover transfer finishes rollback', function (): void {
     transfer_api_bind_fakes();

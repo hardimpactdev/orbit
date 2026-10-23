@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * The agent built from this checkout, for integration tests that run real commands against temporary directories.
@@ -92,6 +93,37 @@ final class LocalAgentBinary
         }
 
         return [self::path(), 'command', $arguments[2]];
+    }
+
+    /**
+     * The local arguments of an agent command that the runner sent through `sudo -n`, run as root with `$environment`,
+     * for an owner or root command, as a Node runs one; null for an account command. Only a privileged test host may run them.
+     *
+     * @param  list<string>  $arguments
+     * @param  array<string, string>  $environment
+     * @return list<string>|null
+     */
+    public static function rootArguments(array $arguments, array $environment = []): ?array
+    {
+        $local = self::localArguments($arguments);
+        if ($local === null || ! in_array(app(AgentContract::class)->command($local[2])->linuxPrivilege, ['root', 'owner'], true)) {
+            return null;
+        }
+        $variables = ['PATH' => (string) getenv('PATH'), ...$environment, 'ORBIT_AGENT_SUPERVISED' => '1', 'ORBIT_AGENT_LOCK_DIR' => self::rootLocks()];
+
+        return ['sudo', '-n', 'env', ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($variables), $variables), ...$local];
+    }
+
+    /** One root-owned private lock directory for this test process, removed when it ends. */
+    private static function rootLocks(): string
+    {
+        static $locks = null;
+        if ($locks === null) {
+            $locks = trim(new Process(['sudo', '-n', 'mktemp', '-d', '-p', '/var/tmp', 'orbit-agent-locks.XXXXXX'])->mustRun()->getOutput());
+            register_shutdown_function(static fn () => new Process(['sudo', '-n', 'rm', '-rf', '--', $locks])->run());
+        }
+
+        return $locks;
     }
 
     /**
