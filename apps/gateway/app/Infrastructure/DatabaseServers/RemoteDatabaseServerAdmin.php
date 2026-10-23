@@ -7,109 +7,53 @@ namespace App\Infrastructure\DatabaseServers;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
 
 /**
- * Runs the fixed MySQL or PostgreSQL admin client inside the server's container with `docker exec`, over SSH to its Node.
- *
- * The first line of protected standard input is the root password. The script reads it into
- * the client password variable and hands it to `docker exec` through the environment, so it never reaches an
- * argument list or a file. The rest of standard input is the SQL.
+ * Runs the fixed MySQL or PostgreSQL admin client inside the server's container through the agent's
+ * `databases.server-admin` (docs/reference/database-servers.md). The root password travels in the protected
+ * envelope and reaches the client through its environment.
  */
 final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 {
-    public const string EXECUTE_SCRIPT = <<<'BASH'
-        container=$1
-        password_variable=$2
-        shift 2
-        IFS= read -r "$password_variable"
-        export "$password_variable"
-        exec sudo "--preserve-env=$password_variable" docker container exec -i --env "$password_variable" -- "$container" "$@"
-        BASH;
-
-    /**
-     * The dump and the load run in one shell inside the container, so the data never leaves it.
-     * Both names are checked identifiers; the password reaches both clients through MYSQL_PWD.
-     */
-    public const string COPY_SCRIPT = <<<'BASH'
-        IFS= read -r MYSQL_PWD
-        export MYSQL_PWD
-        exec sudo --preserve-env=MYSQL_PWD docker container exec -i --env MYSQL_PWD -- "$1" bash -euo pipefail -c 'mysqldump --user=root --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF "$1" | mysql --user=root "$2"' orbit-database-copy "$2" "$3"
-        BASH;
-
-    /** TCP reaches only the final server: the image's first-start server listens on its socket alone. */
-    public const string READY_SCRIPT = <<<'BASH'
-        container=$1
-        deadline=$((SECONDS + $2))
-        password_variable=$3
-        shift 3
-        IFS= read -r "$password_variable"
-        export "$password_variable"
-        while :; do
-            if printf 'SELECT 1;\n' | sudo "--preserve-env=$password_variable" docker container exec -i --env "$password_variable" -- "$container" "$@" >/dev/null 2>&1; then
-                exit 0
-            fi
-            if [ "$SECONDS" -ge "$deadline" ]; then
-                exit 75
-            fi
-            sleep 2
-        done
-        BASH;
-
-    private const float COMMAND_TIMEOUT_SECONDS = 600.0;
-
-    private const int MAX_OUTPUT_BYTES = 1_048_576;
-
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private DockerProcessRenderer $docker,
     ) {}
 
     public function waitUntilReady(DatabaseServer $server, int $timeoutSeconds): bool
     {
-        $result = $this->run(
-            $server,
-            self::READY_SCRIPT,
-            'orbit-database-server-ready',
-            [(string) $timeoutSeconds, ...$this->client($server, tcp: true)],
-            '',
-            (float) ($timeoutSeconds + 60),
-        );
+        [$variable, $client] = $this->client($server, tcp: true);
 
-        return $result->succeeded();
+        try {
+            $this->run($server, ['operation' => 'ready', 'password_variable' => $variable, 'client' => $client, 'timeout_seconds' => $timeoutSeconds], (float) ($timeoutSeconds + 60));
+        } catch (AgentCommandRefused) {
+            return false;
+        }
+
+        return true;
     }
 
     public function execute(DatabaseServer $server, #[SensitiveParameter] string $sql): array
     {
-        $result = $this->run(
-            $server,
-            self::EXECUTE_SCRIPT,
-            'orbit-database-server-sql',
-            $this->client($server),
-            $sql,
-            self::COMMAND_TIMEOUT_SECONDS,
-        );
+        [$variable, $client] = $this->client($server);
 
-        if (! $result->succeeded() || $result->truncated) {
+        try {
+            $result = $this->run($server, ['operation' => 'execute', 'password_variable' => $variable, 'client' => $client, 'sql' => $sql]);
+        } catch (AgentCommandRefused|AgentRunnerFailure) {
             throw $this->failed($server);
         }
 
         $rows = [];
 
-        foreach (preg_split('/\R/', $result->stdout) ?: [] as $line) {
+        foreach (preg_split('/\R/', (string) ($result['output'] ?? '')) ?: [] as $line) {
             if ($line === '') {
                 continue;
             }
@@ -131,74 +75,46 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
             }
         }
 
-        $result = $this->run(
-            $server,
-            self::COPY_SCRIPT,
-            'orbit-database-server-copy',
-            [$source, $target],
-            '',
-            self::COMMAND_TIMEOUT_SECONDS,
-        );
-
-        if (! $result->succeeded()) {
+        try {
+            $this->run($server, ['operation' => 'copy', 'source' => $source, 'target' => $target]);
+        } catch (AgentCommandRefused|AgentRunnerFailure) {
             throw $this->failed($server);
         }
     }
 
-    /** @return list<string> */
+    /** @return array{string, list<string>} The password variable and the client arguments. */
     private function client(DatabaseServer $server, bool $tcp = false): array
     {
         if ($server->driver === DatabaseDriver::Pgsql) {
-            return ['PGPASSWORD', 'psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1'];
+            return ['PGPASSWORD', ['psql', '--no-psqlrc', '--host=127.0.0.1', '--username=postgres', '--dbname=postgres', '--no-align', '--tuples-only', '--quiet', '--set=ON_ERROR_STOP=1']];
         }
 
-        return ['MYSQL_PWD', 'mysql', ...($tcp ? ['--protocol=TCP', '--host=127.0.0.1'] : []), '--user=root', '--batch', '--skip-column-names'];
+        return ['MYSQL_PWD', ['mysql', ...($tcp ? ['--protocol=TCP', '--host=127.0.0.1'] : []), '--user=root', '--batch', '--skip-column-names']];
     }
 
-    /** @param list<string> $arguments */
-    private function run(
-        DatabaseServer $server,
-        string $script,
-        string $name,
-        array $arguments,
-        #[SensitiveParameter]
-        string $sql,
-        float $timeout,
-    ): CommandResult {
-        $node = $server->node;
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(DatabaseServer $server, array $input, ?float $deadlineSeconds = null): array
+    {
         $process = $server->process;
 
         if (! $process instanceof Process) {
             throw $this->failed($server);
         }
 
-        $host = $this->host($node);
-        $container = $this->docker->containerName($process);
-        $input = ProtectedInput::fromString($server->root_password."\n".$sql);
-
-        try {
-            return $this->ssh->execute(
-                new SshConnection(
-                    host: $host,
-                    user: $node->user,
-                    port: 22,
-                    identityFile: $this->keys->privateKeyPath(),
-                    knownHostsFile: $this->knownHosts->path(),
-                ),
-                new RemoteCommand(
-                    ['bash', '-eu', '-c', $script, $name, $container, ...$arguments],
-                    protectedInput: $input,
-                    maxOutputBytes: self::MAX_OUTPUT_BYTES,
-                    timeout: $timeout,
-                ),
-            );
-        } finally {
-            $input->close();
-        }
+        return $this->agents->run($this->node($server), 'databases.server-admin', [
+            ...$input,
+            'container' => $this->docker->containerName($process),
+            'password' => (string) $server->root_password,
+        ], $deadlineSeconds);
     }
 
-    private function host(Node $node): string
+    private function node(DatabaseServer $server): Node
     {
+        $node = $server->node;
+
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new ResourceOperationException(
                 errorCode: 'process.wireguard_ip_missing',
@@ -207,7 +123,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
             );
         }
 
-        return $node->wireguard_ip;
+        return $node;
     }
 
     private function failed(DatabaseServer $server): ResourceOperationException

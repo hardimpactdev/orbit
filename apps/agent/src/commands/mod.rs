@@ -5,6 +5,7 @@ pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
 pub mod clone_candidate;
+pub mod database_server;
 pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_certificates;
@@ -114,6 +115,7 @@ pub fn all() -> Vec<Entry> {
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
         entry::<project_source::UpdateProjectSource>(),
+        entry::<database_server::DatabaseServerAdmin>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),

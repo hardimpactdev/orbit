@@ -826,6 +826,21 @@
       ]
     },
     {
+      "name": "databases.server-admin",
+      "summary": "Run the admin client of a Database server's container, or copy a database inside it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "databases.server_admin_invalid",
+        "databases.server_admin_failed",
+        "databases.server_not_ready"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,
