@@ -162,6 +162,8 @@ it('tells a lost connection, a missing result, and a malformed result apart', fu
 
 it('installs the pin from a staged candidate on a version mismatch and sends the command once more', function (): void {
     $node = agentRunnerNode();
+    // A pin that failed before is no longer the pin, and a passing installation clears its record.
+    $node->forceFill(['agent_failed_pin' => str_repeat('f', 64)])->save();
     $pin = app(AgentDelivery::class)->pin($node);
     $transport = new ScriptedAgentTransport([
         agentRefusal('agent.version_mismatch', ['expected' => $pin, 'observed' => str_repeat('0', 64)]),

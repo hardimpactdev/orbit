@@ -72,12 +72,7 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
     #[\Override]
     public function install(Node $node): bool
     {
-        $replaced = $this->installPin($node, $this->transports->for($node), $this->delivery->pin($node), null);
-        if ($node->agent_failed_pin !== null) {
-            $node->forceFill(['agent_failed_pin' => null])->save();
-        }
-
-        return $replaced;
+        return $this->installPin($node, $this->transports->for($node), $this->delivery->pin($node), null);
     }
 
     /** Installs the pinned binary from a staged candidate, which runs the installer itself. */
@@ -109,6 +104,10 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
             $this->recordFailedPin($node, $pin);
 
             throw new AgentCommandRefused(self::Install, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}].", ['pin' => $pin, 'cause' => $outcome['error']['code'], ...$outcome['error']['details']]);
+        }
+
+        if ($node->agent_failed_pin !== null) {
+            $node->forceFill(['agent_failed_pin' => null])->save();
         }
 
         return ($outcome['data']['replaced'] ?? false) === true;
