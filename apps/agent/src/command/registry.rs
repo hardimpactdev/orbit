@@ -41,6 +41,35 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
             )
         }
     };
+    let _locks = if C::MUTATES {
+        match C::target(&input) {
+            Some(target) => match super::lock::acquire_all(
+                &super::lock::lock_directory(),
+                &target,
+                C::RESOURCES,
+                context.deadline(),
+            ) {
+                Ok(held) => held,
+                Err(super::lock::LockError::Busy(path)) => {
+                    return Outcome::refused(
+                        "agent.target_busy",
+                        "Another command holds the lock of this target.",
+                        json!({"lock": path}),
+                    )
+                }
+                Err(super::lock::LockError::Io(path, reason)) => {
+                    return Outcome::refused(
+                        "agent.lock_unavailable",
+                        "The lock of this target cannot be opened.",
+                        json!({"lock": path, "reason": reason}),
+                    )
+                }
+            },
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
     match C::run(input, context) {
         Ok(output) => Outcome::Ok(serde_json::to_value(output).expect("an output serializes")),
         Err(error) => Outcome::refused(error.code(), error.message(), error.details()),

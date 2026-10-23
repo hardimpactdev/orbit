@@ -1,7 +1,7 @@
 //! One call from envelope to result.
 
 use super::{
-    identity::{effective_uid, Platform},
+    identity::{effective_uid, Platform, Privilege},
     registry::{self, Entry},
     supervise, Context, Outcome, SHA_FIELD, VERSION_MISMATCH,
 };
@@ -25,6 +25,8 @@ pub struct Host {
     pub executable: PathBuf,
     /// Whether this process is the supervised half of a mutation.
     pub supervised: bool,
+    /// The account that started this process through `sudo`, from `SUDO_USER`.
+    pub sudo_user: Option<String>,
 }
 impl Host {
     pub fn current() -> Self {
@@ -35,6 +37,9 @@ impl Host {
             executable_sha256: own_digest(),
             executable,
             supervised: std::env::var_os(SUPERVISED_ENV).is_some(),
+            sudo_user: std::env::var("SUDO_USER")
+                .ok()
+                .filter(|user| !user.is_empty() && user != "root"),
         }
     }
 }
@@ -153,14 +158,6 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
             json!({"command": name, "platform": host.platform}),
         );
     };
-    if !privilege.accepts(host.platform, host.euid) {
-        return Outcome::refused(
-            "agent.identity_mismatch",
-            "The command does not run as the identity its privilege declares.",
-            json!({"privilege": privilege, "euid": host.euid}),
-        );
-    }
-
     let budget = entry.timeout.min(Duration::from_millis(deadline_ms));
     if budget.is_zero() {
         return Outcome::refused(
@@ -171,9 +168,40 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
     }
     let deadline = Instant::now() + budget;
 
+    // On Linux a mutation starts through `sudo -n`, because only root starts its service. The service then runs as
+    // the identity the privilege declares, and the supervised process checks that identity below.
     if entry.mutates && host.platform == Platform::Linux && !host.supervised {
-        return supervise::launch(&host.executable, name, envelope, budget);
+        if host.euid != 0 {
+            return Outcome::refused(
+                "agent.identity_mismatch",
+                "A mutation starts through sudo, so it can run under its own service.",
+                json!({"privilege": privilege, "euid": host.euid}),
+            );
+        }
+        let user = match privilege {
+            Privilege::Account => match &host.sudo_user {
+                Some(user) => Some(user.as_str()),
+                None => {
+                    return Outcome::refused(
+                        "agent.identity_mismatch",
+                        "An account mutation needs the account that started it through sudo.",
+                        json!({"privilege": privilege}),
+                    )
+                }
+            },
+            Privilege::Owner | Privilege::Root => None,
+        };
+        return supervise::launch(&host.executable, name, envelope, budget, user);
     }
+
+    if !privilege.accepts(host.platform, host.euid) {
+        return Outcome::refused(
+            "agent.identity_mismatch",
+            "The command does not run as the identity its privilege declares.",
+            json!({"privilege": privilege, "euid": host.euid}),
+        );
+    }
+
     run_in_process(entry, input, Context::new(host.platform, deadline))
 }
 
@@ -211,6 +239,7 @@ mod tests {
             executable_sha256: Ok(PIN.to_string()),
             executable: PathBuf::from("/usr/local/bin/orbit-agent"),
             supervised: false,
+            sudo_user: None,
         }
     }
 
@@ -281,6 +310,16 @@ mod tests {
         assert_eq!(
             code(&execute("agent.status", spent.as_bytes(), &host(1000))),
             "agent.deadline_exceeded"
+        );
+    }
+
+    #[test]
+    fn a_mutation_starts_only_through_sudo_and_an_account_mutation_needs_its_account() {
+        let envelope = json!({"agent_sha256": PIN, "deadline_ms": 1000, "input": {"candidate": "/x", "sha256": PIN}})
+            .to_string();
+        assert_eq!(
+            code(&execute("agent.install", envelope.as_bytes(), &host(1000))),
+            "agent.identity_mismatch"
         );
     }
 

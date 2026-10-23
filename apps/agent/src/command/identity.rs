@@ -49,6 +49,57 @@ pub fn effective_uid() -> u32 {
     rustix::process::geteuid().as_raw()
 }
 
+/// Makes a child process run as `user`, with that user's groups, before project-controlled code starts. A process
+/// that already runs as `user` keeps its identity; root drops to it; any other identity refuses.
+pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+    let name =
+        std::ffi::CString::new(user).map_err(|_| "the user name holds a NUL byte".to_string())?;
+    // SAFETY: getpwnam returns a pointer into static storage or null; its fields are copied at once.
+    let (uid, gid, home) = unsafe {
+        let entry = libc::getpwnam(name.as_ptr());
+        if entry.is_null() {
+            return Err(format!("the user {user} does not exist"));
+        }
+        (
+            (*entry).pw_uid,
+            (*entry).pw_gid,
+            std::ffi::CStr::from_ptr((*entry).pw_dir)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    };
+    let euid = effective_uid();
+    if euid == uid {
+        return Ok(());
+    }
+    if euid != 0 {
+        return Err(format!("only root can run a command as {user}"));
+    }
+    let mut groups = vec![0 as libc::gid_t; 256];
+    let mut count = groups.len() as libc::c_int;
+    // SAFETY: groups has room for count entries; getgrouplist writes at most that many and updates count.
+    if unsafe { libc::getgrouplist(name.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0 {
+        return Err(format!("the groups of {user} do not fit"));
+    }
+    groups.truncate(count as usize);
+    command
+        .env("HOME", home)
+        .env("USER", user)
+        .env("LOGNAME", user);
+    // SAFETY: setgroups is async-signal-safe and runs in the child between fork and exec.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::setgroups(groups.len() as _, groups.as_ptr()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command.gid(gid).uid(uid);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

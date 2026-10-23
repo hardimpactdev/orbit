@@ -203,6 +203,10 @@ impl Observer {
             #[cfg(test)]
             Self::Fake(healthy) => healthy,
             Self::Systemd => {
+                // A start limit hit by earlier restarts must not fail a valid binary.
+                let _ = Process::new("/usr/bin/systemctl")
+                    .args(["reset-failed", OBSERVER_UNIT])
+                    .status();
                 let restarted = Process::new("/usr/bin/systemctl")
                     .args(["restart", OBSERVER_UNIT])
                     .status()
@@ -276,11 +280,17 @@ pub fn install(
     let name = target.file_name().unwrap().to_string_lossy();
     let staged = directory.join(format!("{name}.orbit-candidate"));
     let kept = directory.join(format!("{name}.previous"));
-    copy_executable(candidate, &staged).map_err(|error| failed("stage", error))?;
+    if let Err(error) = copy_executable(candidate, &staged) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(failed("stage", error));
+    }
     if previous_sha256.is_some() {
         copy_executable(target, &kept).map_err(|error| failed("keep previous", error))?;
     }
-    std::fs::rename(&staged, target).map_err(|error| failed("replace", error))?;
+    if let Err(error) = std::fs::rename(&staged, target) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(failed("replace", error));
+    }
 
     if !observer.restart_and_check() {
         if previous_sha256.is_some() {
@@ -476,6 +486,20 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, InstallError::UpdateBusy { .. }));
+        assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
+    }
+
+    #[test]
+    fn a_failed_replacement_leaves_no_staged_file_and_keeps_the_installed_binary() {
+        let fixture = Fixture::new();
+        fixture.write("bin/orbit-agent", "old");
+        let candidate = fixture.write("candidate-7", "new");
+        // A directory where the staged file would go makes the copy fail.
+        std::fs::create_dir(fixture.directory.join("bin/orbit-agent.orbit-candidate/")).unwrap();
+        assert!(matches!(
+            fixture.install(&fixture.input(&candidate), Observer::Fake(true)),
+            Err(InstallError::InstallFailed { step: "stage", .. })
+        ));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
     }
 

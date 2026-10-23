@@ -39,6 +39,8 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.platform_unsupported",
     "agent.deadline_exceeded",
     "agent.supervisor_failed",
+    "agent.target_busy",
+    "agent.lock_unavailable",
 ];
 
 /// One named Node action with a typed contract.
@@ -55,6 +57,14 @@ pub trait Command {
 
     /// The identity the command runs as on each platform, or `None` where it is unsupported.
     fn privilege(platform: Platform) -> Option<Privilege>;
+
+    /// The canonical target a mutation locks exclusively, such as a checkout path. Reads take no lock.
+    fn target(_input: &Self::Input) -> Option<String> {
+        None
+    }
+
+    /// The shared resources a mutation changes, locked after its target in sorted order.
+    const RESOURCES: &'static [&'static str] = &[];
     fn run(input: Self::Input, context: &Context) -> Result<Self::Output, Self::Error>;
 }
 

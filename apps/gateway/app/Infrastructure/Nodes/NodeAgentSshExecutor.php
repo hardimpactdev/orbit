@@ -241,8 +241,11 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         // so it runs before the section below holds that lock.
         try {
             $binaryChanged = $this->agents->install($node);
-        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
-            throw new ResourceOperationException('agent.install_failed', $exception->getMessage(), 502, $exception);
+        } catch (AgentCommandRefused $exception) {
+            $cause = $exception->details['cause'] ?? $exception->errorCode;
+            throw new ResourceOperationException('agent.install_failed', $exception->getMessage().' Cause: '.(is_string($cause) ? $cause : $exception->errorCode).'.', 502, $exception);
+        } catch (AgentRunnerFailure $exception) {
+            throw new ResourceOperationException('agent.install_failed', $exception->getMessage().' Cause: '.$exception->kind.'.', 502, $exception);
         }
         $this->holdLock($lock);
 

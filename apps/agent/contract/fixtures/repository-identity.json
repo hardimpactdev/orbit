@@ -1,0 +1,437 @@
+[
+    {
+        "origin": "https://github.com/hardimpactdev/orbit.git",
+        "node": "github.com/hardimpactdev/orbit",
+        "gateway": "github.com/hardimpactdev/orbit"
+    },
+    {
+        "origin": "https://github.com/hardimpactdev/orbit",
+        "node": "github.com/hardimpactdev/orbit",
+        "gateway": "github.com/hardimpactdev/orbit"
+    },
+    {
+        "origin": "https://GitHub.com/Org/Repo.git/",
+        "node": "github.com/Org/Repo",
+        "gateway": "github.com/Org/Repo"
+    },
+    {
+        "origin": "git@github.com:hardimpactdev/orbit.git",
+        "node": "github.com/hardimpactdev/orbit",
+        "gateway": "github.com/hardimpactdev/orbit"
+    },
+    {
+        "origin": "git@GitHub.com:Org/Repo",
+        "node": "github.com/Org/Repo",
+        "gateway": "github.com/Org/Repo"
+    },
+    {
+        "origin": "ssh://git@github.com/org/repo.git",
+        "node": "github.com/org/repo",
+        "gateway": "github.com/org/repo"
+    },
+    {
+        "origin": "ssh://git@github.com:22/org/repo.git",
+        "node": "github.com/org/repo",
+        "gateway": "github.com/org/repo"
+    },
+    {
+        "origin": "ssh://github.com/org/repo",
+        "node": "github.com/org/repo",
+        "gateway": "github.com/org/repo"
+    },
+    {
+        "origin": "https://github.com:443/org/repo.git",
+        "node": "github.com/org/repo",
+        "gateway": "github.com/org/repo"
+    },
+    {
+        "origin": "https://user@github.com/org/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://user:token@github.com/org/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git:secret@github.com/org/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "http://github.com/org/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "file:///srv/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "/srv/repo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com/org/repo.git?x=1",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com/org/repo.git#main",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "git@github.com:org/repo.git?x",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com/",
+        "node": "github.com/",
+        "gateway": "github.com/"
+    },
+    {
+        "origin": "git@github.com:",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com/org/repo .git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://github.com/org/re\u200bpo.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[::1]:8443/org/repo.git",
+        "node": "[::1]/org/repo",
+        "gateway": "[::1]/org/repo"
+    },
+    {
+        "origin": "https://github.com/org/repo.git//",
+        "node": "github.com/org/repo",
+        "gateway": "github.com/org/repo"
+    },
+    {
+        "origin": "git@gitlab.example.com:group/sub/repo.git",
+        "node": "gitlab.example.com/group/sub/repo",
+        "gateway": "gitlab.example.com/group/sub/repo"
+    },
+    {
+        "origin": "https://example.test:/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:0/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:0/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:0/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:00001/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:00001/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:00001/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:000022/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:000022/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:000022/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:65535/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:65535/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:65535/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:65536/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:65536/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:65536/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:+22/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:+22/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:+22/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:+/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:+/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:+/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:++1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:++1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:++1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:-1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:-1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:-1/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:-0/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:-0/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:-0/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:22a/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:22a/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:22a/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:a2/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:a2/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:a2/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:+22a/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:+22a/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:+22a/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:1.5/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:1.5/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:1.5/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:22:33/acme/site.git",
+        "node": "example.test:22/acme/site",
+        "gateway": "example.test:22/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:22:33/acme/site.git",
+        "node": "[2001:db8::1]:22/acme/site",
+        "gateway": "[2001:db8::1]:22/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:22:33/acme/site.git",
+        "node": "example.test:22/acme/site",
+        "gateway": "example.test:22/acme/site"
+    },
+    {
+        "origin": "https://example.test:0x1f/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://[2001:db8::1]:0x1f/acme/site.git",
+        "node": "[2001:db8::1]/acme/site",
+        "gateway": "[2001:db8::1]/acme/site"
+    },
+    {
+        "origin": "ssh://git@example.test:0x1f/acme/site.git",
+        "node": "example.test/acme/site",
+        "gateway": "example.test/acme/site"
+    },
+    {
+        "origin": "https://example.test:12345a/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:12345a/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:12345a/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:+65535/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:+65535/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:+65535/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test:notaport/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://[2001:db8::1]:notaport/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "ssh://git@example.test:notaport/acme/site.git",
+        "node": null,
+        "gateway": null
+    }
+]

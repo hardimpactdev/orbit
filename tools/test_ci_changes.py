@@ -49,7 +49,8 @@ class SelectionTest(unittest.TestCase):
             'apps/cli/app/Commands/NodeListCommand.php': ('e2e', 'docs', 'api-reference'),
             'apps/gateway/tests/Support/SubprocessFixture.php': ('e2e',),
             'apps/gateway/routes/api.php': ('cli',),
-            'apps/gateway/tests/Programs/requirements.txt': ('agent',),
+            # The Gateway's fake runner reads the contract, and its privileged tests run the built agent.
+            'apps/agent/contract/commands.json': ('gateway',),
             'apps/docs/app/Console/Commands/DocsLintCommand.php': ('e2e',),
             'packages/php-sdk/composer.json': ('e2e', 'docs', 'api-reference'),
             'docs/openapi.json': ('e2e',),
@@ -138,9 +139,9 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue(api['jobs']['web'])
         self.assertTrue(api['jobs']['api-reference'])
 
-    def test_shared_agent_fixtures_recipe_and_desktop_web_dependency(self):
+    def test_shared_agent_fixtures_built_agent_and_desktop_web_dependency(self):
         self.assertTrue(ci.selection(['apps/agent/tests/redaction_cases.json'])['jobs']['gateway-shards'])
-        self.assertTrue(ci.selection(['apps/gateway/resources/machine-software/recipe.json'])['jobs']['agent'])
+        self.assertTrue(ci.selection(['apps/agent/src/commands/instances.rs'])['jobs']['privileged'])
         web = ci.selection(['apps/web/src/main.tsx'])
         self.assertTrue(web['jobs']['desktop'])
         self.assertTrue(web['jobs']['web'])

@@ -25,6 +25,7 @@ rustix = { version = "1", features = ["fs", "process"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
+libc = "0.2"
 serde_json = "1"
 sha2 = "0.10"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
@@ -32,12 +33,17 @@ tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-t
 tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 toml = "0.8"
 zbus = { version = "5", features = ["tokio"] }
+base64 = "0.22"
 
 # Redaction's shared cases should measure the rules, not unoptimized regex matching.
 [profile.dev.package.regex]
 opt-level = 3
 
 [profile.dev.package.regex-automata]
+opt-level = 3
+
+# Every command hashes its own binary, and a debug binary is large; the tests that run it should not wait on that.
+[profile.dev.package.sha2]
 opt-level = 3
 
 [dev-dependencies]

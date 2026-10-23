@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteInspector;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use Throwable;
 
 final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInspector
 {
-    public function __construct(private RemoteProgramRunner $runner, private RemoteProgramCatalog $catalog) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
     public function hasCollisions(Instance $instance): bool
     {
@@ -27,17 +26,17 @@ final readonly class NativeWebSocketRouteInspector implements WebSocketRouteInsp
         }
 
         try {
-            $result = $this->runner->run(
+            $result = $this->agents->run(
                 $instance->node,
-                $this->catalog->program('instances.inspect-source', user: $user),
-                ['inspection' => 'laravel_routes', 'home' => $home, 'application' => $instance->applicationDirectory(), 'php' => 'php'.$version],
-                timeoutSeconds: 60,
+                'instances.inspect-laravel-routes',
+                ['user' => $user, 'home' => $home, 'application' => $instance->applicationDirectory(), 'php_version' => $version],
+                deadlineSeconds: 60,
             );
-            $collision = $result->data['collision'] ?? null;
         } catch (Throwable) {
             throw $this->failure();
         }
-        if ($result->outcome !== 'routes_inspected' || ! is_bool($collision)) {
+        $collision = $result['collision'] ?? null;
+        if (! is_bool($collision)) {
             throw $this->failure();
         }
 

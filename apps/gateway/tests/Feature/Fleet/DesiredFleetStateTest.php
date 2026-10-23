@@ -295,7 +295,7 @@ describe(DesiredFleetState::class, function (): void {
         $locks->shouldReceive('lock')->once()->andReturn($lock);
         $locks->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $store->get($key));
 
-        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($locks));
+        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($locks), app(AgentDelivery::class));
 
         expect($state->current()->cli->status->value)->toBe('pending');
         Http::assertNothingSent();
@@ -310,7 +310,7 @@ describe(DesiredFleetState::class, function (): void {
         $store = Mockery::mock(ArrayStore::class)->makePartial();
         $store->shouldReceive('lock')->once()->andReturn($lock);
 
-        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($store));
+        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($store), app(AgentDelivery::class));
 
         expect($state->current()->cli->version)->toBe('0.4681.0');
     });

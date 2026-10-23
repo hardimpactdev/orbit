@@ -95,3 +95,19 @@ it('uses a bounded error for an invalid credential-bearing origin', function ():
         ->and($debugOutput)
         ->not->toContain($credential, $repository);
 });
+
+// The agent derives the identity of a checkout's origin on the Node. Both sides read the same cases, so a removal
+// never compares two identities that the rules derive differently.
+it('derives the identity that the agent derives for each shared case', function (): void {
+    $cases = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/repository-identity.json')), true, flags: JSON_THROW_ON_ERROR);
+
+    foreach ($cases as $case) {
+        try {
+            $identity = GitRepositoryIdentity::derive($case['origin']);
+        } catch (InvalidArgumentException) {
+            $identity = null;
+        }
+
+        expect($identity)->toBe($case['gateway'], $case['origin']);
+    }
+});

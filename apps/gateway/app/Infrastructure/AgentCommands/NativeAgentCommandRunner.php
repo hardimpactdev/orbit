@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
@@ -132,10 +133,21 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
             'command',
             $spec->name,
         ];
+        $credential = false;
+        foreach ($input as $key => $value) {
+            if ($value instanceof GitReadEnvironment) {
+                $credential = $credential || ! $value->isEmpty();
+                $input[$key] = (object) $value->variables;
+            }
+        }
         $envelope = json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budget * 1000), 'input' => (object) $input], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         try {
-            $result = $transport->run($arguments, ProtectedInput::fromString($envelope), $budget + self::TransportGraceSeconds);
+            $result = $transport->run(
+                $arguments,
+                $credential ? ProtectedInput::gitCredential($envelope) : ProtectedInput::fromString($envelope),
+                $budget + self::TransportGraceSeconds,
+            );
         } catch (ProcessTimedOutException) {
             throw new AgentRunnerFailure($spec->name, AgentRunnerFailure::Timeout, "The command [{$spec->name}] did not answer before its deadline.");
         }

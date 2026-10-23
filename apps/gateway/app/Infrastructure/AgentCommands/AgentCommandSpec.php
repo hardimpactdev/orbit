@@ -23,10 +23,13 @@ final readonly class AgentCommandSpec
         return $platform === 'macos' ? $this->macosPrivilege : $this->linuxPrivilege;
     }
 
-    /** Whether the runner starts the command through `sudo -n` on the platform. */
+    /**
+     * Whether the runner starts the command through `sudo -n` on the platform. On Linux a mutation always does, because
+     * only root starts its service; the service then runs as the identity the privilege declares.
+     */
     public function needsSudo(string $platform): bool
     {
-        return $platform === 'linux' && in_array($this->linuxPrivilege, ['root', 'owner'], true);
+        return $platform === 'linux' && ($this->mutates || in_array($this->linuxPrivilege, ['root', 'owner'], true));
     }
 
     public function declares(string $code): bool

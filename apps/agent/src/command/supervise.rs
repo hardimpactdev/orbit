@@ -26,8 +26,14 @@ pub fn unit_name(command: &str) -> String {
     format!("orbit-command-{safe}-{:016x}", rand::random::<u64>())
 }
 
-pub fn arguments(executable: &Path, command: &str, budget: Duration, unit: &str) -> Vec<String> {
-    vec![
+pub fn arguments(
+    executable: &Path,
+    command: &str,
+    budget: Duration,
+    unit: &str,
+    user: Option<&str>,
+) -> Vec<String> {
+    let mut arguments = vec![
         "--quiet".into(),
         "--wait".into(),
         "--pipe".into(),
@@ -37,18 +43,31 @@ pub fn arguments(executable: &Path, command: &str, budget: Duration, unit: &str)
         "--property=KillMode=control-group".into(),
         format!("--property=RuntimeMaxSec={}", budget.as_secs() + 1),
         format!("--setenv={SUPERVISED_ENV}=1"),
+    ];
+    // systemd sets HOME, USER, and the user's groups for a service that runs as a named user.
+    if let Some(user) = user {
+        arguments.push(format!("--uid={user}"));
+    }
+    arguments.extend([
         "--".into(),
         executable.display().to_string(),
         "command".into(),
         command.into(),
-    ]
+    ]);
+    arguments
 }
 
 /// Runs the same envelope under a transient service and returns its one result.
-pub fn launch(executable: &Path, command: &str, envelope: &[u8], budget: Duration) -> Outcome {
+pub fn launch(
+    executable: &Path,
+    command: &str,
+    envelope: &[u8],
+    budget: Duration,
+    user: Option<&str>,
+) -> Outcome {
     let unit = unit_name(command);
     let child = Command::new("/usr/bin/systemd-run")
-        .args(arguments(executable, command, budget, &unit))
+        .args(arguments(executable, command, budget, &unit, user))
         .env_clear()
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .stdin(Stdio::piped())
@@ -120,6 +139,7 @@ mod tests {
             "instances.remove-source",
             Duration::from_secs(90),
             "orbit-command-x",
+            None,
         );
         assert!(arguments.contains(&"--property=KillMode=control-group".to_string()));
         assert!(arguments.contains(&"--property=RuntimeMaxSec=91".to_string()));
@@ -131,6 +151,22 @@ mod tests {
                 "command",
                 "instances.remove-source"
             ]
+        );
+    }
+
+    #[test]
+    fn an_account_mutation_runs_its_service_as_that_account() {
+        let arguments = arguments(
+            Path::new("/usr/local/bin/orbit-agent"),
+            "instances.remove-source",
+            Duration::from_secs(9),
+            "u",
+            Some("orbit"),
+        );
+        assert!(arguments.contains(&"--uid=orbit".to_string()));
+        assert!(
+            arguments.iter().position(|a| a == "--uid=orbit")
+                < arguments.iter().position(|a| a == "--")
         );
     }
 

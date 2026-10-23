@@ -27,6 +27,7 @@ use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
@@ -139,7 +140,8 @@ final readonly class RemoveTaskWorkspaceAction
                 || ($cause instanceof ResourceOperationException && ($cause->details['outcome'] ?? null) === 'unconfirmed')
                 || ($cause instanceof RuntimeConvergenceException && $cause->result !== null && in_array($cause->result->exitCode, [124, 137, 143, 255], true))
                 || ($cause instanceof RemoteProgramFailed && $cause->reason !== RemoteProgramFailure::Unreachable
-                    && ($cause->exitCode === null || in_array($cause->exitCode, [124, 137, 143, 255], true)))) {
+                    && ($cause->exitCode === null || in_array($cause->exitCode, [124, 137, 143, 255], true)))
+                || ($cause instanceof AgentRunnerFailure && in_array($cause->kind, [AgentRunnerFailure::Transport, AgentRunnerFailure::Timeout, AgentRunnerFailure::MissingResult], true))) {
                 return true;
             }
         }

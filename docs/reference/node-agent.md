@@ -160,7 +160,7 @@ Each command declares one privilege per platform. The runner reads it from the c
 | `owner` | Starts as root through `sudo -n`, and drops to the recorded owner before project code | The enrolled account |
 | `root` | `sudo -n` | Refused with `agent.privilege_unsupported` |
 
-A read runs in the started process and takes no lock. On Linux, a mutation runs in its own transient service, `orbit-command-<name>-<random>`, with `KillMode=control-group` and `RuntimeMaxSec` set to its bound. Its control group holds every child, so a daemon or `setsid` child stops with the command. The supervised process checks its own executable again. It takes an exclusive `flock` on its target under `/run/lock/orbit`, then on each shared resource in sorted order, then on the update lock when it needs it. Lock files are close-on-exec, so project code never inherits one.
+A read runs in the started process and takes no lock. On Linux, a mutation runs in its own transient service, `orbit-command-<name>-<random>`, with `KillMode=control-group` and `RuntimeMaxSec` set to its bound. Its control group holds every child, so a daemon or `setsid` child stops with the command. The supervised process checks its own executable again. It takes an exclusive `flock` on its target under `/run/lock/orbit-agent`, then on each shared resource in sorted order, then on the update lock when it needs it. Lock files are close-on-exec, so project code never inherits one.
 
 ### The contract
 

@@ -420,6 +420,16 @@ jobs:
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
+      # Source removal tests run the agent built from this commit (tests/Support/LocalAgentBinary.php).
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Restore Rust caches
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/agent
+      - name: Build the agent
+        working-directory: apps/agent
+        run: cargo build --release --locked
       # Valkey tests pull their image on the first real docker run.
       - name: Run privileged tests
         env:

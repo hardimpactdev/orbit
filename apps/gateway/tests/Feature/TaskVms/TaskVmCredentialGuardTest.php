@@ -152,8 +152,8 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
     };
 
     expect($only('/->bashPreamble\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
-        // A remote program receives the Git read environment in its JSON input, on protected input.
-        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
+        // A remote program or an agent command receives the Git read environment in its JSON input, on protected input.
+        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/AgentCommands/NativeAgentCommandRunner.php', 'app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
         ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
         // The publisher removes the token from Git's error output; the others only unset or filter the variables.
         ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
@@ -161,6 +161,7 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
         // GitHub access in the environment of a process on the Gateway, never in a remote command.
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
+            'app/Infrastructure/AgentCommands/NativeAgentCommandRunner.php',
             'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
             'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
             'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',

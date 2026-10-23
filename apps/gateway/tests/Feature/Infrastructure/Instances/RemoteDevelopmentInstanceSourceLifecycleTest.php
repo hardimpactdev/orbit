@@ -48,8 +48,11 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
-use App\Infrastructure\RemotePrograms\SshProgramRunner;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentTransport;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -72,7 +75,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
+use Tests\Support\LocalAgentBinary;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
@@ -87,15 +90,23 @@ beforeAll(function (): void {
 });
 
 afterAll(function (): void {
-    orb76_python_programs()->close();
     new Filesystem()->deleteDirectory(orb76_repository_seed());
 });
 
-function orb76_python_programs(): ForkedPythonPrograms
+/** The real agent runner over the test's SSH stand-in, which runs the built agent binary on this machine. */
+function orb76_agent_runner(SshExecutor $ssh, SshKeyProvider $keys, KnownHostsStore $knownHosts, string $sandbox): NativeAgentCommandRunner
 {
-    static $programs = null;
+    $transports = new class($ssh, $keys, $knownHosts) extends AgentTransports
+    {
+        public function __construct(private readonly SshExecutor $ssh, private readonly SshKeyProvider $keys, private readonly KnownHostsStore $knownHosts) {}
 
-    return $programs ??= new ForkedPythonPrograms;
+        public function for(Node $node): AgentTransport
+        {
+            return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
+        }
+    };
+
+    return new NativeAgentCommandRunner(app(AgentContract::class), LocalAgentBinary::delivery($sandbox.'/agent-delivery'), $transports);
 }
 
 /** The immutable seed is private to this file's worker; each case changes only its copy. */
@@ -160,7 +171,6 @@ beforeEach(function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     };
     $ssh = new DevelopmentSshExecutor($this->transport, $keys, $knownHosts);
-    $catalog = new RemoteProgramCatalog;
     $this->ssh = $ssh;
     $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
     $this->source = new RemoteDevelopmentInstanceSourceLifecycle(
@@ -170,10 +180,9 @@ beforeEach(function (): void {
         app(RepositoryReadAccess::class),
         app(TaskVmGit::class),
     );
-    $this->programs = new SshProgramRunner($this->transport, $keys, $knownHosts, $catalog);
+    $this->agents = orb76_agent_runner($this->transport, $keys, $knownHosts, $this->sandbox);
     $this->removal = new RemoteDevelopmentInstanceSourceRemoval(
-        $this->programs,
-        $catalog,
+        $this->agents,
         $accounts,
         $this->boundary,
         $this->sourceLock,
@@ -184,6 +193,7 @@ beforeEach(function (): void {
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.10',
         'wireguard_ip' => '10.44.0.3',
         'user' => $user,
@@ -517,19 +527,18 @@ it('refuses to move a checkout across a mount before any copy, and keeps it in p
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-cross-device');
     $member = orb180_record_source($this->removal, $instance, true);
     $checkout = (string) $instance->checkout_path;
-    // The guard reports the checkout on another device; every other identity check reads the real one.
+    // The Node answers that the checkout is on another device, as it does without moving anything.
     $this->transport->crossDeviceOnce = true;
 
-    // The program's log reaches the step failure, so the command's Activity keeps the `cross-device:` line.
+    // The step failure keeps a `cross-device:` line, so the command's Activity shows why the checkout stayed.
     expect(fn () => $this->removal->finalize($member))->toThrow(function (RuntimeConvergenceException $exception) use ($checkout): void {
         expect($exception->errorCode)->toBe('instance.removal_incomplete')
             ->and($exception->result?->exitCode)->toBe(1)
-            ->and($exception->result?->stdout)->toBe("{\"outcome\":\"cross_device\",\"data\":{}}\n")
+            ->and($exception->result?->stdout)->toBe("{\"state\":\"cross_device\"}\n")
             ->and($exception->result?->stderr)->toStartWith("cross-device: the checkout [{$checkout}]");
     });
 
-    expect($this->transport->outcomes['instances.finalize-source-removal'] ?? null)->toBe('cross_device')
-        ->and(is_dir($checkout.'/.git'))->toBeTrue()
+    expect(is_dir($checkout.'/.git'))->toBeTrue()
         ->and(file_exists(orb180_quarantine_path($member)))->toBeFalse()
         ->and($member->refresh()->source_finalized_at)->toBeNull();
 
@@ -982,7 +991,8 @@ it('retries empty Project directory cleanup after absent-source finalization is 
     expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
     $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
     $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
-    $this->transport->failGroupingDirectoryCleanupOnce = true;
+    // The first finalization is lost before it runs, as a dropped connection leaves it.
+    $this->transport->loseFinalizationOnce = true;
 
     expect(fn () => $action->execute($instance, false))
         ->toThrow(fn (InstanceRemovalException $exception) => expect($exception->errorCode)->toBe('instance.removal_incomplete'));
@@ -2899,8 +2909,7 @@ it('reports foreign App ownership drift as a removal conflict before path valida
 it('holds the per-Node source lock for every recorded adapter call', function (): void {
     $lock = new Orb180RecordingSourceLock;
     $removal = new RemoteDevelopmentInstanceSourceRemoval(
-        $this->programs,
-        new RemoteProgramCatalog,
+        $this->agents,
         $this->accounts,
         $this->boundary,
         $lock,
@@ -3683,10 +3692,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
     /** @var array<string, string> */
     public array $environment = [];
 
-    public bool $failGroupingDirectoryCleanupOnce = false;
-
-    /** @var array<string, string> The last outcome of each remote program. */
-    public array $outcomes = [];
+    public bool $loseFinalizationOnce = false;
 
     public function __construct(
         public string $remoteOrigin,
@@ -3698,12 +3704,11 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         RemoteCommand $command,
     ): CommandResult {
         $this->commands[] = $command;
-        $input = $command->input;
-        $program = ($command->arguments[0] ?? null) === 'python3' ? ($command->arguments[4] ?? null) : null;
-
-        if (is_string($program) && is_string($input)) {
-            $input = $this->programInput($program, $input);
+        $agent = LocalAgentBinary::localArguments($command->arguments);
+        if ($agent !== null) {
+            return $this->agentCommand($agent, (string) stream_get_contents($command->protectedInput?->stream()));
         }
+        $input = $command->input;
 
         $preparing = is_string($input) && str_contains($input, 'allow_existing=$6');
         if ($preparing && $this->prepareFailure === 'before directory') {
@@ -3719,21 +3724,11 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         );
 
         try {
-            if (is_string($program)) {
-                $payload = $command->protectedInput === null ? $input : stream_get_contents($command->protectedInput->stream());
-                $result = orb76_python_programs()->run($arguments[3], $program, $payload, $this->environment);
-            } else {
-                $executor = new LocalShellSshExecutor(programDirectory: dirname($this->localOrigin));
-                $executor->environment = $this->environment;
-                $result = $executor->execute($connection, new RemoteCommand($arguments, $input, $command->protectedInput));
-            }
+            $executor = new LocalShellSshExecutor(programDirectory: dirname($this->localOrigin));
+            $executor->environment = $this->environment;
+            $result = $executor->execute($connection, new RemoteCommand($arguments, $input, $command->protectedInput));
         } finally {
             $command->protectedInput?->close();
-        }
-
-        if (is_string($program) && $result->succeeded()) {
-            $outcome = json_decode($result->stdout, true);
-            $this->outcomes[$program] = is_array($outcome) && is_string($outcome['outcome'] ?? null) ? $outcome['outcome'] : '';
         }
 
         return new CommandResult(
@@ -3750,65 +3745,68 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
     }
 
     /**
-     * Point a remote program at the local origin, and inject the fault a test asked for into its source, as an
-     * interruption at a given step would leave the Node.
+     * Run an agent command with the built binary on this machine, and inject the fault a test asked for at the point
+     * where the Node would meet it. Git reaches the Project origin through the local repository.
+     *
+     * @param  list<string>  $arguments
      */
-    private function programInput(string $program, string $input): string
+    private function agentCommand(array $arguments, string $envelope): CommandResult
     {
-        [$source, $payload] = explode("\0", $input, 2);
-        $values = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        array_walk_recursive($values, function (mixed &$value): void {
-            $value = $value === $this->remoteOrigin ? $this->localOrigin : $value;
-        });
+        $envelope = str_replace(json_encode($this->remoteOrigin, JSON_UNESCAPED_SLASHES), json_encode($this->localOrigin, JSON_UNESCAPED_SLASHES), $envelope);
 
-        if ($program === 'instances.finalize-source-removal') {
+        if ($arguments[2] === 'instances.finalize-source-removal') {
             $callback = $this->beforeFinalization;
             $this->beforeFinalization = null;
             $callback?->__invoke();
 
-            if ($this->interruptAfterSourceMove) {
-                $this->interruptAfterSourceMove = false;
-                $source = self::inject($source, 'physical = quarantine', 'physical = quarantine; raise SystemExit(74)');
+            if ($this->loseFinalizationOnce) {
+                $this->loseFinalizationOnce = false;
+
+                return new CommandResult(255, '', 'Connection closed', 1, false);
             }
 
             if ($this->crossDeviceOnce) {
                 $this->crossDeviceOnce = false;
-                $source = self::inject($source, 'return os.lstat(first).st_dev == os.lstat(second).st_dev', 'return False');
+
+                return new CommandResult(0, json_encode(['ok' => true, 'data' => ['state' => 'cross_device', 'receipt' => null]], JSON_THROW_ON_ERROR)."\n", '', 1, false);
             }
 
-            if ($this->failGroupingDirectoryCleanupOnce) {
-                $this->failGroupingDirectoryCleanupOnce = false;
-                $source = self::inject($source, 'os.rmdir(grouping_directory)', 'raise SystemExit(97)');
-            }
-        }
-
-        if ($program === 'instances.remove-source') {
-            $checkout = $values['checkout'] ?? null;
-
-            if (is_string($checkout) && is_dir($checkout)) {
-                $configuredOrigin = trim(orb76_run(['git', '-C', $checkout, 'config', '--get', 'remote.origin.url'])->stdout);
-
-                if ($configuredOrigin === $this->localOrigin) {
-                    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
+            if ($this->interruptAfterSourceMove) {
+                $this->interruptAfterSourceMove = false;
+                $input = json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input'];
+                $quarantine = "{$input['root']}/.orbit-removals/{$input['operation']}.{$input['member']}.quarantine";
+                $moved = $input['layout'] === 'worktree'
+                    ? orb76_run(['git', '--git-dir='.$input['common_repository'].'/.git', 'worktree', 'move', $input['checkout'], $quarantine])
+                    : orb76_run(['mv', '--', $input['checkout'], $quarantine]);
+                if (! $moved->succeeded()) {
+                    throw new LogicException('The interrupted finalization could not move the source.');
                 }
+
+                return new CommandResult(255, '', 'Connection closed', 1, false);
             }
-
-            $source = self::inject(
-                $source,
-                "'remote', 'add', 'origin', origin)",
-                "'remote', 'add', 'origin', ".var_export($this->localOrigin, true).')',
-            );
         }
 
-        return $source."\0".json_encode($values, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    private static function inject(string $source, string $search, string $replace): string
-    {
-        if (! str_contains($source, $search)) {
-            throw new LogicException("The program no longer contains [{$search}].");
+        if ($arguments[2] === 'instances.remove-source') {
+            // The checkout names the Project origin, as a Node's does; git reaches it through the local repository.
+            $checkout = json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input']['checkout'];
+            if (is_dir($checkout) && trim(orb76_run(['git', '-C', $checkout, 'config', '--get', 'remote.origin.url'])->stdout) === $this->localOrigin) {
+                orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
+            }
         }
 
-        return str_replace($search, $replace, $source);
+        $process = new Process($arguments, null, LocalAgentBinary::environment([
+            ...$this->environment,
+            'GIT_CONFIG_COUNT' => '1',
+            'GIT_CONFIG_KEY_0' => "url.{$this->localOrigin}.insteadOf",
+            'GIT_CONFIG_VALUE_0' => $this->remoteOrigin,
+        ]), $envelope, 120);
+        $process->run();
+        $stdout = str_replace(
+            [json_encode($this->localOrigin, JSON_UNESCAPED_SLASHES), base64_encode($this->localOrigin)],
+            [json_encode($this->remoteOrigin, JSON_UNESCAPED_SLASHES), base64_encode($this->remoteOrigin)],
+            $process->getOutput(),
+        );
+
+        return new CommandResult((int) $process->getExitCode(), $stdout, $process->getErrorOutput(), 1, false);
     }
 }

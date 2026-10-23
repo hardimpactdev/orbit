@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentContract;
@@ -17,7 +18,7 @@ use App\Models\Node;
 /** A Node that answers each call from a queue of result lines, and records what it was sent. */
 class ScriptedAgentTransport implements AgentTransport
 {
-    /** @var list<array{arguments: list<string>, envelope: array<string, mixed>}> */
+    /** @var list<array{arguments: list<string>, envelope: array<string, mixed>, credential: bool}> */
     public array $calls = [];
 
     /** @var list<string> */
@@ -39,7 +40,7 @@ class ScriptedAgentTransport implements AgentTransport
     public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
     {
         $decoded = json_decode((string) stream_get_contents($envelope->stream()), true, flags: JSON_THROW_ON_ERROR);
-        $this->calls[] = ['arguments' => $arguments, 'envelope' => $decoded];
+        $this->calls[] = ['arguments' => $arguments, 'envelope' => $decoded, 'credential' => $envelope->carriesGitCredential()];
         $result = array_shift($this->results) ?? throw new LogicException('No scripted result left.');
 
         return $result instanceof Closure ? $result($decoded) : $result;
@@ -110,6 +111,24 @@ it('starts a root command through sudo on Linux', function (): void {
     agentRunner($transport)->run(agentRunnerNode(), 'agent.install', ['candidate' => '/var/tmp/x', 'sha256' => str_repeat('a', 64)]);
 
     expect($transport->calls[0]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'agent.install']);
+});
+
+// A task VM never receives a GitHub credential; the guard knows one by the mark on the input.
+it('sends Git read access as its variables on input marked as carrying a credential', function (): void {
+    $transport = new ScriptedAgentTransport([
+        agentResult(['ok' => true, 'data' => ['published' => true]]),
+        agentResult(['ok' => true, 'data' => ['published' => true]]),
+    ]);
+    $runner = agentRunner($transport);
+    $access = GitReadEnvironment::forGitHubToken('secret-token');
+
+    $runner->run(agentRunnerNode(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => $access]);
+    $runner->run(Node::query()->firstOrFail(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => GitReadEnvironment::none()]);
+
+    expect($transport->calls[0]['envelope']['input']['git_read'])->toBe($access->variables)
+        ->and($transport->calls[0]['credential'])->toBeTrue()
+        ->and($transport->calls[1]['envelope']['input']['git_read'])->toBe([])
+        ->and($transport->calls[1]['credential'])->toBeFalse();
 });
 
 it('raises a declared refusal with its code and details', function (): void {

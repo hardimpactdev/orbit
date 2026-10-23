@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/{Actions,Data}/WebSocket/**
   - apps/gateway/app/Domain/WebSocket/{WebSocketAppIssuer,WebSocketAppEnvProjection,WebSocketServerCredentials}.php
   - apps/gateway/app/Http/Controllers/Api/{WebSocketAppsController,WebSocketAppAttachmentsController}.php
-  - apps/gateway/app/Http/Requests/WebSocket/**
+  - apps/gateway/app/{Http/Requests/WebSocket/**,Infrastructure/WebSocket/NativeWebSocketRouteInspector.php}
   - apps/gateway/app/Models/{WebSocketApp,WebSocketAppTarget}.php
   - apps/gateway/database/migrations/2026_12_07_000000_create_websocket_apps.php
 ---
@@ -99,7 +99,7 @@ The socket matcher supports HTTP/1.1 upgrades. Caddy 2.11.7 does not advertise H
 
 The registry permits any origin to subscribe to public channels with the public key. Channel authorization remains on the application `/broadcasting/auth` endpoint; an app key is public and does not authorize private subscriptions.
 
-Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including case variants and parameters anywhere in the first segment that may cover those prefixes. The check uses the existing `instances.inspect-source` program as the production user. The root Laravel fallback is allowed; Caddy reserves the Pusher prefixes before it. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment.
+Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including case variants and parameters anywhere in the first segment that may cover those prefixes. The agent command `instances.inspect-laravel-routes` reads the list as the production user and returns only whether a route collides; application output never leaves the Node. The root Laravel fallback is allowed; Caddy reserves the Pusher prefixes before it. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment.
 
 Attachment and detachment commit stored intent before building Caddy. On build failure, retry public attachment to publish. To repair a withdrawal, run `orbit node:converge <node> --force` on every affected serving Node. A plain converge compares code digests and can skip a changed attachment. Synchronize the environment after attachment or rotation. Route inspection and publication run synchronously under the projection lock. A slow or unreachable target can delay other projection work; retry after it finishes.
 

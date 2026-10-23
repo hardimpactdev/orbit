@@ -9,10 +9,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The directory of target and resource locks on Linux.
-pub const LOCK_DIR: &str = "/run/lock/orbit";
+/// The directory of target and resource locks on Linux. It is not `/run/lock/orbit`, which root-only scripts own.
+pub const LOCK_DIR: &str = "/run/lock/orbit-agent";
 /// The lock that installation, CLI replacement, and final recipe verification hold.
 pub const UPDATE_LOCK_LINUX: &str = "/run/lock/orbit-self-update.lock";
+
+/// The lock directory of this platform. On Linux it is shared by root and the managed account, so it is created
+/// world-writable with the sticky bit, like `/run/lock` itself: anyone may add a lock file, none may remove another's.
+pub fn lock_directory() -> PathBuf {
+    if cfg!(target_os = "linux") {
+        let directory = PathBuf::from(LOCK_DIR);
+        if !directory.is_dir() && std::fs::create_dir(&directory).is_ok() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o1777));
+        }
+        directory
+    } else {
+        PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".orbit/locks")
+    }
+}
 
 /// A held lock; dropping it releases the lock.
 #[derive(Debug)]

@@ -117,6 +117,7 @@ function fleetConverger(ScriptedSshExecutor $ssh, array $options = []): FleetNod
         new NodeFootprint($options['artifacts'] ?? [new FakeFootprintArtifact('caddy', 'c1', changes: false)]),
         $options['verification'] ?? new FleetConvergerVerification,
         new NodeUpdateLock(FleetTestSsh::shell($ssh)),
+        app(AgentDelivery::class),
     );
 }
 

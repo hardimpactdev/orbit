@@ -1,6 +1,8 @@
 //! The named commands this binary implements, by area.
 
 pub mod agent;
+pub mod instances;
+pub mod source;
 
 use crate::command::registry::{entry, Entry};
 
@@ -30,5 +32,17 @@ macro_rules! command_errors {
 }
 
 pub fn all() -> Vec<Entry> {
-    vec![entry::<agent::Status>(), entry::<agent::Install>()]
+    vec![
+        entry::<agent::Status>(),
+        entry::<agent::Install>(),
+        entry::<instances::InspectSource>(),
+        entry::<instances::RemoveSource>(),
+        entry::<instances::PrepareRemoval>(),
+        entry::<instances::FinalizeRemoval>(),
+        entry::<instances::ReadReceipt>(),
+        entry::<instances::CleanReceipt>(),
+        entry::<instances::ReadRemovalState>(),
+        entry::<instances::CheckPublication>(),
+        entry::<instances::InspectLaravelRoutes>(),
+    ]
 }
