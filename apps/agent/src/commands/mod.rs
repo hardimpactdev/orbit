@@ -19,6 +19,7 @@ pub mod metrics_certificate;
 pub mod php_runtime;
 pub mod production;
 pub mod production_home;
+pub mod project_source;
 pub mod registration;
 pub mod source;
 pub mod sqlite_copy;
@@ -112,6 +113,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
+        entry::<project_source::UpdateProjectSource>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),

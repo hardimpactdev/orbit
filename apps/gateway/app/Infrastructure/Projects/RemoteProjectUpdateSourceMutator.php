@@ -5,22 +5,24 @@ declare(strict_types=1);
 namespace App\Infrastructure\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
-use App\Infrastructure\SourceControl\WorkspaceGit;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 use App\Models\TaskVm;
 use Closure;
+use Illuminate\Support\Facades\Config;
 
+/**
+ * The checkout steps of a Project update, through the managed account's `projects.update-source` agent command
+ * (docs/reference/projects.md#update-a-project).
+ */
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private RepositoryReadAccess $access,
     ) {}
 
@@ -34,29 +36,13 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             if ($network) {
                 $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
             }
-            $this->run(
-                $checkout,
-                [$checkout->checkout_path, $currentUrl, $proposedUrl, $network ? '1' : '0'],
-                <<<'BASH'
-                    path=$1
-                    current=$2
-                    proposed=$3
-                    network=$4
-                    test -d "$path"
-                    test -d "$path/.git"
-                    test ! -f "$path/.git"
-                    origin=$(git -C "$path" config --get remote.origin.url)
-                    test "$origin" = "$current"
-                    git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
-                    if [ "$network" = 1 ]; then
-                        # Outside the checkout, so its config cannot shape a credentialed call.
-                        git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --heads -- "$proposed" >/dev/null
-                    fi
-                    BASH,
-                'app-update-repository-preflight',
-                'project.repository_preflight_failed',
-                read: $network ? $read : null,
-            );
+            $this->run($checkout, [
+                'operation' => 'preflight_repository',
+                'path' => $checkout->checkout_path,
+                'current' => $currentUrl,
+                'proposed' => $proposedUrl,
+                'git_read' => $network ? $read : null,
+            ], 'app-update-repository-preflight', 'project.repository_preflight_failed');
         }
     }
 
@@ -91,20 +77,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 $record(array_values($byKey));
             }
 
-            $this->run(
-                $checkout,
-                [$path, $newUrl],
-                <<<'BASH'
-                    path=$1
-                    url=$2
-                    test -d "$path/.git"
-                    test ! -f "$path/.git"
-                    git -C "$path" remote set-url origin -- "$url"
-                    test "$(git -C "$path" config --get remote.origin.url)" = "$url"
-                    BASH,
-                'app-update-repository-origin',
-                'project.repository_origin_failed',
-            );
+            $this->run($checkout, ['operation' => 'set_origin', 'path' => $path, 'url' => $newUrl], 'app-update-repository-origin', 'project.repository_origin_failed');
 
             $byKey[$key] = [...$row, 'mutated' => true];
             if ($record !== null) {
@@ -136,75 +109,31 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 continue;
             }
 
-            $this->run(
-                $checkout,
-                [$mutation['path'], $mutation['previous_url']],
-                <<<'BASH'
-                    path=$1
-                    url=$2
-                    # An origin that never changed is not written, so a read-only checkout cannot hold the rollback.
-                    test "$(git -C "$path" config --get remote.origin.url)" = "$url" || git -C "$path" remote set-url origin -- "$url"
-                    BASH,
-                'app-update-repository-restore',
-                'project.repository_origin_failed',
-            );
+            $this->run($checkout, ['operation' => 'restore_origin', 'path' => $mutation['path'], 'url' => $mutation['previous_url']], 'app-update-repository-restore', 'project.repository_origin_failed');
         }
     }
 
     public function preflightDefaultBranch(Instance $instance, string $newBranch): void
     {
-        $this->run(
-            $instance,
-            [$instance->checkout_path, $newBranch, $instance->loadMissing('project')->project->repository_url],
-            WorkspaceGit::fetchPreamble().<<<'BASH'
-                path=$1
-                branch=$2
-                repository=$3
-                test -d "$path"
-                git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                checkout_fetch -C "$path" fetch --quiet --no-tags --prune -- "$repository" \
-                    '+refs/heads/*:refs/remotes/origin/*'
-                git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
-                BASH,
-            'app-update-default-branch-preflight',
-            'project.source_switch_failed',
-            read: $this->access->for(
-                $instance->project->repository_url,
-                $instance->project->source_access,
-            ),
-        );
+        $project = $instance->loadMissing('project')->project;
+        $this->run($instance, [
+            'operation' => 'preflight_branch',
+            'path' => $instance->checkout_path,
+            'branch' => $newBranch,
+            'repository' => $project->repository_url,
+            'protocols' => array_values(array_filter(Config::array('orbit.git.checkout_protocols', ['https']), is_string(...))),
+            'git_read' => $this->access->for($project->repository_url, $project->source_access),
+        ], 'app-update-default-branch-preflight', 'project.source_switch_failed');
     }
 
     public function switchDefaultBranch(Instance $instance, string $newBranch): void
     {
-        $this->run(
-            $instance,
-            [$instance->checkout_path, $newBranch],
-            <<<'BASH'
-                path=$1
-                branch=$2
-                git -C "$path" checkout --no-track -B "$branch" "origin/$branch"
-                git -C "$path" config "branch.$branch.remote" origin
-                git -C "$path" config "branch.$branch.merge" "refs/heads/$branch"
-                BASH,
-            'app-update-default-branch-switch',
-            'project.source_switch_failed',
-        );
+        $this->run($instance, ['operation' => 'switch_branch', 'path' => $instance->checkout_path, 'branch' => $newBranch], 'app-update-default-branch-switch', 'project.source_switch_failed');
     }
 
     public function restoreDefaultBranch(Instance $instance, string $previousBranch): void
     {
-        $this->run(
-            $instance,
-            [$instance->checkout_path, $previousBranch],
-            <<<'BASH'
-                path=$1
-                branch=$2
-                git -C "$path" checkout "$branch" --
-                BASH,
-            'app-update-default-branch-restore',
-            'project.source_switch_failed',
-        );
+        $this->run($instance, ['operation' => 'restore_branch', 'path' => $instance->checkout_path, 'branch' => $previousBranch], 'app-update-default-branch-restore', 'project.source_switch_failed');
     }
 
     /**
@@ -223,35 +152,11 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         return array_values($unique);
     }
 
-    /**
-     * Hooks never run: every Git call sets core.hooksPath.
-     *
-     * @param  list<string>  $arguments
-     */
-    private function run(
-        Instance $instance,
-        array $arguments,
-        string $script,
-        string $step,
-        string $errorCode,
-        ?GitReadEnvironment $read = null,
-    ): void {
-        $script = WorkspaceGit::bashPreamble().$script;
-        $readScript = $read instanceof GitReadEnvironment
-            ? GitReadScript::for($read, $script)
-            : null;
-
+    /** @param  array<string, mixed>  $input */
+    private function run(Instance $instance, array $input, string $step, string $errorCode): void
+    {
         try {
-            $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: ['bash', '-seu', '--', ...$arguments],
-                    input: $readScript === null ? $script : $readScript->input,
-                    protectedInput: $readScript?->protectedInput,
-                ),
-                step: $step,
-                errorCode: $errorCode,
-            );
+            AgentStep::run($this->agents, $instance->node, 'projects.update-source', $input, $step, $errorCode, 'App development');
         } catch (RuntimeConvergenceException $exception) {
             throw new ResourceOperationException(
                 errorCode: $exception->errorCode,

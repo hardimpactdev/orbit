@@ -813,6 +813,19 @@
       ]
     },
     {
+      "name": "projects.update-source",
+      "summary": "Check, change, or restore a development checkout's origin or default branch.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "projects.source_failed"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

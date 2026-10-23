@@ -58,6 +58,8 @@ final class Orb101ProjectUpdateFixture
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.80',
             'wireguard_ip' => '10.44.0.80',
             'tld' => 'test',
