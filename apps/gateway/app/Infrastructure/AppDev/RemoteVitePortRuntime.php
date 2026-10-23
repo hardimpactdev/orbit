@@ -32,7 +32,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
     public function selectPort(Node $node, int $preferred, array $excluded): int
     {
         try {
-            $result = $this->agents->run($node, 'vite.select-port', ['preferred' => $preferred, 'excluded' => array_values($excluded)]);
+            $result = $this->agents->run($node, 'vite.select-port', ['preferred' => $preferred, 'excluded' => $excluded]);
         } catch (AgentCommandRefused $refusal) {
             if ($refusal->errorCode === 'vite.ports_exhausted') {
                 throw new ProcessOperationException('vite-port-check', 'vite.ports_exhausted', 'No available Vite port remains on this Node.');

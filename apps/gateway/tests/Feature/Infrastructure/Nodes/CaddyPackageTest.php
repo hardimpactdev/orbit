@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Models\Node;
 use Tests\Support\CaddyPackageHarness;
+use Tests\Support\FakeAgentCommandRunner;
 
 describe('Caddy release floor', function (): void {
     it('reads the release from either build of `caddy version`', function (string $output, ?string $release): void {
@@ -47,9 +48,9 @@ describe('Caddy package', function (): void {
     });
 
     it('installs the package only for the roles that serve through Caddy', function (RoleName $role, bool $needed): void {
-        $command = new NodeRolePrerequisiteCommandFactory()->caddyPackage(new Node, $role);
+        $agents = new FakeAgentCommandRunner;
 
-        expect($command instanceof RemoteCommand)->toBe($needed);
+        expect((new RolePrerequisites($agents, new AgentCaddyPackage($agents)))->needsCaddy(new Node, $role))->toBe($needed);
     })->with([
         'router' => [RoleName::Router, true],
         'app development' => [RoleName::AppDev, true],
@@ -63,24 +64,20 @@ describe('Caddy package', function (): void {
         'ingress' => [RoleName::Ingress, true],
     ]);
 
-    it('passes the pinned release, digests, version floor, kernel setting, and old source as fixed argv', function (): void {
-        $command = new NodeRolePrerequisiteCommandFactory()->caddyPackage(new Node, RoleName::AppDev);
+    it('passes the pinned release, digests, version floor, kernel setting, and old source to the agent', function (): void {
+        $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => true]);
 
-        expect($command?->arguments)->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            '2.11.7',
-            'https://github.com/caddyserver/caddy/releases/download/v2.11.7',
-            '47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9',
-            'ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a',
-            '2.9.0',
-            '/etc/sysctl.d/60-orbit-caddy.conf',
-            'net.ipv4.tcp_migrate_req = 1',
-            '/usr/share/keyrings/orbit-caddy.gpg',
-            '/etc/apt/sources.list.d/orbit-caddy.sources',
-        ]);
+        expect((new AgentCaddyPackage($agents))->install(new Node(['name' => 'dev']))->stdout)->toBe(CaddyPackageProgram::Changed."\n")
+            ->and($agents->calls[0]['input'])->toBe([
+                'release' => '2.11.7',
+                'release_url' => 'https://github.com/caddyserver/caddy/releases/download/v2.11.7',
+                'amd64_sha512' => '47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9',
+                'arm64_sha512' => 'ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a',
+                'minimum_version' => '2.9.0',
+                'kernel_setting_path' => '/etc/sysctl.d/60-orbit-caddy.conf',
+                'kernel_setting' => 'net.ipv4.tcp_migrate_req = 1',
+                'legacy_paths' => ['/usr/share/keyrings/orbit-caddy.gpg', '/etc/apt/sources.list.d/orbit-caddy.sources'],
+            ]);
     });
 
     it('never refreshes apt sources, removes a package, or trusts an unpinned download', function (): void {

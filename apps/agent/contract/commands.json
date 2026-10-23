@@ -98,6 +98,21 @@
       ]
     },
     {
+      "name": "roles.install-prerequisites",
+      "summary": "Install a role's packages, and the Composer home and JavaScript runtime of an application role.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "roles.os_unsupported",
+        "roles.prerequisite_conflict",
+        "roles.prerequisite_failed"
+      ]
+    },
+    {
       "name": "instances.inspect-source",
       "summary": "Read the evidence of a development source before its removal.",
       "mutates": false,

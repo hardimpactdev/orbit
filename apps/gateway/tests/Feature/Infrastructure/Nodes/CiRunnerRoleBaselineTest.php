@@ -6,15 +6,16 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\Roles\CiRunnerRoleBaseline;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\ScriptedSshExecutor;
@@ -33,19 +34,20 @@ function ci_runner_baseline(): array
     $ssh = new ScriptedSshExecutor;
     $firewall = new FakeNodeRoleFirewallManager;
 
-    return [new CiRunnerRoleBaseline(new NodeRolePrerequisiteCommandFactory, $accounts,
-        new DevelopmentSshExecutor($ssh, $keys, $known), $firewall,
-        new CiRunnerHostProgram(new SshProgramRunner($ssh, $keys, $known, new RemoteProgramCatalog), new RemoteProgramCatalog)), $ssh, $firewall];
+    $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', []);
+
+    return [new CiRunnerRoleBaseline(new RolePrerequisites($agents, new AgentCaddyPackage($agents)), $accounts, $firewall,
+        new CiRunnerHostProgram(new SshProgramRunner($ssh, $keys, $known, new RemoteProgramCatalog), new RemoteProgramCatalog)), $ssh, $firewall, $agents];
 }
 
 it('installs Incus and runs the host baseline before opening its managed firewall rule', function (): void {
     $node = FleetFixtures::node('ci-only', [RoleName::CiRunner]);
-    [$baseline, $ssh, $firewall] = ci_runner_baseline();
-    $ssh->on('/ci-runners\.host$/', function () use ($ssh, $firewall): CommandResult {
-        expect($ssh->commands[0]->arguments)->toContain('incus', 'incus-base', 'incus-client')->not->toContain('docker.io', 'caddy');
+    [$baseline, $ssh, $firewall, $agents] = ci_runner_baseline();
+    $ssh->on('/ci-runners\.host$/', function () use ($ssh, $firewall, $agents): CommandResult {
+        expect($agents->calls[0]['input']['packages'])->toContain('incus', 'incus-base', 'incus-client')->not->toContain('docker.io', 'caddy');
         expect($firewall->commands)->toBe([]);
 
-        expect(json_decode(explode("\0", $ssh->commands[1]->input)[1], true)['action'])->toBe('converge');
+        expect(json_decode(explode("\0", $ssh->commands[0]->input)[1], true)['action'])->toBe('converge');
 
         return ScriptedSshExecutor::ok("{\"outcome\":\"converged\",\"data\":{}}\n");
     });
@@ -53,8 +55,8 @@ it('installs Incus and runs the host baseline before opening its managed firewal
     $baseline->converge($node, $node->roles()->sole());
 
     expect($firewall->commands)->toBe(['converge:ci-runner']);
-    expect($ssh->lines())->toHaveCount(2)
-        ->and($ssh->commands[1]->arguments)->toContain('sudo', 'root', 'python3', '-I', 'ci-runners.host');
+    expect($ssh->lines())->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments)->toContain('sudo', 'root', 'python3', '-I', 'ci-runners.host');
 });
 
 it('reports host failure and never opens the bridge allowance', function (): void {

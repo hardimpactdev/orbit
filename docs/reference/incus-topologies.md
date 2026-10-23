@@ -98,7 +98,7 @@ Cloud-init creates fresh SSH keys; the harness waits through its seed reboot bef
 
 Before the first migration, `converge-gateway.sh prerequisites` ensures that Caddy and dnsmasq are installed, installing only missing packages.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
+The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. It first installs the pinned agent from the mounted worktree, because the programs call it. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Composition installs no PHP: every Node, the Gateway included, runs the recipe's [PHP build](/reference/compute-drivers#php-build) from the base image. Workload and operator enrollment still use the normal product paths.
 
 Every Node keeps the template's root disk, which has the size of the base image's disk. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 

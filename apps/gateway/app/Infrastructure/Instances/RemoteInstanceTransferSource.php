@@ -277,11 +277,11 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
         return [
             'head' => $captured['head'],
-            'branch' => $captured['branch'],
+            'branch' => is_string($captured['branch']) ? $captured['branch'] : null,
             'detached' => $captured['detached'],
             'archive' => $captured['archive'],
-            'common' => $captured['common'],
-            'refs' => $refs,
+            'common' => is_string($captured['common']) ? $captured['common'] : null,
+            'refs' => array_values(array_filter($refs, is_string(...))),
         ];
     }
 

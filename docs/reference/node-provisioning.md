@@ -418,6 +418,12 @@ The installer also repairs the [managed PHP settings](/reference/compute-drivers
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 
+### Role prerequisites
+
+Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`. A healthy Docker CE installation replaces `docker.io`.
+
+For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`, and the Vite+, Node, and Bun launchers in `/usr/local/bin`. A launcher that Orbit did not write fails the step with `roles.prerequisite_conflict` before any change. A failed version check after publication restores the launchers it replaced.
+
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
 The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through local `sudo`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.

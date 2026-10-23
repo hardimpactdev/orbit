@@ -51,7 +51,11 @@ pub fn parse(text: &str) -> Result<OsRelease, OsReleaseError> {
         if slot.0.is_some() {
             return Err(OsReleaseError::Unreadable {});
         }
-        *slot.0 = Some(value(slot.1).ok_or(OsReleaseError::Unreadable {})?.to_owned());
+        *slot.0 = Some(
+            value(slot.1)
+                .ok_or(OsReleaseError::Unreadable {})?
+                .to_owned(),
+        );
     }
     match (id, codename) {
         (Some(id), Some(codename)) => Ok(OsRelease { id, codename }),

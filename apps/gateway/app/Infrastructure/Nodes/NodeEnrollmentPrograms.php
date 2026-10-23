@@ -7,7 +7,8 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\AgentCommands\AgentInvocation;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\Tools\ComposerToolManager;
@@ -41,7 +42,8 @@ final readonly class NodeEnrollmentPrograms
 
     public function __construct(
         private NodeBootstrapCommandFactory $bootstrap,
-        private NodeRolePrerequisiteCommandFactory $roles,
+        private RolePrerequisites $roles,
+        private AgentInvocation $agent,
         private VpToolManager $vp,
         private ComposerToolManager $composer,
         private RemotePhpPackageManager $php,
@@ -59,9 +61,9 @@ final readonly class NodeEnrollmentPrograms
      *
      * @throws InvalidArgumentException for a repeated role or a role this cannot render
      */
-    public function render(array $roles): array
+    public function render(array $roles, string $architecture = 'x86_64'): array
     {
-        $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser]);
+        $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser, 'architecture' => $architecture]);
         $account = new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser);
 
         $programs = [EnrollmentProgram::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, self::ManagedUser, rolelessOperator: $roles === [])];
@@ -75,13 +77,12 @@ final readonly class NodeEnrollmentPrograms
             }
             $rendered[] = $role;
 
-            $caddy = $this->roles->caddyPackage($node, $role);
-            if ($caddy instanceof RemoteCommand) {
-                $programs[EnrollmentProgram::CaddyPackage] ??= $caddy;
+            if ($this->roles->needsCaddy($node, $role)) {
+                $programs[EnrollmentProgram::CaddyPackage] ??= $this->agent->command($node, 'caddy.install-package', AgentCaddyPackage::input());
             }
             // The gateway role has no prerequisites program; its Caddy follows the VPN through a role step.
             if ($role !== RoleName::Gateway) {
-                $programs[EnrollmentProgram::prerequisites($role)] = $this->roles->make($node, $role, $account);
+                $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'roles.install-prerequisites', $this->roles->input($node, $role, $account));
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
                 $programs[EnrollmentProgram::VpManager] ??= $this->vp->materializeCommand($node);

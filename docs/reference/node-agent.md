@@ -192,6 +192,8 @@ The runner picks the transport from the Node. Both carry the same arguments, env
 | A managed Node | SSH to its WireGuard address, as its enrolled account, with its pinned host key |
 | The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
 
+An image build has no runner. `orbit:node-programs` renders each ported enrollment program as `orbit-agent command <name>` with the envelope on standard input, pinned for `--architecture`. Its JSON names the pinned binary, which the builder installs before the first program.
+
 ### Live output
 
 A command that runs project code can publish its output while it runs. `instances.run-deploy-step` runs one production deploy step as the Instance owner, and `instances.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.

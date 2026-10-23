@@ -20,17 +20,18 @@ pub mod hibernation;
 pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
+pub mod os_release;
 pub mod php_runtime;
 pub mod production;
 pub mod production_home;
 pub mod project_source;
 pub mod registration;
+pub mod role_prerequisites;
 pub mod schedules;
 pub mod source;
 pub mod sqlite_copy;
-pub mod os_release;
-pub mod storage_root;
 pub mod sqlite_seed;
+pub mod storage_root;
 pub mod tls_check;
 pub mod transfer_source;
 pub mod vite;
@@ -76,6 +77,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
         entry::<os_release::ReadOsRelease>(),
+        entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectSource>(),
         entry::<instances::RemoveSource>(),
         entry::<instances::PrepareRemoval>(),

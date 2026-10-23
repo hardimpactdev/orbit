@@ -334,7 +334,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
      * Runs UFW through the agent over the public or WireGuard connection: `['status', 'numbered']` reads the status,
      * `['stored']` the stored rule tuples, and anything else is one change with these `ufw` arguments.
      *
-     * @param  non-empty-list<string>  $arguments
+     * @param  list<string>  $arguments
      */
     private function execute(
         Node $node,

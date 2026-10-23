@@ -11,6 +11,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -53,7 +54,7 @@ final readonly class RemoteDatabaseServerAdmin implements DatabaseServerAdmin
 
         $rows = [];
 
-        foreach (preg_split('/\R/', (string) ($result['output'] ?? '')) ?: [] as $line) {
+        foreach (preg_split('/\R/', StoredValue::string($result['output'] ?? null)) ?: [] as $line) {
             if ($line === '') {
                 continue;
             }

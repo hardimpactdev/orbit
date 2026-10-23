@@ -9,7 +9,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WebSocket\WebSocketServerCredentials;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -23,7 +23,7 @@ use App\Models\NodeRole;
 final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntimeLifecycle
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
+        private RolePrerequisites $prerequisites,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
@@ -41,10 +41,8 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
         $address = $this->address($node);
         $account = $this->accounts->resolve($node);
 
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::WebSocket);
-        if ($caddyPackage instanceof RemoteCommand) {
-            $source = $this->ssh->execute($this->connection($node, $address), $caddyPackage);
-
+        $source = $this->prerequisites->caddy($node, RoleName::WebSocket);
+        if ($source !== null) {
             if (! $source->succeeded()) {
                 throw new NodeRoleOperationException(
                     'caddy-package-source',
@@ -56,10 +54,7 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             }
         }
 
-        $prerequisites = $this->ssh->execute(
-            $this->connection($node, $address),
-            $this->commands->make($node, RoleName::WebSocket, $account),
-        );
+        $prerequisites = $this->prerequisites->install($node, RoleName::WebSocket, $account);
 
         if (! $prerequisites->succeeded()) {
             throw new NodeRoleOperationException(

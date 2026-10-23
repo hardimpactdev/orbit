@@ -13,6 +13,7 @@ use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Schedule;
 use SensitiveParameter;
 use Throwable;
@@ -75,7 +76,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
         $target = $this->targets->forSchedule($schedule);
         $logs = $this->call($target, 'schedules.logs', ['id' => $schedule->id, 'lines' => $lines, 'max_bytes' => self::MAX_LOG_BYTES], 'logs', ScheduleErrorCode::LogsFailed, 'Schedule logs could not be read.');
 
-        return new ScheduleLogsData((string) ($logs['output'] ?? ''), ($logs['truncated'] ?? false) === true);
+        return new ScheduleLogsData(StoredValue::string($logs['output'] ?? null), ($logs['truncated'] ?? false) === true);
     }
 
     public function remove(#[SensitiveParameter] Schedule $schedule, bool $cascade): bool

@@ -213,5 +213,6 @@ function websocket_publication_agents(array &$events, bool $failCertificate, arr
 
             return [];
         });
+
     return $agents;
 }

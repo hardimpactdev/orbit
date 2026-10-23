@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\NodeEnrollmentPrograms;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -18,7 +19,9 @@ function render_node_programs(array $roles): array
     expect(Artisan::call('orbit:node-programs', ['roles' => $roles, '--json' => true]))->toBe(0);
 
     $output = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
-    expect(array_keys($output))->toBe(['programs']);
+    $node = new Node(['platform' => 'linux', 'architecture' => 'x86_64']);
+    expect(array_keys($output))->toBe(['agent', 'programs'])
+        ->and($output['agent'])->toBe(['path' => app(AgentDelivery::class)->localFile($node), 'sha256' => app(AgentDelivery::class)->pin($node)]);
 
     return $output['programs'];
 }
@@ -65,14 +68,23 @@ describe('orbit:node-programs', function (): void {
         $programs = render_node_programs(['app-prod']);
 
         expect(node_program_names($programs))->toBe(['bootstrap', 'caddy-package', 'app-prod-prerequisites', 'vp-manager', 'composer-manager'])
-            ->and($programs[2]['arguments'])->toContain('app-prod', 'orbit', '/home/orbit', 'docker.io', 'caddy');
+            ->and(json_decode((string) $programs[2]['input'], true)['input'])->toMatchArray(['user' => 'orbit', 'home' => '/home/orbit', 'application_runtime' => true, 'apps_directory' => false])
+            ->and(json_decode((string) $programs[2]['input'], true)['input']['packages'])->toContain('docker.io', 'caddy');
+    });
+
+    it('renders ported programs as calls to the pinned agent', function (): void {
+        $programs = array_column(render_node_programs(['vpn']), null, 'name');
+        $node = new Node(['platform' => 'linux', 'architecture' => 'x86_64']);
+
+        expect($programs['vpn-prerequisites']['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'roles.install-prerequisites'])
+            ->and(json_decode((string) $programs['vpn-prerequisites']['input'], true)['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($node));
     });
 
     it('renders Caddy once and each role prerequisite in order for gateway and vpn', function (): void {
         $programs = render_node_programs(['gateway', 'vpn']);
 
         expect(node_program_names($programs))->toBe(['bootstrap', 'caddy-package', 'vpn-prerequisites'])
-            ->and($programs[2]['arguments'])->toContain('vpn', 'dnsmasq', 'openssl');
+            ->and(json_decode((string) $programs[2]['input'], true)['input']['packages'])->toBe(['dnsmasq', 'openssl']);
     });
 
     it('renders shared programs once, at the first role that runs them', function (): void {

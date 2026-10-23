@@ -8,6 +8,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
@@ -17,14 +18,16 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeNodeConverger;
+use Tests\Support\SshCommandAgents;
 
 beforeEach(function (): void {
     $this->caller = $this->markAsGateway(caddy_failure_node('gateway-peer', '10.44.0.1'));
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    app()->instance(SshExecutor::class, caddy_failure_ssh());
+    caddy_failure_bind();
     app()->instance(NodeConverger::class, new FakeNodeConverger);
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
     {
@@ -36,7 +39,7 @@ beforeEach(function (): void {
 });
 
 it('names ingress and ingress.caddy_config_failed when ingress convergence cannot order Caddy', function (): void {
-    app()->instance(SshExecutor::class, caddy_failure_ssh('ordering'));
+    caddy_failure_bind('ordering');
     $cluster = Cluster::query()->create(['name' => 'ingress-ordering']);
     $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
 
@@ -107,7 +110,7 @@ it('returns details.error_code ingress.caddy_config_failed when ingress removal 
 });
 
 it('names the router and router.caddy_config_failed when router convergence cannot order Caddy', function (): void {
-    app()->instance(SshExecutor::class, caddy_failure_ssh('ordering'));
+    caddy_failure_bind('ordering');
     $cluster = Cluster::query()->create(['name' => 'router-ordering']);
     $node = caddy_failure_node('router-a', '10.44.0.4', $cluster);
 
@@ -168,7 +171,7 @@ it('keeps an app-dev removal that stops in the Caddy build on app-dev.caddy_conf
 });
 
 it('names an ingress prerequisite failure as an ingress step and keeps its own code', function (): void {
-    app()->instance(SshExecutor::class, caddy_failure_ssh('source'));
+    caddy_failure_bind('source');
     $cluster = Cluster::query()->create(['name' => 'ingress-source']);
     $node = caddy_failure_node('edge', '10.44.0.2', $cluster);
 
@@ -199,6 +202,18 @@ function caddy_failure_builds(): FakeNodeCaddyBuilds
     expect($builds)->toBeInstanceOf(FakeNodeCaddyBuilds::class);
 
     return $builds;
+}
+
+/** Binds the SSH fake and an agent that answers the role prerequisites, refusing the Caddy package for `source`. */
+function caddy_failure_bind(?string $fail = null): void
+{
+    $ssh = caddy_failure_ssh($fail);
+    $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', [])->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
+    $fail === 'source'
+        ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
+        : $agents->answer('caddy.install-package', ['changed' => false]);
+    app()->instance(SshExecutor::class, $ssh);
+    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $agents));
 }
 
 function caddy_failure_ssh(?string $fail = null): SshExecutor

@@ -10,7 +10,6 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Domain\RemotePrograms\RemoteProgramFailed;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -18,22 +17,15 @@ use App\Models\NodeRole;
 final readonly class CiRunnerRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
+        private RolePrerequisites $prerequisites,
         private ManagedUserAccountResolver $accounts,
-        private DevelopmentSshExecutor $ssh,
         private NodeRoleFirewallManager $firewall,
         private CiRunnerHostProgram $program,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $this->ssh->execute(
-            $node,
-            $this->commands->make($node, RoleName::CiRunner, $this->accounts->resolve($node)),
-            'role-prerequisites',
-            'ci-runner.prerequisite_failed',
-            failureLabel: 'CI runner',
-        );
+        $this->prerequisites->converge($node, RoleName::CiRunner, $this->accounts->resolve($node), 'ci-runner.prerequisite_failed', 'CI runner');
         $this->host($node, 'converge');
         $this->firewall->converge($node, RoleName::CiRunner, $node->user);
     }

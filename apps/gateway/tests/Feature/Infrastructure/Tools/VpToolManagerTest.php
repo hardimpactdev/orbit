@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
@@ -13,7 +12,6 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -237,32 +235,6 @@ describe(VpToolManager::class, function (): void {
         expect($launcher)->toContain('exec "'.$binary.'" "$@"')
             ->toContain('export VP_HOME="'.dirname($binary, 2).'"');
     })->with(['cache-only', 'opt-store', 'home-store']);
-
-    it('keeps canonical VP_HOME launchers compatible with application role convergence', function (RoleName $role, string $fixture): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true, convergeRole: $role);
-
-        expect($result->exitCode)->toBe(0, $result->stderr);
-        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
-    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'cache-only', 'home-store']);
-
-    it('publishes and migrates VP_HOME role launchers without accepting foreign ones', function (RoleName $role, string $fixture): void {
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture('', $fixture, materialize: true, convergeRole: $role, roleOnly: true);
-
-        if ($fixture === 'foreign-launcher') {
-            expect($result->exitCode)->not->toBe(0);
-            expect($result->stderr)->toContain('launcher conflict');
-            expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
-        } elseif ($fixture === 'legacy-failure') {
-            expect($result->exitCode)->not->toBe(0);
-            expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
-        } else {
-            expect($result->exitCode)->toBe(0, $result->stderr);
-            expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
-        }
-    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'opt-legacy', 'cache-only', 'legacy-launchers', 'legacy-failure', 'foreign-launcher']);
 
     it('upgrades only exact managed legacy launchers to export VP_HOME', function (): void {
         [$manager, $ssh] = vp_tool_manager([vp_result()]);
@@ -877,8 +849,6 @@ function vp_tool_run_scope_fixture(
     string $program,
     string $fixture = 'cache-only',
     bool $materialize = false,
-    ?RoleName $convergeRole = null,
-    bool $roleOnly = false,
 ): array {
     $root = sys_get_temp_dir().'/orbit-vp-cache-'.bin2hex(random_bytes(4));
     $home = $root.'/home';
@@ -960,29 +930,6 @@ function vp_tool_run_scope_fixture(
     foreach ($stubs as $name => $contents) {
         file_put_contents($root.'/'.$name, $contents);
         chmod($root.'/'.$name, 0755);
-    }
-    if ($convergeRole !== null) {
-        $roleProgram = (new NodeRolePrerequisiteCommandFactory)->make(
-            new Node,
-            $convergeRole,
-            new ManagedUserAccount($account, $account, $home),
-        )->input ?? '';
-        $runtimeStart = strpos($roleProgram, 'if { [ -e /opt/orbit ]');
-        if ($runtimeStart === false) {
-            throw new RuntimeException('Could not isolate the application-role JavaScript runtime.');
-        }
-        $runtime = substr($roleProgram, $runtimeStart);
-        $runtime = str_replace(
-            'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -c \'curl -fsSL https://bun.com/install | bash\'',
-            'true',
-            $runtime,
-        );
-        mkdir($orbit.'/bun/bin', 0755, true);
-        file_put_contents($orbit.'/bun/bin/bun', "#!/bin/sh\nexit 0\n");
-        chmod($orbit.'/bun/bin/bun', 0755);
-        $program = ($roleOnly
-            ? "managed_user=\$1\nmanaged_group=$(id -gn)\nmanaged_home=".escapeshellarg($home)."\n"
-            : $program."\n").$runtime;
     }
     $program = strtr($program, [
         '/usr/bin/getent' => $root.'/getent',

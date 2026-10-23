@@ -19,19 +19,25 @@ final readonly class AgentCaddyPackage
 {
     public function __construct(private AgentCommandRunner $agents) {}
 
+    /** @return array<string, mixed> */
+    public static function input(): array
+    {
+        return [
+            'release' => CaddyPackageProgram::RELEASE,
+            'release_url' => CaddyPackageProgram::RELEASE_URL,
+            'amd64_sha512' => CaddyPackageProgram::AMD64_SHA512,
+            'arm64_sha512' => CaddyPackageProgram::ARM64_SHA512,
+            'minimum_version' => CaddyRelease::MINIMUM,
+            'kernel_setting_path' => CaddyPackageProgram::KERNEL_SETTING_PATH,
+            'kernel_setting' => CaddyPackageProgram::KERNEL_SETTING,
+            'legacy_paths' => ['/usr/share/keyrings/orbit-caddy.gpg', '/etc/apt/sources.list.d/orbit-caddy.sources'],
+        ];
+    }
+
     public function install(Node $node): CommandResult
     {
         try {
-            $result = $this->agents->run($node, 'caddy.install-package', [
-                'release' => CaddyPackageProgram::RELEASE,
-                'release_url' => CaddyPackageProgram::RELEASE_URL,
-                'amd64_sha512' => CaddyPackageProgram::AMD64_SHA512,
-                'arm64_sha512' => CaddyPackageProgram::ARM64_SHA512,
-                'minimum_version' => CaddyRelease::MINIMUM,
-                'kernel_setting_path' => CaddyPackageProgram::KERNEL_SETTING_PATH,
-                'kernel_setting' => CaddyPackageProgram::KERNEL_SETTING,
-                'legacy_paths' => ['/usr/share/keyrings/orbit-caddy.gpg', '/etc/apt/sources.list.d/orbit-caddy.sources'],
-            ]);
+            $result = $this->agents->run($node, 'caddy.install-package', self::input());
         } catch (AgentCommandRefused $refusal) {
             $reason = $refusal->details['reason'] ?? $refusal->getMessage();
 

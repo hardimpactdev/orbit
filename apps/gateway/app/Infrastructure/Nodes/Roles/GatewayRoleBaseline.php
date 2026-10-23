@@ -32,7 +32,7 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
     public function __construct(
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
-        private NodeRolePrerequisiteCommandFactory $commands,
+        private RolePrerequisites $prerequisites,
         private DevelopmentSshExecutor $ssh,
         private ?GrantGatewayRoleAccessAction $access = null,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
@@ -50,9 +50,17 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
      */
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Gateway);
-        if ($caddyPackage instanceof RemoteCommand) {
-            $this->run($node, $caddyPackage, 'caddy-package-source', 'gateway.caddy_install_failed');
+        $caddy = $this->prerequisites->caddy($node, RoleName::Gateway);
+        if ($caddy !== null) {
+            if (! $caddy->succeeded()) {
+                throw new NodeRoleOperationException(
+                    step: 'caddy-package-source',
+                    errorCode: 'node_role.convergence_failed',
+                    underlyingErrorCode: 'gateway.caddy_install_failed',
+                    message: "Gateway role step [caddy-package-source] failed on node [{$node->name}].",
+                    result: $caddy,
+                );
+            }
             $this->run(
                 $node,
                 new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),

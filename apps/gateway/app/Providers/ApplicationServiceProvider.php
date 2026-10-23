@@ -714,9 +714,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->bind(
             RemoteInstanceCheckoutInspector::class,
             static fn ($app): RemoteInstanceCheckoutInspector => new RemoteInstanceCheckoutInspector(
-                ssh: $app->make(SshExecutor::class),
-                keys: $app->make(SshKeyProvider::class),
-                knownHosts: $app->make(KnownHostsStore::class),
+                agents: $app->make(AgentCommandRunner::class),
                 accounts: $app->make(ManagedUserAccountResolver::class),
                 restoreTimeoutSeconds: Config::integer('orbit.hibernation.cold_wake_timeout_seconds'),
             ),

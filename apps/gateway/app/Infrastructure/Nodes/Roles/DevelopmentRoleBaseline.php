@@ -24,7 +24,7 @@ use App\Models\NodeRole;
 final readonly class DevelopmentRoleBaseline implements RoleBaseline
 {
     public function __construct(
-        private NodeRolePrerequisiteCommandFactory $commands,
+        private RolePrerequisites $prerequisites,
         private DevelopmentSshExecutor $ssh,
         private AppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
@@ -46,20 +46,15 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
         );
         $this->dns->converge($node);
         // Task VM enrollment trusts the software in its image.
-        $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
-        if ($caddyPackage instanceof RemoteCommand && ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage)) {
-            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
-        }
-        $prerequisites = $this->commands->make($node, RoleName::AppDev, $account);
-        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev))) {
-            $this->ssh->execute(
-                $node,
-                $prerequisites,
-                'role-prerequisites',
-                'app-dev.prerequisite_failed',
-                failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
-            );
-        }
+        $this->prerequisites->converge(
+            $node,
+            RoleName::AppDev,
+            $account,
+            'app-dev.prerequisite_failed',
+            CaddyRoleFailure::sshLabel(RoleName::AppDev),
+            caddy: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage),
+            packages: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev)),
+        );
         // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
         $this->ssh->execute(
             $node,

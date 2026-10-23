@@ -157,7 +157,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
                 $input[$key] = (object) $value->variables;
             }
         }
-        $envelope = json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budget * 1000), 'input' => (object) $input], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $envelope = AgentInvocation::envelope($pin, $budget, $input);
 
         try {
             $result = $transport->run(

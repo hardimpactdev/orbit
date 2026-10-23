@@ -9,6 +9,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Models\Node;
 use LogicException;
@@ -27,16 +28,16 @@ final readonly class AgentUfw
     {
         return $this->result(function () use ($node, $stored, $deadlineSeconds, $over): string {
             $answer = $this->call($node, 'firewall.status', ['stored' => $stored], $deadlineSeconds, $over);
-            $tuples = is_array($answer['stored'] ?? null) ? $answer['stored'] : [];
+            $tuples = array_filter(is_array($answer['stored'] ?? null) ? $answer['stored'] : [], is_string(...));
 
-            return (string) ($answer['status'] ?? '').($tuples === [] ? '' : implode("\n", $tuples)."\n");
+            return StoredValue::string($answer['status'] ?? null).($tuples === [] ? '' : implode("\n", $tuples)."\n");
         });
     }
 
     /** @param  list<string>  $arguments  The arguments after `ufw`. */
     public function change(Node $node, array $arguments, ?SshConnection $over = null): CommandResult
     {
-        return $this->result(fn (): string => (string) ($this->call($node, 'firewall.ufw', ['arguments' => $arguments], null, $over)['stdout'] ?? ''));
+        return $this->result(fn (): string => StoredValue::string($this->call($node, 'firewall.ufw', ['arguments' => $arguments], null, $over)['stdout'] ?? null));
     }
 
     /**

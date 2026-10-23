@@ -8,8 +8,8 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketServerCredentials;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -24,35 +24,26 @@ use Illuminate\Support\Env;
 use Illuminate\Support\Str;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
 it('installs prerequisites, then clones, installs and restarts Reverb on every converge', function (): void {
     $commands = [];
-    $lifecycle = websocket_runtime_lifecycle($commands);
+    $agents = new FakeAgentCommandRunner;
+    $lifecycle = websocket_runtime_lifecycle($commands, agents: $agents);
     $node = websocket_runtime_node();
     $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
     $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), 'test-process', 'test-registry-token', 'test-notification-token');
 
     $lifecycle->converge($node, $assignment, $credentials);
 
-    expect($commands)->toHaveCount(3);
+    expect($agents->commands())->toBe(['caddy.install-package', 'roles.install-prerequisites'])
+        ->and($agents->calls[1]['input']['packages'])->toContain('caddy', 'composer', 'git', 'php-curl', 'php-xml')
+        ->and($commands)->toHaveCount(1);
 
-    $caddyPackage = $commands[0];
-    expect($caddyPackage->arguments)
-        ->toContain(CaddyPackageProgram::RELEASE_URL)
-        ->toContain('/etc/apt/sources.list.d/orbit-caddy.sources')
-        ->and($caddyPackage->input)->toContain('sha512sum --check');
-
-    $prerequisites = $commands[1];
-    expect($prerequisites->arguments)->toContain('caddy')
-        ->and($prerequisites->arguments)->toContain('composer')
-        ->and($prerequisites->arguments)->toContain('git')
-        ->and($prerequisites->arguments)->toContain('php-curl')
-        ->and($prerequisites->arguments)->toContain('php-xml');
-
-    $runtime = $commands[2];
+    $runtime = $commands[0];
 
     expect($runtime->arguments)
         ->toContain('orbit-websocket')
@@ -98,7 +89,7 @@ it('installs the server commit pinned by the Gateway release despite a former en
         $commands = [];
         $lifecycle = websocket_runtime_lifecycle($commands, ref: '');
         $lifecycle->converge(websocket_runtime_node(), new NodeRole(['role' => RoleName::WebSocket]), new WebSocketServerCredentials('key', 'process', 'registry', 'notification'));
-        expect($commands[2]->arguments)->toContain($ref)->not->toContain('main');
+        expect($commands[0]->arguments)->toContain($ref)->not->toContain('main');
     } finally {
         if ($previous === null) {
             $environment->clear('ORBIT_WEBSOCKET_REF');
@@ -136,7 +127,7 @@ it('stages the configured repository when an existing checkout origin is obsolet
         $assignment = new NodeRole(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Provisioning]);
         $credentials = new WebSocketServerCredentials('base64:'.base64_encode('k'), 'process', 'registry-token', 'notify-token');
         $lifecycle->converge(websocket_runtime_node(), $assignment, $credentials);
-        $runtime = $commands[2];
+        $runtime = $commands[0];
         $sudo = <<<'BASH'
             sudo() {
                 [ "$1" = -u ] && [ "$3" = -H ] || return 1
@@ -224,9 +215,12 @@ function websocket_runtime_lifecycle(
     string $repository = 'https://example.test/orbit-reverb.git',
     string $installPath = '/opt/orbit/websocket',
     string $ref = 'release-42',
+    FakeAgentCommandRunner $agents = new FakeAgentCommandRunner,
 ): NativeWebSocketRuntimeLifecycle {
+    $agents->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', []);
+
     return new NativeWebSocketRuntimeLifecycle(
-        commands: new NodeRolePrerequisiteCommandFactory,
+        prerequisites: new RolePrerequisites($agents, new AgentCaddyPackage($agents)),
         ssh: new class($commands, $failRuntime) implements SshExecutor
         {
             public function __construct(private array &$commands, private bool $failRuntime) {}
@@ -277,7 +271,7 @@ function websocket_runtime_lifecycle(
 it('prepares a separate release before stopping the running service', function (bool $buildFails, bool $listenerReady): void {
     $commands = [];
     websocket_runtime_lifecycle($commands)->converge(websocket_runtime_node(), new NodeRole, new WebSocketServerCredentials('base64:aw==', 'process', 'registry-token', 'notify-token'));
-    $script = stream_get_contents($commands[2]->protectedInput->stream());
+    $script = stream_get_contents($commands[0]->protectedInput->stream());
     $directory = sys_get_temp_dir().'/orbit-websocket-install-'.bin2hex(random_bytes(8));
     mkdir($directory.'/bin', 0700, true);
     mkdir($directory.'/systemd', 0700);
