@@ -28,6 +28,7 @@ pub mod registration;
 pub mod schedules;
 pub mod source;
 pub mod sqlite_copy;
+pub mod storage_root;
 pub mod sqlite_seed;
 pub mod tls_check;
 pub mod transfer_source;
@@ -72,6 +73,7 @@ pub fn all() -> Vec<Entry> {
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
+        entry::<storage_root::PrepareStorageRoot>(),
         entry::<instances::InspectSource>(),
         entry::<instances::RemoveSource>(),
         entry::<instances::PrepareRemoval>(),

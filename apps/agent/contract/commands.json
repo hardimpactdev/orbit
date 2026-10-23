@@ -72,6 +72,19 @@
       ]
     },
     {
+      "name": "nodes.prepare-storage-root",
+      "summary": "Check a storage root the managed user owns, and create its missing directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.storage_root_unusable"
+      ]
+    },
+    {
       "name": "instances.inspect-source",
       "summary": "Read the evidence of a development source before its removal.",
       "mutates": false,

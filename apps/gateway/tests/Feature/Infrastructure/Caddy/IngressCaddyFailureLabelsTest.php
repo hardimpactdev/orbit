@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,6 +26,13 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     app()->instance(SshExecutor::class, caddy_failure_ssh());
     app()->instance(NodeConverger::class, new FakeNodeConverger);
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
 });
 
 it('names ingress and ingress.caddy_config_failed when ingress convergence cannot order Caddy', function (): void {
@@ -200,10 +209,6 @@ function caddy_failure_ssh(?string $fail = null): SshExecutor
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            if (($command->arguments[0] ?? '') === 'sh') {
-                return new CommandResult(0, "orbit\n/home/orbit\norbit\n", '', 1, false);
-            }
-
             $ordering = ($command->arguments[4] ?? null) === 'caddy'
                 && str_contains($command->input ?? '', 'orbit-vpn.conf');
             $source = in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true);

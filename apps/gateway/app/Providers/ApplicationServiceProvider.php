@@ -356,6 +356,7 @@ use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
+use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -363,7 +364,6 @@ use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -517,7 +517,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,
         MetricsStatusReader::class => NativeMetricsStatusReader::class,
         NodeConverger::class => NativeNodeConverger::class,
-        NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
+        NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         InstalledPackageInventory::class => SharedInstalledPackageInventory::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
