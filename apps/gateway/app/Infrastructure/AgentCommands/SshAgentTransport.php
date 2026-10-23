@@ -14,7 +14,10 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use RuntimeException;
 
-/** A managed Node over SSH to its WireGuard address, as its enrolled account with its pinned host key. */
+/**
+ * A managed Node over SSH to its WireGuard address, as its enrolled account with its pinned host key, or over the
+ * given connection, such as the bootstrap connection of a Node that is still being admitted.
+ */
 final readonly class SshAgentTransport implements AgentTransport
 {
     public const string LinuxBinary = '/usr/local/bin/orbit-agent';
@@ -27,6 +30,7 @@ final readonly class SshAgentTransport implements AgentTransport
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?SshConnection $over = null,
     ) {}
 
     #[\Override]
@@ -66,6 +70,21 @@ final readonly class SshAgentTransport implements AgentTransport
 
     private function connection(float $timeout): SshConnection
     {
+        if ($this->over !== null) {
+            return new SshConnection(
+                host: $this->over->host,
+                user: $this->over->user,
+                port: $this->over->port,
+                identityFile: $this->over->identityFile,
+                knownHostsFile: $this->over->knownHostsFile,
+                connectTimeout: $this->over->connectTimeout,
+                commandTimeout: $timeout,
+                shareConnection: $this->over->shareConnection,
+                proxyJump: $this->over->proxyJump,
+                hostIdentity: $this->over->hostIdentity,
+            );
+        }
+
         $host = $this->node->wireguard_ip;
         if (! is_string($host) || $host === '') {
             throw new RuntimeException("Node [{$this->node->name}] has no WireGuard address.");

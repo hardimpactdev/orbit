@@ -11,9 +11,14 @@ use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
 use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
+use Tests\Support\Fleet\FleetTestSsh;
 
 /** A Node that answers each call from a queue of result lines, and records what it was sent. */
 class ScriptedAgentTransport implements AgentTransport
@@ -241,3 +246,52 @@ it('records no failed pin when the candidate cannot be staged or the installer g
     expect(fn () => agentRunner($transport)->run($node, 'agent.status'))->toThrow(AgentRunnerFailure::class);
     expect($node->fresh()?->agent_failed_pin)->toBeNull();
 })->with(['staging', 'connection']);
+
+it('runs a command over the bootstrap connection of a Node that is being admitted', function (): void {
+    $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => (object) ['state' => 'ok']])]);
+    $over = new SshConnection('192.0.2.10', 'root', 2222, '/key', '/known', hostIdentity: 'SHA256:pinned');
+    $transports = new class($transport) extends AgentTransports
+    {
+        public ?SshConnection $connection = null;
+
+        public function __construct(private readonly AgentTransport $transport) {}
+
+        public function for(Node $node): AgentTransport
+        {
+            throw new LogicException('An admitted Node is reached over its bootstrap connection.');
+        }
+
+        public function over(Node $node, SshConnection $connection): AgentTransport
+        {
+            $this->connection = $connection;
+
+            return $this->transport;
+        }
+    };
+    $runner = new NativeAgentCommandRunner(app(AgentContract::class), app(AgentDelivery::class), $transports);
+
+    expect($runner->runOver(agentRunnerNode(), $over, 'agent.status'))->toBe(['state' => 'ok'])
+        ->and($transports->connection)->toBe($over);
+});
+
+it('keeps the bootstrap connection, with the command deadline, for every call over it', function (): void {
+    $connections = [];
+    $ssh = new class($connections) implements SshExecutor
+    {
+        public function __construct(private array &$connections) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->connections[] = $connection;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $jump = new SshConnection('198.51.100.1', 'orbit', 22, '/key', '/known');
+    $over = new SshConnection('192.0.2.10', 'root', 2222, '/key', '/known', proxyJump: $jump, hostIdentity: 'SHA256:pinned');
+    $keys = new FleetTestSsh;
+
+    new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys, $over)->run(['true'], ProtectedInput::fromString(''), 42.0);
+
+    expect($connections[0])->toEqual(new SshConnection('192.0.2.10', 'root', 2222, '/key', '/known', commandTimeout: 42.0, proxyJump: $jump, hostIdentity: 'SHA256:pinned'));
+});

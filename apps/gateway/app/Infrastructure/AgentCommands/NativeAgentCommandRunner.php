@@ -7,12 +7,13 @@ namespace App\Infrastructure\AgentCommands;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Models\Node;
 use JsonException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
-final readonly class NativeAgentCommandRunner implements AgentCommandRunner
+final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner
 {
     public const string VersionMismatch = 'agent.version_mismatch';
 
@@ -35,8 +36,28 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
     #[\Override]
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
+        return $this->runWith($this->transports->for($node), $node, $command, $input, $deadlineSeconds);
+    }
+
+    #[\Override]
+    public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        return $this->runWith($this->transports->over($node, $connection), $node, $command, $input, $deadlineSeconds);
+    }
+
+    #[\Override]
+    public function installOver(Node $node, SshConnection $connection): bool
+    {
+        return $this->installPin($node, $this->transports->over($node, $connection), $this->delivery->pin($node), null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function runWith(AgentTransport $transport, Node $node, string $command, array $input, ?float $deadlineSeconds): array
+    {
         $spec = $this->contract->command($command);
-        $transport = $this->transports->for($node);
         if ($spec->privilege($transport->platform()) === null) {
             throw new AgentCommandRefused($command, 'agent.platform_unsupported', "The command [{$command}] does not run on {$transport->platform()}.", ['platform' => $transport->platform()]);
         }

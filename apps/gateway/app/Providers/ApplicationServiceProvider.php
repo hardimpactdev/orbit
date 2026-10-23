@@ -212,6 +212,7 @@ use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -591,6 +592,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             Config::string('orbit.home'),
         ));
         $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(AdmissionAgentRunner::class, NativeAgentCommandRunner::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);
 

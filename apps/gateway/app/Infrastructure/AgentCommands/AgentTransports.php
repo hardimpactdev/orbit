@@ -7,6 +7,7 @@ namespace App\Infrastructure\AgentCommands;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -30,5 +31,11 @@ class AgentTransports
         }
 
         return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
+    }
+
+    /** The transport over a given connection, such as the bootstrap connection of a Node that is being admitted. */
+    public function over(Node $node, SshConnection $connection): AgentTransport
+    {
+        return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts, $connection);
     }
 }
