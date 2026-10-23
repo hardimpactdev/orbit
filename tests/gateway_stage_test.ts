@@ -3,6 +3,7 @@
 // (TaskTurnOperation), and an accepted start carries poll_after_seconds.
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import {
+  counters,
   currentSubtask,
   groupOf,
   type Http,
@@ -207,7 +208,9 @@ Deno.test("a busy target keeps the stage running, a refusal fails it", async () 
 Deno.test("a failed operation records failed evidence with its error", async () => {
   const gw = fakeGateway({ operation: { id: 900, status: "failed", error_code: "task_vm.invalid_config", failed_step: "claim" } });
   const job = await settle(args("provision"), gw.http);
-  assertEquals(job.evidence, { status: "failed", runId: "900", operationId: 900, error: "failed task_vm.invalid_config at claim" });
+  assertEquals(job.evidence, {
+    status: "failed", runId: "900", operationId: 900, error: "failed task_vm.invalid_config at claim", groupStatus: "todo", groupEnded: false,
+  });
 });
 
 Deno.test("baseline moves the current subtask to running and checks it", async () => {
@@ -329,4 +332,32 @@ Deno.test("deadlines start when a slow response arrives, not when the call began
   const read = await runStage(args("provision"), deps);
   assertEquals(reads.length, 2);
   assertEquals(read.nextReadAt, "2026-10-23T08:00:42.800Z");
+});
+
+Deno.test("counters count attempts per subtask and reset the handoff streak on a pass", () => {
+  const e = (payload: Record<string, unknown>) => env(payload, "t");
+  assertEquals(counters("implement", 11, "ready_for_review", {}), { attempt: 1 });
+  assertEquals(counters("implement", 11, "ready_for_review", { change: e({ subtask: 11, attempt: 2 }) }), { attempt: 3 });
+  assertEquals(counters("implement", 12, "ready_for_review", { change: e({ subtask: 11, attempt: 5 }) }), { attempt: 1 });
+  const change = e({ subtask: 11, attempt: 2 });
+  assertEquals(counters("handoff", 11, "failed", { change }), { consecutiveFailures: 1, implementAttempts: 2 });
+  assertEquals(counters("handoff", 11, "failed", { change, handoff: e({ subtask: 11, outcome: "failed", consecutiveFailures: 3 }) }), { consecutiveFailures: 4, implementAttempts: 2 });
+  assertEquals(counters("handoff", 11, "passed", { change, handoff: e({ subtask: 11, outcome: "failed", consecutiveFailures: 3 }) }), { consecutiveFailures: 0, implementAttempts: 2 });
+  assertEquals(counters("handoff", 11, "failed", { change, handoff: e({ subtask: 11, outcome: "passed", consecutiveFailures: 0 }) }), { consecutiveFailures: 1, implementAttempts: 2 });
+  assertEquals(counters("handoff", 12, "failed", { handoff: e({ subtask: 11, outcome: "failed", consecutiveFailures: 3 }) }), { consecutiveFailures: 1, implementAttempts: 0 });
+  assertEquals(counters("review", 11, "changes_requested", { change, review: e({ subtask: 11, attempt: 2 }) }), { attempt: 3, implementAttempts: 2 });
+  assertEquals(counters("review", 12, "approved", { review: e({ subtask: 11, attempt: 2 }) }), { attempt: 1, implementAttempts: 0 });
+});
+
+Deno.test("a failed provision records whether it ended the Orbit group", async () => {
+  const cancelled = fakeGateway({ groupStatus: "todo", operation: { id: 900, status: "cancelled" } });
+  const open = await settle(args("provision"), cancelled.http);
+  assertEquals(open.evidence?.groupEnded, false);
+  assertEquals(open.evidence?.groupStatus, "todo");
+  const failed = fakeGateway({ groupStatus: "failed", operation: { id: 900, status: "failed", error_code: "task_vm.invalid_config" } });
+  const ended = await settle(args("provision"), failed.http);
+  assertEquals(ended.evidence?.groupEnded, true);
+  const refused = fakeGateway({ groupStatus: "running", start: () => ({ status: 409, body: { error: { code: "tasks.already_claimed" } } }) });
+  const claimed = await runStage(args("provision"), harness().deps(refused.http));
+  assertEquals(claimed.evidence?.groupEnded, false);
 });

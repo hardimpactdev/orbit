@@ -123,6 +123,50 @@ swamp model method run orbit-subtasks summary --input workItem=bump-packages-php
 ~/.swamp/deno/deno test --allow-all tests/
 ```
 
+## Phase 3: external Orbit task groups (ADR 0229)
+
+Swamp drives an Orbit task group with `orchestration: external` only through
+Gateway operations. Orbit runs every effect in the group's task VM; Swamp
+decides the next step. Swamp never merges.
+
+- Factory: `models/@swamp/software-factory/orbit-groups.yaml`. One work item
+  is one task group, `tg-<group id>`:
+  `provision → baseline → implement → handoff → review → (implement | publish)
+  → published → completed`. Review returns to implement on changes, or for the
+  next subtask; the approval of the last subtask goes to publish.
+- Stage work: `@nckrtl/orbit-gateway.stage` (`extensions/behaviors/orbit_gateway.ts`,
+  logic in `_lib/gateway_stage.ts`). Each call starts or reads one operation
+  (`tasks.provision`, `tasks.check`, `tasks.turn`, `tasks.publish`) with
+  `Idempotency-Key: tg-<id>.<stage>.s<subtask>.c<cycle>`, stores the request and
+  the operation id in `job-<key>`, and returns at once. A replay sends the
+  stored request, so the Gateway returns the same operation.
+- `published` waits for a person to merge the pull request, then calls
+  `tasks:complete`.
+- Every failed or cancelled operation has a route. A failed provision that ended
+  the Orbit group ends the run in `failed`, because a retry needs a new group;
+  one that left the group open (a cancelled queued provision stays `todo`)
+  retries after `provision-retry`. Baseline,
+  handoff, review and publish retry under a new cycle key after an approval
+  (`baseline-retry`, `handoff-retry`, `review-retry`, `publish-retry`). A pull
+  request closed unmerged publishes again after `republish`. A blocked turn or
+  one without a receipt parks for `implement-retry` or `review-retry`, and a
+  failing baseline for `baseline-override`.
+- Caps count per subtask: 6 implement attempts, 3 reviews, and at most 3
+  failing handoffs in a row (the 4th needs `handoff-assistance`; a pass resets
+  the streak). The counters live in each stage's artifact; the stage
+  `maxCycles` are only run-wide safety nets.
+- `tests/factory_routing_test.ts` runs the real factory and driver with swamp in
+  a throwaway copy of the repo against a fake Gateway (`tests/_support/`), one
+  group per routing case.
+- Driver: `orbit-driver-groups` in method mode; `workflows/workflow-groups-driver.yaml`
+  ticks every minute under swamp serve, three guarded steps per group.
+
+```bash
+swamp model method run orbit-groups start --input workItem=tg-1234
+swamp workflow run groups-driver            # one tick by hand; serve runs it each minute
+swamp model method run orbit-groups summary --input workItem=tg-1234
+```
+
 ### Serve on Beast
 
 - User unit `swamp-serve` on `127.0.0.1:9417` (9090 is Prometheus), token

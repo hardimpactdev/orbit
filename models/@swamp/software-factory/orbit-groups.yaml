@@ -1,0 +1,297 @@
+type: '@swamp/software-factory'
+typeVersion: 2026.06.24.1
+id: e3d5ebf8-ee56-435f-a583-de680eaedb31
+name: orbit-groups
+version: 1
+tags: {}
+# One externally orchestrated Orbit task group (ADR 0229) = one work item tg-<group id>.
+#   provision → baseline → implement → handoff → review
+#   review → implement on changes, or for the next subtask; → publish when the last is approved
+#   publish → published; published waits for the merge, then completes the group
+# Every stage's work is orbit-gateway.stage: one keyed Gateway operation, never a wait.
+# The driver (orbit-driver-groups.tick) calls it with <workItem>.<stage>.c<cycle>.
+#
+# Every failed or cancelled operation has a route:
+#   provision → failed (terminal) when it ended the Orbit group (a retry needs a new group);
+#     a cancelled or failed provision that left the group open retries after provision-retry
+#   baseline, handoff, review, publish → retry with a new cycle key after a human approval
+#   implement and review also park for approval on a blocked turn or a turn without a receipt
+#   published → publish again after a human approval when the pull request closed unmerged
+# Caps, per subtask (the counters live in each stage's own artifact; see counters() in
+# _lib/gateway_stage.ts). The stage maxCycles are only run-wide safety nets, so a group
+# with many subtasks never trips them, and every cycle key stays unique in the run:
+#   implement 6 attempts      → rework/fail past it needs review-cap / handoff-assistance
+#   review 3 attempts          → a 3rd change request needs review-cap
+#   handoff failures in a row     → fail is live while the streak is ≤ 3; the 4th needs
+#                                   handoff-assistance; a pass resets the streak
+# Swamp never merges.
+globalArguments:
+  stages:
+    - id: provision
+      initial: true
+      description: claim the group's task VM and create its workspace (tasks.provision)
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: provision
+        resultEvidence: provision-run
+      artifacts:
+        - name: workspace
+          schema:
+            type: object
+            additionalProperties: true
+            required: [instanceId, startingCommit]
+      transitions:
+        - name: provisioned
+          to: baseline
+          gates:
+            - { type: evidence-recorded, config: { name: provision-run, requireField: { status: succeeded } } }
+            - { type: artifact-exists, config: { artifact: workspace } }
+        - name: failed
+          to: failed
+          gates:
+            - { type: evidence-recorded, config: { name: provision-run, requireField: { status: failed, groupEnded: true } } }
+        - name: retry
+          to: provision
+          gates:
+            - { type: evidence-recorded, config: { name: provision-run, requireField: { status: failed, groupEnded: false } } }
+            - { type: human-approval, config: { id: provision-retry } }
+
+    - id: baseline
+      description: the Project check on the start commit, before any implementer (tasks.check baseline)
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: baseline
+        resultEvidence: baseline-run
+      artifacts:
+        - name: baseline
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, checkId]
+      transitions:
+        - name: passed
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.baseline.outcome == "passed"', message: "the baseline did not pass" } }
+        - name: override
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.baseline.outcome != "passed"', message: "the baseline passed" } }
+            - { type: human-approval, config: { id: baseline-override } }
+        - name: retry
+          to: baseline
+          gates:
+            - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: baseline-retry } }
+
+    - id: implement
+      description: one implementer turn on the current subtask (tasks.turn implementer)
+      maxCycles: 300
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: implement
+            change: '${{ data.latest(self.name, "artifact-change") }}'
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+            review: '${{ data.latest(self.name, "artifact-review") }}'
+        resultEvidence: implement-run
+      artifacts:
+        - name: change
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, attempt]
+      transitions:
+        - name: handoff
+          to: handoff
+          gates:
+            - { type: evidence-recorded, config: { name: implement-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review"', message: "the implementer did not hand off" } }
+        - name: retry
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: implement-run } }
+            - { type: human-approval, config: { id: implement-retry } }
+
+    - id: handoff
+      description: the Project check and deliverables; a pass commits the checked tree (tasks.check handoff)
+      maxCycles: 300
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: handoff
+            change: '${{ data.latest(self.name, "artifact-change") }}'
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+        resultEvidence: handoff-run
+      artifacts:
+        - name: handoff
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, checkId, consecutiveFailures, implementAttempts]
+      transitions:
+        - name: pass
+          to: review
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome == "passed"', message: "the handoff check did not pass" } }
+        - name: fail
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome != "passed" && artifacts.handoff.consecutiveFailures <= 3 && artifacts.handoff.implementAttempts < 6', message: "the check passed, failed too often in a row, or the subtask used its implement attempts" } }
+        - name: assist
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome != "passed" && (artifacts.handoff.consecutiveFailures > 3 || artifacts.handoff.implementAttempts >= 6)', message: "the failure is within the limits" } }
+            - { type: human-approval, config: { id: handoff-assistance } }
+        - name: retry
+          to: handoff
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: handoff-retry } }
+
+    - id: review
+      description: one reviewer turn on the checked commit; the Gateway resets the tree after it (tasks.turn reviewer)
+      maxCycles: 150
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: review
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+            review: '${{ data.latest(self.name, "artifact-review") }}'
+            change: '${{ data.latest(self.name, "artifact-change") }}'
+        resultEvidence: review-run
+      artifacts:
+        - name: review
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, attempt, implementAttempts]
+      transitions:
+        - name: rework
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.review.outcome == "changes_requested" && artifacts.review.attempt < 3 && artifacts.review.implementAttempts < 6', message: "no change request within the limits" } }
+        - name: rework-cap
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.review.outcome == "changes_requested" && (artifacts.review.attempt >= 3 || artifacts.review.implementAttempts >= 6)', message: "the change request is within the limits" } }
+            - { type: human-approval, config: { id: review-cap } }
+        - name: next
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.review.outcome == "approved" && has(artifacts.review.hasNext) && artifacts.review.hasNext', message: "no approved subtask with another one open" } }
+        - name: done
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.review.outcome == "approved" && !(has(artifacts.review.hasNext) && artifacts.review.hasNext)', message: "not the approval of the last subtask" } }
+        - name: retry
+          to: review
+          gates:
+            - { type: evidence-recorded, config: { name: review-run } }
+            - { type: human-approval, config: { id: review-retry } }
+
+    - id: publish
+      description: push the checked commit to task-<id> and open the pull request (tasks.publish)
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: publish
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+        resultEvidence: publish-run
+      artifacts:
+        - name: pull-request
+          schema:
+            type: object
+            additionalProperties: true
+            required: [branch, commit]
+      transitions:
+        - name: published
+          to: published
+          gates:
+            - { type: evidence-recorded, config: { name: publish-run, requireField: { status: succeeded } } }
+            - { type: artifact-exists, config: { artifact: pull-request } }
+        - name: retry
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: publish-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: publish-retry } }
+
+    - id: published
+      description: wait for a person to merge the pull request, then complete the group (tasks:complete)
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: merged
+        resultEvidence: merge-run
+      transitions:
+        - name: completed
+          to: completed
+          gates:
+            - { type: evidence-recorded, config: { name: merge-run, requireField: { status: succeeded } } }
+        - name: republish
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: merge-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: republish } }
+
+    - id: completed
+      terminal: true
+    - id: failed
+      terminal: true
+    - id: cancelled
+      terminal: true
+
+  globalTransitions:
+    - name: abort
+      to: cancelled
+      gates:
+            - { type: human-approval, config: { id: abort-confirmation } }
+methods: {}
+checks:
+  require: [run-started, not-terminal, graph-valid, valid-transition, gates-satisfied, stage-executed, cycle-limits]
+reports:
+  require:
+    - { name: "@swamp/software-factory/work-item-summary", methods: [summary] }

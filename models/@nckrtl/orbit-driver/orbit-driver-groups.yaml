@@ -1,0 +1,11 @@
+type: '@nckrtl/orbit-driver'
+typeVersion: 2026.10.22.1
+id: 232f209e-63fd-4d92-be12-c60970859872
+name: orbit-driver-groups
+version: 1
+tags: {}
+# Drives orbit-groups in method mode: each stage method starts or reads one
+# Gateway operation and returns, so a tick never waits on Orbit.
+globalArguments:
+  factory: orbit-groups
+methods: {}

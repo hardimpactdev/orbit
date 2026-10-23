@@ -1,0 +1,36 @@
+id: d83a5174-05bf-41ab-8468-f36d5fe30b03
+name: groups-driver
+description: >-
+  One tick of the reconcile loop over orbit-groups: each active external Orbit
+  task group takes a few short, guarded steps (record, advance, start the next
+  Gateway operation). Runs every minute under swamp serve.
+tags: {}
+trigger:
+  schedule: "* * * * *"
+inputs:
+  properties:
+    maxSteps:
+      type: integer
+      default: 3
+      description: Guarded steps per work item per tick
+    workItems:
+      type: array
+      items: { type: string }
+      description: Work items to tick (default every active run)
+jobs:
+  - name: tick
+    steps:
+      - name: tick
+        task:
+          type: model_method
+          modelIdOrName: orbit-driver-groups
+          methodName: tick
+          inputs:
+            maxSteps: ${{ inputs.maxSteps }}
+            workItems: '${{ has(inputs.workItems) ? inputs.workItems : null }}'
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

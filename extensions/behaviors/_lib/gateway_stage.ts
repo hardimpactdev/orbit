@@ -268,8 +268,46 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
   throw new Error(`unknown stage ${args.stage}`);
 }
 
+/** The payload of a bound artifact when it belongs to this subtask, else null. */
+function ofSubtask(rec: unknown, subtask: number | null): Record<string, unknown> | null {
+  const e = envelope(rec);
+  return e !== null && subtask !== null && e.payload.subtask === subtask ? e.payload : null;
+}
+
+function count(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Per-subtask counters, carried in each stage's own artifact so the factory's gates can cap
+ * attempts per subtask while its cycle numbers (and the driver keys) stay unique across the run.
+ *   implement.attempt              implementer turns on this subtask
+ *   handoff.consecutiveFailures    failing handoffs in a row on this subtask; a pass resets it
+ *   review.attempt                 reviewer turns on this subtask
+ *   handoff/review.implementAttempts  the attempt of the change they judged
+ */
+export function counters(stage: Stage, subtask: number | null, outcome: string, args: Pick<StageArgs, "change" | "handoff" | "review">): Record<string, number> {
+  const change = ofSubtask(args.change, subtask);
+  switch (stage) {
+    case "implement":
+      return { attempt: count(change?.attempt) + 1 };
+    case "handoff": {
+      const prev = ofSubtask(args.handoff, subtask);
+      const failing = outcome !== "passed";
+      const prevFailing = prev !== null && prev.outcome !== "passed";
+      return {
+        consecutiveFailures: failing ? (prevFailing ? Math.max(count(prev!.consecutiveFailures), 1) : 0) + 1 : 0,
+        implementAttempts: count(change?.attempt),
+      };
+    }
+    case "review":
+      return { attempt: count(ofSubtask(args.review, subtask)?.attempt) + 1, implementAttempts: count(change?.attempt) };
+  }
+  return {};
+}
+
 /** Map a succeeded operation's result to the factory products of its stage. */
-async function products(job: Job, result: Record<string, unknown>, http: Http): Promise<Pick<Job, "artifacts" | "evidence">> {
+async function products(job: Job, result: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence">> {
   const ev = (extra: Record<string, unknown> = {}) => ({ status: "succeeded", runId: String(job.operationId), operationId: job.operationId, ...extra });
   switch (job.stage) {
     case "provision":
@@ -290,6 +328,7 @@ async function products(job: Job, result: Record<string, unknown>, http: Http): 
             commit: result.commit ?? null,
             deliverables: result.deliverables ?? [],
             output: String(result.output ?? "").slice(-4000),
+            ...counters(job.stage, job.subtask, outcome, args),
           },
         },
         evidence: ev({ outcome }),
@@ -307,6 +346,7 @@ async function products(job: Job, result: Record<string, unknown>, http: Http): 
         question: receipt?.question ?? null,
         threadId: typeof result.thread === "number" ? result.thread : null,
         threadState: result.state ?? null,
+        ...counters(job.stage, job.subtask, outcome, args),
       };
       if (job.stage === "review" && outcome === "approved") {
         // Approval ends the subtask on the board; the next stage needs to know whether another remains.
@@ -331,6 +371,18 @@ async function products(job: Job, result: Record<string, unknown>, http: Http): 
       };
   }
   return { artifacts: {}, evidence: ev() };
+}
+
+const ENDED_GROUP = ["failed", "cancelled", "completed"];
+
+/**
+ * A failed or cancelled provision ends the run only when it ended the Orbit group. A
+ * cancelled queued provision leaves the group open (todo), where a new provision is valid.
+ */
+async function withGroupOutcome(job: Job, http: Http): Promise<Job> {
+  if (job.stage !== "provision" || job.state !== "failed" || job.evidence === null) return job;
+  const g = await readGroup(http, job.group);
+  return { ...job, evidence: { ...job.evidence, groupStatus: g.status, groupEnded: ENDED_GROUP.includes(g.status) } };
 }
 
 /** `merged`: complete the group once its published pull request merged. No operation. */
@@ -393,7 +445,10 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     } else if (r.status === 409 && (r.body?.error as { code?: string } | undefined)?.code === "operation.target_busy") {
       job = { ...job, lastError: errorCode(r) };
     } else if (r.status >= 400 && r.status < 500) {
-      job = { ...job, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: job.key, error: errorCode(r) } };
+      job = await withGroupOutcome(
+        { ...job, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: job.key, error: errorCode(r) } },
+        deps.http,
+      );
     } else {
       job = { ...job, lastError: errorCode(r) };
     }
@@ -415,10 +470,13 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   job = { ...job, operationStatus: status, lastError: null, nextReadAt: nextRead(clock(), op.poll_after_seconds) };
   if (TERMINAL_OPERATION.includes(status)) {
     if (status === "succeeded") {
-      job = { ...job, state: "succeeded", ...(await products(job, (op.result ?? {}) as Record<string, unknown>, deps.http)) };
+      job = { ...job, state: "succeeded", ...(await products(job, (op.result ?? {}) as Record<string, unknown>, deps.http, args)) };
     } else {
       const error = `${status}${op.error_code ? ` ${op.error_code}` : ""}${op.failed_step ? ` at ${op.failed_step}` : ""}`;
-      job = { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error } };
+      job = await withGroupOutcome(
+        { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error } },
+        deps.http,
+      );
     }
   }
   await deps.writeJob(job);
