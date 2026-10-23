@@ -551,7 +551,7 @@ it('includes the exact native Incus package set only on configured task VM hosts
         expect($tools[$name]->version)->toBe($document['tools'][$name]['artifacts'][$artifactArchitecture]['version']);
     }
     $node->update(['settings' => []]);
-    expect(array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe)))->not->toContain(...RecipeLoader::IncusPackages);
+    expect(array_intersect(RecipeLoader::IncusPackages, array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe))))->toBe([]);
 })->with([
     ['x86_64', 'amd64'],
     ['aarch64', 'arm64'],
