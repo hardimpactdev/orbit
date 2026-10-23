@@ -124,6 +124,10 @@ pub struct InstallInput {
     /// The absolute path of the staged candidate.
     pub candidate: PathBuf,
     pub sha256: String,
+    /// The unit through which the Gateway already holds the update lock, during a converge. The installation
+    /// checks that this unit holds it and does not wait for the lock itself.
+    #[serde(default)]
+    pub held_update_lock: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -171,13 +175,36 @@ impl Command for Install {
             } else {
                 Observer::Absent
             };
-        install(
-            &input,
-            &target,
-            &update_lock(context.platform),
-            wait,
-            observer,
-        )
+        let lock = update_lock(context.platform);
+        let lock = match &input.held_update_lock {
+            None => Some(lock.as_path()),
+            Some(unit) => {
+                held_by(unit, Path::new("/run")).map_err(|reason| failed("update lock", reason))?;
+                None
+            }
+        };
+        install(&input, &target, lock, wait, observer)
+    }
+}
+
+/// Checks that the Gateway's hold unit holds the update lock: its name is one the Gateway gives, it is active,
+/// and its marker, which it writes only once `flock` returned, exists in the root-only `/run`.
+fn held_by(unit: &str, run: &Path) -> Result<(), String> {
+    let suffix = unit.strip_prefix("orbit-update-lock-").unwrap_or_default();
+    if suffix.len() != 12 || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("[{unit}] is not an update lock hold"));
+    }
+    if !run.join(format!("{unit}.held")).is_file() {
+        return Err(format!("[{unit}] does not hold the update lock"));
+    }
+    let active = Process::new("/usr/bin/systemctl")
+        .args(["is-active", "--quiet", unit])
+        .status()
+        .is_ok_and(|status| status.success());
+    if active {
+        Ok(())
+    } else {
+        Err(format!("[{unit}] is not active"))
     }
 }
 
@@ -231,10 +258,12 @@ impl Observer {
     }
 }
 
+/// Installs the candidate, then removes it whatever the outcome. `update_lock` is `None` when the caller's hold
+/// already covers the installation.
 pub fn install(
     input: &InstallInput,
     target: &Path,
-    update_lock: &Path,
+    update_lock: Option<&Path>,
     wait: Instant,
     observer: Observer,
 ) -> Result<InstallOutput, InstallError> {
@@ -246,6 +275,19 @@ pub fn install(
     if !candidate.is_file() {
         return Err(InstallError::CandidateMissing { candidate: shown });
     }
+    let result = replace(input, target, update_lock, wait, observer);
+    let _ = std::fs::remove_file(candidate);
+    result
+}
+
+fn replace(
+    input: &InstallInput,
+    target: &Path,
+    update_lock: Option<&Path>,
+    wait: Instant,
+    observer: Observer,
+) -> Result<InstallOutput, InstallError> {
+    let candidate = &input.candidate;
     let observed = file_sha256(candidate).map_err(|error| failed("read candidate", error))?;
     if observed != input.sha256 {
         return Err(InstallError::CandidateDigestMismatch {
@@ -253,18 +295,20 @@ pub fn install(
             observed,
         });
     }
-    let _lock = lock::acquire(update_lock, wait).map_err(|error| match error {
-        lock::LockError::Busy(path) => InstallError::UpdateBusy {
-            lock: path.display().to_string(),
-        },
-        lock::LockError::Io(path, reason) => InstallError::InstallFailed {
-            step: "update lock",
-            reason: format!("{}: {reason}", path.display()),
-        },
-    })?;
+    let _lock = update_lock
+        .map(|path| lock::acquire(path, wait))
+        .transpose()
+        .map_err(|error| match error {
+            lock::LockError::Busy(path) => InstallError::UpdateBusy {
+                lock: path.display().to_string(),
+            },
+            lock::LockError::Io(path, reason) => InstallError::InstallFailed {
+                step: "update lock",
+                reason: format!("{}: {reason}", path.display()),
+            },
+        })?;
     let previous_sha256 = file_sha256(target).ok();
     if previous_sha256.as_deref() == Some(input.sha256.as_str()) {
-        let _ = std::fs::remove_file(candidate);
         return Ok(InstallOutput {
             replaced: false,
             sha256: observed,
@@ -301,7 +345,6 @@ pub fn install(
             observer: observer.label(),
         });
     }
-    let _ = std::fs::remove_file(candidate);
     Ok(InstallOutput {
         replaced: true,
         sha256: observed,
@@ -357,6 +400,7 @@ mod tests {
             InstallInput {
                 candidate: candidate.into(),
                 sha256: file_sha256(candidate).unwrap(),
+                held_update_lock: None,
             }
         }
         fn install(
@@ -367,7 +411,7 @@ mod tests {
             install(
                 input,
                 &self.target(),
-                &self.lock(),
+                Some(&self.lock()),
                 Instant::now() + Duration::from_secs(2),
                 observer,
             )
@@ -441,13 +485,15 @@ mod tests {
         let input = InstallInput {
             candidate: candidate.clone(),
             sha256: "0".repeat(64),
+            held_update_lock: None,
         };
         assert!(matches!(
             fixture.install(&input, Observer::Fake(true)),
             Err(InstallError::CandidateDigestMismatch { .. })
         ));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
-        assert!(candidate.exists());
+        // A refused candidate is removed too, so failed installations leave nothing staged.
+        assert!(!candidate.exists());
     }
 
     #[test]
@@ -456,6 +502,7 @@ mod tests {
         let missing = InstallInput {
             candidate: fixture.directory.join("absent"),
             sha256: "0".repeat(64),
+            held_update_lock: None,
         };
         assert!(matches!(
             fixture.install(&missing, Observer::Fake(true)),
@@ -464,6 +511,7 @@ mod tests {
         let relative = InstallInput {
             candidate: PathBuf::from("candidate"),
             sha256: "0".repeat(64),
+            held_update_lock: None,
         };
         assert!(matches!(
             fixture.install(&relative, Observer::Fake(true)),
@@ -480,13 +528,50 @@ mod tests {
         let error = install(
             &fixture.input(&candidate),
             &fixture.target(),
-            &fixture.lock(),
+            Some(&fixture.lock()),
             Instant::now() + Duration::from_millis(200),
             Observer::Fake(true),
         )
         .unwrap_err();
         assert!(matches!(error, InstallError::UpdateBusy { .. }));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
+        assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn installs_without_waiting_when_the_callers_hold_covers_it() {
+        let fixture = Fixture::new();
+        fixture.write("bin/orbit-agent", "old");
+        let candidate = fixture.write("candidate-8", "new");
+        let _held = lock::acquire(&fixture.lock(), Instant::now()).unwrap();
+        let output = install(
+            &fixture.input(&candidate),
+            &fixture.target(),
+            None,
+            Instant::now() + Duration::from_millis(200),
+            Observer::Fake(true),
+        )
+        .unwrap();
+        assert!(output.replaced);
+        assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "new");
+    }
+
+    #[test]
+    fn a_named_hold_counts_only_with_a_gateway_name_and_its_marker() {
+        let fixture = Fixture::new();
+        assert!(held_by("orbit-update-lock-../../x", &fixture.directory).is_err());
+        assert!(held_by("ssh.service", &fixture.directory).is_err());
+        let unit = "orbit-update-lock-0123456789ab";
+        assert_eq!(
+            held_by(unit, &fixture.directory),
+            Err(format!("[{unit}] does not hold the update lock"))
+        );
+        fixture.write(&format!("{unit}.held"), "");
+        // The marker is there, but no such unit runs on the test machine.
+        assert_eq!(
+            held_by(unit, &fixture.directory),
+            Err(format!("[{unit}] is not active"))
+        );
     }
 
     #[test]

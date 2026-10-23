@@ -202,7 +202,7 @@ A Gateway release is the only step that updates agents. When a command answers `
 
 A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. Any other failed installation records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node.
 
-`agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It records no recipe identity.
+`agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
 
 ## How it connects
 
@@ -388,7 +388,7 @@ The agent converge writes these files on a Linux Node:
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Kept binary | `/usr/local/bin/orbit-agent.previous`, the binary before the last replacement |
 
-The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate, before it holds the update lock for the files below. It then writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. A failed installation fails the converge with `agent.install_failed`, and a passing one clears the Node's recorded failed pin.
+The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate. It then writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. A failed installation fails the converge with `agent.install_failed`, and a passing one clears the Node's recorded failed pin.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
@@ -415,7 +415,9 @@ To upgrade the fleet, merge the agent change and release the Gateway. Every Node
 
 The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release installs that Node's pin through the local transport.
 
-`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge holds the same lock from the secret check through the agent restart. So no two of them swap or restart the agent at the same time.
+`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge holds the same lock for its whole footprint. So no two of them swap or restart the agent at the same time.
+
+An installation inside a converge names the converge's hold unit in `held_update_lock`. The agent checks that the unit has a Gateway name, is active, and wrote its marker in `/run`, and then installs without waiting. Waiting would block on the converge's own hold until the deadline. Any other installation waits for the lock.
 
 The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
 

@@ -56,6 +56,9 @@ final class NodeUpdateLock
     /** @var array<string, int> Hold depth per Node, shared by every instance in this process. */
     private static array $held = [];
 
+    /** @var array<string, string> The unit of each Node's hold in this process. */
+    private static array $units = [];
+
     public function __construct(private readonly NodeShell $shell) {}
 
     /**
@@ -68,7 +71,7 @@ final class NodeUpdateLock
      */
     public function run(Node $node, Closure $operation): mixed
     {
-        $key = $node->exists ? 'id:'.StoredValue::integer($node->getKey()) : 'name:'.$node->name;
+        $key = self::key($node);
 
         if ((self::$held[$key] ?? 0) > 0) {
             self::$held[$key]++;
@@ -92,11 +95,12 @@ final class NodeUpdateLock
         }
 
         self::$held[$key] = 1;
+        self::$units[$key] = $unit;
 
         try {
             return $operation();
         } finally {
-            unset(self::$held[$key]);
+            unset(self::$held[$key], self::$units[$key]);
 
             try {
                 $this->shell->run($node, new RemoteCommand(['sudo', 'sh', '-c', 'systemctl stop "$1" >/dev/null 2>&1; rm -f -- "/run/$1.held"', 'sh', $unit]));
@@ -104,5 +108,19 @@ final class NodeUpdateLock
                 // RuntimeMaxSec ends the hold when the release cannot reach the Node.
             }
         }
+    }
+
+    /**
+     * The unit through which this process holds the Node's update lock, or null. `agent.install` checks that unit on
+     * the Node and does not wait for a lock its caller already holds.
+     */
+    public static function holder(Node $node): ?string
+    {
+        return self::$units[self::key($node)] ?? null;
+    }
+
+    private static function key(Node $node): string
+    {
+        return $node->exists ? 'id:'.StoredValue::integer($node->getKey()) : 'name:'.$node->name;
     }
 }
