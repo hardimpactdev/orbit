@@ -14,7 +14,6 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Nodes\NodeCliFootprint;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -62,7 +61,6 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
         private NodeShell $shell,
         private NodeFootprint $footprint,
         private FleetNodeVerification $verifier,
-        private NodeUpdateLock $updateLock,
         private AgentDelivery $delivery,
         private NodeCliState $cliState = new NodeCliState,
     ) {}
@@ -121,8 +119,8 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
             $baseline = $this->verifier->baseline($node);
 
             $step = 'cli';
-            // The Gateway's own steps hold the Node's update lock; self-update takes it itself, in between.
-            $installation = $this->retried($node, fn () => $this->updateLock->run($node, fn () => $this->cli->ensure($node, $desired->cli)));
+            // `cli.install` holds the Node's update lock itself; self-update takes it in between.
+            $installation = $this->retried($node, fn () => $this->cli->ensure($node, $desired->cli));
             $this->cliState->clear($node);
             $evidence['cli'] = $installation->toArray();
 

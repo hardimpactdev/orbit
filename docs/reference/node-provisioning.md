@@ -314,7 +314,7 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
-The step reads the link path first, as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
+The agent's `cli.install` runs the step, and `cli.inspect` reads the link alone. Both read the link path first and run a found binary as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
 
 | Found | Result |
 | --- | --- |
@@ -323,7 +323,7 @@ The step reads the link path first, as the managed user, never as root. A link m
 | An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
 | Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
 
-The step reads the path again under the Node's update lock before it installs, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, `/run/lock/orbit-self-update.lock`, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
 
 | Code | Meaning |
 | --- | --- |

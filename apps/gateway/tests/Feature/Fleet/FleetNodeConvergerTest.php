@@ -21,7 +21,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use Tests\Support\Fleet\FakeCliReleaseCatalog;
@@ -116,7 +115,6 @@ function fleetConverger(ScriptedSshExecutor $ssh, array $options = []): FleetNod
         FleetTestSsh::shell($ssh),
         new NodeFootprint($options['artifacts'] ?? [new FakeFootprintArtifact('caddy', 'c1', changes: false)]),
         $options['verification'] ?? new FleetConvergerVerification,
-        new NodeUpdateLock(FleetTestSsh::shell($ssh)),
         app(AgentDelivery::class),
     );
 }
@@ -136,7 +134,7 @@ function selfUpdateReport(string $outcome, ?array $error = null): string
 }
 
 describe('fleet Node converge', function (): void {
-    // Only the CLI install holds the update lock; agent.install and the agent artifact take it themselves.
+    // cli.install, agent.install, and the agent artifact each take the update lock themselves.
     it('runs the CLI install, self-update, footprint, and verify in that order', function (): void {
         $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('updated')));
         $cli = new FleetConvergerCli;
@@ -145,8 +143,7 @@ describe('fleet Node converge', function (): void {
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Converged)
             ->and($cli->calls)->toBe(1)
-            ->and(array_values(array_filter($ssh->lines(), static fn (string $line): bool => ! str_contains($line, 'orbit-update-lock'))))->toBe(['sudo /usr/local/bin/orbit self-update --json'])
-            ->and(count(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, 'orbit-update-lock'))))->toBe(2)
+            ->and($ssh->lines())->toBe(['sudo /usr/local/bin/orbit self-update --json'])
             ->and($result->cliVersion)->toBe('0.4681.0')
             ->and($result->evidence['footprint']['artifacts'])->toBe(['caddy' => 'unchanged'])
             ->and($result->footprintDigest)->toHaveLength(64);
@@ -270,9 +267,10 @@ it('fails with the envelope error code when self-update fails before any step', 
 });
 
 it('defers a Node whose update lock a self-update keeps', function (): void {
-    $ssh = new ScriptedSshExecutor()->on('/orbit-update-lock-[0-9a-f]+ \/run\/lock\/orbit-self-update\.lock 300 1800$/', ScriptedSshExecutor::fail(3));
+    $ssh = new ScriptedSshExecutor;
+    $cli = new FleetConvergerCli(failure: new ResourceOperationException('node.update_busy', 'A self-update held the lock.', 409));
 
-    $result = fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+    $result = fleetConverger($ssh, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
     expect($result->outcome)->toBe(FleetNodeOutcome::Deferred)
         ->and($result->errorCode)->toBe('node.update_busy')

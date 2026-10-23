@@ -85,6 +85,44 @@
       ]
     },
     {
+      "name": "cli.inspect",
+      "summary": "Say whether the Orbit CLI on the Node is missing, current, older, or foreign.",
+      "mutates": false,
+      "timeout_seconds": 150,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "cli.foreign_binary",
+        "cli.release_needed",
+        "cli.update_busy",
+        "cli.download_failed",
+        "cli.checksum_mismatch",
+        "cli.candidate_invalid",
+        "cli.install_failed"
+      ]
+    },
+    {
+      "name": "cli.install",
+      "summary": "Install the Orbit CLI release when the Node needs it, and write root's CLI profile.",
+      "mutates": true,
+      "timeout_seconds": 720,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "cli.foreign_binary",
+        "cli.release_needed",
+        "cli.update_busy",
+        "cli.download_failed",
+        "cli.checksum_mismatch",
+        "cli.candidate_invalid",
+        "cli.install_failed"
+      ]
+    },
+    {
       "name": "nodes.os-release",
       "summary": "Read the operating system ID and codename of the Node.",
       "mutates": false,

@@ -28,9 +28,8 @@ use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
+use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
-use App\Infrastructure\Nodes\NodeUpdateLock;
-use App\Infrastructure\Nodes\SshNodeCliInstaller;
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
@@ -55,11 +54,9 @@ describe('fleet container wiring', function (): void {
             ->and(fleetWired($runner, 'units'))->toBeInstanceOf(NativeFleetConvergeUnits::class)
             ->and(fleetWired($runner, 'serving'))->toBeInstanceOf(FleetServingRelease::class)
             ->and(fleetWired(fleetWired($runner, 'alerts'), 'notifier'))->toBeInstanceOf(ReleaseAlertNotifier::class)
-            ->and(fleetWired($converger, 'cli'))->toBeInstanceOf(SshNodeCliInstaller::class)
-            ->and(fleetWired(fleetWired($converger, 'cli'), 'updateLock'))->toBeInstanceOf(NodeUpdateLock::class)
+            ->and(fleetWired($converger, 'cli'))->toBeInstanceOf(AgentNodeCliInstaller::class)
             ->and(fleetWired($converger, 'verifier'))->toBeInstanceOf(FleetNodeVerifier::class)
             ->and(fleetWired(fleetWired($converger, 'verifier'), 'versions'))->toBeInstanceOf(AgentReportedVersions::class)
-            ->and(fleetWired($converger, 'updateLock'))->toBeInstanceOf(NodeUpdateLock::class)
             ->and(array_map(get_class(...), [...fleetWired(fleetWired($converger, 'footprint'), 'artifacts')]))->toBe([
                 AgentFootprintArtifact::class,
                 CaddyPackageFootprintArtifact::class,
@@ -96,6 +93,6 @@ describe('fleet container wiring', function (): void {
 
         expect($agent)->toBeInstanceOf(NodeAgentSshExecutor::class)
             ->and(fleetWired($agent, 'agents'))->toBeInstanceOf(AgentCommandRunner::class)
-            ->and(fleetWired(app(NodeCliConvergence::class), 'cli'))->toBeInstanceOf(SshNodeCliInstaller::class);
+            ->and(fleetWired(app(NodeCliConvergence::class), 'cli'))->toBeInstanceOf(AgentNodeCliInstaller::class);
     });
 });

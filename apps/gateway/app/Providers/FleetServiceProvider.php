@@ -39,8 +39,8 @@ use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\SshNodeCliInstaller;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Contracts\Foundation\Application;
@@ -53,7 +53,7 @@ final class FleetServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->bind(NodeCliInstaller::class, SshNodeCliInstaller::class);
+        $this->app->bind(NodeCliInstaller::class, AgentNodeCliInstaller::class);
         $this->bindStaticCliRelease();
         $this->app->bind(FleetNodeVisitor::class, FleetNodeConverger::class);
         $this->app->bind(FleetNodeVerification::class, FleetNodeVerifier::class);

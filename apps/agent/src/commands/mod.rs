@@ -6,6 +6,7 @@ pub mod agent_footprint;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
+pub mod cli;
 pub mod clone_candidate;
 pub mod database_server;
 pub mod dependencies;
@@ -79,6 +80,8 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<cli::InspectCli>(),
+        entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectSource>(),
