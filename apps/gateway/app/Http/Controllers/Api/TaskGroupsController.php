@@ -18,6 +18,7 @@ use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\StoreTaskGroupCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Operations\OperationData;
@@ -41,6 +42,7 @@ use App\Http\Requests\Tasks\StartTaskCheckRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
+use App\Http\Requests\Tasks\StoreTaskGroupCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
 use App\Models\Node;
@@ -189,6 +191,31 @@ final class TaskGroupsController extends Controller
         abort_unless($task->parent_id === $group->id, 404);
         $comments = $task->comments()->latest('posted_at');
 
+        if ($request->type() !== null) {
+            $comments->where('type', $request->type());
+        }
+        if ($request->limit() !== null) {
+            $comments->limit($request->limit());
+        }
+
+        return response()->json([
+            'data' => $comments->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function storeGroupComment(StoreTaskGroupCommentRequest $request, Task $group, StoreTaskGroupCommentAction $action): JsonResponse
+    {
+        $comment = $action->execute($group, $request->payload(), $request->attributes->getString('orbit.request_id'));
+
+        return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function groupComments(ListTaskCommentsRequest $request, Task $group): JsonResponse
+    {
+        $comments = $group->comments()->latest('posted_at');
         if ($request->type() !== null) {
             $comments->where('type', $request->type());
         }

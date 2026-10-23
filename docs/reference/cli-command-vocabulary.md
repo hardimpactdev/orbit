@@ -68,6 +68,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules), or a Project Schedule definition with `--project` |
 | `tasks` | `create` | A [task](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |
 | `tasks:comment` | `create` | A typed comment on a subtask |
+| `tasks:group:comment` | `create` | An assistance request or answer owned by a group after all its children end; `list` reads that history |
 | `tasks:subtask` | `create` and `destroy` | A subtask of a task |
 | `tool` | `install` and `remove`; `adopt` establishes ownership of an existing package | A Tool on a Node |
 | `websocket:app` | `create` and `destroy` | A [Reverb app](/reference/websocket-apps) on the `websocket` role |

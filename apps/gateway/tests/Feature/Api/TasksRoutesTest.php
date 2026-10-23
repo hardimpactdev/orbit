@@ -112,6 +112,8 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:subtask:destroy' => ['api/v1/task-groups/{group}/tasks/{task}', ['DELETE']],
         'tasks:subtask:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/cancel', ['POST']],
         'tasks:check:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/check/cancel', ['POST']],
+        'tasks:group:comment:create' => ['api/v1/task-groups/{group}/comments', ['POST']],
+        'tasks:group:comment:list' => ['api/v1/task-groups/{group}/comments', ['GET', 'HEAD']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:publish' => ['api/v1/task-groups/{group}/publish', ['POST']],

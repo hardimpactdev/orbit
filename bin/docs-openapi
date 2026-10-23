@@ -1668,6 +1668,7 @@ CTRL_DATA_OVERRIDES = {
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'AiRouterController@models': ('AiRouterModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
+    'TaskGroupsController@groupComments': ('TaskCommentData', True),
     'TasksController@status': ('TasksStatusData', False),
     'GatewayReleasesController@smoke': ('GatewayReleaseSmokeData', False),
     'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
@@ -2006,7 +2007,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         elif controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
             # Development deploy step creation refuses duplicate names, including exact retries.
-            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create'):
+            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create', 'tasks:group:comment:create'):
                 responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
         else:
             responses['200'] = envelope(data, 'The request succeeded.')
@@ -2047,6 +2048,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] == 'tasks:cancel':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the Task group is completed or in settling or waiting_for_review with a pull request (`tasks.not_cancellable`).')
         responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
+    if route['name'] == 'tasks:group:comment:create':
+        responses['409'] = error_response('The group uses tick orchestration (`tasks.not_orchestrated`), has ended (`tasks.group_closed`), or has an open subtask (`tasks.assistance_subtask_open`). No comment or assistance change is recorded.')
     if route['name'] == 'tasks:agent:show':
         responses['409'] = error_response('The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`).')
         responses['502'] = error_response('The thread\'s Pi server is unavailable, refused the read, did not answer within 5 seconds, or sent a session over 16 MiB, and Orbit saved no transcript (`tasks.agent_read_failed`).')

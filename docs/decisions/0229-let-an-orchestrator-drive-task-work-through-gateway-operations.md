@@ -65,6 +65,12 @@ The orchestrator decides what happens next, and the Gateway does it on the group
 - The operations are orchestrator-neutral. Any caller with Gateway access can use them.
 - An orchestrator never runs a command, an agent, or a Git push itself.
 
+### First additive follow-up: post-child group assistance
+
+An external group may own assistance comments once every child has ended. [Group assistance after all children end](/reference/tasks#group-assistance-after-all-children-end) owns the API, CLI, SDK, and MCP contract, guards, state/effect boundaries, duplicate audit-comment semantics, and rollout/rollback. The group row is locked while the guards and assistance write run. Existing comments store the group ID in both ownership columns; group-owned relationships explicitly remove only the subtask scope, and child histories stay isolated.
+
+This is a narrow record-keeping addition, not an operation or a lifecycle decision. Requests use explicit operator direction replacement; resolutions clear only group direction. No turn, check, topology, retry, state transition, scheduler relay, or approval follows a comment. It avoids dummy children and a permanent comment idempotency registry. Independent requests while children are open retain their current rules. Swamp caller adoption, review/merge and topology support, consult policy, and tick retirement remain separate decisions.
+
 ### Workspaces
 
 A group's workspace is its [task workspace](/reference/tasks#task-workspace): the Instance `task-{id}` on the group's own task VM. Every workspace step of every subtask runs there: the checks, the agent turns, and the commit that publish pushes. The subtasks share the checkout and run in order, as they do today. A development Instance is never a workspace for task work.

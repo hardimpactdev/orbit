@@ -665,6 +665,10 @@ Route::prefix('v1')->group(function (): void {
                 ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
             Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
+            Route::post('task-groups/{group}/comments', [TaskGroupsController::class, 'storeGroupComment'])
+                ->whereNumber('group')->name('tasks:group:comment:create');
+            Route::get('task-groups/{group}/comments', [TaskGroupsController::class, 'groupComments'])
+                ->whereNumber('group')->name('tasks:group:comment:list');
             Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
             Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])

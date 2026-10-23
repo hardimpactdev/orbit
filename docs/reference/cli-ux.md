@@ -62,6 +62,8 @@ Choose a prompt by the values the command admits.
 | Open value with optional suggestions | Suggest |
 | One existing registry entity shown in several columns | Interactive data list |
 
+In a textarea, Enter adds a line and Ctrl+D submits the value. Ctrl+C cancels. Outside a textarea, Ctrl+D cancels rather than accepting a default. A closed input stream always cancels.
+
 Use Laravel Prompts for prompts and tables. An interactive data list means its columnar datatable primitive, with stable selector keys, row highlighting, keyboard selection, and a `Press / to search` hint. Display columns never become identity. A grouped property display is not an interactive data list. Do not substitute the console framework's question or table helpers for these primitives.
 
 Use a finite selector for an existing registry entity; an open text or numeric prompt must not replace it. Select and multiselect defaults belong to the admitted choices. Suggest accepts a valid value outside its suggestions. Multi-value prompts use the command's documented multi-value argument or option in noninteractive mode. An empty candidate set produces an explicit empty result or selection failure; it never invents a default target.

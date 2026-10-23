@@ -14,6 +14,8 @@ covers:
 
 The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
 
+The Tasks fixtures also cover [group assistance](/reference/tasks#group-assistance-after-all-children-end). `tasks/tasks-group-comment-create` records requests, resolutions, and open-child and closed-group refusals. `tasks/tasks-group-comment-list` records group-only history and an empty history. Successful comments carry the group ID in both ownership fields. The SDK checks typed responses, and the separate group CLI commands replay every case in human and JSON modes; these fixtures do not replace the child comment contracts.
+
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
 Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs.

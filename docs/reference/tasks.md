@@ -197,6 +197,8 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `tasks:group:comment:create` | `POST /api/v1/task-groups/{group}/comments` | Gateway |
+| `tasks:group:comment:list` | `GET /api/v1/task-groups/{group}/comments` | Gateway |
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
@@ -947,6 +949,20 @@ Every change to assistance goes through `TaskAssistance::apply`; direct model wr
 Each entry contains the task id, kind, question, and reason. A resolution includes its comment id and author, and an HTTP-triggered entry carries the HTTP request id. Repeating the same request writes nothing. A reason-only reservation note on a task that is not asking writes no assistance event. The earlier request remains in Activity.
 
 Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on an ended group; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
+
+#### Group assistance after all children end
+
+An external, non-terminal group with no open child can own an assistance comment. Use `POST /api/v1/task-groups/{group}/comments`, CLI `tasks:group:comment:create GROUP --type=assistance_requested --body='Work item X, publish-retry, cycle 2, gate: may I republish?' --author=driver`, or MCP `tasks-group-comment-create`. The PHP SDK exposes `CreateTaskGroupCommentRequest`. The body accepts only `type` (`assistance_requested` or `resolution`), nonblank `body` (at most 100,000 characters), and `author` (at most 255 characters). Agent-thread and receipt inputs are not supported. The response is `201 {data: TaskCommentData, meta: {request_id}}`.
+
+The Gateway locks the group and rechecks orchestration, status, and children before inserting the comment. Tick groups return `409 tasks.not_orchestrated`, terminal groups return `409 tasks.group_closed`, and groups with any child not `completed`, `failed`, or `cancelled` return `409 tasks.assistance_subtask_open`. Invalid input returns 422; missing groups and Node access follow the existing task routes. Appending an open child closes this write path until that child ends; use the child route rather than changing old children to bypass the guard.
+
+An `assistance_requested` comment explicitly replaces the group's current request with `direction`, using the body as both question and reason, under the same operator replacement rule as child comments. A `resolution` clears only a current group `direction` request. It never clears a failure, removal failure, or a child's request. Neither comment changes a status or child, starts a turn, check, topology, retry, scheduler relay, publication, completion, or approval. The board and `tasks:status` use the existing assistance fields. A recorded answer is input, not permission to pass an orchestrator's gate.
+
+Read group-owned history with `GET /api/v1/task-groups/{group}/comments`, CLI `tasks:group:comment:list GROUP`, MCP `tasks-group-comment-list`, or SDK `ListTaskGroupCommentsRequest`. Reads require Gateway access and remain available after completion and VM removal. The API and SDK support the existing `type` and `limit` (1–100) filters; the CLI reads the full history. The API returns newest-first `200 {data: [TaskCommentData], meta: {request_id}}`. Group comments store both `task_group_id` and `task_id` as the group ID; they do not appear in a child's comment history. Activity, redaction, and broadcasts use the existing comment and assistance paths.
+
+Repeated identical assistance state writes change no state and add no assistance Activity. Comment insertion is not exactly once: a retry after a lost response may duplicate audit comments, as on the child route. There is no comment operation or permanent idempotency registry. Callers read the complete current request before retrying or resolving, and leave an observed operator replacement alone. Concurrent replacements keep the existing one-open-request semantics; this route has no versioned resolution protocol.
+
+Land this additive API before caller adoption. Swamp adoption is separate; until then Swamp still skips assistance after its children end. Roll back the caller first, retaining the API and readable comments until the operator explicitly resolves outstanding requests. Do not clear requests, reopen children, change orchestration or task status, or change live ownership as rollback. Later review/merge, topology support, consult policy, and tick retirement are outside this slice.
 
 #### Direction requests
 

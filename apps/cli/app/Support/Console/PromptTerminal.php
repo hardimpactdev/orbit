@@ -5,10 +5,19 @@ declare(strict_types=1);
 namespace App\Support\Console;
 
 use Closure;
+use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
+use Laravel\Prompts\TextareaPrompt;
 
 final class PromptTerminal extends Terminal
 {
+    private bool $submitOnEndOfTransmission = false;
+
+    public function forPrompt(Prompt $prompt): void
+    {
+        $this->submitOnEndOfTransmission = $prompt instanceof TextareaPrompt;
+    }
+
     /** @param Closure(): void $restoreCursorState */
     public function __construct(private readonly Terminal $delegate, private readonly Closure $restoreCursorState)
     {
@@ -17,7 +26,9 @@ final class PromptTerminal extends Terminal
 
     public function read(): string
     {
-        return $this->delegate->read();
+        return $this->delegate instanceof InputTerminal
+            ? $this->delegate->read(submitOnEndOfTransmission: $this->submitOnEndOfTransmission)
+            : $this->delegate->read();
     }
 
     public function assertInputAvailable(): void

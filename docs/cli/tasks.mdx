@@ -26,6 +26,8 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
+| [`tasks:group:comment:create`](#orbit-tasksgroupcommentcreate) | Request group direction or record an answer after all subtasks end; start no work. |
+| [`tasks:group:comment:list`](#orbit-tasksgroupcommentlist) | Read group-owned comments, including after completion. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
@@ -280,6 +282,34 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 | --- | --- |
 | `tasks.subtask_not_running` | The subtask is neither a cancellable `todo` subtask nor a `running` subtask, or it moved on while Orbit stopped it. |
 | `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the task. |
+
+## orbit tasks:group:comment:create
+
+Record assistance on an external, non-terminal group after all its children have ended. This does not select or reopen a subtask. A request sets group Direction using explicit operator replacement semantics. A resolution clears group Direction only; it never clears a safety failure or a child's request. Neither sends work. The [post-child assistance contract](/reference/tasks#group-assistance-after-all-children-end) owns the guards and effects.
+
+```bash
+orbit tasks:group:comment:create [group] [--type=TYPE] [--body=TEXT] [--author=NAME] [--json]
+```
+
+| Option | Interactive default | Meaning |
+| --- | --- | --- |
+| `group` | select a task group | Numeric group ID; no subtask ID is accepted. |
+| `--type=TYPE` | select | `assistance_requested` or `resolution`. |
+| `--body=TEXT` | prompt | Nonblank text, at most 100,000 characters. Name the work item, stage, cycle and decision when asking. |
+| `--author=NAME` | local login name | Author, at most 255 characters. Required explicitly with `--json` or `-n`. |
+| `--json` | off | Return the comment and request ID as JSON. |
+
+A terminal prompts for missing inputs. A `--json` or `-n` call requires them before any network call. There is no agent-thread or receipt option. `tasks.not_orchestrated` refuses a tick group, `tasks.group_closed` refuses an ended group, and `tasks.assistance_subtask_open` refuses a group with an open child. Read the full current request before answering; there is no versioned matching-resolution protocol. Repeating a write may add another audit comment even when assistance state is unchanged.
+
+## orbit tasks:group:comment:list
+
+Read group-owned history, newest first, even after completion and VM removal. This history is separate from every child's comments. The command selects only a group when its ID is omitted in a terminal. With `--json` or `-n`, supply the ID.
+
+```bash
+orbit tasks:group:comment:list [group] [--json]
+```
+
+Human output shows each comment's type, author, time and body, followed by the request ID. An empty history says `No comments.` JSON returns `comments` and `request_id`. The API and SDK also accept the existing `type` and `limit` history filters.
 
 ## orbit tasks:comment:create
 
