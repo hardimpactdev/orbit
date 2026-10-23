@@ -6,6 +6,7 @@ pub mod dev_source;
 pub mod instances;
 pub mod php_runtime;
 pub mod production;
+pub mod production_home;
 pub mod registration;
 pub mod source;
 
@@ -69,6 +70,14 @@ pub fn all() -> Vec<Entry> {
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
         entry::<deploy_step::RunDeployStep>(),
+        entry::<production_home::PrepareUser>(),
+        entry::<production_home::PrepareSource>(),
+        entry::<production_home::ResolveSource>(),
+        entry::<production_home::InspectProfile>(),
+        entry::<production_home::GrantCaddy>(),
+        entry::<production_home::ValidateLayout>(),
+        entry::<production_home::ClearCurrent>(),
+        entry::<production_home::RemoveHome>(),
         entry::<php_runtime::ConvergeRuntime>(),
         entry::<php_runtime::RemoveRuntime>(),
         entry::<php_runtime::InspectPool>(),

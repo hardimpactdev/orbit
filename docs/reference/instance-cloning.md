@@ -60,7 +60,7 @@ A checkout's hooks and custom filesystem monitor do not run during that check. T
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
-Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+The [Node agent](/reference/node-agent#commands) prepares the destination: `instances.prepare-production-user` creates the system account `orbit-app-<project>` and its private home, `instances.prepare-production-source` clones the repository into `releases/initial` and records the root-owned source markers, `instances.resolve-production-source` checks out the branch and links `.env`, and `instances.grant-production-caddy-access` lets Caddy reach only the web root. `instances.inspect-production-profile` reads the Composer metadata, and refuses any file in the checkout that the production user does not own. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 

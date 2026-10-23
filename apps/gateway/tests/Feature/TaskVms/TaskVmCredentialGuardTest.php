@@ -176,8 +176,6 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
         'app/Infrastructure/Instances/RemoteDevelopmentDeployment.php',
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
         'app/Infrastructure/Instances/RemoteInstanceCloneCandidateInspector.php',
-        'app/Infrastructure/Instances/RemoteProductionDeployment.php',
-        'app/Infrastructure/Instances/RemoteProductionInstanceSourceLifecycle.php',
         'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',

@@ -28,13 +28,13 @@ command_errors! {
     }
 }
 
-fn invalid(check: &str) -> ReleaseError {
+pub(super) fn invalid(check: &str) -> ReleaseError {
     ReleaseError::Invalid {
         check: check.into(),
     }
 }
 
-fn check(condition: bool, what: &str) -> Result<(), ReleaseError> {
+pub(super) fn check(condition: bool, what: &str) -> Result<(), ReleaseError> {
     if condition {
         Ok(())
     } else {
@@ -42,7 +42,7 @@ fn check(condition: bool, what: &str) -> Result<(), ReleaseError> {
     }
 }
 
-fn failed(step: &str) -> ReleaseError {
+pub(super) fn failed(step: &str) -> ReleaseError {
     ReleaseError::StepFailed { step: step.into() }
 }
 
@@ -100,14 +100,14 @@ impl Layout {
 }
 
 /// The production user's uid and gid.
-fn account(user: &str) -> Result<(u32, u32), ReleaseError> {
+pub(super) fn account(user: &str) -> Result<(u32, u32), ReleaseError> {
     identity::account(user)
         .map(|(uid, gid, _)| (uid, gid))
         .map_err(|_| invalid("the production user exists"))
 }
 
 /// Runs a program as the production user, with standard input closed. Its standard output, or `None` when it fails.
-fn as_user(
+pub(super) fn as_user(
     user: &str,
     program: &str,
     arguments: &[&OsStr],
@@ -125,7 +125,7 @@ fn as_user(
 }
 
 /// Git as the production user, without hooks or fsmonitor.
-fn git(
+pub(super) fn git(
     user: &str,
     release: &Path,
     arguments: &[&str],
@@ -149,34 +149,34 @@ fn git(
     })
 }
 
-fn none() -> BTreeMap<String, String> {
+pub(super) fn none() -> BTreeMap<String, String> {
     BTreeMap::new()
 }
 
 /// A path relative to a release: no leading slash, no `..`, not empty.
-fn relative_path(path: &str) -> bool {
+pub(super) fn relative_path(path: &str) -> bool {
     !path.is_empty() && !path.starts_with('/') && path.split('/').all(|segment| segment != "..")
 }
 
 impl ReleaseHome {
-    fn releases(&self) -> PathBuf {
+    pub(super) fn releases(&self) -> PathBuf {
         self.home.join("releases")
     }
 
-    fn release(&self, name: &str) -> PathBuf {
+    pub(super) fn release(&self, name: &str) -> PathBuf {
         self.releases().join(name)
     }
 
-    fn environment(&self) -> PathBuf {
+    pub(super) fn environment(&self) -> PathBuf {
         self.home.join(".env")
     }
 
-    fn application(&self, release: &Path) -> PathBuf {
+    pub(super) fn application(&self, release: &Path) -> PathBuf {
         PathBuf::from(format!("{}{}", release.display(), self.application_suffix))
     }
 
     /// The link target of a release's `.env`: back up to the home from the application directory.
-    fn environment_target(&self) -> String {
+    pub(super) fn environment_target(&self) -> String {
         format!(
             "{}.env",
             "../".repeat(2 + self.application_suffix.matches('/').count())
@@ -185,7 +185,7 @@ impl ReleaseHome {
 
     /// The home is `/home/<user>`, the web root is relative, and the root-owned marker names this repository, user,
     /// and home. With `releases`, the releases directory exists as a real directory.
-    fn check(&self, layout: &Layout, releases: bool) -> Result<(), ReleaseError> {
+    pub(super) fn check(&self, layout: &Layout, releases: bool) -> Result<(), ReleaseError> {
         check(
             self.home == layout.home_root.join(&self.user),
             "the home is the user's",
@@ -236,7 +236,7 @@ impl ReleaseHome {
     }
 
     /// The release that `current` names, or `None` when there is no `current`.
-    fn selected(&self) -> Result<Option<String>, ReleaseError> {
+    pub(super) fn selected(&self) -> Result<Option<String>, ReleaseError> {
         let current = self.home.join("current");
         if fs::symlink_metadata(&current).is_err() {
             return Ok(None);
@@ -503,7 +503,10 @@ fn served_path(path: &str) -> bool {
         })
 }
 
-fn walk(root: &Path, keep: &mut dyn FnMut(&Path, &fs::Metadata)) -> Result<(), ReleaseError> {
+pub(super) fn walk(
+    root: &Path,
+    keep: &mut dyn FnMut(&Path, &fs::Metadata),
+) -> Result<(), ReleaseError> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(path) = pending.pop() {
         let metadata = fs::symlink_metadata(&path).map_err(|_| invalid("the tree can be read"))?;
@@ -537,7 +540,7 @@ fn directories_below(root: &Path) -> Result<Vec<PathBuf>, ReleaseError> {
     Ok(directories)
 }
 
-fn setfacl(arguments: &[&str], path: &Path) -> Result<(), ReleaseError> {
+pub(super) fn setfacl(arguments: &[&str], path: &Path) -> Result<(), ReleaseError> {
     let status = Process::new("setfacl")
         .args(arguments)
         .arg("--")
@@ -1307,7 +1310,7 @@ fn state_directory(binding: &BindingHome, layout: &Layout) -> Result<PathBuf, Re
     Ok(layout.state_root.join(binding.instance.to_string()))
 }
 
-fn root_owned(path: &Path, layout: &Layout, mode: u32, directory: bool) -> bool {
+pub(super) fn root_owned(path: &Path, layout: &Layout, mode: u32, directory: bool) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| {
         (if directory {
             metadata.is_dir()

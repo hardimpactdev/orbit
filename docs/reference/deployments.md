@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
-  - apps/agent/src/commands/{production,production_tests}.rs
+  - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - packages/php-sdk/src/{Requests,Responses}/Projects/*DevelopmentDeployStep*.php

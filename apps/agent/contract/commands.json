@@ -429,6 +429,126 @@
     },
     {
       "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.prepare-production-user",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Create a production Instance's system account and private home, or check them.",
+      "timeout_seconds": 60
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.prepare-production-source",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Clone a production Instance's repository into its initial release and record the source markers.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.resolve-production-source",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check out a branch in a production Instance's initial release and link its environment.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": false,
+      "name": "instances.inspect-production-profile",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Read a production checkout's Composer metadata, refusing files the user does not own.",
+      "timeout_seconds": 60
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.grant-production-caddy-access",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Deny Caddy a production home except a path to the selected web root.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": false,
+      "name": "instances.validate-release-layout",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check a production home, its releases, and the release that current selects.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.clear-current-release",
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "summary": "Check a production home and remove its current link.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.release_invalid",
+        "instances.commit_not_on_branch",
+        "instances.release_step_failed"
+      ],
+      "mutates": true,
+      "name": "instances.remove-production-home",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Remove a production Instance's home, system account, and source state.",
+      "timeout_seconds": 600
+    },
+    {
+      "errors": [
         "php.runtime_invalid",
         "php.cache_socket_unavailable",
         "php.cache_association_invalid",

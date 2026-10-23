@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentSourceProfile;
@@ -13,15 +14,19 @@ use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Models\Instance;
 
+/**
+ * A production Instance's home before and around its releases, through the Node agent's `instances.*` commands
+ * (docs/reference/node-agent.md): the system account, the initial clone, its branch and Composer profile, Caddy's
+ * access, the check of `current`, and removal.
+ */
 final readonly class RemoteProductionInstanceSourceLifecycle implements ProductionInstanceSourceLifecycle, ProductionReleaseLayout
 {
     public function __construct(
-        private ProductionSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ComposerSourceClassifier $classifier,
         private RepositoryReadAccess $access,
     ) {}
@@ -30,245 +35,42 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         $instance->loadMissing('node');
         [$user, $home] = $this->identity($instance);
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $home],
-                input: <<<'BASH'
-                    user=$1
-                    home=$2
-                    test "$home" = "/home/$user"
-                    test "${#user}" -le 32
-                    printf '%s' "$user" | grep -Eq '^orbit-app-[1-9][0-9]*$'
 
-                    if getent passwd "$user" >/dev/null; then
-                        entry=$(getent passwd "$user")
-                        test "$(printf '%s' "$entry" | cut -d: -f6)" = "$home"
-                        test "$(printf '%s' "$entry" | cut -d: -f7)" = /usr/sbin/nologin
-                        test "$(id -gn "$user")" = "$user"
-                        test "$(id -u "$user")" -lt 1000
-                    else
-                        test ! -e "$home"
-                        test ! -L "$home"
-                        sudo useradd --system --user-group --home-dir "$home" --shell /usr/sbin/nologin -- "$user"
-                    fi
-
-                    if [ -e "$home" ] || [ -L "$home" ]; then
-                        test -d "$home"
-                        test ! -L "$home"
-                        test "$(stat -c %U -- "$home")" = "$user"
-                        test "$(stat -c %G -- "$home")" = "$user"
-                    else
-                        sudo install -d -o "$user" -g "$user" -m 0700 -- "$home"
-                    fi
-                    BASH,
-            ),
-            step: 'production-user',
-            errorCode: 'app-prod.user_conflict',
-        );
+        $this->run($instance, 'instances.prepare-production-user', ['user' => $user, 'home' => $home], 'production-user', 'app-prod.user_conflict');
     }
 
     public function prepareSource(Instance $instance, bool $allowExisting): void
     {
         $instance->loadMissing(['project', 'node']);
-        [$user, $home] = $this->identity($instance);
-        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
-                    set -o pipefail
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    allow_existing=$5
-                    state_root=/var/lib/orbit/app-instance-sources
-                    state_directory="$state_root/$instance"
-                    marker="$state_directory/initial-clone"
-                    layout_marker="$state_directory/release-layout"
-                    releases="$home/releases"
-                    release="$releases/initial"
-                    environment="$home/.env"
-                    test "$home" = "/home/$user"
-                    case "$instance" in ''|*[!0-9]*) exit 1 ;; esac
-                    test "$instance" -ge 1
-                    sudo test -d "$home"
-                    sudo test ! -L "$home"
-                    test "$(sudo stat -c %U -- "$home")" = "$user"
-                    test "$(sudo stat -c %G -- "$home")" = "$user"
-                    unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user"
-                    unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group"
 
-                    if sudo -u "$user" -H test -e "$release/.git" || sudo -u "$user" -H test -L "$release/.git"; then
-                        test "$allow_existing" = 1
-                        sudo test -d "$state_root"
-                        sudo test ! -L "$state_root"
-                        test "$(sudo stat -c %U:%G -- "$state_root")" = root:root
-                        sudo test -d "$state_directory"
-                        sudo test ! -L "$state_directory"
-                        test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
-                        test "$(sudo stat -c %a -- "$state_directory")" = 700
-                        sudo test -f "$marker"
-                        sudo test ! -L "$marker"
-                        test "$(sudo stat -c %U:%G -- "$marker")" = root:root
-                        test "$(sudo stat -c %a -- "$marker")" = 600
-                        actual_marker=$(sudo base64 --wrap=0 -- "$marker")
-                        expected_marker=$(printf '%s\0%s\0%s\0' "$repository" "$user" "$home" | base64 --wrap=0)
-                        test "$actual_marker" = "$expected_marker"
-                        sudo test -f "$layout_marker"
-                        sudo test ! -L "$layout_marker"
-                        test "$(sudo stat -c %U:%G -- "$layout_marker")" = root:root
-                        test "$(sudo stat -c %a -- "$layout_marker")" = 600
-                        actual_layout=$(sudo base64 --wrap=0 -- "$layout_marker")
-                        expected_layout=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                        test "$actual_layout" = "$expected_layout"
-                        sudo -u "$user" -H test -d "$releases"
-                        sudo -u "$user" -H test ! -L "$releases"
-                        sudo -u "$user" -H test -f "$environment"
-                        sudo -u "$user" -H test ! -L "$environment"
-                        test "$(sudo -u "$user" -H stat -c %a -- "$environment")" = 600
-                        sudo -u "$user" -H test ! -e "$home/current"
-                        sudo -u "$user" -H test ! -L "$home/current"
-                        sudo -u "$user" -H test -d "$release/.git"
-                        sudo -u "$user" -H test ! -L "$release/.git"
-                        test "$(sudo -u "$user" -H git -C "$release" rev-parse --is-inside-work-tree)" = true
-                        actual=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
-                        expected=$(printf '%s\0' "$repository" | base64 --wrap=0)
-                        test "$actual" = "$expected"
-                        exit 0
-                    fi
-
-                    unexpected_entry=$(sudo find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)
-                    test -z "$unexpected_entry"
-                    if sudo test -e "$state_directory" || sudo test -L "$state_directory"; then exit 1; fi
-                    sudo -u "$user" -H install -d -m 0700 -- "$releases"
-                    sudo -u "$user" -H install -m 0600 /dev/null "$environment"
-                    git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release"
-                    sudo install -d -o root -g root -m 0700 -- "$state_root" "$state_directory"
-                    sudo test ! -L "$state_root"
-                    test "$(sudo stat -c %U:%G -- "$state_root")" = root:root
-                    sudo test ! -L "$state_directory"
-                    test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
-                    test "$(sudo stat -c %a -- "$state_directory")" = 700
-                    temporary=$(sudo mktemp "$state_directory/.initial-clone.XXXXXX")
-                    cleanup_marker() { sudo rm -f -- "$temporary"; }
-                    trap cleanup_marker EXIT
-                    printf '%s\0%s\0%s\0' "$repository" "$user" "$home" | sudo tee "$temporary" >/dev/null
-                    sudo chown root:root -- "$temporary"
-                    sudo chmod 0600 -- "$temporary"
-                    sudo mv -- "$temporary" "$marker"
-                    temporary=
-                    layout_temporary=$(sudo mktemp "$state_directory/.release-layout.XXXXXX")
-                    cleanup_layout_marker() { sudo rm -f -- "$layout_temporary"; }
-                    trap cleanup_layout_marker EXIT
-                    printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | sudo tee "$layout_temporary" >/dev/null
-                    sudo chown root:root -- "$layout_temporary"
-                    sudo chmod 0600 -- "$layout_temporary"
-                    sudo mv -- "$layout_temporary" "$layout_marker"
-                    layout_temporary=
-                    trap - EXIT
-                    BASH);
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $instance->project->repository_url,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $allowExisting ? '1' : '0',
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
-            step: 'production-source-prepare',
-            errorCode: 'instance.clone_failed',
-        );
+        $this->run($instance, 'instances.prepare-production-source', [
+            ...$this->home($instance),
+            'allow_existing' => $allowExisting,
+            'git_read' => $this->gitRead($instance),
+        ], 'production-source-prepare', 'instance.clone_failed');
     }
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
         $instance->loadMissing(['project', 'node']);
-        [$user, $home] = $this->identity($instance);
-        $branch = $instance->branch_override
-            ?? $instance->branch
-            ?? $instance->project->default_branch;
+        $branch = $instance->branch_override ?? $instance->branch ?? $instance->project->default_branch;
 
         if (! is_string($branch)) {
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
         }
 
-        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), ProductionApplicationPaths::render(<<<'BASH'
-                    repository=$1
-                    user=$2
-                    home=$3
-                    branch=$4
-                    instance=$5
-                    clone_target=$6
-                    release="$home/releases/initial"
-                    environment="$home/.env"
-                    release_environment="$release__APPLICATION_SUFFIX__/.env"
-                    layout_marker="/var/lib/orbit/app-instance-sources/$instance/release-layout"
-                    actual_layout=$(sudo base64 --wrap=0 -- "$layout_marker")
-                    expected_layout=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual_layout" = "$expected_layout"
-                    sudo -u "$user" -H test -f "$environment"
-                    sudo -u "$user" -H test ! -L "$environment"
-                    sudo -u "$user" -H test ! -e "$home/current"
-                    sudo -u "$user" -H test ! -L "$home/current"
-                    source_ref="refs/remotes/origin/$branch"
-                    git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin
-                    sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$release" checkout --quiet -B "$branch" "$source_ref"
-                    sudo -u "$user" -H git -C "$release" branch --quiet --set-upstream-to="origin/$branch" "$branch"
-                    test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
-                    if sudo -u "$user" -H test -L "$release_environment"; then
-                        sudo -u "$user" -H test -L "$release_environment"
-                        test "$(sudo -u "$user" -H readlink -- "$release_environment")" = __ENVIRONMENT_TARGET__
-                    elif sudo -u "$user" -H test -e "$release_environment"; then
-                        test "$clone_target" = 1
-                        sudo -u "$user" -H test -f "$release_environment"
-                        sudo -u "$user" -H git -C "$release" ls-files --error-unmatch -- __ENVIRONMENT_PATH__ >/dev/null
-                        sudo -u "$user" -H git -C "$release" diff --quiet -- __ENVIRONMENT_PATH__
-                        sudo -u "$user" -H git -C "$release" diff --cached --quiet -- __ENVIRONMENT_PATH__
-                        sudo -u "$user" -H rm -- "$release_environment"
-                        sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
-                    else
-                        sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
-                    fi
-                    test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-                    commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
-                    printf '%s\t%s\n' "$branch" "$commit"
-                    BASH, $instance->root ?? $instance->project->root));
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $instance->project->repository_url,
-                    $user,
-                    $home,
-                    $branch,
-                    (string) $instance->id,
-                    $instance->clone_candidate_id === null ? '0' : '1',
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
-            step: 'production-source-resolve',
-            errorCode: 'instance.branch_resolution_failed',
-        );
-        $parts = explode("\t", trim($result->stdout), 2);
+        $result = $this->run($instance, 'instances.resolve-production-source', [
+            ...$this->releaseHome($instance),
+            'branch' => $branch,
+            'clone_target' => $instance->clone_candidate_id !== null,
+            'git_read' => $this->gitRead($instance),
+        ], 'production-source-resolve', 'instance.branch_resolution_failed');
 
-        if (count($parts) !== 2) {
+        if (! is_string($result['branch'] ?? null) || ! is_string($result['commit'] ?? null)) {
             throw $this->failure('production-source-resolve', 'instance.source_identity_invalid');
         }
 
-        return new DevelopmentSourceResolution($parts[0], $parts[1]);
+        return new DevelopmentSourceResolution($result['branch'], $result['commit']);
     }
 
     public function inspectProfile(Instance $instance): DevelopmentSourceProfile
@@ -282,65 +84,15 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
         }
 
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolve($checkout, $root), $instance->project->type->frameworkEntryPoint()],
-                input: <<<'BASH'
-                    # find must restore its working directory after sudo changes users.
-                    cd /
-                    user=$1
-                    relative_root=$2
-                    checkout=$3
-                    application=$4
-                    entry_point=$5
-                    application_real=$(sudo -u "$user" -H realpath -m -- "$application")
-                    test "$application_real" = "$application" || { printf 'UNSAFE\n'; exit 0; }
-                    case "$application_real" in "$checkout"|"$checkout"/*) ;; *) printf 'UNSAFE\n'; exit 0 ;; esac
-                    composer="$application/composer.json"
-                    artisan="$application/$entry_point"
-                    candidate="$checkout/$relative_root"
-                    resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
+        $result = $this->run($instance, 'instances.inspect-production-profile', [
+            'user' => $user,
+            'relative_root' => $root,
+            'checkout' => $checkout,
+            'application' => ApplicationDirectory::resolve($checkout, $root),
+            'entry_point' => $instance->project->type->frameworkEntryPoint(),
+        ], 'production-source-classification', 'app-prod.source_classification_failed');
 
-                    case "$resolved" in
-                        "$checkout"/*) ;;
-                        *) printf 'UNSAFE\n'; exit 0 ;;
-                    esac
-                    unexpected_user=$(sudo -u "$user" -H find -P "$checkout" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user" || { printf 'UNSAFE\n'; exit 0; }
-                    unexpected_group=$(sudo -u "$user" -H find -P "$checkout" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group" || { printf 'UNSAFE\n'; exit 0; }
-                    if sudo -u "$user" -H test -e "$resolved" || sudo -u "$user" -H test -L "$resolved"; then
-                        test "$(sudo -u "$user" -H stat -c %U -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
-                        test "$(sudo -u "$user" -H stat -c %G -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
-                    fi
-
-                    if sudo -u "$user" -H test -L "$composer" || { sudo -u "$user" -H test -e "$composer" && ! sudo -u "$user" -H test -f "$composer"; }; then
-                        printf 'UNSAFE\n'
-                        exit 0
-                    fi
-                    if ! sudo -u "$user" -H test -e "$composer"; then
-                        if sudo -u "$user" -H test -e "$artisan" || sudo -u "$user" -H test -L "$artisan"; then printf 'PARTIAL\n'; else printf 'NONE\n'; fi
-                        exit 0
-                    fi
-                    test "$(sudo -u "$user" -H stat -c %U -- "$composer")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
-                    if sudo -u "$user" -H test -L "$artisan"; then artisan_kind=unsafe
-                    elif sudo -u "$user" -H test -f "$artisan"; then artisan_kind=regular
-                    elif sudo -u "$user" -H test -e "$artisan"; then artisan_kind=unsafe
-                    else artisan_kind=absent
-                    fi
-                    printf 'COMPOSER\t%s\t' "$artisan_kind"
-                    sudo -u "$user" -H base64 --wrap=0 -- "$composer"
-                    printf '\n'
-                    BASH,
-            ),
-            step: 'production-source-classification',
-            errorCode: 'app-prod.source_classification_failed',
-        );
-
-        $instance->loadMissing('project');
-
-        return $this->profile(trim($result->stdout), $instance->project->type);
+        return $this->profile($result, $instance->project->type);
     }
 
     public function prepareCaddyAccess(Instance $instance): void
@@ -353,249 +105,73 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-caddy-access', 'app-prod.source_metadata_unsafe');
         }
 
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $home,
-                    $user,
-                    $root,
-                    $instance->clone_candidate_id === null ? '0' : '1',
-                ],
-                input: <<<'BASH'
-                    home=$1
-                    user=$2
-                    relative_root=$3
-                    clone_target=$4
-                    releases="$home/releases"
-                    current="$home/current"
-                    initial="$releases/initial"
-                    test "$home" = "/home/$user"
-                    sudo -u "$user" -H test -d "$home"
-                    sudo -u "$user" -H test ! -L "$home"
-                    home_real=$(sudo -u "$user" -H realpath -e -- "$home")
-                    test "$home_real" = "$home"
-                    document_root_exists=0
-                    ancestor_paths=()
-                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-                    if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
-                        sudo -u "$user" -H test -L "$current"
-                        test "$(sudo -u "$user" -H stat -c %U -- "$current")" = "$user"
-                        test "$(sudo -u "$user" -H stat -c %G -- "$current")" = "$user"
-                        releases_real=$(sudo -u "$user" -H realpath -e -- "$releases")
-                        test "$releases_real" = "$releases"
-                        selected=$(sudo -u "$user" -H realpath -e -- "$current")
-                        case "$selected" in "$releases"/*) ;; *) exit 1 ;; esac
-                    elif [ "$clone_target" = 1 ]; then
-                        selected=$(sudo -u "$user" -H realpath -e -- "$initial")
-                        test "$selected" = "$initial"
-                    fi
-                    if [ -n "${selected:-}" ]; then
-                        sudo -u "$user" -H test -d "$selected"
-                        document_root="$selected/$relative_root"
-                        document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")
-                        case "$document_root_real" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
-                        sudo -u "$user" -H test -d "$document_root"
-                        test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
-                        unexpected_symlink=$(sudo find -P "$document_root_real" -type l -print -quit)
-                        test -z "$unexpected_symlink"
-                        ancestor="$document_root_real"
-                        while [ "$ancestor" != "$home" ]; do
-                            ancestor=${ancestor%/*}
-                            if [ "$ancestor" = "$home" ]; then break; fi
-                            case "$ancestor" in "$home"/*) ;; *) exit 1 ;; esac
-                            sudo test -d "$ancestor"
-                            sudo test ! -L "$ancestor"
-                            ancestor_paths+=("$ancestor")
-                        done
-                        document_root_exists=1
-                    fi
-                    unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user"
-                    unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group"
-                    sudo setfacl -n -P -R -m u:caddy:--- "$home"
-                    sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
-                    sudo setfacl -m u:caddy:--x /home "$home"
-                    if [ "$document_root_exists" = 1 ]; then
-                        for ancestor in "${ancestor_paths[@]}"; do
-                            sudo setfacl -m u:caddy:--x "$ancestor"
-                        done
-                        sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
-                        sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                    fi
-                    BASH,
-            ),
-            step: 'production-caddy-access',
-            errorCode: 'app-prod.source_metadata_unsafe',
-        );
+        $this->run($instance, 'instances.grant-production-caddy-access', [
+            'user' => $user,
+            'home' => $home,
+            'relative_root' => $root,
+            'clone_target' => $instance->clone_candidate_id !== null,
+        ], 'production-caddy-access', 'app-prod.source_metadata_unsafe');
     }
 
     public function validateCurrent(Instance $instance): void
     {
-        $this->releaseLayout($instance, 'validate');
+        if ($instance->usesProductionReleaseLayout()) {
+            $instance->loadMissing(['project', 'node']);
+            $this->run($instance, 'instances.validate-release-layout', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
+        }
     }
 
     public function clearCurrent(Instance $instance): void
     {
-        $this->releaseLayout($instance, 'clear');
+        if ($instance->usesProductionReleaseLayout()) {
+            $instance->loadMissing(['project', 'node']);
+            $this->run($instance, 'instances.clear-current-release', $this->releaseHome($instance), 'production-release-layout', 'app-prod.source_metadata_unsafe');
+        }
     }
 
-    private function releaseLayout(Instance $instance, string $action): void
+    public function remove(Instance $instance): void
     {
-        if ($action !== 'remove' && ! $instance->usesProductionReleaseLayout()) {
-            return;
-        }
-
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
-        if ($action === 'remove' && ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}")) {
+        if ($user !== "orbit-app-{$instance->project_id}" || $home !== "/home/{$user}") {
             throw $this->failure('production-source-cleanup', 'app-prod.identity_missing');
         }
+
+        $this->run($instance, 'instances.remove-production-home', $this->home($instance), 'production-source-cleanup', 'app-prod.source_cleanup_failed');
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(Instance $instance, string $command, array $input, string $step, string $errorCode): array
+    {
+        return AgentStep::run($this->agents, $instance->node, $command, $input, $step, $errorCode, 'App production');
+    }
+
+    /** @return array{repository: string, user: string, home: string, instance: int} */
+    private function home(Instance $instance): array
+    {
+        [$user, $home] = $this->identity($instance);
+
+        return ['repository' => $instance->project->repository_url, 'user' => $user, 'home' => $home, 'instance' => $instance->id];
+    }
+
+    /** @return array<string, mixed> */
+    private function releaseHome(Instance $instance): array
+    {
         $root = $instance->root ?? $instance->project->root;
 
         if (! is_string($root)) {
             throw $this->failure('production-release-layout', 'app-prod.source_metadata_unsafe');
         }
 
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $instance->project->repository_url,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $root,
-                    $action,
-                ],
-                input: ProductionApplicationPaths::render(<<<'BASH'
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    relative_root=$5
-                    action=$6
-                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
-                    marker="$state_directory/release-layout"
-                    releases="$home/releases"
-                    environment="$home/.env"
-                    current="$home/current"
-
-                    cd /
-                    test "$home" = "/home/$user"
-                    if [ "$action" = remove ]; then
-                        if ! sudo test -e "$state_directory" && ! sudo test -L "$state_directory"; then
-                            if getent passwd "$user" >/dev/null; then exit 1; fi
-                            sudo test ! -e "$home"
-                            sudo test ! -L "$home"
-                            exit 0
-                        fi
-                    fi
-
-                    sudo test -d "$state_directory"
-                    sudo test ! -L "$state_directory"
-                    test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
-                    test "$(sudo stat -c %a -- "$state_directory")" = 700
-                    if [ "$action" = remove ]; then
-                        remove_state() {
-                            sudo rm -r --one-file-system -- "$state_directory"
-                            sudo test ! -e "$state_directory"
-                            sudo test ! -L "$state_directory"
-                        }
-                        if ! getent passwd "$user" >/dev/null && sudo test ! -e "$home" && sudo test ! -L "$home"; then
-                            remove_state
-                            exit 0
-                        fi
-                    fi
-                    sudo test -f "$marker"
-                    sudo test ! -L "$marker"
-                    test "$(sudo stat -c %U:%G -- "$marker")" = root:root
-                    test "$(sudo stat -c %a -- "$marker")" = 600
-                    actual=$(sudo base64 --wrap=0 -- "$marker")
-                    expected=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual" = "$expected"
-
-                    if [ "$action" = remove ]; then
-                        account_exists=0
-                        if entry=$(getent passwd "$user"); then
-                            account_exists=1
-                            test "$(printf '%s' "$entry" | cut -d: -f6)" = "$home"
-                            test "$(printf '%s' "$entry" | cut -d: -f7)" = /usr/sbin/nologin
-                            test "$(id -gn "$user")" = "$user"
-                            test "$(id -u "$user")" -lt 1000
-                            if pgrep -u "$user" >/dev/null; then exit 1; else test "$?" = 1; fi
-                        fi
-
-                        if sudo test -e "$home" || sudo test -L "$home"; then
-                            sudo test -d "$home"
-                            sudo test ! -L "$home"
-                            test "$(sudo realpath -e -- "$home")" = "$home"
-                            if [ "$account_exists" = 1 ]; then
-                                test "$(sudo stat -c %U:%G -- "$home")" = "$user:$user"
-                            fi
-                            sudo rm -r --one-file-system -- "$home"
-                        fi
-                        if [ "$account_exists" = 1 ]; then
-                            sudo userdel -- "$user"
-                        fi
-                        if getent passwd "$user" >/dev/null; then exit 1; fi
-                        sudo test ! -e "$home"
-                        sudo test ! -L "$home"
-                        remove_state
-                        exit 0
-                    fi
-
-                    sudo -u "$user" -H test -d "$home"
-                    sudo -u "$user" -H test ! -L "$home"
-                    test "$(sudo -u "$user" -H realpath -e -- "$home")" = "$home"
-                    sudo -u "$user" -H test -d "$releases"
-                    sudo -u "$user" -H test ! -L "$releases"
-                    sudo -u "$user" -H test -f "$environment"
-                    sudo -u "$user" -H test ! -L "$environment"
-                    test "$(sudo -u "$user" -H stat -c %a -- "$environment")" = 600
-                    unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
-                    test -z "$unexpected_user"
-                    unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
-                    test -z "$unexpected_group"
-                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-
-                    if ! sudo -u "$user" -H test -e "$current" && ! sudo -u "$user" -H test -L "$current"; then
-                        exit 0
-                    fi
-
-                    sudo -u "$user" -H test -L "$current"
-                    test "$(sudo -u "$user" -H stat -c %U -- "$current")" = "$user"
-                    test "$(sudo -u "$user" -H stat -c %G -- "$current")" = "$user"
-                    selected=$(sudo -u "$user" -H realpath -e -- "$current")
-                    case "$selected" in "$releases"/*) ;; *) exit 1 ;; esac
-                    sudo -u "$user" -H test -d "$selected"
-                    selected_environment="$selected__APPLICATION_SUFFIX__/.env"
-                    sudo -u "$user" -H test -L "$selected_environment"
-                    test "$(sudo -u "$user" -H readlink -- "$selected_environment")" = __ENVIRONMENT_TARGET__
-                    test "$(sudo -u "$user" -H realpath -e -- "$selected_environment")" = "$environment"
-                    resolved_root=$(sudo -u "$user" -H realpath -m -- "$current/$relative_root")
-                    case "$resolved_root" in "$selected"|"$selected"/*) ;; *) exit 1 ;; esac
-
-                    if [ "$action" = clear ]; then
-                        sudo -u "$user" -H rm -- "$current"
-                    fi
-                    BASH, $root),
-            ),
-            step: $action === 'remove' ? 'production-source-cleanup' : 'production-release-layout',
-            errorCode: $action === 'remove' ? 'app-prod.source_cleanup_failed' : 'app-prod.source_metadata_unsafe',
-        );
+        return [...$this->home($instance), 'relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root)];
     }
 
-    public function remove(Instance $instance): void
+    private function gitRead(Instance $instance): GitReadEnvironment
     {
-        $this->releaseLayout($instance, 'remove');
+        return $this->access->for($instance->project->repository_url, $instance->project->source_access);
     }
 
     /** @return array{string, string} */
@@ -614,39 +190,34 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             || preg_match('#\A'.preg_quote("{$home}/releases/", '#').'(?!\.\.?\z)[^/]+\z#D', $checkout) === 1;
     }
 
-    private function profile(string $result, ProjectType $projectType): DevelopmentSourceProfile
+    /** @param  array<string, mixed>  $result */
+    private function profile(array $result, ProjectType $projectType): DevelopmentSourceProfile
     {
-        if ($result === 'NONE') {
+        $kind = $result['kind'] ?? null;
+
+        if ($kind === 'none') {
             return new DevelopmentSourceProfile(null, false);
         }
 
-        if ($result === 'UNSAFE' || $result === 'PARTIAL' || ! str_starts_with($result, "COMPOSER\t")) {
+        if ($kind !== 'composer' || ! is_string($result['entry_point'] ?? null)) {
             throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
         }
 
-        $parts = explode("\t", $result, 3);
-        $json = isset($parts[2]) ? base64_decode($parts[2], true) : false;
+        $json = is_string($result['composer'] ?? null) ? base64_decode($result['composer'], true) : false;
 
         if (! is_string($json)) {
             throw $this->failure('production-source-classification', 'app-prod.php_version_unsupported');
         }
 
         try {
-            return $this->classifier->classify($json, $projectType, $parts[1]);
+            return $this->classifier->classify($json, $projectType, $result['entry_point']);
         } catch (RuntimeConvergenceException $exception) {
-            throw $this->failure(
-                'production-source-classification',
-                str_replace('app-dev.', 'app-prod.', $exception->errorCode),
-                $exception,
-            );
+            throw $this->failure('production-source-classification', str_replace('app-dev.', 'app-prod.', $exception->errorCode), $exception);
         }
     }
 
-    private function failure(
-        string $step,
-        string $errorCode,
-        ?\Throwable $previous = null,
-    ): RuntimeConvergenceException {
+    private function failure(string $step, string $errorCode, ?\Throwable $previous = null): RuntimeConvergenceException
+    {
         return new RuntimeConvergenceException(
             step: $step,
             errorCode: $errorCode,

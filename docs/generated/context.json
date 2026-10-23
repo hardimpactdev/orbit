@@ -2292,6 +2292,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Project",
                 "Role",
