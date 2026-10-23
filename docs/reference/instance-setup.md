@@ -7,8 +7,8 @@ covers:
   - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
-  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/resources/instances/{lifecycle.py,ci-caches.sh}
+  - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/instances/{lifecycle.py,ci-caches.sh}}
+  - apps/agent/src/commands/{dev_source,dev_source_tests}.rs
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
 
@@ -70,7 +70,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. Production releases are unchanged.
+The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. The [agent commands](/reference/node-agent#commands) `instances.prepare-development-source`, `instances.inspect-development-source`, and `instances.resolve-development-source` run these steps, and each one first checks that every parent of the checkout is a real directory under the apps root. Production releases are unchanged.
 
 Every Gateway Git call sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`, so a hook path or a filesystem monitor in `.git/config` never runs. A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Caddy can read only the web root and the public storage target; [Caddy access](/reference/routes#caddy-access) describes the walk.
 
@@ -84,7 +84,7 @@ The managed user writes task metadata under `$(git rev-parse --git-path orbit)`.
 
 On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers development checkouts on other Nodes.
 
-A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` to `true`, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `protocol.allow` is `never`, and each transport is set on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels on the standard input of the SSH process, never in an argument or a file.
+A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` to `true`, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `protocol.allow` is `never`, and each transport is set on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels in the command's input on the standard input of the SSH process, never in an argument or a file.
 
 The checkout's `.git/config` is not trusted. The operator writes it, and so does every program that runs as the managed user: setup steps, development Processes, and any agent working in the checkout. Command-line settings outrank that file, so a planted credential helper, hook, `url.*.insteadOf`, or transport setting cannot run a command or move the fetch off HTTPS while the token is in the environment.
 

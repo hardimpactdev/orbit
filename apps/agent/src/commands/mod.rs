@@ -1,6 +1,7 @@
 //! The named commands this binary implements, by area.
 
 pub mod agent;
+pub mod dev_source;
 pub mod instances;
 pub mod source;
 
@@ -44,5 +45,8 @@ pub fn all() -> Vec<Entry> {
         entry::<instances::ReadRemovalState>(),
         entry::<instances::CheckPublication>(),
         entry::<instances::InspectLaravelRoutes>(),
+        entry::<dev_source::PrepareDevelopmentSource>(),
+        entry::<dev_source::InspectDevelopmentSource>(),
+        entry::<dev_source::ResolveDevelopmentSource>(),
     ]
 }

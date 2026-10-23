@@ -253,7 +253,7 @@ it('records no failed pin when the candidate cannot be staged or the installer g
                 throw new RuntimeException('disk full');
             }
         }
-        : new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), new CommandResult(255, '', 'Connection closed', 1, false)]);
+    : new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), new CommandResult(255, '', 'Connection closed', 1, false)]);
 
     expect(fn () => agentRunner($transport)->run($node, 'agent.status'))->toThrow(AgentRunnerFailure::class);
     expect($node->fresh()?->agent_failed_pin)->toBeNull();

@@ -220,6 +220,51 @@
       },
       "summary": "Read whether a production release's Laravel routes claim the Reverb paths.",
       "timeout_seconds": 60
+    },
+    {
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ],
+      "mutates": true,
+      "name": "instances.prepare-development-source",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Create a development Instance's checkout, or check the one an earlier attempt made.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ],
+      "mutates": false,
+      "name": "instances.inspect-development-source",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Check a development Instance's prepared checkout and read its origin, branch, and commit.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "instances.source_invalid",
+        "instances.source_busy",
+        "instances.git_failed"
+      ],
+      "mutates": true,
+      "name": "instances.resolve-development-source",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Fetch a development Instance's origin and check out its branch.",
+      "timeout_seconds": 900
     }
   ],
   "common_errors": [

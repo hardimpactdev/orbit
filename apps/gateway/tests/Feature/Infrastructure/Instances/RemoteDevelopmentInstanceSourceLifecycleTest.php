@@ -9,6 +9,7 @@ use App\Data\Instances\CreateInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -38,6 +39,11 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentTransport;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -48,11 +54,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\AgentCommands\AgentContract;
-use App\Infrastructure\AgentCommands\AgentTransport;
-use App\Infrastructure\AgentCommands\AgentTransports;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -75,9 +76,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
-use Tests\Support\LocalAgentBinary;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\LocalAgentBinary;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PlantedGitConfig;
 
@@ -173,14 +175,15 @@ beforeEach(function (): void {
     $ssh = new DevelopmentSshExecutor($this->transport, $keys, $knownHosts);
     $this->ssh = $ssh;
     $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
+    $this->agents = orb76_agent_runner($this->transport, $keys, $knownHosts, $this->sandbox);
     $this->source = new RemoteDevelopmentInstanceSourceLifecycle(
         $ssh,
+        $this->agents,
         $accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
         app(TaskVmGit::class),
     );
-    $this->agents = orb76_agent_runner($this->transport, $keys, $knownHosts, $this->sandbox);
     $this->removal = new RemoteDevelopmentInstanceSourceRemoval(
         $this->agents,
         $accounts,
@@ -238,15 +241,13 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
         ->and($resolution->startingCommit)->toBe($main)
         // Only the default branch and the task branch come from the mirror. The old in-VM fetch took every branch.
         ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes'])->stdout))->toBe("refs/remotes/origin/HEAD\nrefs/remotes/origin/main");
-    $network = [];
     foreach ($this->transport->commands as $command) {
         expect($command->protectedInput?->carriesGitCredential())->not->toBeTrue();
-        if (str_contains((string) $command->input, 'allow_existing=$6') || str_contains((string) $command->input, 'instance_name=$6')) {
-            $network[] = $command->arguments[array_key_last($command->arguments)];
-        }
     }
+    $network = array_column(array_filter($this->transport->agentCalls, static fn (array $call): bool => in_array($call['command'], ['instances.prepare-development-source', 'instances.resolve-development-source'], true)), 'input');
     // Preparation runs `git init` instead of a clone, and resolution fetches nothing in the VM.
-    expect($network)->toBe(['0', '0']);
+    expect(array_column($network, 'network'))->toBe([false, false])
+        ->and(array_column($network, 'git_read'))->toBe([[], []]);
 });
 
 it('starts a new task workspace at main tip and imports the newest cached ancestor', function (bool $cachedHead): void {
@@ -322,7 +323,7 @@ it('starts a cache-enabled new task workspace cold at main tip when cache refs a
                     : $this->runner->run($invocation);
             }
         };
-        $this->source = new RemoteDevelopmentInstanceSourceLifecycle($this->ssh, $this->accounts, $this->boundary, app(RepositoryReadAccess::class), new TaskVmGit($runner, $this->sandbox.'/mirror', ['https', 'file']));
+        $this->source = new RemoteDevelopmentInstanceSourceLifecycle($this->ssh, $this->agents, $this->accounts, $this->boundary, app(RepositoryReadAccess::class), new TaskVmGit($runner, $this->sandbox.'/mirror', ['https', 'file']));
     }
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'No baseline', 'brief' => 'No cache.', 'status' => TaskGroupStatus::Running]);
     orb76_task_vm($this->node)->update(['group_id' => $group->id]);
@@ -1174,8 +1175,10 @@ it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected 
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+    $agents = new FakeAgentCommandRunner()->answer('instances.prepare-development-source', ['created' => true]);
     $source = new RemoteDevelopmentInstanceSourceLifecycle(
         new DevelopmentSshExecutor($recorder, $keys, $knownHosts),
+        $agents,
         $this->accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
@@ -1190,17 +1193,18 @@ it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected 
     if ($token === null) {
         expect(fn () => $source->prepare($instance, false))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('github.cli_unauthenticated'))
-            ->and($recorder->commands)->toBe([]);
+            ->and($agents->calls)->toBe([]);
 
         return;
     }
 
     $source->prepare($instance, false);
 
-    expect($recorder->commands)->toHaveCount(1)
-        ->and($recorder->commands[0]->input)->toBeNull()
-        ->and(implode(' ', $recorder->commands[0]->arguments))->not->toContain($token)
-        ->and($recorder->protectedInput)->toContain(base64_encode("x-access-token:{$token}"), 'git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone');
+    // The runner sends Git read access only on input marked as carrying a credential (NativeAgentCommandRunnerTest).
+    $access = $agents->calls[0]['input']['git_read'];
+    expect($agents->commands())->toBe(['instances.prepare-development-source'])
+        ->and($access)->toBeInstanceOf(GitReadEnvironment::class)
+        ->and(implode("\n", $access->variables))->toContain(base64_encode("x-access-token:{$token}"));
 })->with([
     'logged in' => ['gho_sentinel000000000000000000'],
     'not logged in' => [null],
@@ -1276,9 +1280,9 @@ it('checks local HEAD before rename without contacting origin or changing Git so
     orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--detach']);
     expect(fn () => $this->source->assertBranchCheckedOut($instance, 't3code/login'))
         ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('instance.branch_not_checked_out'));
-    foreach ($this->transport->commands as $command) {
-        expect($command->input)->not->toContain('git_read', ' fetch ', ' checkout ', ' reset ');
-    }
+    // Only the read command runs: no fetch, checkout, or reset, and no Git read access.
+    expect(array_unique(array_column($this->transport->agentCalls, 'command')))->toBe(['instances.inspect-development-source'])
+        ->and(array_unique(array_column(array_column($this->transport->agentCalls, 'input'), 'verify_origin')))->toBe([false]);
 });
 
 it('reports a held checkout lifecycle lock before rename without leaving a lock file', function (): void {
@@ -1335,21 +1339,16 @@ it('makes preparation idempotent and uses only fixed source-control commands', f
     $resolution = $this->source->resolve($instance);
     $this->source->inspectResolved($instance);
 
-    $inputs = implode("\n", array_map(
-        static fn (RemoteCommand $command): string => $command->input ?? '',
-        $this->transport->commands,
-    ));
-
-    expect($resolution->branch)
-        ->toBe('dev')
-        ->and(substr_count($inputs, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin --'))
-        ->toBe(2)
-        ->and($inputs)
-        ->not->toContain('caddy', 'certificate', 'dns', 'php-fpm', 'systemctl', 'hostname');
-
-    foreach ($this->transport->commands as $command) {
-        expect(array_slice($command->arguments, 0, 3))->toBe(['bash', '-seu', '--']);
-    }
+    // Every step is a source command; the agent's Rust tests prove which Git commands each one runs.
+    expect($resolution->branch)->toBe('dev')
+        ->and(array_column($this->transport->agentCalls, 'command'))->toBe([
+            'instances.prepare-development-source',
+            'instances.prepare-development-source',
+            'instances.inspect-development-source',
+            'instances.resolve-development-source',
+            'instances.inspect-development-source',
+        ])
+        ->and(count($this->transport->commands))->toBe(5);
 });
 
 it('inspects prepared source by its configured origin despite an insteadOf rule', function (): void {
@@ -3694,6 +3693,9 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public bool $loseFinalizationOnce = false;
 
+    /** @var list<array{command: string, input: array<string, mixed>}> The agent commands, as the Gateway sent them. */
+    public array $agentCalls = [];
+
     public function __construct(
         public string $remoteOrigin,
         private readonly string $localOrigin,
@@ -3706,18 +3708,12 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         $this->commands[] = $command;
         $agent = LocalAgentBinary::localArguments($command->arguments);
         if ($agent !== null) {
-            return $this->agentCommand($agent, (string) stream_get_contents($command->protectedInput?->stream()));
+            $envelope = (string) stream_get_contents($command->protectedInput?->stream());
+            $this->agentCalls[] = ['command' => $agent[2], 'input' => json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input']];
+
+            return $this->agentCommand($agent, $envelope);
         }
         $input = $command->input;
-
-        $preparing = is_string($input) && str_contains($input, 'allow_existing=$6');
-        if ($preparing && $this->prepareFailure === 'before directory') {
-            $input = str_replace('mkdir -m 0755 -- "$checkout"', 'exit 75', $input);
-        }
-        if ($preparing && $this->prepareFailure === 'before receipt') {
-            $clone = 'git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"';
-            $input = str_replace($clone, $clone."\nexit 75", $input);
-        }
         $arguments = array_map(
             fn (string $argument): string => $argument === $this->remoteOrigin ? $this->localOrigin : $argument,
             $command->arguments,
@@ -3732,7 +3728,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         }
 
         return new CommandResult(
-            exitCode: $preparing && $this->prepareFailure === 'lost response' && $result->succeeded() ? 255 : $result->exitCode,
+            exitCode: $result->exitCode,
             stdout: str_replace(
                 [$this->localOrigin, base64_encode($this->localOrigin)],
                 [$this->remoteOrigin, base64_encode($this->remoteOrigin)],
@@ -3786,6 +3782,36 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             }
         }
 
+        if ($arguments[2] === 'instances.prepare-development-source' && $this->prepareFailure !== null) {
+            $failure = $this->prepareFailure;
+            $values = json_decode($envelope, flags: JSON_THROW_ON_ERROR);
+            if ($failure === 'before directory') {
+                // The run ends after it created the parents and before the checkout.
+                $parent = dirname($values->input->checkout);
+                if (! is_dir($parent)) {
+                    mkdir($parent, 0o755, true);
+                }
+
+                return new CommandResult(75, '', '', 1, false);
+            }
+            if ($failure === 'before receipt') {
+                // The run ends after the clone and before it writes the prepare receipt.
+                $values->input->prepare_id = null;
+                $this->run($arguments, json_encode($values, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+                return new CommandResult(75, '', '', 1, false);
+            }
+            $result = $this->run($arguments, $envelope);
+
+            return $result->succeeded() ? new CommandResult(255, '', 'Connection closed', 1, false) : $result;
+        }
+
+        return $this->run($arguments, $envelope);
+    }
+
+    /** @param  list<string>  $arguments */
+    private function run(array $arguments, string $envelope): CommandResult
+    {
         if ($arguments[2] === 'instances.remove-source') {
             // The checkout names the Project origin, as a Node's does; git reaches it through the local repository.
             $checkout = json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input']['checkout'];

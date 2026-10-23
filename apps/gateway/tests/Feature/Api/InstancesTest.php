@@ -56,7 +56,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
@@ -67,12 +67,7 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -94,6 +89,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\TestCase;
 
@@ -572,46 +568,14 @@ beforeEach(function (): void {
 
 describe('development Instance rename', function (): void {
     beforeEach(function (): void {
-        $this->renameTransport = new class implements SshExecutor
-        {
-            public int $exitCode = 0;
-
-            public int $calls = 0;
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->calls++;
-
-                $branch = $command->arguments[array_key_last($command->arguments)];
-                $output = base64_encode('https://github.com/acme/site.git')."\n".base64_encode($branch)."\n";
-
-                return new CommandResult($this->exitCode, $output, '', 1, false);
-            }
-        };
-        app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
-            $this->renameTransport,
-            new class implements SshKeyProvider
-            {
-                public function privateKeyPath(): string
-                {
-                    return '/tmp/test-key';
-                }
-
-                public function publicKey(): string
-                {
-                    return 'ssh-ed25519 test';
-                }
-            },
-            new class implements KnownHostsStore
-            {
-                public function path(): string
-                {
-                    return '/tmp/test-hosts';
-                }
-
-                public function put(string $host, int $port, HostKey $key): void {}
-            },
-        ));
+        // The agent's Rust tests prove how the checkout is read; here it reports the HEAD a test chooses.
+        $this->renameHead = 't3code/login';
+        $this->renameAgents = new FakeAgentCommandRunner()->answer('instances.inspect-development-source', fn (): array => [
+            'origin' => 'https://github.com/acme/site.git',
+            'branch' => $this->renameHead,
+            'commit' => null,
+        ]);
+        app()->instance(AgentCommandRunner::class, $this->renameAgents);
         $this->routeProjection = Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing();
         app()->instance(RouteDomainProjector::class, $this->routeProjection);
         $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
@@ -644,14 +608,21 @@ describe('development Instance rename', function (): void {
         'both' => [['branch' => 't3code/login', 'domain' => 'login.acme.test']],
     ]);
 
-    it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (int $exit, string $code): void {
-        $this->renameTransport->exitCode = $exit;
+    it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (?string $head, string $code): void {
+        $this->renameHead = $head;
+        if ($code === 'instance.lifecycle_busy') {
+            $this->renameAgents->refuse('instances.inspect-development-source', 'instances.source_busy');
+        }
         $before = $this->renameInstance->getAttributes();
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'login.acme.test'])
             ->assertConflict()->assertJsonPath('error.code', $code);
         expect($this->renameInstance->refresh()->getAttributes())->toBe($before)
             ->and(Route::query()->sole()->domain)->toBe('dev.acme.test');
-    })->with([[42, 'instance.branch_not_checked_out'], [75, 'instance.lifecycle_busy']]);
+    })->with([
+        'another branch' => ['main', 'instance.branch_not_checked_out'],
+        'detached HEAD' => [null, 'instance.branch_not_checked_out'],
+        'busy checkout' => ['t3code/login', 'instance.lifecycle_busy'],
+    ]);
 
     it('refuses a domain conflict before recording the checked-out branch', function (): void {
         Route::query()->create(['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'domain' => 'occupied.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -673,7 +644,7 @@ describe('development Instance rename', function (): void {
     it('validates presence, types and branch names', function (array $payload): void {
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     })->with([[[]], [['branch' => null]], [['domain' => '']], [['branch' => 7]], [['branch' => '-invalid']]]);
 
     it('maps environment-owner contention to lifecycle busy', function (): void {
@@ -695,6 +666,7 @@ describe('development Instance rename', function (): void {
     });
 
     it('keeps the existing override when recording the current branch again', function (): void {
+        $this->renameHead = 'dev';
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 'dev'])->assertOk();
         expect($this->renameInstance->refresh()->branch_override)->toBeNull();
     });
@@ -794,7 +766,7 @@ describe('development Instance rename', function (): void {
         $this->renameInstance->update(['status' => InstanceState::SourceResolved]);
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login'])
             ->assertConflict()->assertJsonPath('error.code', 'instance.rename_inactive');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     });
 
     it('refuses production and linked-worktree Instances', function (string $layout): void {
@@ -807,7 +779,7 @@ describe('development Instance rename', function (): void {
         }
         $this->postJson('/api/v1/instances/'.$instance->id.'/rename', ['branch' => 't3code/login'])
             ->assertConflict()->assertJsonPath('error.code', 'instance.rename_unsupported');
-        expect($this->renameTransport->calls)->toBe(0);
+        expect($this->renameAgents->calls)->toBe([]);
     })->with(['production', 'worktree']);
 
     it('requires an own Route only for domain changes', function (): void {
