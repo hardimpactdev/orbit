@@ -151,6 +151,34 @@ it('reports a bounded redacted command tail when diagnostics are requested', fun
     expect(substr_count($text, 'old output'))->toBeLessThan(40);
 });
 
+it('reports unexpected causes only with redacted bounded diagnostics', function (bool $diagnostics): void {
+    app()->instance(NodeConverger::class, new class implements NodeConverger
+    {
+        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+        {
+            throw new RuntimeException(str_repeat('old detail ', 500)."\nMissing agent delivery\nTOKEN=do-not-print");
+        }
+    });
+
+    $output = new BufferedOutput;
+    $exit = Artisan::call('orbit:node-provision', [
+        'name' => 'operator',
+        'host' => '192.0.2.95',
+        '--diagnostics' => $diagnostics,
+        '--host-key-fingerprint' => 'SHA256:pinned',
+    ], $output);
+
+    $text = $output->fetch();
+    expect($exit)->toBe(1);
+    expect($text)->toContain('node.provision_failed')->not->toContain('do-not-print');
+    expect(mb_strlen($text))->toBeLessThan(4200);
+    if ($diagnostics) {
+        expect($text)->toContain('Missing agent delivery', '[REDACTED]');
+    } else {
+        expect($text)->not->toContain('Missing agent delivery', 'old detail');
+    }
+})->with([true, false]);
+
 it('passes explicit console user identities', function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
