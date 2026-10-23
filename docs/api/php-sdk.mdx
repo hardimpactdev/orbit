@@ -140,6 +140,10 @@ printf("%s %s\n", $operation->status, $operation->result['selected_release'] ?? 
 
 Closing the connection or stopping the loop does not stop the operation. `CancelOperationRequest` asks it to stop. The SDK never retries a start request.
 
+## Update a published Process
+
+`UpdateProcessRequest(processId: 267, environment: ['POWERSYNC_SYNC_CONFIG_B64' => $syncRules])` sends only the environment map. An image-only rollout uses `UpdateProcessRequest(processId: 267, image: 'powersync:next')`. The Gateway preserves omitted fields and keeps targeting public and private Process Routes active when their resolved TCP listener stays valid. A listener change raises `GatewayApiException` with code `process.route_upstream_changed`, status 409, and the blocking Route's ID and domain in its details. See [Process updates](/reference/processes-and-schedules#update-in-place).
+
 ## Doctor
 
 `RunDoctorRequest` sends `POST /api/v1/doctor` with an optional Node ID and family list and returns a `DoctorReportResponse` with `healthy`, the per-Node reports, and the summary the Gateway computed.

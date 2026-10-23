@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Process;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use SensitiveParameter;
 
@@ -20,9 +21,11 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
     /** @var array<string, int> */
     private array $depths = [];
 
-    public function run(#[SensitiveParameter] Process $process, Closure $operation): mixed
+    public function __construct(private readonly CommandDeadline $deadline = new CommandDeadline) {}
+
+    public function run(#[SensitiveParameter] Process $process, Closure $operation, bool $wait = false): mixed
     {
-        return $this->execute($process, $operation, relocations: 0);
+        return $this->execute($process, $operation, $wait, relocations: 0);
     }
 
     /**
@@ -35,6 +38,7 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
         #[SensitiveParameter]
         Process $process,
         Closure $operation,
+        bool $wait,
         int $relocations,
     ): mixed {
         $key = $this->key($process);
@@ -52,7 +56,15 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
         $lock = Cache::lock($key, 3_600);
 
         if (! $lock->get()) {
-            throw $this->busy($process);
+            if (! $wait) {
+                throw $this->busy($process);
+            }
+
+            try {
+                $lock->block((int) floor($this->deadline->cap(30.0)));
+            } catch (LockTimeoutException) {
+                throw $this->busy($process);
+            }
         }
 
         $this->depths[$key] = 1;
@@ -62,7 +74,7 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
             $relocatedKey = $this->key($fresh);
 
             if ($relocatedKey !== $key) {
-                return $this->relocate($fresh, $operation, $relocations, $key, $lock);
+                return $this->relocate($fresh, $operation, $wait, $relocations, $key, $lock);
             }
 
             return $operation($fresh);
@@ -84,6 +96,7 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
         #[SensitiveParameter]
         Process $process,
         Closure $operation,
+        bool $wait,
         int $relocations,
         string $key,
         Lock $lock,
@@ -95,7 +108,7 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
             throw $this->busy($process);
         }
 
-        return $this->execute($process, $operation, $relocations + 1);
+        return $this->execute($process, $operation, $wait, $relocations + 1);
     }
 
     private function fresh(#[SensitiveParameter] Process $process): Process

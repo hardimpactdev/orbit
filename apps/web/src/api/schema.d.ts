@@ -2532,6 +2532,8 @@ export interface paths {
         /**
          * process:update
          * @description Update an installed Process specification or one Project process definition.
+         *
+         *     Installed updates preserve omitted fields. Public and private Process Routes stay active when their single resolved TCP listener keeps the same address and host port. Otherwise the Gateway returns process.route_upstream_changed (409), naming the Route. Process removal remains refused with process.has_routes.
          */
         patch: operations["process-update"];
         trace?: never;

@@ -114,6 +114,7 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
 | `route.upstream_unresolved` | The Process has no single supported listener for this publication. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |
+| `process.runtime_lock_failed` | Process Route creation could not acquire the Process runtime lock within its bounded wait. No Route was reserved. |
 
 A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
@@ -240,6 +241,7 @@ The first form stores a loopback URL. The second form stores a Node Process and 
 | Create | Private: stores the Route, issues the Orbit CA leaf, builds Caddy, then publishes DNS. Success returns an `active` Route. An identical retry returns the stored Route and converges nothing. |
 | Destroy | Withdraws the site and DNS record. Private Routes remove the leaf; public Routes reconcile the Ingress firewall. Destroy again to retry a failure. |
 | Node removal | Refused while the Node serves a custom proxy Route, with `node.has_routes` or `route.reconciliation_required`. |
+| Process update | Allowed when the resulting specification keeps every targeting Route's single resolved TCP listener at the same address and host port. Otherwise refused with `process.route_upstream_changed` (409), naming the Route. |
 | Process removal | Refused while a custom proxy Route targets the Process, with `process.has_routes`. |
 
 To recover a `failed` private custom proxy create, destroy the Route and create it again. Repeat the identical public Process creation request to resume activation. Destroy withdraws its public site and reconciles the Ingress firewall; repeat destroy after a failure.
@@ -266,7 +268,11 @@ Activation verifies the Process Node's firewall and sends an HTTP HEAD request f
 
 It keeps the activation for retry and Doctor reports the blocked path. Orbit adds no hidden firewall opening or Process port rewrite. Use the managed [firewall commands](/cli/firewall) to allow the selected LAN source before retrying. Docker publications bypass UFW, as that page explains; this check requires recorded firewall intent and does not make UFW an isolation boundary for Docker.
 
-Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal and configuration updates are refused with `process.has_routes`; remove the Route first.
+Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal stays refused with `process.has_routes`.
+
+Configuration and image updates are allowed when they preserve the Route's resolved upstream; see [Process updates](/reference/processes-and-schedules#update-in-place). The Route keeps its ID, active state, site, certificate, DNS, and firewall rules. A container replacement can briefly interrupt requests while the listener restarts. Caddy reconnects to the same upstream; no Route activation or rebuild is needed. Doctor's existing upstream check reports an unreachable listener after an update, for both public and private Process Routes.
+
+Process Route creation shares the [Process runtime lock](/reference/processes-and-schedules#locks) with updates. If an update is running, creation waits, reads the current Process, and resolves its listener again before reserving the Route. If creation reserves the Route first, an update must preserve that Route's listener.
 
 Doctor checks public Process Routes on the Ingress in the `route` family only when both Nodes are in its selected scope. Otherwise it reports nothing about that Route and does not inspect the Process Node. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
 
