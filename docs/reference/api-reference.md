@@ -17,6 +17,8 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. The check prints a unified diff and the regeneration command when an output is stale. It leaves the files unchanged. Continuous integration and the local candidate gate run the check.
 
+Group assistance comments have separate collection and create schemas: `GET /api/v1/task-groups/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
+
 The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).

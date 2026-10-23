@@ -828,4 +828,18 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
 
         return false;
     }
+
+    /** The operator's login name, offered as the prompt default. */
+    protected static function localUser(): string
+    {
+        foreach (['USER', 'USERNAME', 'LOGNAME'] as $name) {
+            $value = getenv($name);
+
+            if (is_string($value) && $value !== '' && mb_strlen($value) <= self::AUTHOR_MAX) {
+                return $value;
+            }
+        }
+
+        return '';
+    }
 }

@@ -9416,6 +9416,105 @@
       }
     },
     {
+      "name": "tasks-group-comment-create",
+      "extension": "tasks",
+      "title": "tasks:group:comment:create",
+      "description": "Record group assistance or an answer after all subtasks end; start no work.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/comments",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "assistance_requested",
+              "resolution"
+            ],
+            "description": "assistance_requested or resolution"
+          },
+          "body": {
+            "type": "string",
+            "pattern": "\\S",
+            "maxLength": 100000,
+            "description": "Comment text"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Who wrote the comment"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "type",
+          "body",
+          "author"
+        ]
+      }
+    },
+    {
+      "name": "tasks-group-comment-list",
+      "extension": "tasks",
+      "title": "tasks:group:comment:list",
+      "description": "List group-owned comments, newest first, including after completion.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/comments",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [
+        "type",
+        "limit"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "blocked",
+              "answered",
+              "topology_requested",
+              "assistance_requested",
+              "resolution",
+              "question_closed",
+              "provider_retry"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",

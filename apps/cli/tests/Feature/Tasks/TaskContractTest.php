@@ -154,6 +154,16 @@ describe('tasks contract', function (): void {
         'invalid JSON' => ['[{'],
     ]);
 
+    it('renders group assistance comments and refusals', function (): void {
+        $request = ['group' => '1', '--type' => 'assistance_requested', '--body' => 'Work item X, publish-retry, cycle 2, gate: may I republish?', '--author' => 'driver'];
+        run_task_contract('tasks/tasks-group-comment-create/requested', 'tasks:group:comment:create', $request, 0);
+        run_task_contract('tasks/tasks-group-comment-create/resolved', 'tasks:group:comment:create', [...$request, '--type' => 'resolution', '--body' => 'Approved for this work item, stage and cycle.', '--author' => 'nick'], 0);
+        run_task_contract('tasks/tasks-group-comment-create/subtask-open', 'tasks:group:comment:create', $request, 1);
+        run_task_contract('tasks/tasks-group-comment-create/group-closed', 'tasks:group:comment:create', $request, 1);
+        run_task_contract('tasks/tasks-group-comment-list/default', 'tasks:group:comment:list', ['group' => '1'], 0);
+        run_task_contract('tasks/tasks-group-comment-list/empty', 'tasks:group:comment:list', ['group' => '1'], 0);
+    });
+
     it('renders comments and agent threads', function (): void {
         run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);
         run_task_contract('tasks-comment-list/default', 'tasks:comment:list', ['group' => '1', 'subtask' => '1'], 0);

@@ -52,6 +52,56 @@ beforeEach(function (): void {
     ]);
 });
 
+it('publishes the narrow group assistance OpenAPI contract', function (): void {
+    $spec = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $comments = $spec['paths']['/api/v1/task-groups/{group}/comments'];
+    expect($comments['get']['responses']['200']['content']['application/json']['schema']['properties']['data'])
+        ->toBe(['type' => 'array', 'items' => ['$ref' => '#/components/schemas/TaskComment']])
+        ->and(array_keys($comments['post']['responses']))->not->toContain(200);
+    $body = $comments['post']['requestBody']['content']['application/json']['schema'];
+    expect($body['additionalProperties'])->toBeFalse()
+        ->and($body['required'])->toBe(['type', 'body', 'author'])
+        ->and(array_keys($body['properties']))->toBe(['type', 'body', 'author'])
+        ->and($body['properties']['type']['enum'])->toBe(['assistance_requested', 'resolution'])
+        ->and($body['properties']['body']['pattern'])->toBe('\\S');
+});
+
+it('requests resolves and reads post-child group assistance through generated MCP tools', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Post-child assistance', 'brief' => 'Ask before republishing.',
+        'orchestration' => 'external', 'status' => TaskGroupStatus::Running,
+    ]);
+    $tools = tasks_mcp_message(tasks_mcp_call($this, 'tools/list'))['result']['tools'];
+    $create = collect($tools)->firstWhere('name', 'tasks-group-comment-create');
+    expect(array_keys($create['inputSchema']['properties']))->toBe(['group', 'type', 'body', 'author']);
+    foreach (['assistance_requested' => 'May I republish?', 'resolution' => 'Approved for this cycle.'] as $type => $body) {
+        $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+            'name' => 'tasks-group-comment-create', 'arguments' => ['group' => $group->id, 'type' => $type, 'body' => $body, 'author' => 'driver'],
+        ]));
+        $document = json_decode($message['result']['content'][0]['text'], true);
+        expect($message['result']['isError'] ?? true)->toBeFalse()
+            ->and($document['data']['task_id'])->toBe($group->id)
+            ->and($document['data']['body'])->toBe($body)
+            ->and($document['meta']['request_id'])->toBeString()
+            ->and($group->fresh()->assistance_requested)->toBe($type === 'assistance_requested');
+    }
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    $listed = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-group-comment-list', 'arguments' => ['group' => $group->id, 'type' => 'resolution', 'limit' => 1],
+    ]));
+    $document = json_decode($listed['result']['content'][0]['text'], true);
+    expect($listed['result']['isError'] ?? true)->toBeFalse()
+        ->and($document['data'])->toHaveCount(1)
+        ->and($document['data'][0]['type'])->toBe('resolution');
+    $refused = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-group-comment-create', 'arguments' => ['group' => $group->id, 'type' => 'resolution', 'body' => 'Too late.', 'author' => 'driver'],
+    ]));
+    $error = json_decode($refused['result']['content'][0]['text'], true);
+    expect($refused['result']['isError'] ?? false)->toBeTrue()
+        ->and($error['status'])->toBe(409)->and($error['error']['code'])->toBe('tasks.group_closed');
+});
+
 it('creates and lists a task group through MCP after the extension is enabled', function (): void {
     app(TaskExtensionState::class)->enable();
 

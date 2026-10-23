@@ -39,7 +39,7 @@ final class TaskComment extends Model
     /** @return BelongsTo<Task, $this> */
     public function task(): BelongsTo
     {
-        return $this->belongsTo(Task::class);
+        return $this->belongsTo(Task::class)->withoutGlobalScope('subtask');
     }
 
     /** @return BelongsTo<AgentThread, $this> */

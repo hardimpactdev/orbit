@@ -136,6 +136,10 @@ abstract class PromptContext extends Prompt
 
     public static function displayPrompt(Prompt $prompt): mixed
     {
+        $terminal = self::terminal();
+        if ($terminal instanceof PromptTerminal) {
+            $terminal->forPrompt($prompt);
+        }
         $output = self::output();
 
         if ($output instanceof PromptOutput) {

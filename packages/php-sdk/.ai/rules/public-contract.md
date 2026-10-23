@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 235 concrete public Gateway API operations:
+The SDK models exactly 237 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -27,7 +27,7 @@ The SDK models exactly 235 concrete public Gateway API operations:
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.
 - Vault: status, setup, sync, and teardown.
-- Tasks: enable, disable, status, group list, show, create, update, provision, check, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
+- Tasks: enable, disable, status, group list, show, create, update, provision, check, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.
 
 The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -122,7 +122,9 @@ operations. Keep the public API typed and small.
   `after_sequence`, the group title, brief, status,
   and ordered subtask titles and briefs on create,
   partial title, brief, status, and position updates, and the comment type,
-  body, author, and optional agent thread ID. Toggle, status, cancel, complete,
+  body, author, and optional agent thread ID for subtask comments. Group assistance
+  comments send only type, body, and author; group history accepts optional type
+  and limit filters. Toggle, status, cancel, complete,
   destroy, and question list requests are bodyless. Task and subtask responses
   keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
   The Gateway owns the lifecycle, scheduling, and every status rule.

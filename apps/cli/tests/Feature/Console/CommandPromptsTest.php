@@ -17,6 +17,7 @@ use Laravel\Prompts\PasswordPrompt;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\SuggestPrompt;
 use Laravel\Prompts\Terminal;
+use Laravel\Prompts\TextareaPrompt;
 use Laravel\Prompts\TextPrompt;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -297,6 +298,42 @@ it('aborts before mutation for cancellation bytes inside buffered input', functi
         }
     });
 })->with([Key::CTRL_C, Key::CTRL_D]);
+
+it('submits multiline input through the real input reader with Ctrl-D', function (): void {
+    withNativePromptFixture(function (): void {
+        $input = fopen('php://temp', 'w+');
+        fwrite($input, 'May I republish?'.Key::CTRL_D);
+        rewind($input);
+        $terminal = new PromptStreamFixtureTerminal($input);
+
+        try {
+            $prompts = new CommandPrompts(promptFixtureMode(), new BufferedOutput, $terminal);
+            expect($prompts->run(fn (): TextareaPrompt => new TextareaPrompt('Body', required: true)))
+                ->toBe('May I republish?');
+            expect($terminal->raw)->toBeFalse();
+        } finally {
+            fclose($input);
+        }
+    });
+});
+
+it('still cancels multiline input on Ctrl-C or a closed stream', function (string $bytes): void {
+    withNativePromptFixture(function () use ($bytes): void {
+        $input = fopen('php://temp', 'w+');
+        fwrite($input, $bytes);
+        rewind($input);
+        $terminal = new PromptStreamFixtureTerminal($input);
+
+        try {
+            $prompts = new CommandPrompts(promptFixtureMode(), new BufferedOutput, $terminal);
+            expect(fn () => $prompts->run(fn (): TextareaPrompt => new TextareaPrompt('Body', default: 'unsafe-default')))
+                ->toThrow(PromptAborted::class);
+            expect($terminal->raw)->toBeFalse();
+        } finally {
+            fclose($input);
+        }
+    });
+})->with([Key::CTRL_C, '']);
 
 it('aborts a real closed input stream without accepting a default or mutating', function (): void {
     withNativePromptFixture(function (): void {
