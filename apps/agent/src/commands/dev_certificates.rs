@@ -321,8 +321,17 @@ fn install_file(source: &Path, target: &Path, uid: u32, gid: u32, mode: u32) -> 
     fs::set_permissions(target, fs::Permissions::from_mode(mode))
 }
 
-fn prepare_caddy_directories(directories: &[&Path], owner: u32, caddy: u32) -> io::Result<()> {
-    for directory in directories {
+fn prepare_caddy_directories(
+    root: &Path,
+    scope: &str,
+    version: &str,
+    owner: u32,
+    caddy: u32,
+) -> io::Result<()> {
+    let scope = root.join(scope);
+    let versions = scope.join("versions");
+    let candidate = versions.join(format!("{version}.candidate"));
+    for directory in [root, &scope, &versions, &candidate] {
         if !directory.is_dir() {
             fs::DirBuilder::new().mode(0o750).create(directory)?;
         }
@@ -386,7 +395,7 @@ pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     let caddy_versions = caddy_root.join("versions");
     let caddy_candidate = caddy_versions.join(format!("{}.candidate", leaf.version));
     let caddy_published = caddy_versions.join(&leaf.version);
-    prepare_caddy_directories(&[&caddy_root, &caddy_versions, &caddy_candidate], 0, caddy)
+    prepare_caddy_directories(Path::new(CADDY_ROOT), &leaf.scope, &leaf.version, 0, caddy)
         .map_err(io_failed)?;
     install_file(
         &published.join("key.pem"),
@@ -558,11 +567,15 @@ mod tests {
             "orbit-leaf-permissions-{:016x}",
             rand::random::<u64>()
         ));
-        fs::create_dir(&root).unwrap();
         let scope = root.join("app-instance-3");
         let versions = scope.join("versions");
         let candidate = versions.join("leaf.candidate");
-        let directories = [scope.as_path(), versions.as_path(), candidate.as_path()];
+        let directories = [
+            root.as_path(),
+            scope.as_path(),
+            versions.as_path(),
+            candidate.as_path(),
+        ];
         let owner = rustix::process::getuid().as_raw();
         let group = rustix::process::getgid().as_raw();
         for repair in [false, true] {
@@ -571,7 +584,7 @@ mod tests {
                     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
                 }
             }
-            prepare_caddy_directories(&directories, owner, group).unwrap();
+            prepare_caddy_directories(&root, "app-instance-3", "leaf", owner, group).unwrap();
             for path in directories {
                 let metadata = fs::metadata(path).unwrap();
                 assert_eq!(
