@@ -76,7 +76,6 @@ describe('fleet container wiring', function (): void {
         $resume = app(ResumeFleetRolloutAction::class);
 
         expect(fleetWired($converge, 'footprint'))->toBeInstanceOf(NodeFootprint::class)
-            ->and(fleetWired($converge, 'updateLock'))->toBeInstanceOf(NodeUpdateLock::class)
             ->and(fleetWired($resume, 'units'))->toBeInstanceOf(NativeFleetConvergeUnits::class)
             ->and(fleetWired($resume, 'show'))->toBeInstanceOf(ShowFleetRolloutAction::class)
             ->and(app(ShowFleetRolloutAction::class))->toBeInstanceOf(ShowFleetRolloutAction::class);

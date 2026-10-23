@@ -417,9 +417,7 @@ To upgrade the fleet, merge the agent change and release the Gateway. Every Node
 
 The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release installs that Node's pin through the local transport.
 
-`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge holds the same lock for its whole footprint. So no two of them swap or restart the agent at the same time.
-
-An installation inside a converge names the converge's hold unit in `held_update_lock`. The agent checks that the unit has a Gateway name, is active, and wrote its marker in `/run`, and then installs without waiting. Waiting would block on the converge's own hold until the deadline. Any other installation waits for the lock.
+`agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. The converge's agent step holds the same lock from the secret check through the agent restart, after the installation. So no two of them swap or restart the agent at the same time.
 
 The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
 

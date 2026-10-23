@@ -136,6 +136,7 @@ function selfUpdateReport(string $outcome, ?array $error = null): string
 }
 
 describe('fleet Node converge', function (): void {
+    // Only the CLI install holds the update lock; agent.install and the agent artifact take it themselves.
     it('runs the CLI install, self-update, footprint, and verify in that order', function (): void {
         $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('updated')));
         $cli = new FleetConvergerCli;
@@ -145,7 +146,7 @@ describe('fleet Node converge', function (): void {
         expect($result->outcome)->toBe(FleetNodeOutcome::Converged)
             ->and($cli->calls)->toBe(1)
             ->and(array_values(array_filter($ssh->lines(), static fn (string $line): bool => ! str_contains($line, 'orbit-update-lock'))))->toBe(['sudo /usr/local/bin/orbit self-update --json'])
-            ->and(count(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, 'orbit-update-lock'))))->toBe(4)
+            ->and(count(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, 'orbit-update-lock'))))->toBe(2)
             ->and($result->cliVersion)->toBe('0.4681.0')
             ->and($result->evidence['footprint']['artifacts'])->toBe(['caddy' => 'unchanged'])
             ->and($result->footprintDigest)->toHaveLength(64);

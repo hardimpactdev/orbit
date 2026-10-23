@@ -9,7 +9,6 @@ use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 
@@ -23,7 +22,6 @@ final readonly class ConvergeNodeFootprintAction
         private NodeFootprint $footprint,
         private ManagedNodeEligibility $eligibility,
         private NodeRoleConvergeLock $lock,
-        private NodeUpdateLock $updateLock,
     ) {}
 
     public function execute(Node $node, bool $force = false): NodeFootprintData
@@ -33,7 +31,7 @@ final readonly class ConvergeNodeFootprintAction
         }
 
         try {
-            $result = $this->lock->run($node, fn () => $this->updateLock->run($node, fn () => $this->footprint->converge($node, $force)), errorCode: 'node.converge_failed', step: 'node-lock');
+            $result = $this->lock->run($node, fn () => $this->footprint->converge($node, $force), errorCode: 'node.converge_failed', step: 'node-lock');
         } catch (NodeRoleOperationException $exception) {
             throw new ResourceOperationException($exception->underlyingErrorCode, $exception->getMessage(), 409, $exception);
         }

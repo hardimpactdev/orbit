@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\GitHub\GitReadEnvironment;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
@@ -83,9 +82,7 @@ final readonly class NativeAgentCommandRunner implements AgentCommandRunner
 
         try {
             $candidate = $transport->stage($this->delivery->localFile($node));
-            $held = NodeUpdateLock::holder($node);
-            $input = ['candidate' => $candidate, 'sha256' => $pin, ...($held === null ? [] : ['held_update_lock' => $held])];
-            $outcome = $this->send($transport, $spec, $pin, $input, microtime(true) + $remaining, $candidate);
+            $outcome = $this->send($transport, $spec, $pin, ['candidate' => $candidate, 'sha256' => $pin], microtime(true) + $remaining, $candidate);
         } catch (AgentRunnerFailure $failure) {
             // No answer proves the pin cannot install, so the next command tries again.
             throw $failure;

@@ -11,12 +11,9 @@ use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
 use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 
 /** A Node that answers each call from a queue of result lines, and records what it was sent. */
 class ScriptedAgentTransport implements AgentTransport
@@ -184,20 +181,6 @@ it('installs the pin from a staged candidate on a version mismatch and sends the
         ])
         ->and($transport->staged)->toBe([app(AgentDelivery::class)->localFile($node)])
         ->and($node->fresh()?->agent_failed_pin)->toBeNull();
-});
-
-// A converge holds the update lock while it installs; an installation that waited for that lock would wait for itself.
-it('names the update lock hold that the Gateway keeps, so the installation does not wait for it', function (): void {
-    $node = agentRunnerNode();
-    $installed = agentResult(['ok' => true, 'data' => ['replaced' => true, 'sha256' => 'x', 'previous_sha256' => null, 'observer' => 'restarted']]);
-    $transport = new ScriptedAgentTransport([$installed, $installed]);
-    $runner = agentRunner($transport);
-
-    new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor))->run($node, fn (): bool => $runner->install($node));
-    $runner->install($node);
-
-    expect($transport->calls[0]['envelope']['input']['held_update_lock'])->toMatch('/\Aorbit-update-lock-[0-9a-f]{12}\z/')
-        ->and($transport->calls[1]['envelope']['input'])->not->toHaveKey('held_update_lock');
 });
 
 it('fails instead of retrying again when the Node still mismatches after a passing installation', function (): void {

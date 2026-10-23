@@ -153,7 +153,7 @@ final readonly class FleetNodeConverger implements FleetNodeVisitor
 
             $step = 'footprint';
             $repairs = FleetNodeVerifier::repairs($baseline);
-            $footprint = $this->retried($node, fn () => $this->updateLock->run($node, fn () => $this->footprint->converge($node, $repairs === [] ? false : $repairs)));
+            $footprint = $this->retried($node, fn () => $this->footprint->converge($node, $repairs === [] ? false : $repairs));
             $evidence['footprint'] = $footprint->toArray();
 
             // Caddy refusing the Caddyfile on the first Node of a rollout, after Orbit's Caddy code changed, is more
