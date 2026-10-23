@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
@@ -136,7 +135,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
+    )), $vp, app(RepositoryPullRequestAccess::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Projects\CiCacheSetup;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -14,13 +13,22 @@ use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleAgent;
+use Tests\Support\LocalAgentBinary;
 
-function ci_setup_run(string $checkout, string $command): Process
+/**
+ * Runs the agent's @orbit/ci-caches program in the checkout, as an Instance setup step runs it.
+ *
+ * @return array{exit: int, stdout: string}
+ */
+function ci_setup_run(string $checkout): array
 {
-    $process = new Process(['bash', '-c', $command], $checkout);
-    $process->run();
+    $node = new Node(['name' => 'ci', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '127.0.0.1']);
+    $answer = LocalAgentBinary::localRunner(sys_get_temp_dir().'/orbit-ci-cache-agent-'.bin2hex(random_bytes(6)))->run($node, 'instances.run-lifecycle-step', [
+        'checkout' => $checkout, 'program' => 'import_ci_caches', 'step' => 'ci-caches', 'timeout_seconds' => 60, 'environment' => ['ORBIT_SEED_PATH' => ''],
+    ]);
+    $stdout = implode('', array_map(static fn (array $chunk): string => $chunk['stream'] === 'stdout' ? $chunk['value'] : '', $answer['output']));
 
-    return $process;
+    return ['exit' => $answer['exit_code'], 'stdout' => $stdout];
 }
 
 function ci_setup_git(string $checkout, array $arguments): string
@@ -55,13 +63,13 @@ describe('CI main cache setup', function (): void {
             ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
             ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'task change']);
         }
-        $command = app(CiCacheSetup::class)->command(new Project, 60);
-        $process = ci_setup_run($this->checkout, $command);
+        $script = GatewaySetupSteps::script(LifecycleStep::ImportCiCaches);
+        $process = ci_setup_run($this->checkout);
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process['exit'])->toBe(0)
             ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)
-            ->and(strlen($command))->toBeLessThan(4096)
-            ->and($command)->not->toContain('base64', '.zip', 'GITHUB_TOKEN');
+            ->and(strlen($script))->toBeLessThan(4096)
+            ->and($script)->not->toContain('base64', '.zip', 'GITHUB_TOKEN');
     })->with(['main' => false, 'recorded task baseline' => true]);
 
     it('keeps the task baseline private to each linked worktree', function (): void {
@@ -71,28 +79,26 @@ describe('CI main cache setup', function (): void {
         ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'new main']);
         $next = ci_setup_git($this->checkout, ['rev-parse', 'HEAD']);
         ci_setup_git($this->checkout, ['update-ref', 'refs/worktree/orbit/ci-baseline', $next]);
-        $process = ci_setup_run($linked, app(CiCacheSetup::class)->command(new Project, 60));
+        $process = ci_setup_run($linked);
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process['exit'])->toBe(0)
             ->and(file_get_contents($linked.'/imports.log'))->toBe('import --commit '.$this->baseline)
             ->and(ci_setup_git($this->checkout, ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($next);
     });
 
     it('fails the step on a write failure or missing required tooling', function (bool $missing): void {
         $missing ? unlink($this->checkout.'/bin/ci-cache-ref') : file_put_contents($this->checkout.'/import-exit', '1');
-        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
-
-        expect($process->getExitCode())->toBe(1);
+        expect(ci_setup_run($this->checkout)['exit'])->toBe(1);
     })->with(['an import failure' => false, 'no bin/ci-cache-ref' => true]);
 
     it('runs cold without a recorded task baseline rather than choosing the newest main ref', function (): void {
         ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
         ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'task change']);
         ci_setup_git($this->checkout, ['update-ref', '-d', 'refs/worktree/orbit/ci-baseline']);
-        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
+        $process = ci_setup_run($this->checkout);
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->toContain('cold: no recorded code baseline')
+        expect($process['exit'])->toBe(0)
+            ->and($process['stdout'])->toContain('cold: no recorded code baseline')
             ->and(file_exists($this->checkout.'/imports.log'))->toBeFalse();
     });
 
@@ -101,9 +107,7 @@ describe('CI main cache setup', function (): void {
         ci_setup_git($this->checkout, ['update-ref', '-d', 'refs/worktree/orbit/ci-baseline']);
         $newer = ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'new main']);
         ci_setup_git($this->checkout, ['update-ref', 'refs/remotes/origin/main', $newer]);
-        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
-
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect(ci_setup_run($this->checkout)['exit'])->toBe(0)
             ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline);
     });
 

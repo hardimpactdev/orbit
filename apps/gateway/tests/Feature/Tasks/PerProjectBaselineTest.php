@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
@@ -59,7 +58,7 @@ function per_project_baseline_runner(): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), ResolvedVp::manager(), app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
+    )), ResolvedVp::manager(), app(RepositoryPullRequestAccess::class));
 }
 
 function per_project_baseline_instance(?string $command): Instance

@@ -37,7 +37,6 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     public function __construct(
         private TaskWorkspaceExecutor $ssh,
         private VpToolManager $vp,
-        private GatewaySetupSteps $gatewaySteps,
         private RepositoryPullRequestAccess $github,
     ) {}
 
@@ -63,10 +62,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         foreach ($setup as &$step) {
             if (GatewaySetupSteps::owns($step['command'])) {
                 try {
-                    $instance->loadMissing('project');
-                    $started = microtime(true);
-                    $step['command'] = $this->gatewaySteps->command($instance->project, $step['command'], $step['timeout_seconds']);
-                    $step['timeout_seconds'] = max(1, (int) floor($step['timeout_seconds'] - (microtime(true) - $started)));
+                    $step['command'] = GatewaySetupSteps::script($step['command']);
                 } catch (ResourceOperationException $exception) {
                     throw new TaskCheckException('Setup step ['.$step['name'].']: '.$exception->getMessage());
                 }

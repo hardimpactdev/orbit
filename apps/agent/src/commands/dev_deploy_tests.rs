@@ -299,7 +299,7 @@ fn lifecycle_checkout() -> PathBuf {
 fn lifecycle_input(checkout: &Path, script: &str) -> LifecycleInput {
     LifecycleInput {
         checkout: checkout.to_path_buf(),
-        script: script.into(),
+        program: StepProgram::Command(script.into()),
         step: "setup".into(),
         timeout_seconds: 30,
         environment: [("ORBIT_SEED_PATH".to_string(), "/seed".to_string())].into(),

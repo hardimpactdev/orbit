@@ -454,13 +454,31 @@ impl Command for RunStep {
 pub struct LifecycleInput {
     /// Any Instance checkout of this account, by its canonical path.
     pub checkout: PathBuf,
-    /// The Project step's program, which runs with `bash -eu` in the checkout.
-    pub script: String,
+    pub program: StepProgram,
     pub step: String,
     pub timeout_seconds: u64,
     /// Variables the step sees beside the account's own, such as `VP_HOME` and the seed.
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
+}
+
+/// What a setup or teardown step runs with `bash -eu` in the checkout: the Project's command, or a Gateway-owned
+/// operation whose program ships with the agent.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum StepProgram {
+    Command(String),
+    /// `@orbit/ci-caches`: imports the Pint and PHPStan caches of the recorded code baseline.
+    ImportCiCaches,
+}
+
+impl StepProgram {
+    fn script(&self) -> &str {
+        match self {
+            Self::Command(command) => command,
+            Self::ImportCiCaches => include_str!("ci_caches.sh"),
+        }
+    }
 }
 
 /// Runs one Project setup or teardown step with the lifecycle lock held and not inherited, as `step` runs a deploy
@@ -477,7 +495,7 @@ pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, Dev
         .create_new(true)
         .mode(0o600)
         .open(&file)
-        .and_then(|mut handle| handle.write_all(input.script.as_bytes()))
+        .and_then(|mut handle| handle.write_all(input.program.script().as_bytes()))
         .map_err(|_| failed("write the step"))?;
     let result = run_program(
         &Program {

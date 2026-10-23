@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -83,30 +82,34 @@ function tmpdir_shell(): LocalShellSshExecutor
 
 function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
-        $transport ?? tmpdir_shell(),
-        new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
+    return new RemoteTaskCheckRunner(
+        new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
+            $transport ?? tmpdir_shell(),
+            new class implements SshKeyProvider
             {
-                return '/unused';
-            }
+                public function privateKeyPath(): string
+                {
+                    return '/unused';
+                }
 
-            public function publicKey(): string
+                public function publicKey(): string
+                {
+                    return 'unused';
+                }
+            },
+            new class implements KnownHostsStore
             {
-                return 'unused';
-            }
-        },
-        new class implements KnownHostsStore
-        {
-            public function path(): string
-            {
-                return '/unused';
-            }
+                public function path(): string
+                {
+                    return '/unused';
+                }
 
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    )), ResolvedVp::manager(), app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
+                public function put(string $host, int $port, HostKey $key): void {}
+            },
+        )),
+        ResolvedVp::manager(),
+        app(RepositoryPullRequestAccess::class),
+    );
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor

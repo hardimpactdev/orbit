@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -64,7 +63,9 @@ final class LifecycleAgent implements AgentCommandRunner
      */
     private function record(array $input): array
     {
-        if (! is_string($input['checkout'] ?? null) || ! is_string($input['script'] ?? null) || ! is_int($input['timeout_seconds'] ?? null)) {
+        $program = $input['program'] ?? null;
+        $command = is_array($program) ? ($program['command'] ?? null) : $program;
+        if (! is_string($input['checkout'] ?? null) || ! is_string($command) || ! is_int($input['timeout_seconds'] ?? null)) {
             throw new UnexpectedValueException('The lifecycle step input is invalid.');
         }
 
@@ -73,7 +74,7 @@ final class LifecycleAgent implements AgentCommandRunner
             $environment[(string) $key] = is_string($value) ? $value : '';
         }
 
-        return ['checkout' => $input['checkout'], 'command' => $input['script'], 'environment' => $environment, 'timeout' => $input['timeout_seconds']];
+        return ['checkout' => $input['checkout'], 'command' => $command, 'environment' => $environment, 'timeout' => $input['timeout_seconds']];
     }
 
     public function runner(?CommandDeadline $deadline = null, string $vpHome = '/opt/orbit/vite-plus'): ProjectLifecycleRunner
@@ -83,7 +84,6 @@ final class LifecycleAgent implements AgentCommandRunner
             $this,
             $deadline ?? new CommandDeadline,
             ResolvedVp::manager($vpHome),
-            app(GatewaySetupSteps::class),
         );
     }
 }

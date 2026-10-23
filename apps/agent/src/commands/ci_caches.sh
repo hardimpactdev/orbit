@@ -1,4 +1,4 @@
-# Orbit @orbit/ci-caches: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
+# The agent's @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
 # Missing or invalid refs leave checks cold. Required tooling and cache writes remain setup failures.
 set -eu
 if [ ! -f bin/ci-cache-ref ]; then

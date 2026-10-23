@@ -23,7 +23,6 @@ final readonly class ProjectLifecycleRunner
         private AgentCommandRunner $agents,
         private CommandDeadline $deadline,
         private VpToolManager $vp,
-        private GatewaySetupSteps $gatewaySteps,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
@@ -64,25 +63,19 @@ final readonly class ProjectLifecycleRunner
                     throw $this->deadlineCut($phase, $step, 0.0);
                 }
 
-                $command = $step->command;
-                if (GatewaySetupSteps::owns($command)) {
+                $program = ['command' => $step->command];
+                if (GatewaySetupSteps::owns($step->command)) {
                     if ($phase !== LifecyclePhase::Setup) {
-                        throw new ResourceOperationException('instance.teardown_step_failed', "{$command} is a setup-only operation.", 422, details: ['step' => $step->name]);
+                        throw new ResourceOperationException('instance.teardown_step_failed', "{$step->command} is a setup-only operation.", 422, details: ['step' => $step->name]);
                     }
-                    $started = microtime(true);
-                    $command = $this->gatewaySteps->command($instance->project, $command, $budget);
-                    $timeout = $this->deadline->cap(max(0.0, $timeout - (microtime(true) - $started)));
-                    $budget = $timeout - 5.0;
-                    if ($budget <= 0.0) {
-                        throw $this->deadlineCut($phase, $step, 0.0);
-                    }
+                    $program = GatewaySetupSteps::program($step->command);
                 }
 
                 // Read the seed for each step: converting an old default release layout moves it to the checkout.
                 $seed = $phase === LifecyclePhase::Setup ? Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']) : null;
                 // A default records its own checkout as its seed; its setup has no other seed.
                 $seeded = $seed !== null && $seed->seed_path !== $checkout;
-                $this->runStep($instance, $step, $phase, $command, $timeout, [
+                $this->runStep($instance, $step, $phase, $program, $timeout, [
                     'VP_HOME' => $vpHome,
                     'ORBIT_SEED_PATH' => $seeded ? ($seed->seed_path ?? '') : '',
                     'ORBIT_SEED_COMMIT' => $seeded ? ($seed->seed_commit ?? '') : '',
@@ -150,14 +143,15 @@ final readonly class ProjectLifecycleRunner
      * caller maps: exit 75 for a busy checkout, 124 when the step's own bound stopped it, 126 or 127 for a missing
      * command, and 1 for any other failure. The result keeps the last KiB of the step's standard error.
      *
+     * @param  array{command: string}|string  $program  The Project's command, or a Gateway-owned operation.
      * @param  array<string, string>  $environment
      */
-    private function runStep(Instance $instance, LifecycleStep $step, LifecyclePhase $phase, string $command, float $timeout, array $environment): void
+    private function runStep(Instance $instance, LifecycleStep $step, LifecyclePhase $phase, array|string $program, float $timeout, array $environment): void
     {
         try {
             $answer = $this->agents->run($instance->node, 'instances.run-lifecycle-step', [
                 'checkout' => $instance->checkout_path,
-                'script' => $command,
+                'program' => $program,
                 'step' => $step->name,
                 'timeout_seconds' => max(1, (int) floor($timeout - 5.0)),
                 'environment' => $environment,

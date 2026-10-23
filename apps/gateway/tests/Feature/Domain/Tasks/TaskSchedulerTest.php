@@ -7,7 +7,6 @@ use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
@@ -1933,7 +1932,6 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
             app(KnownHostsStore::class),
         )),
         ResolvedVp::manager(probe: $probe),
-        app(GatewaySetupSteps::class),
         app(RepositoryPullRequestAccess::class),
     ));
 
