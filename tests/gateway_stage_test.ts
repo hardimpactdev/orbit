@@ -34,14 +34,15 @@ function fakeGateway(opts: {
   const calls: Call[] = [];
   const tasks = (opts.tasks ?? [{ id: 11, position: 1, status: "todo" }]).map((t) => ({
     ...t, title: `Subtask ${t.id}`, brief: "Update dependencies.", deliverables: [{ id: "lock", type: "file", description: "composer.lock modified" }],
-    assistance_requested: false,
+    assistance_requested: false, assistance_kind: null as string | null, assistance_question: null as string | null, assistance_reason: null as string | null,
   }));
+  const assistance = { assistance_requested: false, assistance_kind: null as string | null, assistance_question: null as string | null, assistance_reason: null as string | null };
   let groupStatus = opts.groupStatus ?? "backlog";
   const http: Http = (method, path, body, key) => {
     calls.push({ method, path, body, raw: body === undefined ? undefined : JSON.stringify(body), key });
     const ok = (data: unknown, status = 200): Promise<HttpResponse> => Promise.resolve({ status, body: { data, meta: {} } });
     if (method === "GET" && path === "/api/v1/task-groups/7") {
-      return ok({ id: 7, title: "Deps", brief: "Group brief.", status: groupStatus, watched_pr_state: opts.watched ?? null, tasks });
+      return ok({ id: 7, title: "Deps", brief: "Group brief.", status: groupStatus, watched_pr_state: opts.watched ?? null, ...assistance, tasks });
     }
     if (method === "PATCH" && path === "/api/v1/task-groups/7") {
       groupStatus = String(body!.status);
@@ -59,7 +60,7 @@ function fakeGateway(opts: {
     if (method === "GET" && path === "/api/v1/operations/900") return ok(opts.operation ?? { id: 900, status: "waiting", poll_after_seconds: 10 });
     return Promise.resolve({ status: 404, body: { error: { code: "not_found" } } });
   };
-  return { http, calls, tasks };
+  return { http, calls, tasks, assistance };
 }
 
 /** A job store and a clock: each `run` call is one driver tick, one minute after the last. */
@@ -371,7 +372,10 @@ Deno.test("a parked run raises assistance once with a plain reason, and clears i
   const http: Http = async (method, path, body, key) => {
     if (method === "POST" && path.endsWith("/comments")) {
       posts.push(body!);
-      gw.tasks[0].assistance_requested = body!.type === "assistance_requested";
+      const active = body!.type === "assistance_requested";
+      const request = { assistance_requested: active, assistance_kind: active ? "direction" : null, assistance_question: active ? String(body!.body) : null, assistance_reason: active ? String(body!.body) : null };
+      Object.assign(gw.tasks[0], request);
+      Object.assign(gw.assistance, request);
       return { status: 201, body: { data: {} } };
     }
     return gw.http(method, path, body, key);
@@ -404,7 +408,9 @@ Deno.test("a parked run raises assistance once with a plain reason, and clears i
 
 Deno.test("assistance already on the subtask is not posted again after a lost record", async () => {
   const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
-  gw.tasks[0].assistance_requested = true;
+  const existingRequest = { assistance_requested: true, assistance_kind: "direction", assistance_question: "Need help", assistance_reason: "Need help" };
+  Object.assign(gw.tasks[0], existingRequest);
+  Object.assign(gw.assistance, existingRequest);
   const posts: unknown[] = [];
   const http: Http = (method, path, body, key) => {
     if (method === "POST" && path.endsWith("/comments")) posts.push(body);
@@ -419,22 +425,6 @@ Deno.test("assistance already on the subtask is not posted again after a lost re
   assertEquals(assistanceBody({ workItem: "tg-7", parked: true, stage: "publish", cycle: 1, reason: "r" }, ""), "Swamp parked tg-7 at publish, cycle 1. Waiting for: r");
 });
 
-Deno.test("known limitation: a gate reached after every subtask ended raises no board assistance (no group-level route yet)", async () => {
-  const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "completed" }] });
-  const posts: unknown[] = [];
-  const http: Http = (method, path, body, key) => {
-    if (method === "POST" && path.endsWith("/comments")) posts.push(body);
-    return gw.http(method, path, body, key);
-  };
-  let rec: import("../extensions/behaviors/_lib/gateway_stage.ts").AssistanceRecord | null = null;
-  const deps = { http, readRecord: () => Promise.resolve(rec), writeRecord: (r: typeof rec) => { rec = r; return Promise.resolve(); }, readJob: () => Promise.resolve(null) };
-  const parked = { workItem: "tg-7", parked: true, stage: "publish", cycle: 1, reason: "awaiting human approval 'publish-retry'" };
-  await syncAssistance(parked, deps);
-  await syncAssistance(parked, deps);
-  await syncAssistance({ ...parked, parked: false, stage: "published" }, deps);
-  assertEquals(posts, []);
-  assertEquals(rec!.subtask, null);
-});
 
 Deno.test("merged clears the error of a retried complete once the group is completed", async () => {
   const gw = fakeGateway({ groupStatus: "running", watched: "merged" });

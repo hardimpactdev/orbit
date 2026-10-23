@@ -1,3 +1,5 @@
+import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
+
 // The stage work of an externally orchestrated Orbit task group (ADR 0229).
 // Each call has ensure semantics for one driver key `<workItem>.<stage>.c<cycle>`:
 //   - no job yet: plan the request, store it, start the Gateway operation with
@@ -70,16 +72,22 @@ export interface Deps {
   now?: () => number;
 }
 
-interface TaskRow {
+interface AssistanceFields {
+  assistance_requested?: boolean;
+  assistance_kind?: string | null;
+  assistance_question?: string | null;
+  assistance_reason?: string | null;
+}
+interface TaskRow extends AssistanceFields {
   id: number;
   position: number;
   title: string;
   brief: string;
   status: string;
   deliverables?: { id: string; type: string; description: string }[];
-  assistance_requested?: boolean;
 }
-interface GroupRow {
+export interface GroupRow extends AssistanceFields {
+  orchestration?: string;
   id: number;
   title: string;
   brief: string;
@@ -485,15 +493,8 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
 }
 
 // ---- Assistance on the board -------------------------------------------------------------
-// Orbit raises no assistance for an external group, so the orchestrator does: when the run
-// parks at a human gate, it posts an assistance_requested comment with a plain reason on the
-// group's current (open) subtask, and a resolution once it moves on. On an open subtask the
-// request is the subtask's own, and Orbit mirrors it on the group; its resolution clears both
-// (TaskAssistance::resolveExternalSubtask). On an ended subtask Orbit refuses the subtask flag
-// and raises an independent group request that no resolution clears, so a gate reached after
-// every subtask ended (publish-retry, republish) raises nothing; the record says why.
-// The subtask's own assistance flag decides whether a comment is still needed, so a repeat or
-// a crash between the post and the record posts nothing twice.
+// Open children retain the original comment path. Post-child publish gates use
+// the group route and conservative history/approval reconciliation in group_assistance.ts.
 
 export interface AssistanceArgs {
   workItem: string;
@@ -501,6 +502,8 @@ export interface AssistanceArgs {
   stage: string;
   cycle: number;
   reason: string;
+  factory?: string;
+  gateIds?: string[];
 }
 
 export interface AssistanceRecord {
@@ -510,6 +513,7 @@ export interface AssistanceRecord {
   raisedAt: string | null;
   /** Why a parked entry raised nothing, such as no open subtask to own the request. */
   skipped?: string | null;
+  groupRequest?: GroupRequest | null;
 }
 
 export interface AssistanceDeps {
@@ -519,6 +523,8 @@ export interface AssistanceDeps {
   /** The stage job of a driver key, to explain why the stage parked. */
   readJob: (key: string) => Promise<Job | null>;
   now?: () => number;
+  readRun?: () => Promise<{ workItem?: string; startedAt?: string } | null>;
+  readApproval?: (gateId: string) => Promise<unknown>;
 }
 
 /** Why a stage entry parked, from its job: the failed operation, or the outcome it ended with. */
@@ -551,16 +557,49 @@ async function postComment(http: Http, group: number, subtask: number, type: "as
   if (r.status !== 200 && r.status !== 201) throw new Error(`posting ${type} on subtask ${subtask}: ${errorCode(r)}`);
 }
 
+function inactiveRequest(r: AssistanceFields): boolean {
+  return r.assistance_requested === false && r.assistance_kind === null && r.assistance_question === null && r.assistance_reason === null;
+}
+
+function directionRequest(r: AssistanceFields): boolean {
+  return r.assistance_requested === true && r.assistance_kind === "direction" &&
+    typeof r.assistance_question === "string" && typeof r.assistance_reason === "string";
+}
+
+/** Match the Gateway's complete request comparison, never just the reason. */
+function mirroredDirection(g: GroupRow, t: TaskRow): boolean {
+  return directionRequest(g) && directionRequest(t) &&
+    g.assistance_question === t.assistance_question && g.assistance_reason === t.assistance_reason;
+}
+
 /** One assistance sync for one work item: raise it when parked, clear it when not. */
 export async function syncAssistance(args: AssistanceArgs, deps: AssistanceDeps): Promise<AssistanceRecord> {
   const group = groupOf(args.workItem);
-  const rec = (await deps.readRecord()) ?? { workItem: args.workItem, subtask: null, key: null, raisedAt: null, skipped: null };
+  let rec = (await deps.readRecord()) ?? { workItem: args.workItem, subtask: null, key: null, raisedAt: null, skipped: null };
+  const groupView = await readGroup(deps.http, group);
+  const hasOpenChild = currentSubtask(groupView) !== null;
+  if (!hasOpenChild || rec.groupRequest) {
+    rec = await syncGroupAssistance(args, deps, rec, group, () => readGroup(deps.http, group), async () => {
+      const why = parkedWhy(await deps.readJob(`${args.workItem}.${args.stage}.c${args.cycle}`));
+      return assistanceBody(args, why);
+    });
+    if (!hasOpenChild || rec.groupRequest) return rec;
+    // The current group request is resolved; continue with the ordinary child path.
+  }
   const key = `${args.stage}.c${args.cycle}`;
+  const skip = async (why: string): Promise<AssistanceRecord> => {
+    const skipped = { ...rec, skipped: why };
+    await deps.writeRecord(skipped);
+    return skipped;
+  };
   const clear = async (): Promise<AssistanceRecord> => {
     if (rec.subtask === null) return rec;
     const g = await readGroup(deps.http, group);
     const t = g.tasks.find((x) => x.id === rec.subtask);
     if (t?.assistance_requested) {
+      if (!OPEN_SUBTASK.includes(t.status) || !directionRequest(t) || (!inactiveRequest(g) && !mirroredDirection(g, t))) {
+        return skip("preserved independent, safety or unreadable request before child resolution");
+      }
       await postComment(deps.http, group, t.id, "resolution", `Swamp resumed ${args.workItem} at ${args.stage}, cycle ${args.cycle}.`);
     }
     const cleared = { workItem: args.workItem, subtask: null, key: null, raisedAt: null, skipped: null };
@@ -568,20 +607,18 @@ export async function syncAssistance(args: AssistanceArgs, deps: AssistanceDeps)
     return cleared;
   };
   if (!args.parked) return clear();
-  if (rec.key === key && (rec.subtask !== null || rec.skipped)) return rec;
-  if (rec.subtask !== null) await clear();
+  if (rec.key === key && rec.subtask !== null) return rec;
+  if (rec.subtask !== null) {
+    rec = await clear();
+    if (rec.subtask !== null) return rec; // Refusal must not fall through to a new request.
+  }
   const g = await readGroup(deps.http, group);
   const t = currentSubtask(g);
-  if (t === null) {
-    // Known limitation: publish-retry and republish are reached after every subtask ended, and the
-    // Gateway has no route to raise and later resolve a group-level request (the comment route
-    // needs a child, and clears the group only when that child owns the request). So these gates
-    // post no board assistance until Orbit adds one; see "ADR 0229 follow-ups" in docs/phase-3-design.md.
-    const skipped = { workItem: args.workItem, subtask: null, key, raisedAt: null, skipped: "no open subtask can own the request" };
-    await deps.writeRecord(skipped);
-    return skipped;
-  }
+  if (t === null) return rec; // The child ended between reads; reconcile afresh next tick.
   if (!t.assistance_requested) {
+    if (!inactiveRequest(g) || !inactiveRequest(t)) {
+      return skip("preserved independent, safety or unreadable request before child assistance");
+    }
     const why = parkedWhy(await deps.readJob(`${args.workItem}.${args.stage}.c${args.cycle}`));
     await postComment(deps.http, group, t.id, "assistance_requested", assistanceBody(args, why));
   }

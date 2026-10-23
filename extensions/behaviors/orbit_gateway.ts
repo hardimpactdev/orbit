@@ -64,7 +64,7 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.23.1",
+  version: "2026.10.23.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     job: {
@@ -74,13 +74,14 @@ export const behavior = {
       garbageCollection: 10,
     },
     assistance: {
-      description: "The subtask where this work item raised board assistance while parked, if any",
+      description: "The child or exact post-child group request owned by this work item",
       schema: z.object({
         workItem: z.string(),
         subtask: z.number().nullable(),
         key: z.string().nullable(),
         raisedAt: z.string().nullable(),
         skipped: z.string().nullable().optional(),
+        groupRequest: z.object({ body: z.string(), stage: z.string(), cycle: z.number().int(), gateId: z.string(), era: z.string() }).nullable().optional(),
       }),
       lifetime: "infinite",
       garbageCollection: 10,
@@ -88,16 +89,18 @@ export const behavior = {
   },
   methods: {
     assistance: {
-      description: "Raise board assistance on the group while the run is parked at a human gate, and clear it once it moves on",
+      description: "Reconcile parked assistance; post-child group requests clear only after their exact factory approval",
       arguments: z.object({
         workItem: z.string().describe("tg-<task group id>"),
         parked: z.boolean(),
         stage: z.string(),
         cycle: z.number().int(),
         reason: z.string(),
+        factory: z.string().optional(),
+        gateIds: z.array(z.string()).optional(),
       }),
       execute: async (
-        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string },
+        args: { workItem: string; parked: boolean; stage: string; cycle: number; reason: string; factory?: string; gateIds?: string[] },
         context: {
           globalArgs: { gatewayUrl: string; caFile: string; timeoutSeconds: number };
           definition: { name: string };
@@ -115,6 +118,12 @@ export const behavior = {
             handle = await context.writeResource("assistance", `assistance-${args.workItem}`, r as unknown as Record<string, unknown>);
           },
           readJob: (key) => read<Job>(`job-${key}`),
+          readRun: async () => args.factory
+            ? ((await context.queryData(`modelName == "${args.factory}" && name == "state-${args.workItem}"`, "attributes")) as { workItem: string; startedAt: string }[])[0] ?? null
+            : null,
+          readApproval: async (gateId) => args.factory
+            ? ((await context.queryData(`modelName == "${args.factory}" && name == "approval-${args.workItem}-${gateId}"`, "attributes")) as unknown[])[0] ?? null
+            : null,
         });
         return { dataHandles: handle ? [handle] : [] };
       },

@@ -21,11 +21,14 @@ interface Group {
   brief: string;
   status: string;
   watched_pr_state: string | null;
+  orchestration: string;
   assistance_requested: boolean;
+  assistance_kind: string | null;
+  assistance_reason: string | null;
   assistance_question: string | null;
   tasks: {
     id: number; position: number; title: string; brief: string; status: string; deliverables: unknown[];
-    assistance_requested: boolean; assistance_question: string | null;
+    assistance_requested: boolean; assistance_kind: string | null; assistance_question: string | null; assistance_reason: string | null;
   }[];
   scenario: Scenario;
   counts: Record<string, number>;
@@ -37,16 +40,16 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     const gid = Number(id);
     groups.set(gid, {
       id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {},
-      assistance_requested: false, assistance_question: null,
+      orchestration: "external", assistance_requested: false, assistance_kind: null, assistance_reason: null, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
-        id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_question: null,
+        id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null,
       })),
     });
   }
   const ops = new Map<number, Record<string, unknown>>();
   const byKey = new Map<string, number>();
   const starts = new Map<string, number>();
-  const comments: { group: number; subtask: number; type: string; body: string }[] = [];
+  const comments: { id: number; group: number; subtask: number | null; task_group_id: number; task_id: number; type: string; body: string; author: string }[] = [];
   let nextOp = 1000;
 
   const bump = (g: Group, k: string) => (g.counts[k] = (g.counts[k] ?? 0) + 1);
@@ -109,6 +112,25 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         g.status = body.status;
         return json(200, view());
       }
+      if (rest === "/comments" && req.method === "GET") {
+        return json(200, comments.filter((c) => c.group === g.id && c.subtask === null).toReversed());
+      }
+      if (rest === "/comments" && req.method === "POST") {
+        if (g.orchestration !== "external") return json(409, { error: { code: "tasks.not_orchestrated" } });
+        if (["completed", "failed", "cancelled"].includes(g.status)) return json(409, { error: { code: "tasks.group_closed" } });
+        if (g.tasks.some((t) => !["completed", "failed", "cancelled"].includes(t.status))) return json(409, { error: { code: "tasks.assistance_subtask_open" } });
+        const c = { id: comments.length + 1, group: g.id, subtask: null, task_group_id: g.id, task_id: g.id, type: body.type, body: body.body, author: body.author };
+        comments.push(c);
+        if (body.type === "assistance_requested") {
+          g.assistance_requested = true;
+          g.assistance_kind = "direction";
+          g.assistance_question = g.assistance_reason = body.body;
+        } else if (body.type === "resolution" && g.assistance_kind === "direction") {
+          g.assistance_requested = false;
+          g.assistance_kind = g.assistance_question = g.assistance_reason = null;
+        }
+        return json(201, c);
+      }
       const sub = /^\/tasks\/(\d+)$/.exec(rest);
       if (req.method === "PATCH" && sub) {
         const t = g.tasks.find((x) => x.id === Number(sub[1]));
@@ -120,7 +142,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
       if (req.method === "POST" && comment) {
         const t = g.tasks.find((x) => x.id === Number(comment[1]));
         if (!t) return json(404, { error: { code: "http.404" } });
-        comments.push({ group: g.id, subtask: t.id, type: body.type, body: body.body });
+        comments.push({ id: comments.length + 1, group: g.id, subtask: t.id, task_group_id: g.id, task_id: t.id, type: body.type, body: body.body, author: body.author });
         // Orbit's TaskAssistance rules for an external group:
         // - a request on an open subtask flags the subtask and mirrors it on the group;
         // - a request on an ended subtask is refused for the subtask and raises an independent
@@ -131,18 +153,21 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         if (body.type === "assistance_requested") {
           if (!ended) {
             t.assistance_requested = true;
-            t.assistance_question = body.body;
+            t.assistance_kind = "direction";
+            t.assistance_question = t.assistance_reason = body.body;
           }
           g.assistance_requested = true;
-          g.assistance_question = body.body;
+          g.assistance_kind = "direction";
+          g.assistance_question = g.assistance_reason = body.body;
         } else if (body.type === "resolution") {
-          const owns = t.assistance_requested && g.assistance_requested && t.assistance_question === g.assistance_question;
+          const owns = t.assistance_requested && g.assistance_requested && t.assistance_kind === g.assistance_kind && t.assistance_question === g.assistance_question && t.assistance_reason === g.assistance_reason;
           t.assistance_requested = false;
-          t.assistance_question = null;
+          t.assistance_kind = t.assistance_question = t.assistance_reason = null;
           if (owns) {
             const pending = [...g.tasks].sort((a, b) => a.position - b.position).find((x) => x.assistance_requested);
             g.assistance_requested = pending !== undefined;
-            g.assistance_question = pending?.assistance_question ?? null;
+            g.assistance_question = g.assistance_reason = pending?.assistance_question ?? null;
+            g.assistance_kind = pending ? "direction" : null;
           }
         }
         return json(201, { id: comments.length, type: body.type });

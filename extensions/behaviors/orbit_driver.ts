@@ -8,7 +8,7 @@
 //             stored pre-approval for exactly that work item, gate, stage and
 //             cycle is applied instead, so a pre-approved gate needs no live turn
 //   assist    with assistanceModel set, the parked run raises assistance on the
-//             target system, and the next unparked tick clears it
+//             target system; that behavior reconciles ownership and consent
 // Work modes:
 //   method    (v1) call the stage method; it launches/polls a detached effect job
 //   workflow  (v2) start the stage workflow detached (`swamp workflow run`); the
@@ -364,7 +364,8 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
   for (const gateId of pendingGateIds(status)) {
     const name = preapprovalName(workItem, gateId, stage, cycle);
     const pre = await latest<Preapproval>(ctx, ctx.definitionName, name);
-    if (pre === null || pre.appliedAt !== null) continue;
+    if (pre === null || pre.appliedAt !== null || pre.workItem !== workItem || pre.gateId !== gateId || pre.stage !== stage || pre.cycle !== cycle ||
+      (startedAt === null || !Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(pre.createdAt)) || Date.parse(pre.createdAt) < Date.parse(startedAt))) continue;
     await call(ctx, f, "approve", {
       workItem, gateId, actor: pre.actor, note: `pre-approved ${pre.createdAt}${pre.note ? `: ${pre.note}` : ""}`,
     });
@@ -390,7 +391,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.10.22.1",
+  version: "2026.10.23.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -472,7 +473,7 @@ export const behavior = {
             const parked = (last.waiting ?? "").startsWith("assistance: ");
             try {
               await call(ctx, ctx.globalArgs.assistanceModel, "assistance", {
-                workItem, parked, stage: last.status.stage.id, cycle: last.status.stage.cycle,
+                workItem, parked, factory: f, gateIds: parked ? pendingGateIds(last.status) : [], stage: last.status.stage.id, cycle: last.status.stage.cycle,
                 reason: parked ? last.waiting!.slice("assistance: ".length) : "",
               });
             } catch (e) {

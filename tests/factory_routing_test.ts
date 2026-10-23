@@ -166,13 +166,13 @@ Deno.test({
       const flags = (g: number) => [fake.groups.get(g)!.assistance_requested, fake.groups.get(g)!.tasks.map((x) => x.assistance_requested)];
       assertEquals(flags(103), [false, [false]]);
       assertEquals(flags(105), [true, [true]]);
-      // Known limitation, pinned until Orbit has a group-level assistance route: publish-retry and republish
-      // are reached after every subtask ended, so no subtask can own a request and none is raised (Orbit
-      // would keep an independent group request open). Nothing is left on the board.
-      assertEquals(types(104), []);
-      assertEquals(flags(104), [false, [false]]);
-      assertEquals(types(108), []);
-      assertEquals(flags(108), [false, [false]]);
+      // Post-child gates use group comments, never an ended child's route.
+      for (const [g, gate] of [[104, "publish-retry"], [108, "republish"]] as const) {
+        assertEquals(types(g), ["assistance_requested", "resolution"]);
+        assert(fake.commentsOf(g).every((c) => c.subtask === null));
+        assertStringIncludes(fake.commentsOf(g)[0].body, `Gate: ${gate}; work item: tg-${g};`);
+        assertEquals(flags(g), [false, [false]]);
+      }
     } finally {
       await fake.close();
       await Deno.remove(dir, { recursive: true }).catch(() => {});

@@ -68,19 +68,20 @@ This design slice runs none of these experiments and starts no group.
 
 ## First slice: group assistance after the children end
 
-Implement the [small group-comment contract](group-assistance-contract.md) first.
+Adopt the [delivered group-comment contract](group-assistance-contract.md) first.
+Orbit PR #1500 merged at `d6bce77673b00e4b5e60cf9260d5441a746c829a`;
+the Swamp client change follows separately from Gateway delivery.
 It closes an observed gap without changing execution, merge policy, or topology.
-Swamp can park at `publish-retry` or `republish` after every child ends, but today
-has no board request it can later resolve. Do not reopen an ended child to carry it.
+The client adopts this route for `publish-retry` and `republish` after every
+child ends. It reads full history/current request and clears only its matching
+Direction request after an explicit exact factory approval in the current era.
+Open-child assistance keeps its child-comment path. A board resolution grants no
+factory approval and starts no retry. Never reopen an ended child to carry it.
 
-The implementation sequence, after parent approval, is:
-
-1. Orbit docs/ADR amendment and Gateway group-comment API, CLI/MCP parity, using
-   existing assistance types, Activity, broadcasts, and access rules.
-2. Independent review and normal Orbit release, with focused contract checks.
-3. A separate orbit-swamp change to use the route only when no open child exists.
-   Keep open-child assistance unchanged. Read recorded resolutions as input; a
-   comment never silently grants a Swamp human-approval gate.
+The Gateway delivery is complete. This client slice still needs independent
+parent review, merge, controlled deployment and separately authorized live
+acceptance. Fixture evidence is local; it adds no live adoption or ADR 0229
+worker/orchestrator interruption proof.
 
 Acceptance and rollback are in the contract. This slice removes no tick class,
 changes no orchestration mode, starts no new group, and requires no new operation
@@ -236,8 +237,8 @@ Keep ordinary external work available while later modes remain refused.
 The parent must decide the first implementation's scope and approve the later
 amendments. In particular:
 
-- Accept the narrow post-child assistance contract, or require group comments
-  during open-child work too? This design recommends the narrow contract first.
+- The narrow post-child assistance slice is authorized. Open-child group comments
+  remain outside this slice; ordinary gates keep the child path.
 - Accept own-branch review-and-merge before incoming PRs? Incoming work remains
   on the tick until covered; full retirement waits for both.
 - Approve the review-record and merge effects, and settle typed-child append
