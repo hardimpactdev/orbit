@@ -4,6 +4,7 @@ pub mod agent;
 pub mod deploy_step;
 pub mod dev_source;
 pub mod instances;
+pub mod php_runtime;
 pub mod production;
 pub mod registration;
 pub mod source;
@@ -68,5 +69,9 @@ pub fn all() -> Vec<Entry> {
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
         entry::<deploy_step::RunDeployStep>(),
+        entry::<php_runtime::ConvergeRuntime>(),
+        entry::<php_runtime::RemoveRuntime>(),
+        entry::<php_runtime::InspectPool>(),
+        entry::<php_runtime::RefreshCache>(),
     ]
 }

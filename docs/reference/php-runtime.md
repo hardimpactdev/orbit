@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
+  - apps/agent/src/commands/php_runtime.rs
 ---
 
 # PHP runtimes
@@ -23,6 +24,8 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root remains the corresponding `apps/site/public`. Root `public` keeps the checkout or release root as the application working directory.
 
 Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
+
+The Gateway renders each production runtime's files. The [Node agent](/reference/node-agent#commands) checks and publishes them, as root, with `php.converge-production-runtime`; `php.remove-production-runtime` removes them, and `php.refresh-production-cache` refreshes the cache. Each command first checks the root-owned marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and each takes the agent's lock `production-php:<user>`, so two changes to one runtime never overlap. Service metrics read the generated pool with `php.inspect-production-pool`, which takes no lock.
 
 The generated pool records the resolved release as a comment. A release switch changes those bytes and restarts that Instance's dedicated service, so existing workers cannot keep the previous release as their working directory. A confirmed no-op reconciliation does not restart the service.
 
@@ -150,7 +153,7 @@ The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request 
 
 A production master keeps compiled code until a cache refresh. Each [deployment](/reference/deployments) and rollback refreshes the cache of its own service:
 
-1. The Gateway checks that the service is active and owns the expected socket.
+1. The Node agent checks that the service is active and owns the expected socket.
 2. It asks for `opcache_reset()` through that socket, inside the service. The FastCGI request sets the parameter `ORBIT_OPCACHE_ACTION=reset`. A request without it only reads the cache status.
 3. It reports success only after a later request shows the reset finished.
 

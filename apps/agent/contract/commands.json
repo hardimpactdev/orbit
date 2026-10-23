@@ -426,6 +426,78 @@
       },
       "summary": "Run a production deploy step as the Instance user and publish its output live.",
       "timeout_seconds": 3600
+    },
+    {
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ],
+      "mutates": true,
+      "name": "php.converge-production-runtime",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Publish a production Instance's dedicated PHP-FPM service, or only a monitoring change of its pool.",
+      "timeout_seconds": 300
+    },
+    {
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ],
+      "mutates": true,
+      "name": "php.remove-production-runtime",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Stop and remove a production Instance's dedicated PHP-FPM service, keeping its local tuning.",
+      "timeout_seconds": 120
+    },
+    {
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ],
+      "mutates": false,
+      "name": "php.inspect-production-pool",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Read a production Instance's generated PHP-FPM pool and its fingerprint.",
+      "timeout_seconds": 30
+    },
+    {
+      "errors": [
+        "php.runtime_invalid",
+        "php.cache_socket_unavailable",
+        "php.cache_association_invalid",
+        "php.cache_reset_rejected",
+        "php.cache_reset_pending",
+        "php.cache_protocol_failed"
+      ],
+      "mutates": true,
+      "name": "php.refresh-production-cache",
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "summary": "Reset OPcache in a production Instance's own PHP-FPM workers and confirm it.",
+      "timeout_seconds": 60
     }
   ],
   "common_errors": [

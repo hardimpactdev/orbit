@@ -13,7 +13,6 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
-use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -270,7 +269,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             ->map(static fn (string $value, string $key): string => $key.'='.escapeshellarg($value))
             ->implode("\n");
 
-        $applicationPoolSelection = RemoteProductionPhpRuntimeManager::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions();
+        $applicationPoolSelection = ProductionRuntimeGenerationProgram::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions();
 
         return ProductionApplicationPaths::render(<<<BASH
             set -u

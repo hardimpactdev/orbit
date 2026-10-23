@@ -83,15 +83,3 @@ function service_metrics_python(string $body, array $arguments = []): Process
 
     return $process;
 }
-
-it('does not write production pool configuration from the Node script', function (): void {
-    $program = file_get_contents(resource_path('scripts/service-metrics-fpm.py'));
-
-    expect($program)->toBeString()
-        ->not->toContain('write_text(')
-        ->not->toContain('os.replace(')
-        ->not->toContain('open(pool,')
-        ->not->toContain('open(pool_path,')
-        ->not->toContain("open(root / 'generated/pool.conf', 'w'")
-        ->not->toContain('pool.write(');
-});

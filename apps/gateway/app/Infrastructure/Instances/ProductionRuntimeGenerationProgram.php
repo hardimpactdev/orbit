@@ -4,8 +4,49 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+/**
+ * Shell functions that the Doctor's Instance check and the Schedule runtime still read a production PHP runtime
+ * with. The Node agent's `php.*-production-*` commands own the same rules in `apps/agent/src/commands/php_runtime.rs`;
+ * these go when those two areas run through the agent.
+ */
 final class ProductionRuntimeGenerationProgram
 {
+    /**
+     * Bind the pool to the resolved release so convergence replaces workers whose cwd still points at
+     * the previous release, even though the configured chdir through current has not changed.
+     */
+    public static function applicationPoolSelectionFunction(): string
+    {
+        return <<<'BASH'
+            select_application_pool() {
+                local application_directory="$application" selected resolved
+                if [ "$application" != "$initial_application" ]; then
+                    if [ -e "$home/current" ] || [ -L "$home/current" ]; then
+                        test -L "$home/current" || return 1
+                        selected=$(realpath -e -- "$home/current") || return 1
+                        case "$selected" in "$home/releases/"*) ;; *) return 1 ;; esac
+                        printf '%s' "${selected#"$home/releases/"}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
+                        resolved=$(realpath -e -- "$application") || return 1
+                        test "$resolved" = "$selected${application#"$home/current"}" || return 1
+                    else
+                        application_directory="$initial_application"
+                        pool_configuration="$initial_pool_configuration"
+                        resolved=$(realpath -e -- "$application_directory") || return 1
+                        test "$resolved" = "$application_directory" || return 1
+                    fi
+                else
+                    resolved=$(realpath -e -- "$application_directory") || return 1
+                    test "$resolved" = "$application_directory" || return 1
+                fi
+                test -d "$application_directory" || return 1
+                pool_configuration=$({
+                    printf '%s' "$pool_configuration" | base64 --decode
+                    printf '\n; Orbit application release: %s\n' "$resolved"
+                } | base64 --wrap=0)
+            }
+            BASH;
+    }
+
     public static function functions(): string
     {
         return <<<'BASH'

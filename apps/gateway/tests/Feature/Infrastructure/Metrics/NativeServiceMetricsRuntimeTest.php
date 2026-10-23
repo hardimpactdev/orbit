@@ -22,6 +22,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 
 beforeEach(function (): void {
@@ -41,6 +42,8 @@ beforeEach(function (): void {
         }
     };
     $this->builds = new FakeNodeCaddyBuilds;
+    $this->pools = [];
+    $this->agents = new FakeAgentCommandRunner()->answer('php.inspect-production-pool', fn (): array => array_shift($this->pools));
     $this->productionPhp = Mockery::mock(ProductionPhpRuntimeManager::class)->shouldIgnoreMissing();
     $this->runtime = new NativeServiceMetricsRuntime(
         new ProductionSshExecutor(
@@ -68,6 +71,7 @@ beforeEach(function (): void {
             },
         ),
         $this->builds,
+        $this->agents,
         productionPhp: $this->productionPhp,
     );
     $this->metrics = service_metrics_runtime_node('metrics', '10.44.0.7', []);
@@ -122,18 +126,12 @@ it('restores the previous pool monitoring state after publication fails', functi
     $target = new ServiceMetricsNode($node, false, false, [$instance]);
     $enabledPool = "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n";
     $disabledPool = "[orbit-metricapp]\nuser = metricapp\n";
-    $this->ssh->outputs = [
-        '{"config":"prior-exporter-config"}',
-        json_encode(['pool' => $enabledPool, 'fingerprint' => 'before'], JSON_THROW_ON_ERROR),
-    ];
+    $this->ssh->outputs = ['{"config":"prior-exporter-config"}'];
+    $this->pools = [['pool' => $enabledPool, 'fingerprint' => 'before'], ['pool' => $disabledPool, 'fingerprint' => 'after']];
     $snapshot = $this->runtime->snapshot($target);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, false);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
-    $this->ssh->outputs = [
-        json_encode(['pool' => $disabledPool, 'fingerprint' => 'after'], JSON_THROW_ON_ERROR),
-        '{}',
-        '{}',
-    ];
+    $this->ssh->outputs = ['{}', '{}'];
 
     try {
         $this->runtime->converge($target, $this->metrics);
@@ -152,10 +150,8 @@ it('includes a read-only runtime fingerprint in exporter config after monitoring
     $node = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::AppProd]);
     $instance = service_metrics_runtime_instance($node);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, true);
-    $this->ssh->outputs = [
-        json_encode(['pool' => "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n", 'fingerprint' => 'local-tuning-hash'], JSON_THROW_ON_ERROR),
-        '{}',
-    ];
+    $this->pools = [['pool' => "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n", 'fingerprint' => 'local-tuning-hash']];
+    $this->ssh->outputs = ['{}'];
 
     $this->runtime->converge(new ServiceMetricsNode($node, false, true, [$instance]), $this->metrics);
     $request = service_metrics_runtime_request($this->ssh->commands[array_key_last($this->ssh->commands)]);

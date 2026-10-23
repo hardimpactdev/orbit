@@ -20,7 +20,6 @@ use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -171,28 +170,21 @@ describe('production web roots', function (): void {
             ->and(file_exists("{$home}/env/apps/blog/.env"))->toBeFalse();
     });
 
-    it('adds a pool for each served directory and checks its directory and socket on the Node', function (): void {
+    it('adds a pool for each served directory to the runtime it converges', function (): void {
         [$instance] = prodweb_instance();
-        $runtime = new AppDevFakeSshExecutor;
-        $manager = new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, prodweb_executor($runtime), '/run/lock/orbit');
+        $agents = new FakeAgentCommandRunner()->answer('php.converge-production-runtime', ['published' => true]);
+        $manager = new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents, prodweb_executor(new AppDevFakeSshExecutor));
         $manager->converge($instance);
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
         $manager->converge($instance);
-        $manager->remove($instance);
-        $converges = collect($runtime->commands)->filter(static fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === 'converge')->values();
-        $remove = collect($runtime->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === 'remove');
+        [$before, $after] = array_column(array_column($agents->calls, 'input'), 'configuration');
         $suffix = substr(hash('sha256', 'apps/docs'), 0, 8);
-        $pool = base64_decode($converges[1]->arguments[18], true);
 
-        expect(count($converges[1]->arguments))->toBe(count($converges[0]->arguments))
-            ->and($pool)->toStartWith(base64_decode($converges[0]->arguments[18], true))
+        expect($after['pool'])->toStartWith($before['pool'])
             ->toContain("[orbit-orbit-acme-{$suffix}]\nuser = orbit-acme\n")
             ->toContain("listen = /run/php/orbit-acme.{$suffix}.sock\n")
             ->toContain("chdir = /home/orbit-acme/current/apps/docs\n")
-            ->and(base64_decode($converges[1]->arguments[23], true))->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n")
-            ->and($converges[1]->input)->toContain("sed -n 's/^chdir = //p' | tail -n +2", "sed -n 's/^listen = //p' | tail -n +2")
-            ->and($converges[0]->input)->not->toContain('served_directory')
-            ->and($remove?->input)->not->toContain('served');
+            ->and($after['initial_pool'])->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n");
     });
 });
 
