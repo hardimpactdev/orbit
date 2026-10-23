@@ -651,6 +651,19 @@
       ]
     },
     {
+      "name": "instances.transfer-source",
+      "summary": "Capture, materialize, discard, or clean up a development Instance transfer.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "instances.transfer_source_failed"
+      ]
+    },
+    {
       "name": "instances.read-dependency-files",
       "summary": "Read the dependency manifests and lockfiles of a development checkout.",
       "mutates": false,

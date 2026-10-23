@@ -2447,6 +2447,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",

@@ -29,7 +29,6 @@ use Illuminate\Support\Facades\File;
 use Tests\Support\FeatureTestEnvironment;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
-use Tests\Support\LocalInstanceTransferTransport;
 use Tests\Support\TestToolchain;
 use Tests\Support\WithSharedGitFixtureCleanup;
 use Tests\TestCase;
@@ -87,7 +86,6 @@ uses()
     );
 
 uses(WithSharedGitFixtureCleanup::class)
-    ->beforeAll(fn () => LocalInstanceTransferTransport::prepare())
     ->in('Feature/Api/TransferInstanceTest.php', 'Feature/Infrastructure/Instances/TransferEnvironmentModeTest.php', 'Feature/Infrastructure/Instances/RemoteInstanceTransferSourceTest.php');
 
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).

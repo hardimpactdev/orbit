@@ -13,12 +13,11 @@ use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -27,10 +26,14 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
+/**
+ * Moves a development Instance between Nodes (docs/reference/instance-transfer.md). The Node agent's
+ * `instances.transfer-source` captures, unpacks, and removes checkouts; the Gateway moves the archive with `scp`.
+ */
 final readonly class RemoteInstanceTransferSource implements InstanceTransferSource
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ProcessRunner $processes,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
@@ -40,30 +43,24 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
     {
         $instance->loadMissing('node');
         $layout = InstanceSourceLayout::from($instance->source_layout);
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? ''],
-                input: $this->captureScript(),
-            ),
-            step: 'app-instance-transfer-capture',
-            errorCode: 'instance.transfer_failed',
-        );
-        $facts = $this->facts($result->stdout);
+        $facts = $this->facts($this->run($instance->node, [
+            'operation' => 'capture',
+            'source' => $instance->checkout_path,
+            'layout' => $layout->value,
+            'sqlite_source' => $sqliteSourcePath,
+        ], 'app-instance-transfer-capture', 'instance.transfer_failed'));
 
         return new TransferSourceCapture(
             instanceId: $instance->id,
             nodeId: $instance->node_id,
             layout: $layout,
             sourcePath: $instance->checkout_path,
-            commonRepositoryPath: $facts['common'] !== ''
-                ? $facts['common']
-                : $instance->registration_common_repository_path,
+            commonRepositoryPath: $facts['common'] ?? $instance->registration_common_repository_path,
             head: $facts['head'],
-            branch: $facts['branch'] === '' ? null : $facts['branch'],
-            detached: $facts['detached'] === '1',
+            branch: $facts['branch'],
+            detached: $facts['detached'],
             archiveIdentity: $facts['archive'],
-            refs: $facts['refs'] === '' ? [] : explode(' ', $facts['refs']),
+            refs: $facts['refs'],
         );
     }
 
@@ -95,20 +92,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     public function discardDestination(Node $node, StoragePath $path): void
     {
-        $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $path->value],
-                input: <<<'BASH'
-                    destination=$1
-                    if [ -e "$destination" ] || [ -L "$destination" ]; then
-                      rm -rf -- "$destination"
-                    fi
-                    BASH,
-            ),
-            step: 'app-instance-transfer-discard',
-            errorCode: 'instance.transfer_failed',
-        );
+        $this->run($node, ['operation' => 'discard', 'destination' => $path->value], 'app-instance-transfer-discard', 'instance.transfer_failed');
     }
 
     public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult
@@ -117,22 +101,11 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         $common = $transfer->common_repository_path;
 
         try {
-            $this->ssh->execute(
-                $source,
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $transfer->source_path,
-                        $transfer->source_layout->value,
-                        $common ?? '',
-                    ],
-                    input: $this->cleanupScript(),
-                ),
-                step: 'app-instance-transfer-cleanup',
-                errorCode: 'instance.transfer_cleanup_incomplete',
-            );
+            $this->run($source, [
+                'operation' => 'cleanup',
+                'source' => $transfer->source_path,
+                'common' => $common,
+            ], 'app-instance-transfer-cleanup', 'instance.transfer_cleanup_incomplete');
         } catch (RuntimeConvergenceException) {
             return new TransferCleanupResult(false, true, ['source-placement']);
         }
@@ -193,25 +166,15 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             'app-instance-transfer-upload',
         );
 
-        $this->ssh->execute(
-            $destination,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $remoteArchive,
-                    $path->value,
-                    $capture->head,
-                    $capture->branch ?? '',
-                    $capture->detached ? '1' : '0',
-                    $environmentDirectory.'/.env',
-                ],
-                input: $this->materializeScript(),
-            ),
-            step: 'app-instance-transfer-materialize',
-            errorCode: 'instance.transfer_failed',
-        );
+        $this->run($destination, [
+            'operation' => 'materialize',
+            'archive' => $remoteArchive,
+            'destination' => $path->value,
+            'head' => $capture->head,
+            'branch' => $capture->branch,
+            'detached' => $capture->detached,
+            'environment' => $environmentDirectory.'/.env',
+        ], 'app-instance-transfer-materialize', 'instance.transfer_failed');
     }
 
     /** @param non-empty-list<string> $arguments */
@@ -284,125 +247,42 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         return "{$user}@{$formattedHost}:{$path}";
     }
 
-    /** @return array{head: string, branch: string, detached: string, archive: string, common: string, refs: string} */
-    private function facts(string $stdout): array
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function run(Node $node, array $input, string $step, string $errorCode): array
     {
-        $facts = [];
+        return AgentStep::run($this->agents, $node, 'instances.transfer-source', $input, $step, $errorCode, 'Instance transfer');
+    }
 
-        foreach (explode("\n", trim($stdout)) as $line) {
-            if (! str_contains($line, '=')) {
-                continue;
-            }
+    /**
+     * @param  array<string, mixed>  $captured
+     * @return array{head: string, branch: ?string, detached: bool, archive: string, common: ?string, refs: list<string>}
+     */
+    private function facts(array $captured): array
+    {
+        $refs = $captured['refs'] ?? null;
 
-            [$key, $value] = explode('=', $line, 2);
-            $facts[$key] = $value;
+        if (
+            ! is_string($captured['head'] ?? null)
+            || ! (is_string($captured['branch'] ?? null) || ($captured['branch'] ?? null) === null)
+            || ! is_bool($captured['detached'] ?? null)
+            || ! is_string($captured['archive'] ?? null)
+            || ! (is_string($captured['common'] ?? null) || ($captured['common'] ?? null) === null)
+            || ! is_array($refs) || ! array_is_list($refs) || ! array_all($refs, static fn (mixed $ref): bool => is_string($ref))
+        ) {
+            throw $this->failed();
         }
 
-        foreach (['head', 'branch', 'detached', 'archive', 'common', 'refs'] as $required) {
-            if (! is_string($facts[$required] ?? null)) {
-                throw $this->failed();
-            }
-        }
-
-        return $facts;
-    }
-
-    private function captureScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            source=$1
-            layout=$2
-            sqlite_source=$3
-            archive="/tmp/orbit-transfer-$(basename "$source")-$$.tar"
-            cd -- "$source"
-            head=$(git rev-parse HEAD)
-            branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-            detached=0
-            if [ "$branch" = "HEAD" ]; then
-              detached=1
-              branch=""
-            fi
-            common=""
-            if [ -f .git ]; then
-              common=$(git rev-parse --git-common-dir)
-            fi
-            refs=$(git for-each-ref --format='%(refname:short)' refs/heads)
-            exclusions=()
-            if [ -n "$sqlite_source" ]; then
-              case "$sqlite_source" in
-                "$source"/*)
-                  relative="./${sqlite_source#"$source"/}"
-                  exclusions=(--no-wildcards --anchored "--exclude=$relative" "--exclude=$relative-wal" "--exclude=$relative-shm")
-                  ;;
-                *) exit 20 ;;
-              esac
-            fi
-            if [ "$layout" = "worktree" ]; then
-              git bundle create "$archive.bundle" HEAD
-              tar --exclude=.git "${exclusions[@]}" -cf "$archive" .
-              tar -rf "$archive" -C "$(dirname "$archive")" "$(basename "$archive.bundle")"
-              rm -f -- "$archive.bundle"
-            else
-              tar "${exclusions[@]}" -cf "$archive" .
-            fi
-            printf 'head=%s\nbranch=%s\ndetached=%s\narchive=%s\ncommon=%s\nrefs=%s\n' \
-              "$head" "$branch" "$detached" "$archive" "$common" "$refs"
-            BASH;
-    }
-
-    private function materializeScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            archive=$1
-            destination=$2
-            head=$3
-            branch=$4
-            detached=$5
-            mkdir -p -- "$(dirname "$destination")"
-            mkdir -- "$destination"
-            tar -xf "$archive" -C "$destination"
-            rm -f -- "$archive"
-            cd -- "$destination"
-            if [ ! -d .git ]; then
-              git init --quiet
-              if [ -f ./*.bundle ]; then
-                bundle=$(echo ./*.bundle)
-                git -C "$destination" fetch --quiet "$bundle" HEAD
-                rm -f -- "$bundle"
-              fi
-              if [ "$detached" = "1" ] || [ -z "$branch" ]; then
-                git -C "$destination" update-ref --no-deref HEAD "$head"
-              else
-                git -C "$destination" symbolic-ref HEAD "refs/heads/$branch"
-                git -C "$destination" update-ref HEAD "$head"
-              fi
-              # Populate the index without replacing dirty files or restoring excluded SQLite files.
-              git -C "$destination" reset --mixed --quiet "$head"
-            fi
-            # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
-            environment=${6:-$destination/.env}
-            case "$environment" in "$destination"/*) ;; *) exit 20 ;; esac
-            if [ -f "$environment" ] && [ ! -L "$environment" ]; then
-              test "$(realpath -e -- "$environment")" = "$environment"
-              chmod o-rwx -- "$environment"
-            fi
-            BASH;
-    }
-
-    private function cleanupScript(): string
-    {
-        return <<<'BASH'
-            source=$1
-            layout=$2
-            common=$3
-            if [ ! -e "$source" ] && [ ! -L "$source" ]; then
-              exit 0
-            fi
-            if [ -n "$common" ] && [ "$source" = "$common" ]; then
-              exit 20
-            fi
-            rm -rf -- "$source"
-            BASH;
+        return [
+            'head' => $captured['head'],
+            'branch' => $captured['branch'],
+            'detached' => $captured['detached'],
+            'archive' => $captured['archive'],
+            'common' => $captured['common'],
+            'refs' => $refs,
+        ];
     }
 
     private function failed(): ResourceOperationException

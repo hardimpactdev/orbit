@@ -71,7 +71,7 @@ function remote_transfer_archive(): array
     $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $sandbox.'/source')->mustRun()->getOutput());
     new Process(['tar', '-cf', $sandbox.'/archive.tar', '.'], $sandbox.'/source')->mustRun();
     $node = static fn (string $name): Node => Node::query()->create([
-        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit',
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
         'public_ssh_host' => '127.0.0.1', 'wireguard_ip' => '127.0.0.'.(Node::query()->count() + 1),
     ]);
     $source = $node('staging-source');

@@ -12,6 +12,5 @@ trait WithSharedGitFixtureCleanup
     public static function clearSharedGitFixtures(): void
     {
         GatewayReleaseFixture::forget();
-        LocalInstanceTransferTransport::forget();
     }
 }

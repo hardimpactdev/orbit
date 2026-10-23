@@ -29,7 +29,7 @@ describe('transferred worktree', function (): void {
         file_put_contents($checkout.'/README.md', "Dirty readme\n");
         file_put_contents($checkout.'/database.sqlite-wal', 'selected WAL');
         file_put_contents($checkout.'/database.sqlite-shm', 'selected SHM');
-        $node = Node::query()->create(['name' => 'worktree-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
+        $node = Node::query()->create(['name' => 'worktree-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
         orbit_test_set_app_placement_role($node, production: false);
         $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
@@ -79,7 +79,7 @@ it('materializes a transferred checkout with an environment that other local use
         chmod($root.'/'.$name.'/README.md', 0o664);
 
         $node = static fn (string $name, string $address): Node => Node::query()->create([
-            'name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
+            'name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
             'public_ssh_host' => $address, 'wireguard_ip' => $address,
         ]);
         $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);

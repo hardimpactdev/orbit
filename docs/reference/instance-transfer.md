@@ -53,7 +53,7 @@ Every transfer runs in this order:
 2. It copies the source checkout to the destination.
 3. When you select a SQLite file, it takes one consistent snapshot and installs it at the selected path on the destination.
 
-The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A checkout of any size that fits the Gateway's disk can move. If staging fails, the Gateway records and logs the failing step.
+The [Node agent](/reference/node-agent#commands)'s `instances.transfer-source` captures the archive on the source Node, unpacks it on the destination, and removes the old checkout, as the managed user. The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A checkout of any size that fits the Gateway's disk can move. If staging fails, the Gateway records and logs the failing step.
 
 When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 

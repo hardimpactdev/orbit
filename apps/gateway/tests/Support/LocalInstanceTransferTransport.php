@@ -7,7 +7,6 @@ namespace Tests\Support;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
 use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Processes\CommandResult;
@@ -15,16 +14,12 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
-use Symfony\Component\Process\Process;
 
-/** Runs the real transfer programs locally, redirecting only privileged state and SSH transport. */
-final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnapshotTransfer, SshExecutor
+/** Runs the real transfer agent commands locally, and replaces only the `scp` transport and the SQLite move. */
+final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnapshotTransfer
 {
     /** @var list<string> */
     public array $stagedPaths = [];
@@ -57,29 +52,53 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     /** @var array<string, string> */
     private array $snapshots = [];
 
-    private static ?ForkedPythonPrograms $python = null;
-
-    public static function prepare(): void
-    {
-        self::$python = new ForkedPythonPrograms;
-    }
-
-    public static function forget(): void
-    {
-        self::$python?->close();
-        self::$python = null;
-    }
-
     public function __construct(private readonly string $sandbox) {}
 
+    /** The real transfer source, whose agent commands run as the current user. */
     public function source(): RemoteInstanceTransferSource
     {
-        return new RemoteInstanceTransferSource(
-            new DevelopmentSshExecutor($this, $this->keys(), $this->knownHosts()),
-            $this,
-            $this->keys(),
-            $this->knownHosts(),
-        );
+        $transport = $this;
+        $agents = LocalAgentBinary::localRunner($this->sandbox.'/agent');
+
+        return new RemoteInstanceTransferSource(new class($transport, $agents) implements AgentCommandRunner
+        {
+            public function __construct(private readonly LocalInstanceTransferTransport $transport, private readonly AgentCommandRunner $agents) {}
+
+            public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+            {
+                return $this->transport->sourceCommand($input, fn (array $input): array => $this->agents->run($node, $command, $input, $deadlineSeconds));
+            }
+
+            public function install(Node $node): bool
+            {
+                return $this->agents->install($node);
+            }
+        }, $this, $this->keys(), $this->knownHosts());
+    }
+
+    /**
+     * Runs one transfer source command against the local archive, and applies an injected lost discard response.
+     *
+     * @param  array<string, mixed>  $input
+     * @param  Closure(array<string, mixed>): array<string, mixed>  $run
+     * @return array<string, mixed>
+     */
+    public function sourceCommand(array $input, Closure $run): array
+    {
+        if (($input['operation'] ?? null) === 'materialize') {
+            $input['archive'] = $this->localPath((string) $input['archive']);
+        }
+        $output = $run($input);
+        if (($input['operation'] ?? null) === 'discard') {
+            ($this->onDiscard)?->__invoke();
+            if ($this->lostDiscardResponse) {
+                $this->lostDiscardResponse = false;
+
+                throw new \RuntimeException('Injected lost response after successful cleanup.');
+            }
+        }
+
+        return $output;
     }
 
     /** The real seeder, whose agent commands run as root through `sudo`, so only a privileged test host runs it. */
@@ -186,40 +205,6 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         }
 
         return new CommandResult(copy($this->localPath($source), $this->localPath($target)) ? 0 : 1, '', '', 1, false);
-    }
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $arguments = $command->arguments;
-        if (str_contains($command->input ?? '', 'archive=$1'."\n")) {
-            $arguments[3] = $this->localPath($arguments[3]);
-        }
-
-        if ($command->output !== null || $command->cancelled !== null || $command->protectedInput !== null) {
-            throw new \LogicException('Finite transfer proofs do not replace streaming, cancellation, or protected-input transports.');
-        }
-        if (array_slice($arguments, 0, 2) === ['python3', '-c']) {
-            $python = self::$python ?? throw new \LogicException('Prepare the transfer fixture host in beforeAll.');
-            $result = $python->runCommand($arguments[2], array_slice($arguments, 3), $command->input ?? '', timeoutSeconds: $command->timeout);
-        } else {
-            $input = $command->input;
-            if ($arguments[0] === 'bash' && $input !== null) {
-                $input = BufferedBashProgram::stdinPrelude($this->sandbox).$input;
-            }
-            $process = new Process($arguments, input: $input, timeout: $command->timeout ?? 60);
-            $process->run();
-            $result = new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
-        }
-        if ($result->exitCode === 0 && str_contains($command->input ?? '', 'destination=$1')) {
-            ($this->onDiscard)?->__invoke();
-        }
-        if ($result->exitCode === 0 && $this->lostDiscardResponse && str_contains($command->input ?? '', 'destination=$1')) {
-            $this->lostDiscardResponse = false;
-
-            return new CommandResult(1, '', 'Injected lost response after successful cleanup.', 1, false);
-        }
-
-        return $result;
     }
 
     private function localPath(string $path): string
