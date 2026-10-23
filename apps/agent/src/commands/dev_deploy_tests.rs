@@ -234,8 +234,16 @@ fn runs_a_step_in_the_checkout_with_redacted_output_and_no_inherited_lock() {
         .output
         .iter()
         .any(|chunk| chunk.stream == "stderr" && chunk.value == "token=[REDACTED]\n"));
+    // Another test's fork can hold a copy of the lock for an instant before its exec closes it; a leftover of this
+    // step would hold it for seconds.
+    let free = (0..20).any(|_| {
+        fixture.checkout().lock().is_ok() || {
+            std::thread::sleep(Duration::from_millis(50));
+            false
+        }
+    });
     assert!(
-        fixture.checkout().lock().is_ok(),
+        free,
         "a process the step left behind does not hold the lock"
     );
     let leftovers = fs::read_dir(fixture.home.join(".git"))
