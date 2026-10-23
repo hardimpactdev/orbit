@@ -219,10 +219,11 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
             .new Process(['getfacl', '-p', ...$ancestors, "$root/checkout/.git"])->mustRun()->getOutput();
         $before = $granted();
         $process = development_caddy_access([development_caddy_access_site($checkout, 'web/site')], "$root/bin");
-        expect(development_caddy_access_refusal($process)['code'])->toBe($failRecovery ? 'instances.caddy_access_recovery_failed' : 'instances.caddy_access_failed');
+        $error = development_caddy_access_refusal($process);
+        expect($error['code'])->toBe($failRecovery ? 'instances.caddy_access_recovery_failed' : 'instances.caddy_access_failed');
         // Nothing lands in the Git directory, which the checkout's own programs can write.
         expect(new Filesystem()->glob("$root/checkout/.git/orbit-caddy-acl.*"))->toBe([]);
-        $retained = development_caddy_access_refusal($process)['details']['snapshots'] ?? null;
+        $retained = $error['details']['snapshots'] ?? null;
         if ($failRecovery) {
             expect($retained)->toStartWith('/var/tmp/orbit-caddy-acl.')
                 ->and(fileowner($retained))->toBe(posix_geteuid())
