@@ -441,12 +441,13 @@ it('runs the remote program regression tests without host mutations or network a
 it('keeps newer Ubuntu versions visible in the plan result and recorded status', function (): void {
     $node = FleetFixtures::node('recipe-newer');
     $recipe = new RecipeLoader()->load();
-    $newer = ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]];
-    recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command): CommandResult {
+    $installed = $recipe->tools['curl']->version.'+fixture1';
+    $newer = ['curl' => ['installed' => $installed, 'version' => $recipe->tools['curl']->version]];
+    recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command) use ($installed): CommandResult {
         $payload = RecipeProgramPayload::read($command->input);
         $tools = [];
         foreach ($payload['tools'] as $name => $pin) {
-            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? $installed : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
         }
 
         return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
@@ -455,7 +456,7 @@ it('keeps newer Ubuntu versions visible in the plan result and recorded status',
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
-    expect($result['plan']->tools['curl'])->toMatchArray(['changed' => false, 'status' => 'newer_than_recipe', 'installed' => '8.18.0-1ubuntu2.8'])
+    expect($result['plan']->tools['curl'])->toMatchArray(['changed' => false, 'status' => 'newer_than_recipe', 'installed' => $installed])
         ->and($result['changes']['newer_than_recipe'])->toBe($newer)
         ->and($node->refresh()->settings['machine_recipe']['newer_than_recipe'])->toBe($newer);
 });
@@ -538,21 +539,22 @@ it('embeds and runs the account store publisher in recipe programs', function ()
         ->toBe(['outcome' => 'inspected', 'data' => ['version' => null]]);
 });
 
-it('includes the exact native Incus package set only on configured task VM hosts', function (string $architecture, string $version): void {
+it('includes the exact native Incus package set only on configured task VM hosts', function (string $architecture, string $artifactArchitecture): void {
     $node = FleetFixtures::node('recipe-incus-host', [RoleName::Database]);
     $node->update(['architecture' => $architecture, 'settings' => ['task_vms' => ['capacity' => 1]]]);
     $recipe = new RecipeLoader()->load();
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
 
     $tools = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
     foreach (RecipeLoader::IncusPackages as $name) {
-        expect($tools[$name]->version)->toBe($version);
+        expect($tools[$name]->version)->toBe($document['tools'][$name]['artifacts'][$artifactArchitecture]['version']);
     }
     $node->update(['settings' => []]);
-    expect(array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe)))->not->toContain('incus');
+    expect(array_intersect(RecipeLoader::IncusPackages, array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe))))->toBe([]);
 })->with([
-    ['x86_64', '1:7.0.1-ubuntu26.04-202609250211'],
-    ['aarch64', '1:7.0.1-ubuntu26.04-202609250512'],
+    ['x86_64', 'amd64'],
+    ['aarch64', 'arm64'],
 ]);
 
 function incusRecipeInspection(RemoteCommand $command, bool $phpChange = false): CommandResult

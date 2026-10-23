@@ -103,6 +103,8 @@ Tests are scheduled individually so a long file cannot leave the other workers i
 
 The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
 
+Incus installer and artifact bump tests own fixed package versions and fake indexes. They keep architecture builds distinct and installed downgrade candidates newer than their fixture pins. Tests that decode or transport the recipe use their own architecture builds or compare with the document under test, including image payloads and configured hosts. Ubuntu plan fixtures derive newer installed versions from their recipe pins. Nightly artifact and snapshot updates therefore change no behavioral expectation.
+
 Assembly includes the recipe image builder and the shared recipe library used by `docker.migrate`.
 
 Task monitors and the recipe library share `tasks/unit-state.py` through `TaskUnitProgram`, which inserts it at `# ORBIT_TASK_UNIT_STATE` before transport. The remote program catalogue expands the same marker inside named libraries. `# Uses:` only prepends same-language libraries; it cannot insert Python into the existing Bash topology script.
