@@ -841,6 +841,71 @@
       ]
     },
     {
+      "name": "hibernation.marker",
+      "summary": "Create or remove a hibernation marker that Caddy reads.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.times",
+      "summary": "Read the modification times of hibernation markers and access logs.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.inspect-checkout",
+      "summary": "Report an Instance checkout's dependency files and its last source change.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.prune-checkout",
+      "summary": "Remove an Instance checkout's vendor or node_modules directory.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
+      "name": "hibernation.restore-dependencies",
+      "summary": "Install an Instance checkout's Composer or JavaScript dependencies again.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

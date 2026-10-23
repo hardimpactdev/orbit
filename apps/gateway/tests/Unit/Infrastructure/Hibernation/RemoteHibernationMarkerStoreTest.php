@@ -3,163 +3,64 @@
 declare(strict_types=1);
 
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\TestCase;
 
-it('writes the awake marker after creating traversable tmpfs and log directories', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
+uses(TestCase::class);
+
+it('writes the awake and cold markers after preparing the marker and log directories', function (string $marker): void {
+    $agents = new FakeAgentCommandRunner()->answer('hibernation.marker', []);
+    $store = new RemoteHibernationMarkerStore($agents);
+    $key = RuntimeHibernation::key(6);
+
+    $marker === 'awake' ? $store->markAwake(hibernation_marker_node(), $key) : $store->markCold(hibernation_marker_node(), $key);
+
+    expect($agents->calls[0]['input'])->toBe([
+        'operation' => 'mark',
+        'marker_directory' => RuntimeHibernation::MarkerDirectory,
+        'log_directory' => RuntimeHibernation::AccessLogDirectory,
+        'path' => $marker === 'awake' ? RuntimeHibernation::awakePath($key) : RuntimeHibernation::coldPath($key),
     ]);
-    $store = new RemoteHibernationMarkerStore(
-        ssh: $ssh,
-        keys: new HibernationFakeSshKeyProvider,
-        knownHosts: new HibernationFakeKnownHostsStore,
-    );
+})->with(['awake', 'cold']);
 
-    $store->markAwake(hibernation_marker_node(), RuntimeHibernation::key(6));
+it('removes the awake and cold markers', function (): void {
+    $agents = new FakeAgentCommandRunner()->answer('hibernation.marker', []);
+    $store = new RemoteHibernationMarkerStore($agents);
+    $key = RuntimeHibernation::key(6);
 
-    expect($ssh->commands[0]->arguments)
-        ->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            RuntimeHibernation::MarkerDirectory,
-            RuntimeHibernation::AccessLogDirectory,
-        ])
-        ->and($ssh->commands[0]->input)
-        ->toBe(HibernationDirectoryEnsure::script())
-        ->and(array_map(static fn ($command): array => $command->arguments, array_slice($ssh->commands, 1)))
-        ->toBe([
-            ['sudo', 'touch', '--', RuntimeHibernation::awakePath('app-instance-6')],
-            ['sudo', 'chmod', '0644', '--', RuntimeHibernation::awakePath('app-instance-6')],
-        ]);
+    $store->markAsleep(hibernation_marker_node(), $key);
+    $store->clearCold(hibernation_marker_node(), $key);
+
+    expect(array_column($agents->calls, 'input'))->toBe([
+        ['operation' => 'remove', 'path' => RuntimeHibernation::awakePath($key)],
+        ['operation' => 'remove', 'path' => RuntimeHibernation::coldPath($key)],
+    ]);
 });
 
-it('uses the later of the access log and awake marker as last activity', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "100\n", '', 1, false),
-        new CommandResult(0, "200\n", '', 1, false),
-    ]);
-    $store = new RemoteHibernationMarkerStore(
-        ssh: $ssh,
-        keys: new HibernationFakeSshKeyProvider,
-        knownHosts: new HibernationFakeKnownHostsStore,
-    );
+it('uses the later of the access log and awake marker as last activity, and none when both are missing', function (?int $log, ?int $awake, ?int $activity): void {
+    $key = RuntimeHibernation::key(6);
+    $agents = new FakeAgentCommandRunner()->answer('hibernation.times', ['times' => [
+        RuntimeHibernation::accessLogPath($key) => $log,
+        RuntimeHibernation::awakePath($key) => $awake,
+    ]]);
 
-    expect($store->lastActivityUnix(hibernation_marker_node(), RuntimeHibernation::key(6)))
-        ->toBe(200)
-        ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
-        ->toBe([
-            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::accessLogPath('app-instance-6')],
-            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
-        ]);
-});
+    expect(new RemoteHibernationMarkerStore($agents)->lastActivityUnix(hibernation_marker_node(), $key))->toBe($activity)
+        ->and($agents->calls)->toHaveCount(1);
+})->with([[100, 200, 200], [300, null, 300], [null, null, null]]);
 
-it('writes the durable cold marker under the access-log directory', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(0, '', '', 1, false),
-    ]);
-    $store = new RemoteHibernationMarkerStore(
-        ssh: $ssh,
-        keys: new HibernationFakeSshKeyProvider,
-        knownHosts: new HibernationFakeKnownHostsStore,
-    );
+it('reads a present awake or cold marker, and a Node that does not answer as absent', function (): void {
+    $key = RuntimeHibernation::key(6);
+    $present = new FakeAgentCommandRunner()->answer('hibernation.times', ['times' => [RuntimeHibernation::awakePath($key) => 100, RuntimeHibernation::coldPath($key) => null]]);
+    $silent = new FakeAgentCommandRunner()->answer('hibernation.times', fn () => throw new RuntimeException('unreachable'));
 
-    $store->markCold(hibernation_marker_node(), RuntimeHibernation::key(6));
-
-    expect($ssh->commands[0]->arguments)
-        ->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            RuntimeHibernation::MarkerDirectory,
-            RuntimeHibernation::AccessLogDirectory,
-        ])
-        ->and(array_map(static fn ($command): array => $command->arguments, array_slice($ssh->commands, 1)))
-        ->toBe([
-            ['sudo', 'touch', '--', RuntimeHibernation::coldPath('app-instance-6')],
-            ['sudo', 'chmod', '0644', '--', RuntimeHibernation::coldPath('app-instance-6')],
-        ]);
-});
-
-it('treats a present awake marker as awake and a missing marker as asleep', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "200\n", '', 1, false),
-        new CommandResult(1, '', 'missing', 1, false),
-    ]);
-    $store = new RemoteHibernationMarkerStore(
-        ssh: $ssh,
-        keys: new HibernationFakeSshKeyProvider,
-        knownHosts: new HibernationFakeKnownHostsStore,
-    );
-    $node = hibernation_marker_node();
-
-    expect($store->isAwake($node, RuntimeHibernation::key(6)))
-        ->toBeTrue()
-        ->and($store->isAwake($node, RuntimeHibernation::key(6)))
-        ->toBeFalse()
-        ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
-        ->toBe([
-            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
-            ['sudo', 'stat', '-c', '%Y', '--', RuntimeHibernation::awakePath('app-instance-6')],
-        ]);
-});
-
-it('treats a missing log and missing awake marker as no activity', function (): void {
-    $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(1, '', 'missing', 1, false),
-        new CommandResult(1, '', 'missing', 1, false),
-    ]);
-    $store = new RemoteHibernationMarkerStore(
-        ssh: $ssh,
-        keys: new HibernationFakeSshKeyProvider,
-        knownHosts: new HibernationFakeKnownHostsStore,
-    );
-
-    expect($store->lastActivityUnix(hibernation_marker_node(), RuntimeHibernation::key(6)))
-        ->toBeNull();
+    expect(new RemoteHibernationMarkerStore($present)->isAwake(hibernation_marker_node(), $key))->toBeTrue()
+        ->and(new RemoteHibernationMarkerStore($present)->isCold(hibernation_marker_node(), $key))->toBeFalse()
+        ->and(new RemoteHibernationMarkerStore($silent)->isAwake(hibernation_marker_node(), $key))->toBeFalse();
 });
 
 function hibernation_marker_node(): Node
 {
-    return new Node([
-        'name' => 'app-dev',
-        'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.3',
-    ]);
-}
-
-final class HibernationFakeSshKeyProvider implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/orbit/ssh/id_ed25519';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 test';
-    }
-}
-
-final class HibernationFakeKnownHostsStore implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/orbit/ssh/known_hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
+    return new Node(['name' => 'app-dev', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3']);
 }

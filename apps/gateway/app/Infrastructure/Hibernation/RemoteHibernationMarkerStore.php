@@ -7,78 +7,44 @@ namespace App\Infrastructure\Hibernation;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Node;
+use Throwable;
 
+/**
+ * The hibernation markers and access logs of a Node, through the agent's `hibernation.marker` and
+ * `hibernation.times` (docs/reference/app-dev-runtime-hibernation.md).
+ */
 final readonly class RemoteHibernationMarkerStore implements HibernationMarkerStore
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function markAwake(Node $node, string $key): void
     {
-        $path = RuntimeHibernation::awakePath($key);
-        $this->run(
-            $node,
-            'prepare-dirs',
-            [
-                'sudo',
-                'bash',
-                '-seu',
-                '--',
-                RuntimeHibernation::MarkerDirectory,
-                RuntimeHibernation::AccessLogDirectory,
-            ],
-            HibernationDirectoryEnsure::script(),
-        );
-        $this->run($node, 'mark-awake', ['sudo', 'touch', '--', $path]);
-        $this->run($node, 'mark-awake-mode', ['sudo', 'chmod', '0644', '--', $path]);
+        $this->mark($node, 'mark-awake', RuntimeHibernation::awakePath($key));
     }
 
     public function markAsleep(Node $node, string $key): void
     {
-        $this->run($node, 'mark-asleep', ['sudo', 'rm', '-f', '--', RuntimeHibernation::awakePath($key)]);
+        $this->run($node, 'mark-asleep', ['operation' => 'remove', 'path' => RuntimeHibernation::awakePath($key)]);
     }
 
     public function markCold(Node $node, string $key): void
     {
-        $path = RuntimeHibernation::coldPath($key);
-        $this->run(
-            $node,
-            'prepare-dirs',
-            [
-                'sudo',
-                'bash',
-                '-seu',
-                '--',
-                RuntimeHibernation::MarkerDirectory,
-                RuntimeHibernation::AccessLogDirectory,
-            ],
-            HibernationDirectoryEnsure::script(),
-        );
-        $this->run($node, 'mark-cold', ['sudo', 'touch', '--', $path]);
-        $this->run($node, 'mark-cold-mode', ['sudo', 'chmod', '0644', '--', $path]);
+        $this->mark($node, 'mark-cold', RuntimeHibernation::coldPath($key));
     }
 
     public function clearCold(Node $node, string $key): void
     {
-        $this->run($node, 'clear-cold', ['sudo', 'rm', '-f', '--', RuntimeHibernation::coldPath($key)]);
+        $this->run($node, 'clear-cold', ['operation' => 'remove', 'path' => RuntimeHibernation::coldPath($key)]);
     }
 
     public function lastActivityUnix(Node $node, string $key): ?int
     {
         $times = array_values(array_filter(
-            [
-                $this->mtime($node, RuntimeHibernation::accessLogPath($key)),
-                $this->mtime($node, RuntimeHibernation::awakePath($key)),
-            ],
+            $this->times($node, [RuntimeHibernation::accessLogPath($key), RuntimeHibernation::awakePath($key)]),
             static fn (?int $time): bool => $time !== null,
         ));
 
@@ -87,50 +53,57 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
 
     public function isAwake(Node $node, string $key): bool
     {
-        return $this->mtime($node, RuntimeHibernation::awakePath($key)) !== null;
+        return $this->times($node, [RuntimeHibernation::awakePath($key)])[0] !== null;
     }
 
     public function isCold(Node $node, string $key): bool
     {
-        return $this->mtime($node, RuntimeHibernation::coldPath($key)) !== null;
+        return $this->times($node, [RuntimeHibernation::coldPath($key)])[0] !== null;
     }
 
-    private function mtime(Node $node, string $path): ?int
+    private function mark(Node $node, string $step, string $path): void
     {
-        $result = $this->ssh->execute(
-            $this->connection($node),
-            new RemoteCommand(['sudo', 'stat', '-c', '%Y', '--', $path]),
-        );
-
-        if (! $result->succeeded()) {
-            return null;
-        }
-
-        $stamp = trim($result->stdout);
-
-        if (preg_match('/\A[1-9][0-9]*\z/D', $stamp) !== 1) {
-            return null;
-        }
-
-        return (int) $stamp;
+        $this->run($node, $step, [
+            'operation' => 'mark',
+            'marker_directory' => RuntimeHibernation::MarkerDirectory,
+            'log_directory' => RuntimeHibernation::AccessLogDirectory,
+            'path' => $path,
+        ]);
     }
 
-    /** @param non-empty-list<string> $arguments */
-    private function run(Node $node, string $step, array $arguments, ?string $input = null): void
+    /**
+     * @param  list<string>  $paths
+     * @return list<int|null> Each path's modification time, or null when it is missing or the Node does not answer.
+     */
+    private function times(Node $node, array $paths): array
     {
-        $result = $this->ssh->execute($this->connection($node), new RemoteCommand($arguments, $input));
+        $this->requireAddress($node);
 
-        if ($result->succeeded()) {
-            return;
+        try {
+            $times = $this->agents->run($node, 'hibernation.times', ['paths' => $paths])['times'] ?? [];
+        } catch (Throwable) {
+            $times = [];
         }
 
-        throw new HibernationException(
-            errorCode: 'hibernation.marker_failed',
-            message: "Hibernation marker step [{$step}] failed on Node [{$node->name}].",
-        );
+        return array_map(static fn (string $path): ?int => is_array($times) && is_int($times[$path] ?? null) ? $times[$path] : null, $paths);
     }
 
-    private function connection(Node $node): SshConnection
+    /** @param  array<string, mixed>  $input */
+    private function run(Node $node, string $step, array $input): void
+    {
+        $this->requireAddress($node);
+
+        try {
+            $this->agents->run($node, 'hibernation.marker', $input);
+        } catch (Throwable) {
+            throw new HibernationException(
+                errorCode: 'hibernation.marker_failed',
+                message: "Hibernation marker step [{$step}] failed on Node [{$node->name}].",
+            );
+        }
+    }
+
+    private function requireAddress(Node $node): void
     {
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new HibernationException(
@@ -138,13 +111,5 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
                 message: "Node [{$node->name}] has no WireGuard address.",
             );
         }
-
-        return new SshConnection(
-            host: $node->wireguard_ip,
-            user: $node->user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
     }
 }

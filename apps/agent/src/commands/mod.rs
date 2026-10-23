@@ -14,6 +14,7 @@ pub mod dev_source;
 pub mod environment;
 pub mod firewall;
 pub mod health;
+pub mod hibernation;
 pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
@@ -116,6 +117,11 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_certificate::MetricsCertificate>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),
+        entry::<hibernation::MarkHibernation>(),
+        entry::<hibernation::ReadHibernationTimes>(),
+        entry::<hibernation::InspectCheckout>(),
+        entry::<hibernation::PruneCheckout>(),
+        entry::<hibernation::RestoreDependencies>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),
