@@ -1466,6 +1466,81 @@
         "php.cache_reset_pending",
         "php.cache_protocol_failed"
       ]
+    },
+    {
+      "name": "wireguard.project-hub",
+      "summary": "Install the WireGuard hub configuration and run it, restoring the previous one on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_install_failed",
+        "wireguard.hub_config_invalid",
+        "wireguard.hub_start_failed"
+      ]
+    },
+    {
+      "name": "wireguard.inspect-hub",
+      "summary": "Read whether the hub interface runs and the digests of its configuration and VPN DNS records.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_unreadable"
+      ]
+    },
+    {
+      "name": "wireguard.inspect-peer-dns",
+      "summary": "Read a peer's saved DNS state, its PostUp hooks, and its live orbit resolver settings.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_dns_busy",
+        "wireguard.peer_dns_unreadable"
+      ]
+    },
+    {
+      "name": "wireguard.query-dns",
+      "summary": "Look names up through systemd-resolved without its cache.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.dns_name_invalid"
+      ]
+    },
+    {
+      "name": "wireguard.repair-peer-dns",
+      "summary": "Move a peer's DNS selection to the orbit link with the given routing domains, restoring it on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_dns_busy",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_state_unsupported",
+        "wireguard.peer_dns_candidate_invalid",
+        "wireguard.peer_dns_apply_failed",
+        "wireguard.peer_dns_recovery_failed",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_dns_repair_failed"
+      ]
     }
   ]
 }

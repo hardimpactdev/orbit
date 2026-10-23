@@ -21,6 +21,7 @@ pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
 pub mod os_release;
+pub mod peer_dns;
 pub mod php_runtime;
 pub mod production;
 pub mod production_home;
@@ -35,6 +36,7 @@ pub mod storage_root;
 pub mod tls_check;
 pub mod transfer_source;
 pub mod vite;
+pub mod wireguard;
 
 use crate::command::registry::{entry, Entry};
 use crate::command::{Platform, Privilege};
@@ -164,5 +166,10 @@ pub fn all() -> Vec<Entry> {
         entry::<php_runtime::RemoveRuntime>(),
         entry::<php_runtime::InspectPool>(),
         entry::<php_runtime::RefreshCache>(),
+        entry::<wireguard::ProjectHub>(),
+        entry::<wireguard::InspectHub>(),
+        entry::<peer_dns::InspectPeerDns>(),
+        entry::<peer_dns::QueryDns>(),
+        entry::<peer_dns::RepairPeerDns>(),
     ]
 }
