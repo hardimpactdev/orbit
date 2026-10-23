@@ -937,11 +937,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 configuration: app(VpnConfigurationRepository::class),
                 serverRenderer: app(WireGuardServerConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
-                processes: app(ProcessRunner::class),
+                agents: app(AgentCommandRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-                ssh: app(SshExecutor::class),
-                keys: app(SshKeyProvider::class),
-                knownHosts: app(KnownHostsStore::class),
             ),
         );
         $this->app->alias(NativeGatewayPeerProjectionManager::class, GatewayPeerProjectionManager::class);
@@ -958,9 +955,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             NativeWireGuardPeerDnsRepairer::class,
             static fn (): NativeWireGuardPeerDnsRepairer => new NativeWireGuardPeerDnsRepairer(
                 configuration: app(VpnConfigurationRepository::class),
-                ssh: app(SshExecutor::class),
-                sshKeys: app(SshKeyProvider::class),
-                knownHosts: app(KnownHostsStore::class),
+                agents: app(AgentCommandRunner::class),
             ),
         );
         $this->app->alias(NativeWireGuardPeerDnsRepairer::class, WireGuardPeerDnsRepairer::class);

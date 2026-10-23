@@ -8,17 +8,11 @@ use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
@@ -26,98 +20,53 @@ use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
-it('compares the active interface and exact rendered server and DNS projections', function (): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-    ]);
+it('compares the active interface and the digests of the rendered server and DNS projections', function (): void {
+    $harness = gateway_vpn_inspector();
+    $harness->answer(true, $harness->serverConfig(), $harness->dnsConfig());
 
     try {
-        $state = $inspector->inspect($role);
+        $state = $harness->inspector->inspect($harness->role);
 
-        expect($state->interfaceActive)
-            ->toBeTrue()
-            ->and($state->serverConfigMatches)
-            ->toBeTrue()
-            ->and($state->dnsConfigMatches)
-            ->toBeTrue()
-            ->and($ssh->calls)
-            ->toHaveCount(3)
-            ->and($ssh->calls[0]['command']->arguments)
-            ->toBe([
-                'bash',
-                '-ceu',
-                'if systemctl is-active --quiet wg-quick@orbit; then printf \'1\\n\'; else printf \'0\\n\'; fi',
-            ])
-            ->and($ssh->calls[1]['command']->arguments)
-            ->toContain('/etc/wireguard/orbit.conf')
-            ->and($ssh->calls[2]['command']->arguments)
-            ->toContain('/etc/dnsmasq.d/orbit-records.conf')
-            ->and($ssh->calls[1]['protected'])
+        expect([$state->interfaceActive, $state->serverConfigMatches, $state->dnsConfigMatches])
+            ->toBe([true, true, true])
+            ->and($harness->agents->calls)
+            ->toBe([['node' => 'gateway-vpn-inspector', 'command' => 'wireguard.inspect-hub', 'input' => []]])
+            ->and($harness->serverConfig())
             ->toContain('PrivateKey = SERVER_PRIVATE')
-            ->and($ssh->calls[2]['protected'])
-            ->toStartWith('# Managed by Orbit.')
-            ->and(array_column($ssh->calls, 'connection'))
-            ->each(fn ($connection) => $connection->toEqual(
-                new SshConnection('10.44.0.1', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
-            ));
-
-        foreach ($ssh->calls as $call) {
-            expect(implode(' ', $call['command']->arguments).($call['command']->input ?? ''))
-                ->not
-                ->toContain('SERVER_PRIVATE', 'SERVER_PUBLIC');
-        }
+            ->and($harness->dnsConfig())
+            ->toStartWith('# Managed by Orbit.');
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        $harness->cleanup();
     }
 });
 
 it('inspects the explicitly selected VPN role when a lower fleet assignment exists', function (): void {
-    [$inspector, $ssh, $orbitHome] = gateway_vpn_inspector([
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-    ]);
+    $harness = gateway_vpn_inspector();
+    $harness->answer(true, '', '');
     $selected = Node::query()->create([
         'name' => 'selected-gateway-vpn-inspector',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
-        'public_ssh_port' => 2022,
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.2',
         'wireguard_public_key' => 'SELECTED_PUBLIC',
     ]);
-    $selectedRole = $selected
-        ->roles()
-        ->create([
-            'role' => RoleName::Vpn,
-            'status' => LifecycleStatus::Active,
-        ]);
+    $selectedRole = $selected->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
 
     try {
-        $inspector->inspect($selectedRole);
+        $harness->inspector->inspect($selectedRole);
 
-        expect(array_column($ssh->calls, 'connection'))
-            ->each(fn ($connection) => $connection->toEqual(
-                new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
-            ));
+        expect(array_column($harness->agents->calls, 'node'))->toBe(['selected-gateway-vpn-inspector']);
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        $harness->cleanup();
     }
 });
 
 it('renders VPN peers in stable persisted order', function (): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-    ]);
+    $harness = gateway_vpn_inspector();
     $firstPeer = Node::query()->create([
         'name' => 'peer-z',
         'status' => LifecycleStatus::Active,
@@ -136,149 +85,70 @@ it('renders VPN peers in stable persisted order', function (): void {
         'wireguard_ip' => '10.44.0.8',
         'wireguard_public_key' => 'PEER_A_PUBLIC',
     ]);
+    $harness->answer(true, implode(PHP_EOL, [
+        '[Interface]',
+        'Address = 10.44.0.1/24',
+        'ListenPort = 51820',
+        'PrivateKey = SERVER_PRIVATE',
+        '',
+        '[Peer]',
+        "# {$firstPeer->name}",
+        'PublicKey = PEER_Z_PUBLIC',
+        'AllowedIPs = 10.44.0.9/32',
+        '',
+        '[Peer]',
+        "# {$secondPeer->name}",
+        'PublicKey = PEER_A_PUBLIC',
+        'AllowedIPs = 10.44.0.8/32',
+        '',
+    ]), $harness->dnsConfig());
 
     try {
         DB::statement('PRAGMA reverse_unordered_selects = ON');
-        $inspector->inspect($role);
 
-        expect($ssh->calls[1]['protected'])
-            ->toBe(implode(PHP_EOL, [
-                '[Interface]',
-                'Address = 10.44.0.1/24',
-                'ListenPort = 51820',
-                'PrivateKey = SERVER_PRIVATE',
-                '',
-                '[Peer]',
-                "# {$firstPeer->name}",
-                'PublicKey = PEER_Z_PUBLIC',
-                'AllowedIPs = 10.44.0.9/32',
-                '',
-                '[Peer]',
-                "# {$secondPeer->name}",
-                'PublicKey = PEER_A_PUBLIC',
-                'AllowedIPs = 10.44.0.8/32',
-                '',
-            ]));
+        expect($harness->inspector->inspect($harness->role)->serverConfigMatches)->toBeTrue();
     } finally {
         DB::statement('PRAGMA reverse_unordered_selects = OFF');
-        new Filesystem()->deleteDirectory($orbitHome);
+        $harness->cleanup();
     }
 });
 
-it('returns independent bounded mismatch observations', function (
-    array $outputs,
-    array $expected,
-): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector(array_map(
-        gateway_vpn_result(...),
-        $outputs,
-    ));
+it('returns independent mismatch observations, a missing file included', function (bool $active, ?string $server, ?string $dns, array $expected): void {
+    $harness = gateway_vpn_inspector();
+    $harness->answer($active, $server ?? $harness->serverConfig(), $dns ?? $harness->dnsConfig(), missing: $server === 'missing' ? 'config_sha256' : null);
 
     try {
-        $state = $inspector->inspect($role);
+        $state = $harness->inspector->inspect($harness->role);
 
-        expect([
-            $state->interfaceActive,
-            $state->serverConfigMatches,
-            $state->dnsConfigMatches,
-        ])->toBe($expected);
+        expect([$state->interfaceActive, $state->serverConfigMatches, $state->dnsConfigMatches])->toBe($expected);
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        $harness->cleanup();
     }
 })->with([
-    'inactive interface' => [
-        ["0\n", "1\n", "1\n"],
-        [false, true, true],
-    ],
-    'server mismatch' => [
-        ["1\n", "0\n", "1\n"],
-        [true, false, true],
-    ],
-    'DNS mismatch' => [
-        ["1\n", "1\n", "0\n"],
-        [true, true, false],
-    ],
+    'inactive interface' => [false, null, null, [false, true, true]],
+    'server mismatch' => [true, 'other', null, [true, false, true]],
+    'DNS mismatch' => [true, null, "other\n", [true, true, false]],
+    'missing server file' => [true, 'missing', null, [true, false, true]],
 ]);
 
-it('probes for the compared file before running cmp so an absent projection is drift', function (): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("0\n"),
-        gateway_vpn_result("1\n"),
-    ]);
+it('fails closed for a refusal, a lost result, and malformed output', function (string $case): void {
+    $harness = gateway_vpn_inspector();
+    match ($case) {
+        'refusal' => $harness->agents->refuse('wireguard.inspect-hub', 'wireguard.hub_unreadable'),
+        'transport' => $harness->agents->answer('wireguard.inspect-hub', static fn (): array => throw new AgentRunnerFailure('wireguard.inspect-hub', AgentRunnerFailure::Transport, 'secret')),
+        'malformed active' => $harness->agents->answer('wireguard.inspect-hub', ['active' => 'yes', 'config_sha256' => null, 'dns_records_sha256' => null]),
+        'missing digest' => $harness->agents->answer('wireguard.inspect-hub', ['active' => true, 'config_sha256' => null]),
+        'malformed digest' => $harness->agents->answer('wireguard.inspect-hub', ['active' => true, 'config_sha256' => 7, 'dns_records_sha256' => null]),
+    };
 
     try {
-        $inspector->inspect($role);
-        $command = $ssh->calls[2]['command'];
-
-        expect($command->arguments[0])
-            ->toBe('bash')
-            ->and($command->arguments[1])
-            ->toBe('-ceu')
-            ->and($command->arguments[2])
-            ->toContain('if ! sudo test -f "$1"; then')
-            ->and(mb_strpos(haystack: $command->arguments[2], needle: 'sudo test -f "$1"'))
-            ->toBeLessThan(mb_strpos(haystack: $command->arguments[2], needle: 'sudo cmp -s -- "$1" -'));
+        expect(fn () => $harness->inspector->inspect($harness->role))->toThrow(DoctorInspectionException::class, '');
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        $harness->cleanup();
     }
-});
+})->with(['refusal', 'transport', 'malformed active', 'missing digest', 'malformed digest']);
 
-it('yields a bounded mismatch rather than an error when the compared file does not exist', function (): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("0\n"),
-        gateway_vpn_result("1\n"),
-    ]);
-
-    try {
-        $inspector->inspect($role);
-        $script = $ssh->calls[2]['command']->arguments[2];
-        $path = $ssh->calls[2]['command']->arguments[4];
-        $expected = $ssh->calls[2]['protected'];
-
-        expect($path)
-            ->toBe('/etc/dnsmasq.d/orbit-records.conf')
-            ->and(gateway_vpn_compare_script($script, $path, $expected, present: null))
-            ->toBe([0, "0\n"])
-            ->and(gateway_vpn_compare_script($script, $path, $expected, present: $expected))
-            ->toBe([0, "1\n"])
-            ->and(gateway_vpn_compare_script($script, $path, $expected, present: "[Unit]\n"))
-            ->toBe([0, "0\n"]);
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('fails closed for command failure timeout truncation malformed output and transport errors', function (
-    array $results,
-    bool $throws = false,
-): void {
-    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector($results);
-    $ssh->throws = $throws;
-
-    try {
-        expect(fn () => $inspector->inspect($role))->toThrow(DoctorInspectionException::class, '');
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-})->with([
-    'command failure' => [[new CommandResult(1, 'secret-output', 'secret-error', 1, false)]],
-    'timeout' => [[new CommandResult(124, '', 'timeout secret', 30_000, false)]],
-    'truncation' => [[new CommandResult(0, "1\n", '', 1, true)]],
-    'malformed output' => [[gateway_vpn_result("1\nsecret-config\n")]],
-    'unreadable private DNS projection' => [[
-        gateway_vpn_result("1\n"),
-        gateway_vpn_result("1\n"),
-        new CommandResult(2, '', 'cmp: secret path: Permission denied', 1, false),
-    ]],
-    'transport error' => [[], true],
-]);
-
-/** @return array{NativeGatewayVpnStateInspector, GatewayVpnInspectorSsh, string, NodeRole} */
-function gateway_vpn_inspector(array $results): array
+function gateway_vpn_inspector(): object
 {
     $orbitHome = sys_get_temp_dir().'/orbit-doctor-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -290,119 +160,55 @@ function gateway_vpn_inspector(array $results): array
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.1',
-        'public_ssh_port' => 2022,
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.1',
         'wireguard_public_key' => 'SERVER_PUBLIC',
     ]);
-    $role = $gateway
-        ->roles()
-        ->create([
-            'role' => RoleName::Vpn,
-            'status' => LifecycleStatus::Active,
-        ]);
+    $role = $gateway->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     $settings = new VpnSettings(app(SettingRepository::class));
     $settings->configure('10.44.0.0/24');
-    $ssh = new GatewayVpnInspectorSsh($results);
-    $inspector = new NativeGatewayVpnStateInspector(
-        $ssh,
-        new GatewayVpnInspectorKeys,
-        new GatewayVpnInspectorKnownHosts,
-        new VpnConfigurationRepository($settings, $orbitHome),
-        new WireGuardServerConfigRenderer,
-        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)),
-        new CommandDeadline,
-    );
+    $configuration = new VpnConfigurationRepository($settings, $orbitHome);
+    $dns = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class));
+    $agents = new FakeAgentCommandRunner;
+    $inspector = new NativeGatewayVpnStateInspector($agents, $configuration, new WireGuardServerConfigRenderer, $dns, new CommandDeadline);
 
-    return [$inspector, $ssh, $orbitHome, $role];
-}
-
-function gateway_vpn_result(string $stdout): CommandResult
-{
-    return new CommandResult(0, $stdout, '', 1, false);
-}
-
-/**
- * Run the rendered compare script with a transparent `sudo` shim against a real
- * file that is absent, identical, or different.
- *
- * @return array{int, string}
- */
-function gateway_vpn_compare_script(string $script, string $path, string $expected, ?string $present): array
-{
-    $root = sys_get_temp_dir().'/orbit-doctor-compare-'.Str::uuid();
-    $target = $root.$path;
-    mkdir(directory: $root.'/bin', permissions: 0o700, recursive: true);
-    mkdir(directory: dirname($target), permissions: 0o700, recursive: true);
-
-    if ($present !== null) {
-        file_put_contents(filename: $target, data: $present);
-    }
-
-    file_put_contents(filename: $root.'/bin/sudo', data: "#!/usr/bin/env bash\nexec \"\$@\"\n");
-    chmod($root.'/bin/sudo', permissions: 0o755);
-
-    try {
-        $process = new Process(['bash', '-ceu', $script, '--', $target], $root, [
-            'PATH' => $root.'/bin:'.getenv('PATH'),
-        ]);
-        $process->setInput($expected);
-        $process->run();
-
-        return [$process->getExitCode() ?? 1, $process->getOutput()];
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-}
-
-final class GatewayVpnInspectorSsh implements SshExecutor
-{
-    /** @var list<array{connection: SshConnection, command: RemoteCommand, protected: string}> */
-    public array $calls = [];
-
-    public bool $throws = false;
-
-    /** @param list<CommandResult> $results */
-    public function __construct(
-        private array $results,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    return new class($inspector, $agents, $role, $orbitHome, $configuration, $dns)
     {
-        $protected = '';
-        if ($command->protectedInput !== null) {
-            $contents = stream_get_contents($command->protectedInput->stream());
-            $protected = is_string($contents) ? $contents : '';
-        }
-        $this->calls[] = ['connection' => $connection, 'command' => $command, 'protected' => $protected];
+        public function __construct(
+            public readonly NativeGatewayVpnStateInspector $inspector,
+            public readonly FakeAgentCommandRunner $agents,
+            public readonly NodeRole $role,
+            private readonly string $orbitHome,
+            private readonly VpnConfigurationRepository $configuration,
+            private readonly DevelopmentDnsConfigRenderer $dns,
+        ) {}
 
-        if ($this->throws) {
-            throw new RuntimeException('secret transport detail');
+        public function serverConfig(): string
+        {
+            return new WireGuardServerConfigRenderer()->render(
+                $this->configuration->forPeer($this->role->node),
+                Node::query()->whereNotNull('wireguard_public_key')->get(),
+            );
         }
 
-        return array_shift($this->results) ?? throw new RuntimeException('Unexpected VPN inspector call.');
-    }
-}
+        public function dnsConfig(): string
+        {
+            return $this->dns->render();
+        }
 
-final readonly class GatewayVpnInspectorKeys implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/key';
-    }
+        /** The agent reports the digests of these file contents; `missing` reports that file absent. */
+        public function answer(bool $active, string $server, string $dns, ?string $missing = null): void
+        {
+            $state = ['active' => $active, 'config_sha256' => hash('sha256', $server), 'dns_records_sha256' => hash('sha256', $dns)];
+            if ($missing !== null) {
+                $state[$missing] = null;
+            }
+            $this->agents->answer('wireguard.inspect-hub', $state);
+        }
 
-    public function publicKey(): string
-    {
-        return 'public';
-    }
-}
-
-final readonly class GatewayVpnInspectorKnownHosts implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/known';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
+        public function cleanup(): void
+        {
+            new Filesystem()->deleteDirectory($this->orbitHome);
+        }
+    };
 }

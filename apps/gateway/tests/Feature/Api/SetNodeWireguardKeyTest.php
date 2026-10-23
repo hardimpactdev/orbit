@@ -10,11 +10,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -26,6 +24,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
     beforeEach(function (): void {
@@ -55,34 +54,27 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
         $settings->configure('10.44.0.0/24');
         $this->configuration = new VpnConfigurationRepository($settings, $this->orbitHome);
         app()->instance(VpnConfigurationRepository::class, $this->configuration);
-        $this->processes = new class($this->orbitHome) implements ProcessRunner
+        $this->processes = new class
         {
             public int $calls = 0;
 
             public bool $fail = false;
 
             public string $live = '';
-
-            public function __construct(private readonly string $home) {}
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls++;
-
-                if ($this->fail) {
-                    return new CommandResult(1, 'private remote output', 'private remote error', 1, false);
-                }
-
-                if ($invocation->arguments === ['sudo', 'mv', '-f', '--', '/etc/wireguard/orbit-candidate.conf', '/etc/wireguard/orbit.conf']) {
-                    $this->live = (string) file_get_contents($this->home.'/generated/wireguard/orbit.conf');
-                }
-
-                return new CommandResult(0, '', '', 1, false);
-            }
         };
+        $hub = $this->processes;
+        $agents = new FakeAgentCommandRunner()->answer('wireguard.project-hub', static function (array $input) use ($hub): array {
+            $hub->calls++;
+            if ($hub->fail) {
+                throw new AgentCommandRefused('wireguard.project-hub', 'wireguard.hub_install_failed', 'private remote error');
+            }
+            $hub->live = $input['config'];
+
+            return [];
+        });
         $this->projection = new NativeGatewayPeerProjectionManager(
             $this->configuration, new WireGuardServerConfigRenderer, new ProtectedFileWriter,
-            $this->processes, $this->orbitHome,
+            $agents, $this->orbitHome,
         );
         app()->instance(GatewayPeerProjectionManager::class, $this->projection);
         $this->projection->converge($this->node);

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
-/** Shared resolver inspection, split-DNS preflight, and uplink migration state. */
+/**
+ * The split-DNS preflight and uplink migration state of peer convergence, which runs over the bootstrap SSH path
+ * before the tunnel exists. The agent's `wireguard.repair-peer-dns` keeps the same uplink snapshot format.
+ */
 final class PeerDnsProgram
 {
     /** @param list<string> $domains */
@@ -73,31 +76,6 @@ final class PeerDnsProgram
                     resolvectl "$setting" "$link" "${values[@]}" || return 1
                 done
             }
-
-            if [ "${1:-}" = inspect ]; then
-                set -o pipefail
-                exec 9>> /run/lock/orbit-wireguard-peer.lock
-                flock -s -w 5 9 || exit 41
-                state=
-                hooks=
-                if [ -f /etc/wireguard/orbit.dns-link ]; then
-                    state=$(cat -- /etc/wireguard/orbit.dns-link)
-                fi
-                if [ -f /etc/wireguard/orbit.conf ]; then
-                    hooks=$(sed -n '/^PostUp = resolvectl/p' /etc/wireguard/orbit.conf)
-                fi
-                dns=$(resolvectl dns orbit)
-                domains=$(resolvectl domain orbit)
-                default_route=$(resolvectl default-route orbit)
-                uplink=no
-                previous_server=$(printf '%s\n' "$state" | sed -n '2p')
-                if peer_dns_has_uplink "$2" "$previous_server"; then uplink=yes; fi
-                for value in "$state" "$hooks" "$dns" "$domains" "$default_route" "$uplink"; do
-                    printf '%s' "$value" | base64 --wrap=0
-                    printf '\n'
-                done
-                exit 0
-            fi
             BASH;
 
         return $domains === [] ? $source : $source.PHP_EOL.'dns_domains=('.implode(' ', array_map(escapeshellarg(...), $domains)).')'.PHP_EOL;

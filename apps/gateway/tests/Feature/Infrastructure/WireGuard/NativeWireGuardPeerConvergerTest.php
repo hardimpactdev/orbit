@@ -13,13 +13,10 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
@@ -27,32 +24,31 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process as SymfonyProcess;
-use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\HostBinary;
 use Tests\Support\TestToolchain;
 
 it('rejects invalid stored DNS names before generating keys or projecting the hub', function (bool $recoverable): void {
-    $processes = new AppDevFakeProcessRunner;
+    $agents = wireguard_hub_agents();
     $ssh = new AppDevFakeSshExecutor;
-    [$converger, $peer, $connection, $home] = wireguard_peer_harness($processes, $ssh);
+    [$converger, $peer, $connection, $home] = wireguard_peer_harness($agents, $ssh);
     Node::query()->whereKey($peer->id)->toBase()->update(['tld' => 'bad;name']);
     $peer->refresh();
     try {
         expect(fn () => $recoverable
             ? $converger->convergeRecoverably($peer, $connection, static function (): void {})
             : $converger->converge($peer, $connection))->toThrow(NodeProvisioningException::class);
-        expect($ssh->commands)->toBe([])->and($processes->invocations)->toBe([]);
+        expect($ssh->commands)->toBe([])->and($agents->calls)->toBe([]);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
 })->with([false, true]);
 
-it('validates a candidate config under /etc/wireguard before replacing the live server config', function (): void {
+it('projects the hub through the agent and validates the peer candidate under /etc/wireguard', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
     file_put_contents(
@@ -85,18 +81,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             dnsServer: '10.44.0.53',
         );
 
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $calls = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls[] = $invocation;
-
-                return new CommandResult(0, '', '', 2, false);
-            }
-        };
+        $agents = wireguard_hub_agents();
         $ssh = new class implements SshExecutor
         {
             /** @var list<RemoteCommand> */
@@ -115,7 +100,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 configuration: new VpnConfigurationRepository($settings, $orbitHome),
                 serverRenderer: new WireGuardServerConfigRenderer,
                 files: new ProtectedFileWriter,
-                processes: $processes,
+                agents: $agents,
                 orbitHome: $orbitHome,
             ),
             ssh: $ssh,
@@ -135,52 +120,12 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
 
         expect($peer->refresh()->wireguard_public_key)
             ->toBe(str_repeat(string: 'A', times: 43).'=')
-            ->and($processes->calls)
-            ->toHaveCount(5)
-            ->and($processes->calls[0]->arguments)
-            ->toBe([
-                'sudo',
-                'install',
-                '-D',
-                '-o',
-                'root',
-                '-g',
-                'root',
-                '-m',
-                '0600',
-                '--',
-                $orbitHome.'/generated/wireguard/orbit.conf',
-                '/etc/wireguard/orbit-candidate.conf',
-            ])
-            ->and($processes->calls[1]->arguments)
-            ->toBe([
-                'sudo',
-                'wg-quick',
-                'strip',
-                '/etc/wireguard/orbit-candidate.conf',
-            ])
-            ->and($processes->calls[2]->arguments)
-            ->toBe(['sudo', 'bash', '-seu'])
-            ->and($processes->calls[2]->input)
-            ->toContain('cp --preserve=mode,ownership -- "$live" "$backup"')
-            ->and($processes->calls[3]->arguments)
-            ->toBe([
-                'sudo',
-                'mv',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-                '/etc/wireguard/orbit.conf',
-            ])
-            ->and($processes->calls[4]->arguments)
-            ->toBe(['sudo', 'bash', '-seu'])
-            ->and($processes->calls[4]->input)
-            ->toContain(
-                'wg syncconf orbit "$runtime_config"',
-                'systemctl start wg-quick@orbit',
-                'mv -fT -- "$backup" "$live"',
-                'sync_live || systemctl restart wg-quick@orbit || true',
-            )
+            ->and($agents->commands())
+            ->toBe(['wireguard.project-hub'])
+            ->and($agents->calls[0]['node'])
+            ->toBe('gateway')
+            ->and($agents->calls[0]['input']['config'])
+            ->toBe(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'))
             ->and($ssh->commands)
             ->toHaveCount(2)
             ->and(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'))
@@ -242,7 +187,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
     }
 });
 
-it('does not install hub credentials on the gateway host when peer converge runs after a role split', function (): void {
+it('projects hub credentials onto the vpn Node when peer converge runs after a role split', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-split-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
     $hubPrivateKey = str_repeat(string: 'S', times: 43).'=';
@@ -287,35 +232,12 @@ it('does not install hub credentials on the gateway host when peer converge runs
             dnsServer: '10.44.0.1',
         );
 
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $calls = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls[] = $invocation;
-
-                return new CommandResult(0, '', '', 2, false);
-            }
-        };
+        $agents = wireguard_hub_agents();
         $peerSsh = new class implements SshExecutor
         {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
                 return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
-            }
-        };
-        $hubSsh = new class implements SshExecutor
-        {
-            /** @var list<string> */
-            public array $hosts = [];
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->hosts[] = $connection->host;
-
-                return new CommandResult(0, '', '', 1, false);
             }
         };
         $converger = new NativeWireGuardPeerConverger(
@@ -324,30 +246,8 @@ it('does not install hub credentials on the gateway host when peer converge runs
                 configuration: new VpnConfigurationRepository($settings, $orbitHome),
                 serverRenderer: new WireGuardServerConfigRenderer,
                 files: new ProtectedFileWriter,
-                processes: $processes,
+                agents: $agents,
                 orbitHome: $orbitHome,
-                ssh: $hubSsh,
-                keys: new class implements SshKeyProvider
-                {
-                    public function privateKeyPath(): string
-                    {
-                        return '/tmp/orbit-hub.key';
-                    }
-
-                    public function publicKey(): string
-                    {
-                        return 'ssh-ed25519 hub';
-                    }
-                },
-                knownHosts: new class implements KnownHostsStore
-                {
-                    public function path(): string
-                    {
-                        return '/tmp/orbit-hub-known-hosts';
-                    }
-
-                    public function put(string $host, int $port, HostKey $key): void {}
-                },
             ),
             ssh: $peerSsh,
         );
@@ -363,10 +263,8 @@ it('does not install hub credentials on the gateway host when peer converge runs
             ),
         );
 
-        expect($processes->calls)
-            ->toBe([])
-            ->and($hubSsh->hosts)
-            ->toBe(['10.44.0.1'])
+        expect(array_column($agents->calls, 'node'))
+            ->toBe(['vpn'])
             ->and(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'))
             ->toContain(
                 'PrivateKey = '.$hubPrivateKey,
@@ -379,7 +277,7 @@ it('does not install hub credentials on the gateway host when peer converge runs
     }
 });
 
-it('does not replace or restart the live service when candidate validation fails', function (): void {
+it('does not configure the peer when the hub refuses its configuration', function (string $refusal, string $step, string $errorCode): void {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
     file_put_contents(
@@ -411,29 +309,7 @@ it('does not replace or restart the live service when candidate validation fails
             dnsServer: '10.44.0.53',
         );
 
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $calls = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls[] = $invocation;
-
-                if (
-                    $invocation->arguments === [
-                        'sudo',
-                        'wg-quick',
-                        'strip',
-                        '/etc/wireguard/orbit-candidate.conf',
-                    ]
-                ) {
-                    return new CommandResult(1, '', 'Permission denied', 2, false);
-                }
-
-                return new CommandResult(0, '', '', 2, false);
-            }
-        };
+        $agents = new FakeAgentCommandRunner()->refuse('wireguard.project-hub', $refusal);
         $ssh = new class implements SshExecutor
         {
             /** @var list<RemoteCommand> */
@@ -452,7 +328,7 @@ it('does not replace or restart the live service when candidate validation fails
                 configuration: new VpnConfigurationRepository($settings, $orbitHome),
                 serverRenderer: new WireGuardServerConfigRenderer,
                 files: new ProtectedFileWriter,
-                processes: $processes,
+                agents: $agents,
                 orbitHome: $orbitHome,
             ),
             ssh: $ssh,
@@ -465,32 +341,15 @@ it('does not replace or restart the live service when candidate validation fails
             identityFile: '/tmp/key',
             knownHostsFile: '/tmp/known_hosts',
         )))
-            ->toThrow(function (NodeProvisioningException $exception): void {
+            ->toThrow(function (NodeProvisioningException $exception) use ($step, $errorCode): void {
                 expect($exception->step)
-                    ->toBe('wireguard-server-validate')
+                    ->toBe($step)
                     ->and($exception->errorCode)
-                    ->toBe('vpn.server_config_invalid');
+                    ->toBe($errorCode);
             });
 
-        expect($processes->calls)
-            ->toHaveCount(3)
-            ->and($processes->calls[0]->arguments[11])
-            ->toBe('/etc/wireguard/orbit-candidate.conf')
-            ->and($processes->calls[1]->arguments)
-            ->toBe([
-                'sudo',
-                'wg-quick',
-                'strip',
-                '/etc/wireguard/orbit-candidate.conf',
-            ])
-            ->and($processes->calls[2]->arguments)
-            ->toBe([
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-            ])
+        expect($agents->commands())
+            ->toBe(['wireguard.project-hub'])
             ->and($ssh->commands)
             ->toHaveCount(1)
             ->and($peer->refresh()->wireguard_public_key)
@@ -498,227 +357,14 @@ it('does not replace or restart the live service when candidate validation fails
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
-});
-
-it('attempts candidate cleanup and preserves the original failure when atomic replace fails', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
-    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
-    file_put_contents(
-        filename: $orbitHome.'/wireguard/private.key',
-        data: str_repeat(string: 'S', times: 43).'=',
-    );
-    file_put_contents(
-        filename: $orbitHome.'/wireguard/public.key',
-        data: str_repeat(string: 'P', times: 43).'=',
-    );
-
-    try {
-        $gateway = Node::query()->create([
-            'name' => 'gateway',
-            'public_ssh_host' => '85.9.218.89',
-            'wireguard_ip' => '10.44.0.1',
-            'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
-        ]);
-        $gateway->roles()->create(['role' => RoleName::Vpn]);
-        $peer = Node::query()->create([
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'wireguard_ip' => '10.44.0.2',
-        ]);
-        $settings = new VpnSettings(app(SettingRepository::class));
-        $settings->configure(
-            subnet: '10.44.0.0/24',
-            endpoint: '10.0.0.2:51820',
-            dnsServer: '10.44.0.53',
-        );
-
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $calls = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls[] = $invocation;
-
-                if (
-                    $invocation->arguments === [
-                        'sudo',
-                        'mv',
-                        '-f',
-                        '--',
-                        '/etc/wireguard/orbit-candidate.conf',
-                        '/etc/wireguard/orbit.conf',
-                    ]
-                ) {
-                    return new CommandResult(1, '', 'Device or resource busy', 2, false);
-                }
-
-                if (
-                    $invocation->arguments === [
-                        'sudo',
-                        'rm',
-                        '-f',
-                        '--',
-                        '/etc/wireguard/orbit-candidate.conf',
-                        '/etc/wireguard/.orbit.conf.rollback',
-                    ]
-                ) {
-                    return new CommandResult(1, '', 'Permission denied', 2, false);
-                }
-
-                return new CommandResult(0, '', '', 2, false);
-            }
-        };
-        $ssh = new class implements SshExecutor
-        {
-            /** @var list<RemoteCommand> */
-            public array $commands = [];
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->commands[] = $command;
-
-                return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
-            }
-        };
-        $converger = new NativeWireGuardPeerConverger(
-            configuration: new VpnConfigurationRepository($settings, $orbitHome),
-            gatewayPeers: new NativeGatewayPeerProjectionManager(
-                configuration: new VpnConfigurationRepository($settings, $orbitHome),
-                serverRenderer: new WireGuardServerConfigRenderer,
-                files: new ProtectedFileWriter,
-                processes: $processes,
-                orbitHome: $orbitHome,
-            ),
-            ssh: $ssh,
-        );
-
-        expect(fn () => $converger->converge($peer, new SshConnection(
-            host: '94.237.40.75',
-            user: 'orbit',
-            port: 22,
-            identityFile: '/tmp/key',
-            knownHostsFile: '/tmp/known_hosts',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('wireguard-server-install')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.server_config_install_failed')
-                    ->and($exception->result?->stderr)
-                    ->toBe('Device or resource busy');
-            });
-
-        expect($processes->calls)
-            ->toHaveCount(5)
-            ->and($processes->calls[1]->arguments)
-            ->toBe([
-                'sudo',
-                'wg-quick',
-                'strip',
-                '/etc/wireguard/orbit-candidate.conf',
-            ])
-            ->and($processes->calls[2]->arguments)
-            ->toBe(['sudo', 'bash', '-seu'])
-            ->and($processes->calls[3]->arguments)
-            ->toBe([
-                'sudo',
-                'mv',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-                '/etc/wireguard/orbit.conf',
-            ])
-            ->and($processes->calls[4]->arguments)
-            ->toBe([
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-                '/etc/wireguard/.orbit.conf.rollback',
-            ])
-            ->and($ssh->commands)
-            ->toHaveCount(1)
-            ->and($peer->refresh()->wireguard_public_key)
-            ->toBe(str_repeat(string: 'A', times: 43).'=');
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('restores and restarts the previous server config when peer publication cannot activate it', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        /** @var list<ProcessInvocation> */
-        public array $calls = [];
-
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $this->calls[] = $invocation;
-
-            if (
-                $invocation->arguments === ['sudo', 'bash', '-seu']
-                && str_contains($invocation->input ?? '', 'wg syncconf orbit "$runtime_config"')
-            ) {
-                return new CommandResult(1, '', 'new server config failed', 2, false);
-            }
-
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
-    $ssh = new class implements SshExecutor
-    {
-        /** @var list<RemoteCommand> */
-        public array $commands = [];
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->commands[] = $command;
-
-            return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
-        }
-    };
-    [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness($processes, $ssh);
-
-    try {
-        expect(fn () => $converger->converge($peer, $connection))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('wireguard-server-restart')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.server_start_failed')
-                    ->and($exception->result?->stderr)
-                    ->toBe('new server config failed');
-            });
-        $scripts = Collection::make($processes->calls)
-            ->filter(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'bash', '-seu'])
-            ->pluck('input')
-            ->filter(static fn (mixed $input): bool => is_string($input))
-            ->implode("\n");
-
-        expect($scripts)
-            ->toContain(
-                'cp --preserve=mode,ownership -- "$live" "$backup"',
-                'mv -fT -- "$backup" "$live"',
-                'sync_live || systemctl restart wg-quick@orbit || true',
-            )
-            ->and($ssh->commands)
-            ->toHaveCount(1);
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
+})->with([
+    'invalid' => ['wireguard.hub_config_invalid', 'wireguard-server-validate', 'vpn.server_config_invalid'],
+    'install' => ['wireguard.hub_install_failed', 'wireguard-server-install', 'vpn.server_config_install_failed'],
+    'start' => ['wireguard.hub_start_failed', 'wireguard-server-restart', 'vpn.server_start_failed'],
+]);
 
 it('restores and restarts the previous peer config when remote activation fails', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         /** @var list<RemoteCommand> */
@@ -737,7 +383,7 @@ it('restores and restarts the previous peer config when remote activation fails'
     };
     $sleeps = [];
     [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness(
-        $processes,
+        $agents,
         $ssh,
         static function (int $microseconds) use (&$sleeps): int {
             $sleeps[] = $microseconds;
@@ -827,18 +473,7 @@ it('rejects a missing or mismatched recoverable key before persisted, gateway, o
     CommandResult $keyResult,
     string $errorCode,
 ): void {
-    $processes = new class implements ProcessRunner
-    {
-        /** @var list<ProcessInvocation> */
-        public array $calls = [];
-
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $this->calls[] = $invocation;
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class($keyResult) implements SshExecutor
     {
         /** @var list<RemoteCommand> */
@@ -855,7 +490,7 @@ it('rejects a missing or mismatched recoverable key before persisted, gateway, o
             return $this->keyResult;
         }
     };
-    [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness($processes, $ssh);
+    [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness($agents, $ssh);
     $peer->update(['wireguard_public_key' => str_repeat(string: 'A', times: 43).'=']);
     $completionCalled = false;
 
@@ -877,7 +512,7 @@ it('rejects a missing or mismatched recoverable key before persisted, gateway, o
             ->toBeFalse()
             ->and($ssh->commands)
             ->toHaveCount(1)
-            ->and($processes->calls)
+            ->and($agents->calls)
             ->toBeEmpty();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -1456,13 +1091,7 @@ it('restores supported persistent and runtime systemd states after recoverable f
 ]);
 
 it('retries a peer install with bounded exponential backoff after ssh transport failures', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         public int $peerInstallAttempts = 0;
@@ -1491,7 +1120,7 @@ it('retries a peer install with bounded exponential backoff after ssh transport 
     };
     $sleeps = [];
     [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness(
-        $processes,
+        $agents,
         $ssh,
         static function (int $microseconds) use (&$sleeps): int {
             $sleeps[] = $microseconds;
@@ -1513,13 +1142,7 @@ it('retries a peer install with bounded exponential backoff after ssh transport 
 });
 
 it('preserves the final transport failure after exhausting peer install retries', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         public int $peerInstallAttempts = 0;
@@ -1546,7 +1169,7 @@ it('preserves the final transport failure after exhausting peer install retries'
     };
     $sleeps = [];
     [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness(
-        $processes,
+        $agents,
         $ssh,
         static function (int $microseconds) use (&$sleeps): int {
             $sleeps[] = $microseconds;
@@ -1574,13 +1197,7 @@ it('preserves the final transport failure after exhausting peer install retries'
 });
 
 it('does not retry a connected peer install with an exit-255 semantic failure', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         public int $peerInstallAttempts = 0;
@@ -1601,7 +1218,7 @@ it('does not retry a connected peer install with an exit-255 semantic failure', 
     };
     $sleeps = [];
     [$converger, $peer, $connection, $orbitHome] = wireguard_peer_harness(
-        $processes,
+        $agents,
         $ssh,
         static function (int $microseconds) use (&$sleeps): int {
             $sleeps[] = $microseconds;
@@ -1622,108 +1239,9 @@ it('does not retry a connected peer install with an exit-255 semantic failure', 
     }
 });
 
-it('uses a wg-quick compatible candidate filename', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
-    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
-    file_put_contents(
-        filename: $orbitHome.'/wireguard/private.key',
-        data: str_repeat(string: 'S', times: 43).'=',
-    );
-    file_put_contents(
-        filename: $orbitHome.'/wireguard/public.key',
-        data: str_repeat(string: 'P', times: 43).'=',
-    );
-
-    try {
-        $gateway = Node::query()->create([
-            'name' => 'gateway',
-            'public_ssh_host' => '85.9.218.89',
-            'wireguard_ip' => '10.44.0.1',
-            'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
-        ]);
-        $gateway->roles()->create(['role' => RoleName::Vpn]);
-        $peer = Node::query()->create([
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'wireguard_ip' => '10.44.0.2',
-        ]);
-        $settings = new VpnSettings(app(SettingRepository::class));
-        $settings->configure(
-            subnet: '10.44.0.0/24',
-            endpoint: '10.0.0.2:51820',
-            dnsServer: '10.44.0.53',
-        );
-
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $calls = [];
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->calls[] = $invocation;
-
-                return new CommandResult(0, '', '', 2, false);
-            }
-        };
-        $ssh = new class implements SshExecutor
-        {
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
-            }
-        };
-        $converger = new NativeWireGuardPeerConverger(
-            configuration: new VpnConfigurationRepository($settings, $orbitHome),
-            gatewayPeers: new NativeGatewayPeerProjectionManager(
-                configuration: new VpnConfigurationRepository($settings, $orbitHome),
-                serverRenderer: new WireGuardServerConfigRenderer,
-                files: new ProtectedFileWriter,
-                processes: $processes,
-                orbitHome: $orbitHome,
-            ),
-            ssh: $ssh,
-        );
-
-        $converger->converge($peer, new SshConnection(
-            host: '94.237.40.75',
-            user: 'orbit',
-            port: 22,
-            identityFile: '/tmp/key',
-            knownHostsFile: '/tmp/known_hosts',
-        ));
-
-        $candidatePath = Collection::make($processes->calls)
-            ->flatMap(static fn (ProcessInvocation $invocation): array => $invocation->arguments)
-            ->first(
-                static fn (string $argument): bool => (
-                    str_starts_with($argument, '/etc/wireguard/')
-                    && $argument !== '/etc/wireguard/orbit.conf'
-                ),
-            );
-
-        expect($candidatePath)
-            ->toBe('/etc/wireguard/orbit-candidate.conf')
-            ->and(basename($candidatePath, suffix: '.conf'))
-            ->toBe('orbit-candidate')
-            ->and(strlen(basename($candidatePath, suffix: '.conf')))
-            ->toBeLessThanOrEqual(15)
-            ->and(preg_match('/^[A-Za-z0-9_=+.-]{1,15}$/', basename($candidatePath, suffix: '.conf')))
-            ->toBe(1);
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
 /** @return array{NativeWireGuardPeerConverger, Node, SshConnection, string} */
 it('finalizes a recoverable publication over the connection the completion registers', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         /** @var list<string> */
@@ -1736,7 +1254,7 @@ it('finalizes a recoverable publication over the connection the completion regis
             return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
         }
     };
-    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($processes, $ssh);
+    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($agents, $ssh);
     $peer->update(['wireguard_public_key' => str_repeat(string: 'A', times: 43).'=']);
     $tunnel = new SshConnection(
         host: '10.44.0.2',
@@ -1758,13 +1276,7 @@ it('finalizes a recoverable publication over the connection the completion regis
 });
 
 it('rolls back a recoverable publication over the registered connection when the completion fails', function (): void {
-    $processes = new class implements ProcessRunner
-    {
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            return new CommandResult(0, '', '', 2, false);
-        }
-    };
+    $agents = wireguard_hub_agents();
     $ssh = new class implements SshExecutor
     {
         /** @var list<string> */
@@ -1777,7 +1289,7 @@ it('rolls back a recoverable publication over the registered connection when the
             return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
         }
     };
-    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($processes, $ssh);
+    [$converger, $peer, $public, $orbitHome] = wireguard_peer_harness($agents, $ssh);
     $peer->update(['wireguard_public_key' => str_repeat(string: 'A', times: 43).'=']);
     $tunnel = new SshConnection(
         host: '10.44.0.2',
@@ -1804,7 +1316,7 @@ it('rolls back a recoverable publication over the registered connection when the
     }
 });
 
-function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Closure $sleep = null): array
+function wireguard_peer_harness(FakeAgentCommandRunner $agents, SshExecutor $ssh, ?Closure $sleep = null): array
 {
     $orbitHome = sys_get_temp_dir().'/orbit-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -1842,7 +1354,7 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Clo
                 configuration: new VpnConfigurationRepository($settings, $orbitHome),
                 serverRenderer: new WireGuardServerConfigRenderer,
                 files: new ProtectedFileWriter,
-                processes: $processes,
+                agents: $agents,
                 orbitHome: $orbitHome,
             ),
             ssh: $ssh,
@@ -1862,7 +1374,7 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?Clo
 
 it('keeps native SSH argv small at the maximum namespace and endpoint length', function (): void {
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, str_repeat('A', 43).'=', '', 0, false)]);
-    [$converger, $peer, $connection, $home] = wireguard_peer_harness(new AppDevFakeProcessRunner, $ssh);
+    [$converger, $peer, $connection, $home] = wireguard_peer_harness(wireguard_hub_agents(), $ssh);
     try {
         $rows = [];
         for ($i = 0; $i < 511; $i++) {
@@ -3146,3 +2658,8 @@ it('requires public DNS before both new and root-to-split peer convergence', fun
     [true, false, '198.51.100.53', '', true],
     [true, true, '198.51.100.53', '', true],
 ]);
+
+function wireguard_hub_agents(): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()->answer('wireguard.project-hub', []);
+}

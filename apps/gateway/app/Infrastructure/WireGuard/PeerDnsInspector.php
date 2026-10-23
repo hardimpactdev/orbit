@@ -4,21 +4,18 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
+/** Compares a peer's saved and live DNS state with the policy, and checks its lookups, through agent reads. */
 final readonly class PeerDnsInspector
 {
     public function __construct(
         private PeerDnsPolicy $policy,
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
         private CommandDeadline $deadline,
     ) {}
 
@@ -27,34 +24,25 @@ final readonly class PeerDnsInspector
     {
         $address = $this->policy->server($node);
         $domains = $this->policy->domains($node);
-        $output = $this->execute($node, new RemoteCommand(
-            ['sudo', 'bash', '-seu', '--', 'inspect', $address],
-            input: PeerDnsProgram::source(),
-            maxOutputBytes: 1_048_576,
-        ));
-        if ($output === null) {
-            throw new \RuntimeException('Peer DNS inspection failed.');
+        $observed = $this->read($node, 'wireguard.inspect-peer-dns', ['server' => $address]);
+        $values = [];
+        foreach (['state', 'hooks', 'dns', 'domains', 'default_route'] as $field) {
+            if (! is_string($observed[$field] ?? null)) {
+                throw new \RuntimeException('Peer DNS inspection returned incomplete state.');
+            }
+            $values[$field] = $observed[$field];
         }
-        $values = explode("\n", rtrim($output, "\n"));
-        if (count($values) !== 6) {
-            throw new \RuntimeException('Peer DNS inspection returned incomplete state.');
-        }
-        $decoded = array_map(static fn (string $value): string|false => base64_decode($value, true), $values);
-        if (in_array(false, $decoded, true)) {
-            throw new \RuntimeException('Peer DNS inspection returned invalid state.');
-        }
-        [$state, $hooks, $dns, $live, $default, $uplink] = $decoded;
-        if (! in_array($uplink, ['yes', 'no'], true)) {
+        if (! is_bool($observed['uplink'] ?? null)) {
             throw new \RuntimeException('Peer DNS inspection returned invalid uplink state.');
         }
-        $liveDomains = explode(' ', $this->setting($live) ?? '');
+        $liveDomains = explode(' ', $this->setting($values['domains']) ?? '');
         sort($liveDomains, SORT_STRING);
         $expectedDomains = array_map(static fn (string $domain): string => '~'.$domain, $domains);
         $hook = 'PostUp = resolvectl dns %i '.$address.'; resolvectl domain %i '.implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $domains));
 
-        return ['policy' => $state === implode("\n", ['orbit', $address, ...$domains])
-            && $this->setting($dns) === $address && $liveDomains === $expectedDomains
-            && $hooks === $hook && $this->setting($default) === 'no', 'uplink' => $uplink === 'yes'];
+        return ['policy' => $values['state'] === implode("\n", ['orbit', $address, ...$domains])
+            && $this->setting($values['dns']) === $address && $liveDomains === $expectedDomains
+            && $values['hooks'] === $hook && $this->setting($values['default_route']) === 'no', 'uplink' => $observed['uplink']];
     }
 
     /** @return array{private: ?string, public: ?string, private_valid: bool, public_valid: bool, valid: bool} */
@@ -65,8 +53,11 @@ final readonly class PeerDnsInspector
         if (! $isPrivate($privateDomain) || $isPrivate($publicDomain)) {
             return ['private' => null, 'public' => null, 'private_valid' => false, 'public_valid' => false, 'valid' => false];
         }
-        $private = $this->read($node, ['resolvectl', 'query', '--cache=no', '--type=A', $privateDomain]);
-        $public = $this->read($node, ['resolvectl', 'query', '--cache=no', '--type=A', $publicDomain]);
+        $answers = $this->read($node, 'wireguard.query-dns', ['names' => [$privateDomain, $publicDomain]])['answers'] ?? null;
+        if (! is_array($answers) || count($answers) !== 2) {
+            throw new \RuntimeException('Peer DNS lookups returned incomplete answers.');
+        }
+        [$private, $public] = array_map(static fn (mixed $answer): ?string => is_string($answer) ? $answer : null, array_values($answers));
         preg_match('/-- link: ([^\s]+)/', $private ?? '', $privateLink);
         preg_match('/-- link: ([^\s]+)/', $public ?? '', $publicLink);
 
@@ -82,23 +73,16 @@ final readonly class PeerDnsInspector
         return str_contains($output, ':') ? trim(explode(':', $output, 2)[1]) : null;
     }
 
-    /** @param non-empty-list<string> $arguments */
-    private function read(Node $node, array $arguments): ?string
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function read(Node $node, string $command, array $input): array
     {
-        return $this->execute($node, new RemoteCommand($arguments));
-    }
-
-    private function execute(Node $node, RemoteCommand $command): ?string
-    {
-        $result = $this->ssh->execute(
-            new SshConnection((string) $node->wireguard_ip, $node->user, 22, $this->keys->privateKeyPath(), $this->knownHosts->path(), commandTimeout: $this->deadline->cap(10.0)),
-            $command,
-        );
-
-        if ($result->exitCode === 255) {
-            throw new \RuntimeException('Peer DNS SSH inspection failed.');
+        try {
+            return $this->agents->run($node, $command, $input, $this->deadline->cap(10.0));
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new \RuntimeException('Peer DNS inspection failed.', previous: $exception);
         }
-
-        return $result->succeeded() && ! $result->truncated ? rtrim($result->stdout, "\r\n") : null;
     }
 }
