@@ -574,6 +574,7 @@ function transfer_api_app_dev(string $name, Cluster $cluster, string $address): 
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'tld' => null,
         'cluster_id' => $cluster->id,
         'public_ssh_host' => "{$name}.example.test",
