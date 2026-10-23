@@ -204,3 +204,98 @@ fn invalid_input_refuses_before_observations_and_unknown_fields_are_rejected() {
         "domain": "app.test", "certificates": "/etc/caddy/certs", "projection": { "kind": "router", "upstreams": [], "script": "anything" }
     })).is_err());
 }
+
+#[test]
+fn batch_urls_inspect_each_application_once_without_changing_files() {
+    let fixture = Fixture::new();
+    let cases = [
+        (
+            "docs",
+            Some("APP_NAME=Docs\nAPP_URL=https://app.test\n"),
+            true,
+        ),
+        ("quoted", Some("APP_URL=\"https://app.test\"\n"), true),
+        ("stale", Some("APP_URL=https://old.test\n"), false),
+        (
+            "twice",
+            Some("APP_URL=https://app.test\nAPP_URL=https://app.test\n"),
+            false,
+        ),
+        ("missing", None, false),
+    ];
+    let mut applications = Vec::new();
+    for (name, env, _) in &cases {
+        let root = fixture.root.join("apps").join(name);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("artisan"), "<?php").unwrap();
+        if let Some(env) = env {
+            fs::write(root.join(".env"), env).unwrap();
+        }
+        applications.push(ApplicationUrl {
+            directory: format!("apps/{name}"),
+            url: "https://app.test".into(),
+        });
+    }
+    // No artisan means no Laravel URL to inspect, including an absent directory or a linked artisan.
+    fs::create_dir_all(fixture.root.join("static")).unwrap();
+    fs::write(fixture.root.join("static/.env"), "APP_URL=other").unwrap();
+    symlink("../apps/docs/artisan", fixture.root.join("static/artisan")).unwrap();
+    for name in ["static", "absent", ""] {
+        applications.push(ApplicationUrl {
+            directory: name.into(),
+            url: "https://app.test".into(),
+        });
+    }
+    let input = ApplicationUrlsInput {
+        checkout: fixture.root.clone(),
+        applications,
+    };
+    for _ in 0..2 {
+        assert_eq!(
+            application_urls(&input).unwrap().matches,
+            vec![true, true, false, false, false, true, true, true]
+        );
+    }
+    for (name, env, _) in cases {
+        assert_eq!(
+            fs::read_to_string(fixture.root.join("apps").join(name).join(".env"))
+                .ok()
+                .as_deref(),
+            env
+        );
+    }
+    fs::write(fixture.root.join("artisan"), "<?php").unwrap();
+    fs::write(fixture.root.join(".env"), "APP_URL=wrong\n").unwrap();
+    assert_eq!(
+        application_urls(&input).unwrap().matches.last(),
+        Some(&false)
+    );
+}
+
+#[test]
+fn batch_urls_refuse_invalid_directories_and_preserve_empty_checks() {
+    let fixture = Fixture::new();
+    for directory in [
+        "/tmp",
+        "../outside",
+        "apps/../outside",
+        "./apps",
+        "apps//docs",
+        "apps\\docs",
+        "apps\0",
+    ] {
+        let input = ApplicationUrlsInput {
+            checkout: fixture.root.clone(),
+            applications: vec![ApplicationUrl {
+                directory: directory.into(),
+                url: "https://app.test".into(),
+            }],
+        };
+        assert_eq!(application_urls(&input), Err(InspectionError::Invalid {}));
+    }
+    let input = ApplicationUrlsInput {
+        checkout: fixture.root.clone(),
+        applications: vec![],
+    };
+    assert!(application_urls(&input).unwrap().matches.is_empty());
+}

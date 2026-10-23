@@ -188,6 +188,64 @@ impl Command for InspectPrivateRoute {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationUrlsInput {
+    checkout: PathBuf,
+    applications: Vec<ApplicationUrl>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplicationUrl {
+    directory: String,
+    url: String,
+}
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ApplicationUrls {
+    matches: Vec<bool>,
+}
+fn application_urls(input: &ApplicationUrlsInput) -> Result<ApplicationUrls, InspectionError> {
+    if !absolute(&input.checkout)
+        || input.applications.iter().any(|app| {
+            let relative = app.directory.is_empty()
+                || app.directory.split('/').all(|part| {
+                    !part.is_empty() && part != "." && part != ".." && !part.contains(['\0', '\\'])
+                });
+            !relative || app.url.is_empty() || app.url.contains(['\n', '\r', '\0'])
+        })
+    {
+        return Err(InspectionError::Invalid {});
+    }
+    Ok(ApplicationUrls {
+        matches: input
+            .applications
+            .iter()
+            .map(|app| {
+                let root = input.checkout.join(&app.directory);
+                !fs::symlink_metadata(root.join("artisan")).is_ok_and(|metadata| metadata.is_file())
+                    || url_matches(&root.join(".env"), &app.url)
+            })
+            .collect(),
+    })
+}
+pub struct InspectApplicationUrls;
+impl Command for InspectApplicationUrls {
+    const NAME: &'static str = "doctor.inspect-application-urls";
+    const SUMMARY: &'static str =
+        "Check Laravel URLs in the application directories served by an Instance's Routes.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = ApplicationUrlsInput;
+    type Output = ApplicationUrls;
+    type Error = InspectionError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
+        application_urls(&input)
+    }
+}
+
 #[cfg(test)]
 #[path = "doctor_route_tests.rs"]
 mod tests;

@@ -1035,6 +1035,19 @@
       ]
     },
     {
+      "name": "doctor.inspect-application-urls",
+      "summary": "Check Laravel URLs in the application directories served by an Instance's Routes.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.projection_invalid"
+      ]
+    },
+    {
       "name": "caddy.remove-certificate",
       "summary": "Remove a certificate directory that Caddy reads.",
       "mutates": true,
