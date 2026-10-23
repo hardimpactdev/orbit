@@ -170,7 +170,7 @@ Environment synchronization and application reload remain separate operations. T
 
 Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
 
-After a successful server activation, Orbit keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
+The agent's `websocket.converge-runtime` builds, checks, and activates a release, and `websocket.remove-runtime` removes it. After a successful server activation, the agent keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
 
 ## Deploy and recover
 

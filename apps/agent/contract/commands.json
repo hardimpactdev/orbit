@@ -85,6 +85,51 @@
       ]
     },
     {
+      "name": "websocket.converge-runtime",
+      "summary": "Install the pinned Reverb release, switch to it, and restart the websocket service.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
+      "name": "websocket.remove-runtime",
+      "summary": "Stop and remove the websocket service, and its releases when asked.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
+      "name": "websocket.runtime-active",
+      "summary": "Say whether the websocket service is active.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "websocket.runtime_invalid",
+        "websocket.runtime_failed",
+        "websocket.runtime_not_listening"
+      ]
+    },
+    {
       "name": "ci-runners.host",
       "summary": "Converge, inspect, or remove the CI role's reserved Incus host resources.",
       "mutates": true,

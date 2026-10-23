@@ -41,6 +41,7 @@ pub mod tls_check;
 pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
+pub mod websocket_runtime;
 pub mod wireguard;
 
 use crate::command::registry::{entry, Entry};
@@ -83,6 +84,9 @@ pub fn all() -> Vec<Entry> {
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),
         entry::<storage_root::PrepareStorageRoot>(),
+        entry::<websocket_runtime::ConvergeRuntime>(),
+        entry::<websocket_runtime::RemoveRuntime>(),
+        entry::<websocket_runtime::RuntimeActive>(),
         entry::<ci_runner::CiRunnerHost>(),
         entry::<horizon_queue::ReadQueue>(),
         entry::<valkey_acl::WriteValkeyAcl>(),

@@ -1031,7 +1031,7 @@ it('checks the remote operating system before every role convergence', function 
         'guard:unknown',
         'ssh:caddy-source',
         'ssh:websocket',
-        'ssh:orbit',
+        'agent:websocket-runtime',
         'guard:unknown',
         'guard:unknown',
         'ssh:ci-runner',
@@ -1235,12 +1235,16 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
     );
     $credentials->shouldReceive('purge');
 
+    $agents = (new FakeAgentCommandRunner)->answer('websocket.converge-runtime', static function () use (&$events): array {
+        $events[] = 'agent:websocket-runtime';
+
+        return ['release' => '/opt/orbit/websocket.releases/release.1'];
+    });
+
     return new WebSocketRoleBaseline(
         runtime: new NativeWebSocketRuntimeLifecycle(
-            baseline_prerequisites($events),
-            baseline_ssh($events),
-            baseline_keys(),
-            baseline_known_hosts(),
+            baseline_prerequisites($events, agents: $agents),
+            $agents,
             baseline_account_resolver(),
         ),
         // The publication step reaches real local certificate issuance and DNS
