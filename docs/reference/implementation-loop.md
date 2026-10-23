@@ -628,7 +628,7 @@ The fixture that snapshots a live WAL shares only its initial database, not the 
 
 The Documents scheduler proves startup and recurring cleanup, explicit pause/resume, dead-worker fencing, and daemon restart in separate cases. Each case owns its database, HTTP server and workers, with real `schedule:work` dispatch and `schedule:run` children. A restart case may prepare earlier deletions through the real cleanup action; the old worker's child dispatch has its own proof.
 
-ACL race fixtures cover ten real walks in five independent pairs. Each pair owns its checkouts and releases both walks at each find/setfacl boundary before waiting for the next boundary. Every pair checks removals, replacements, late-file inheritance and source denial. File reads under the Caddy identity use one process per checkout.
+ACL race fixtures cover five real walks, one per case, because the Node agent runs one walk per managed account at a time. Each case owns its checkout and releases the walk at each find/setfacl boundary. Every case checks removals, replacements, late-file inheritance and source denial. File reads under the Caddy identity use one process per checkout.
 
 Valkey fixtures prepare an immutable ACL seed once through the real remote writer. Each case checks that seed against its records and copies it only at first boot, before executing the production image's entrypoint and server command. Restarts never restore the seed; missing-ACL failure and repair still exercise the real writer. Fixtures acknowledge each boot directly from the attached Docker process and do not persist unrelated Docker logs. Mutable servers and volumes remain private to each case.
 

@@ -249,13 +249,13 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
     'shared Git failed recovery' => [true, true],
 ]);
 
-it('finishes paired walks while setup removes and replaces files under the checkout and the Web root', function (int $run): void {
+it('finishes a walk while setup removes and replaces files under the checkout and the Web root', function (int $run): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
 
-    // Five cases each own two real walks; no pair races another pair's mutable ACL grants.
-    $roots = [development_caddy_access_fixture(), development_caddy_access_fixture()];
+    // Five cases each own one real walk. The agent runs one walk per managed account at a time.
+    $roots = [development_caddy_access_fixture()];
     $processes = [];
 
     try {
@@ -319,7 +319,7 @@ it('finishes paired walks while setup removes and replaces files under the check
         }
 
         expect($failures)->toBe([]);
-        expect($completedWalks)->toBe(2);
+        expect($completedWalks)->toBe(1);
         foreach ($roots as $root) {
             $checkout = "$root/checkout";
             // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
