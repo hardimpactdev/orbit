@@ -158,7 +158,7 @@ Each command declares one privilege per platform. The runner reads it from the c
 | --- | --- | --- |
 | `account` | The managed account | The enrolled account |
 | `owner` | Starts as root through `sudo -n`, and drops to the recorded owner before project code | The enrolled account |
-| `root` | `sudo -n` | Refused with `agent.privilege_unsupported` |
+| `root` | `sudo -n` | Not declared, so the command refuses with `agent.platform_unsupported` |
 
 A read runs in the started process and takes no lock. On Linux, a mutation runs in its own transient service, `orbit-command-<name>-<random>`, with `KillMode=control-group` and `RuntimeMaxSec` set to its bound. Its control group holds every child, so a daemon or `setsid` child stops with the command. The supervised process checks its own executable again. It takes an exclusive `flock` on its target under `/run/lock/orbit-agent`, then on each shared resource in sorted order, then on the update lock when it needs it. Lock files are close-on-exec, so project code never inherits one.
 
@@ -175,7 +175,7 @@ These errors can come from any command:
 | `agent.unknown_command` | The pinned binary has no command with that name |
 | `agent.invalid_input` | The input does not match the command |
 | `agent.identity_mismatch` | The command does not run as its privilege requires |
-| `agent.privilege_unsupported`, `agent.platform_unsupported` | The command does not run on this platform |
+| `agent.platform_unsupported` | The command does not run on this platform |
 | `agent.deadline_exceeded` | The command did not finish before its deadline |
 | `agent.supervisor_failed` | A mutation's service ended without a result |
 
@@ -197,10 +197,10 @@ SSH stays the repair path. When an agent cannot start or answer, `orbit node:con
 A Gateway release is the only step that updates agents. When a command answers `agent.version_mismatch`, the runner:
 
 1. copies the pinned binary from the [delivery](#delivery) to a new private path on the Node, `/var/tmp/orbit-agent-candidate-<random>`, with `install -m 0700 /dev/stdin`;
-2. runs that candidate's own `agent.install`, which waits for the update lock at most 120 seconds or the call's remaining deadline;
+2. runs that candidate's own `agent.install`, which waits up to 120 seconds for the update lock;
 3. sends the command once more, with the deadline that is left.
 
-A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. Any other failed installation records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node.
+The lock wait always leaves 30 seconds of the call's deadline for the swap and the health check. A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. Any other failed installation records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node.
 
 `agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
 

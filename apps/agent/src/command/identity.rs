@@ -30,11 +30,6 @@ pub enum Privilege {
     Root,
 }
 impl Privilege {
-    /// Whether the runner starts the command through `sudo -n` on this platform.
-    pub fn needs_sudo(self, platform: Platform) -> bool {
-        platform == Platform::Linux && matches!(self, Self::Owner | Self::Root)
-    }
-
     /// Whether an effective user ID fits this privilege on this platform.
     pub fn accepts(self, platform: Platform, euid: u32) -> bool {
         match (platform, self) {
@@ -50,7 +45,8 @@ pub fn effective_uid() -> u32 {
 }
 
 /// Makes a child process run as `user`, with that user's groups, before project-controlled code starts. A process
-/// that already runs as `user` keeps its identity; root drops to it; any other identity refuses.
+/// that already runs as `user` keeps its identity; root drops to it; any other identity refuses. It never runs a child
+/// as root.
 pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
     let name =
@@ -69,6 +65,9 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
                 .into_owned(),
         )
     };
+    if uid == 0 {
+        return Err(format!("{user} is root; project code never runs as root"));
+    }
     let euid = effective_uid();
     if euid == uid {
         return Ok(());
@@ -87,22 +86,90 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
         .env("HOME", home)
         .env("USER", user)
         .env("LOGNAME", user);
-    // SAFETY: setgroups is async-signal-safe and runs in the child between fork and exec.
+    // The standard library changes the uid before it runs `pre_exec` closures, so all three changes happen here, in
+    // the order that keeps the right to make the next one.
+    // SAFETY: setgroups, setgid, and setuid are async-signal-safe and run in the child between fork and exec.
     unsafe {
         command.pre_exec(move || {
-            if libc::setgroups(groups.len() as _, groups.as_ptr()) != 0 {
+            if libc::setgroups(groups.len() as _, groups.as_ptr()) != 0
+                || libc::setgid(gid) != 0
+                || libc::setuid(uid) != 0
+            {
                 return Err(std::io::Error::last_os_error());
             }
             Ok(())
         });
     }
-    command.gid(gid).uid(uid);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Runs as root through `drop_tests_as_root_and_keeps_the_target_groups`: drops to `nobody` and reports its identity.
+    #[test]
+    #[ignore = "runs as root from another test"]
+    fn drop_as_root_helper() {
+        let mut command = std::process::Command::new("id");
+        drop_to(&mut command, "nobody").unwrap();
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        print!("ORBIT-ID {}", String::from_utf8_lossy(&output.stdout));
+    }
+
+    #[test]
+    fn drops_from_root_to_the_target_user_and_its_groups() {
+        if !std::process::Command::new("sudo")
+            .args(["-n", "true"])
+            .status()
+            .is_ok_and(|status| status.success())
+        {
+            eprintln!("skipped: this test needs passwordless sudo");
+            return;
+        }
+        let output = std::process::Command::new("sudo")
+            .arg("-n")
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "command::identity::tests::drop_as_root_helper",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let line = stdout
+            .lines()
+            .find(|line| line.contains("ORBIT-ID "))
+            .unwrap();
+        assert!(
+            line.contains("uid=65534(nobody)") && line.contains("gid=65534"),
+            "{line}"
+        );
+        assert!(
+            !line.contains("groups=0") && !line.contains("(root)"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn never_runs_a_child_as_root() {
+        let mut command = std::process::Command::new("id");
+        assert!(drop_to(&mut command, "root")
+            .unwrap_err()
+            .contains("never runs as root"));
+    }
 
     #[test]
     fn linux_root_and_owner_commands_need_root_and_account_commands_refuse_it() {
@@ -120,8 +187,5 @@ mod tests {
         assert!(Privilege::Owner.accepts(Platform::Macos, 501));
         assert!(!Privilege::Account.accepts(Platform::Macos, 0));
         assert!(!Privilege::Root.accepts(Platform::Macos, 0));
-        assert!(!Privilege::Root.needs_sudo(Platform::Macos));
-        assert!(Privilege::Root.needs_sudo(Platform::Linux));
-        assert!(!Privilege::Account.needs_sudo(Platform::Linux));
     }
 }

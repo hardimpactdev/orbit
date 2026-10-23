@@ -512,7 +512,9 @@ describe('self-update agent step', function (): void {
             ->and($this->envelopes[0]['agent_sha256'])->toBe($digest)
             ->and($this->envelopes[0]['input']['sha256'])->toBe($digest)
             ->and(dirname($this->envelopes[0]['input']['candidate']))->toBe($this->machine.'/bin')
-            ->and($this->processes[2][0])->toBe($this->envelopes[0]['input']['candidate']);
+            ->and($this->processes[2][0])->toBe($this->envelopes[0]['input']['candidate'])
+            // The installer takes the self-update lock itself; a held lock would make it wait for this command.
+            ->and($this->lockFreeDuringAgentInstall)->toBe([true]);
     });
 
     it('reports the installer refusal, removes the candidate, and leaves the CLI alone', function (): void {

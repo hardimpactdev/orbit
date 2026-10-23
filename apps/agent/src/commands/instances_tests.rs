@@ -917,6 +917,7 @@ fn fake_php() -> &'static Path {
                 "php9.6",
                 "printf '%s' 'sensitive application error'\nexit 0",
             ),
+            ("php9.5", "exec sleep 30"),
         ] {
             let path = directory.join(name);
             fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -972,6 +973,14 @@ fn laravel_routes_are_read_inside_the_selected_release_and_failures_print_nothin
         InspectLaravelRoutes::run(input(release.clone(), "9.6"), &context()),
         Err(LaravelRoutesError::RoutesUnreadable {})
     );
+    // A release that hangs at boot fails at the deadline, and its process does not outlive the read.
+    let started = Instant::now();
+    let short = Context::new(Platform::Linux, Instant::now() + Duration::from_millis(500));
+    assert_eq!(
+        InspectLaravelRoutes::run(input(release.clone(), "9.5"), &short),
+        Err(LaravelRoutesError::RoutesUnreadable {})
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
     assert_eq!(
         InspectLaravelRoutes::run(input(release, "../../bin/sh"), &context()),
         Err(LaravelRoutesError::RoutesUnreadable {})

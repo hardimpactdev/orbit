@@ -14,6 +14,8 @@ pub const OBSERVER_UNIT: &str = "orbit-agent.service";
 const OBSERVER_UNIT_FILE: &str = "/etc/systemd/system/orbit-agent.service";
 /// An installation waits at most this long for the update lock.
 const UPDATE_WAIT: Duration = Duration::from_secs(120);
+/// The part of the deadline that the lock wait leaves for the copy, the restart, and the health window.
+const INSTALL_RESERVE: Duration = Duration::from_secs(30);
 /// The observer must stay active this long after a restart.
 const HEALTH_WINDOW: Duration = Duration::from_secs(5);
 
@@ -168,7 +170,7 @@ impl Command for Install {
 
     fn run(input: InstallInput, context: &Context) -> Result<InstallOutput, InstallError> {
         let target = binary_path(context.platform);
-        let wait = context.deadline().min(Instant::now() + UPDATE_WAIT);
+        let wait = lock_wait(context.deadline(), Instant::now());
         let observer =
             if context.platform == Platform::Linux && Path::new(OBSERVER_UNIT_FILE).exists() {
                 Observer::Systemd
@@ -185,6 +187,15 @@ impl Command for Install {
         };
         install(&input, &target, lock, wait, observer)
     }
+}
+
+/// When the lock wait ends: at most `UPDATE_WAIT` from now, and early enough to finish the installation by the deadline.
+fn lock_wait(deadline: Instant, now: Instant) -> Instant {
+    deadline
+        .checked_sub(INSTALL_RESERVE)
+        .unwrap_or(now)
+        .max(now)
+        .min(now + UPDATE_WAIT)
 }
 
 /// Checks that the Gateway's hold unit holds the update lock: its name is one the Gateway gives, it is active,
@@ -536,6 +547,20 @@ mod tests {
         assert!(matches!(error, InstallError::UpdateBusy { .. }));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
         assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn the_lock_wait_leaves_time_to_finish_the_installation() {
+        let now = Instant::now();
+        assert_eq!(
+            lock_wait(now + Duration::from_secs(120), now),
+            now + Duration::from_secs(90)
+        );
+        assert_eq!(
+            lock_wait(now + Duration::from_secs(600), now),
+            now + UPDATE_WAIT
+        );
+        assert_eq!(lock_wait(now + Duration::from_secs(10), now), now);
     }
 
     #[test]

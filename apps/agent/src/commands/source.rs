@@ -301,6 +301,11 @@ pub fn clean(checkout: &Path) -> Option<bool> {
         .then(|| trim_end(&output.stdout, b'\n').is_empty())
 }
 
+/// Creates a directory that only its owner can read, such as one that holds a private repository's fetched objects.
+pub fn private_directory(path: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::DirBuilderExt::mode(&mut fs::DirBuilder::new(), 0o700).create(path)
+}
+
 /// Whether a current branch or tag of the origin contains the commit. The origin's refs go into a temporary
 /// repository outside the checkout, and only the fetch sees the Git read environment. `Err` when a step fails.
 pub fn is_published(
@@ -310,7 +315,7 @@ pub fn is_published(
 ) -> Result<bool, &'static str> {
     let scratch =
         std::env::temp_dir().join(format!("orbit-publication-{:016x}", rand::random::<u64>()));
-    fs::create_dir(&scratch).map_err(|_| "create a scratch directory")?;
+    private_directory(&scratch).map_err(|_| "create a scratch directory")?;
     let result = (|| {
         let repository = scratch.join("repository.git");
         let git_dir = join(Path::new("--git-dir="), &repository.display().to_string());
@@ -472,7 +477,7 @@ pub fn repository_identity(origin: &str) -> Option<String> {
     }
     Some(format!(
         "{}/{}",
-        host.to_lowercase(),
+        host.to_ascii_lowercase(),
         path.trim_end_matches('/')
     ))
 }
@@ -510,11 +515,12 @@ fn php_port(port: &str) -> bool {
     value <= 65535 && (!negative || value == 0)
 }
 
-/// Unicode separators (`\p{Z}`) and other characters (`\p{C}`): controls, format characters, and private use.
+/// Unicode separators (`\p{Z}`) and other characters (`\p{C}`), unassigned code points included, as PHP matches them.
 fn separator_or_other(character: char) -> bool {
-    character.is_whitespace()
-        || character.is_control()
-        || matches!(character, '\u{00ad}' | '\u{061c}' | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}' | '\u{fff9}'..='\u{fffb}' | '\u{e000}'..='\u{f8ff}')
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN
+        .get_or_init(|| regex::Regex::new(r"[\p{Z}\p{C}]").unwrap())
+        .is_match(character.encode_utf8(&mut [0; 4]))
 }
 
 /// The systemd unit of a process: the last part of its cgroup path.
@@ -850,6 +856,17 @@ pub fn encoded(value: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_private_directory_is_readable_only_by_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let path =
+            std::env::temp_dir().join(format!("orbit-private-{:016x}", rand::random::<u64>()));
+        private_directory(&path).unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        fs::remove_dir(&path).unwrap();
+        assert_eq!(mode, 0o700);
+    }
+
     use super::*;
 
     #[test]

@@ -9,7 +9,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 command_errors! {
@@ -1849,7 +1849,7 @@ impl Command for InspectLaravelRoutes {
 
     fn run(
         input: InspectLaravelRoutesInput,
-        _: &Context,
+        context: &Context,
     ) -> Result<LaravelRoutesOutput, LaravelRoutesError> {
         let path = || LaravelRoutesError::PathMismatch {};
         let current = input.home.join("current");
@@ -1857,6 +1857,11 @@ impl Command for InspectLaravelRoutes {
             canonical(&input.home) && is_symlink(&current),
             path,
             "the production current link",
+        )?;
+        require(
+            owner(&input.home).starts_with(&format!("{}:", input.user)),
+            path,
+            "the production user owns the home",
         )?;
         let release = fs::canonicalize(&current).map_err(|_| path())?;
         let application = fs::canonicalize(&input.application).map_err(|_| path())?;
@@ -1890,14 +1895,10 @@ impl Command for InspectLaravelRoutes {
             .stderr(std::process::Stdio::null());
         crate::command::identity::drop_to(&mut command, &input.user)
             .map_err(|_| LaravelRoutesError::RoutesUnreadable {})?;
-        let output = command
-            .output()
-            .map_err(|_| LaravelRoutesError::RoutesUnreadable {})?;
-        if !output.status.success() {
-            return Err(LaravelRoutesError::RoutesUnreadable {});
-        }
-        let routes: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)
-            .map_err(|_| LaravelRoutesError::RoutesUnreadable {})?;
+        let wait = context.deadline().min(Instant::now() + ROUTE_LIST_LIMIT);
+        let stdout = output_before(command, wait).ok_or(LaravelRoutesError::RoutesUnreadable {})?;
+        let routes: Vec<serde_json::Value> =
+            serde_json::from_slice(&stdout).map_err(|_| LaravelRoutesError::RoutesUnreadable {})?;
         let uris: Option<Vec<String>> = routes
             .iter()
             .map(|route| route.get("uri")?.as_str().map(str::to_string))
@@ -1906,6 +1907,34 @@ impl Command for InspectLaravelRoutes {
         Ok(LaravelRoutesOutput {
             collision: routes_collide(&uris),
         })
+    }
+}
+
+/// How long Laravel may take to list its routes; a release that hangs at boot fails the check.
+const ROUTE_LIST_LIMIT: Duration = Duration::from_secs(45);
+
+/// The standard output of a command that exits successfully before `deadline`, or `None`. A command still running
+/// at the deadline is killed, so a read leaves no process behind.
+fn output_before(mut command: std::process::Command, deadline: Instant) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut child = command.stdout(std::process::Stdio::piped()).spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).map(|_| bytes)
+    });
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return status.success().then(|| reader.join().ok()?.ok()).flatten()
+            }
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
     }
 }
 

@@ -141,7 +141,7 @@ Each command declares one privilege in its definition:
 | --- | --- | --- |
 | `account` | The managed account | The enrolled account |
 | `owner` | Starts through `sudo -n`; the supervisor drops groups, GID, and UID to the recorded owner before project code | The enrolled account |
-| `root` | `sudo -n` | Refused with `agent.privilege_unsupported` |
+| `root` | `sudo -n` | Not declared, so the command refuses with `agent.platform_unsupported` |
 
 Each command's privilege is part of the shared JSON fixtures that Rust exports. The Gateway runner reads it from there, not from caller input. Before any change, the command checks its effective identity against the declared privilege: root for `root` and `owner` on Linux, the expected account otherwise. A mismatch refuses with `agent.identity_mismatch`, so a wrong identity never fails halfway through a change.
 

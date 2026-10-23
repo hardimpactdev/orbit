@@ -60,6 +60,7 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
 {
     $test->processes = [];
     $test->envelopes = [];
+    $test->lockFreeDuringAgentInstall = [];
     $agentInstall ??= ['ok' => true, 'data' => ['replaced' => true, 'observer' => 'restarted']];
 
     Process::fake(static function (PendingProcess $process) use ($test, $downloads, $reported, $onDownload, $agentInstall) {
@@ -97,6 +98,11 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
         if (($command[1] ?? null) === 'command' && ($command[2] ?? null) === 'agent.install') {
             $envelope = json_decode((string) $process->input, true, flags: JSON_THROW_ON_ERROR);
             $test->envelopes[] = $envelope;
+            // agent.install takes the self-update lock itself, so the command must not hold it here.
+            $lock = fopen($test->machine.'/self-update.lock', 'c');
+            $test->lockFreeDuringAgentInstall[] = flock($lock, LOCK_EX | LOCK_NB);
+            flock($lock, LOCK_UN);
+            fclose($lock);
             if (is_array($agentInstall) && ($agentInstall['ok'] ?? false) === true) {
                 copy($envelope['input']['candidate'], $test->machine.'/bin/orbit-agent');
                 unlink($envelope['input']['candidate']);

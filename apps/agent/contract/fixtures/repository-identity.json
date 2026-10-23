@@ -115,7 +115,7 @@
         "gateway": null
     },
     {
-        "origin": "https://github.com/org/re\u200bpo.git",
+        "origin": "https://github.com/org/re​po.git",
         "node": null,
         "gateway": null
     },
@@ -431,6 +431,46 @@
     },
     {
         "origin": "ssh://git@example.test:notaport/acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "git@bitbucKet.org:team/repo.git",
+        "node": "bitbucKet.org/team/repo",
+        "gateway": "bitbucKet.org/team/repo"
+    },
+    {
+        "origin": "https://GITKHUB.com/acme/site.git",
+        "node": "gitKhub.com/acme/site",
+        "gateway": "gitKhub.com/acme/site"
+    },
+    {
+        "origin": "https://Éxample.test/acme/site.git",
+        "node": "Éxample.test/acme/site",
+        "gateway": "Éxample.test/acme/site"
+    },
+    {
+        "origin": "git@exa͸mple.test:acme/site.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test/acme/si͸te.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "git@example.test:acme/si⁠te.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "https://example.test/acme/s󠀁ite.git",
+        "node": null,
+        "gateway": null
+    },
+    {
+        "origin": "git@example.test:acme/­site.git",
         "node": null,
         "gateway": null
     }

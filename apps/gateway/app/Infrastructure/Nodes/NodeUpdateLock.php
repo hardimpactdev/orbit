@@ -14,7 +14,7 @@ use Throwable;
 
 /**
  * Holds the Node's update lock, `/run/lock/orbit-self-update.lock`, across several SSH commands. `orbit
- * self-update` holds the same lock while it replaces and health-checks the agent and the CLI, so a Gateway
+ * self-update` and `agent.install` hold the same lock while they replace the CLI or the agent, so a Gateway
  * converge that swaps or restarts the agent, or installs the CLI, never runs inside a self-update.
  *
  * One SSH command starts a transient unit that waits for the lock and then sleeps; the converge runs its own

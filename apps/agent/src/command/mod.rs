@@ -35,7 +35,6 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.unknown_command",
     "agent.invalid_input",
     "agent.identity_mismatch",
-    "agent.privilege_unsupported",
     "agent.platform_unsupported",
     "agent.deadline_exceeded",
     "agent.supervisor_failed",
