@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Doctor\UfwManagedRulesCheck;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
@@ -23,6 +24,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Tests\Support\SshCommandAgents;
 
 it('replaces the analytics database port in one converge and clears Doctor drift', function (): void {
     $storage = analytics_storage_processes();
@@ -869,7 +871,9 @@ function role_firewall_manager(SshExecutor $ssh): NativeNodeRoleFirewallManager
         public function put(string $host, int $port, HostKey $key): void {}
     };
 
-    return new NativeNodeRoleFirewallManager($ssh, $keys, $knownHosts);
+    $agents = new SshCommandAgents($ssh);
+
+    return new NativeNodeRoleFirewallManager(new AgentUfw($agents, $agents), $keys, $knownHosts);
 }
 
 final class RoleFirewallSshExecutor implements SshExecutor

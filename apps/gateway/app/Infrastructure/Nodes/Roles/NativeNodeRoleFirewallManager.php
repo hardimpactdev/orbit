@@ -9,18 +9,16 @@ use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
-use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Nodes\NodeSshJump;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use InvalidArgumentException;
@@ -28,7 +26,7 @@ use InvalidArgumentException;
 final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallManager, RouterLanIngressPublisher
 {
     public function __construct(
-        private SshExecutor $ssh,
+        private AgentUfw $ufw,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $statusParser = new UfwStatusParser,
@@ -147,7 +145,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         foreach ($numbers as $number) {
             $result = $this->execute(
                 $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
+                ['--force', 'delete', (string) $number],
                 publicConnection: false,
                 managedUser: $managedUser,
             );
@@ -203,7 +201,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
             $enabled = $this->execute(
                 $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'enable']),
+                ['--force', 'enable'],
                 publicConnection: true,
                 managedUser: $managedUser,
             );
@@ -243,7 +241,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         foreach (array_unique($numbers) as $number) {
             $result = $this->execute(
                 $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
+                ['--force', 'delete', (string) $number],
                 $publicConnection,
                 $managedUser,
             );
@@ -277,7 +275,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     {
         $result = $this->execute(
             $node,
-            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
+            ['status', 'numbered'],
             $publicConnection,
             $managedUser,
         );
@@ -299,7 +297,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     {
         $result = $this->execute(
             $node,
-            new RemoteCommand(UfwStoredRuleProbe::arguments()),
+            ['stored'],
             publicConnection: true,
             managedUser: $managedUser,
         );
@@ -325,20 +323,32 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     private function apply(Node $node, UfwManagedRule $rule, bool $publicConnection, string $managedUser): void
     {
-        $result = $this->execute($node, new RemoteCommand($rule->arguments), $publicConnection, $managedUser);
+        $result = $this->execute($node, array_slice($rule->arguments, 2), $publicConnection, $managedUser);
 
         if (! $result->succeeded()) {
             $this->fail($node, "Could not apply [{$rule->shape->comment}].", $result);
         }
     }
 
+    /**
+     * Runs UFW through the agent over the public or WireGuard connection: `['status', 'numbered']` reads the status,
+     * `['stored']` the stored rule tuples, and anything else is one change with these `ufw` arguments.
+     *
+     * @param  non-empty-list<string>  $arguments
+     */
     private function execute(
         Node $node,
-        RemoteCommand $command,
+        array $arguments,
         bool $publicConnection,
         string $managedUser,
     ): CommandResult {
-        return $this->ssh->execute($this->connection($node, $publicConnection, $managedUser), $command);
+        $connection = $this->connection($node, $publicConnection, $managedUser);
+
+        return match ($arguments) {
+            ['status', 'numbered'] => $this->ufw->status($node, over: $connection),
+            ['stored'] => $this->ufw->status($node, stored: true, over: $connection),
+            default => $this->ufw->change($node, $arguments, $connection),
+        };
     }
 
     private function connection(Node $node, bool $publicConnection, string $managedUser): SshConnection
@@ -520,7 +530,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         foreach ($numbers as $number) {
             $result = $this->execute(
                 $node,
-                new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
+                ['--force', 'delete', (string) $number],
                 publicConnection: false,
                 managedUser: $managedUser,
             );

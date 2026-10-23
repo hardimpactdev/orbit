@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
@@ -19,11 +20,21 @@ use LogicException;
  * shape those fakes read: its scope at argument 3, and a marker input for a reuse, a presence check, or a removal.
  * Every other agent command goes to `$others`.
  */
-final readonly class SshCommandAgents implements AgentCommandRunner
+final readonly class SshCommandAgents implements AdmissionAgentRunner, AgentCommandRunner
 {
     public function __construct(private SshExecutor $ssh, private ?AgentCommandRunner $others = null) {}
 
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        return $this->runOver($node, new SshConnection((string) $node->wireguard_ip, $node->user, 22, '/tmp/orbit-test-key', '/tmp/orbit-test-known-hosts', commandTimeout: $deadlineSeconds ?? 900.0), $command, $input, $deadlineSeconds);
+    }
+
+    public function installOver(Node $node, SshConnection $connection): bool
+    {
+        return false;
+    }
+
+    public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         [$arguments, $stdin] = match ($command) {
             'firewall.status' => [['sudo', 'ufw', 'status', 'numbered'], null],
@@ -38,7 +49,6 @@ final readonly class SshCommandAgents implements AgentCommandRunner
         if ($arguments === null) {
             return ($this->others ?? throw new LogicException("No answer for agent command [{$command}]."))->run($node, $command, $input, $deadlineSeconds);
         }
-        $connection = new SshConnection((string) $node->wireguard_ip, $node->user, 22, '/tmp/orbit-test-key', '/tmp/orbit-test-known-hosts', commandTimeout: $deadlineSeconds ?? 900.0);
         $result = $this->ssh->execute($connection, new RemoteCommand($arguments, input: $stdin));
         if (! $result->succeeded()) {
             [$code, $details] = match (true) {
