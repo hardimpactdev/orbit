@@ -2729,6 +2729,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Role",
