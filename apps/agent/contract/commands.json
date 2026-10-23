@@ -265,6 +265,48 @@
       },
       "summary": "Fetch a development Instance's origin and check out its branch.",
       "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ],
+      "mutates": false,
+      "name": "instances.inspect-registration-source",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
+      "timeout_seconds": 60
+    },
+    {
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ],
+      "mutates": true,
+      "name": "instances.relocate-registration-source",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
+      "timeout_seconds": 900
+    },
+    {
+      "errors": [
+        "instances.registration_invalid",
+        "instances.git_failed"
+      ],
+      "mutates": true,
+      "name": "instances.laravel-registration-receipt",
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
+      "timeout_seconds": 30
     }
   ],
   "common_errors": [

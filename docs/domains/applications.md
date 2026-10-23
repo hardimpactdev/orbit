@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
   - apps/gateway/{app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php},database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
-  - apps/cli/app/Services/Git/**
+  - apps/cli/app/{Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php,Services/Git/**}
+  - apps/agent/src/commands/{registration,registration_tests}.rs
 ---
 
 # Applications

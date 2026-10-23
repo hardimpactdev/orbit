@@ -8,7 +8,11 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentTransport;
+use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -25,6 +29,7 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Tests\Support\LocalAgentBinary;
 use Tests\Support\SeparateFilesystem;
 
 pest()->group('privileged');
@@ -745,6 +750,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'name' => 'orb105-local',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'tld' => 'test',
         'public_ssh_host' => '192.0.2.105',
         'wireguard_ip' => '127.0.0.1',
@@ -871,12 +877,18 @@ function orb105_registration_manager(
             return new ManagedUserAccount($node->user, $this->managedGroup ?? orb105_primary_group(), '/tmp');
         }
     };
-    $manager = new RemoteRegistrationSourceManager(
-        new DevelopmentSshExecutor($executor, $keys, $knownHosts),
-        $accounts,
-    );
+    $transports = new class($executor, $keys, $knownHosts) extends AgentTransports
+    {
+        public function __construct(private readonly SshExecutor $ssh, private readonly SshKeyProvider $keys, private readonly KnownHostsStore $knownHosts) {}
 
-    return $manager;
+        public function for(Node $node): AgentTransport
+        {
+            return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
+        }
+    };
+    $agents = new NativeAgentCommandRunner(app(AgentContract::class), LocalAgentBinary::delivery(orb105_agent_directory().'/delivery'), $transports);
+
+    return new RemoteRegistrationSourceManager($agents, $accounts);
 }
 
 /** @param array{source_root: string, destination_root: string} $fixture */
@@ -958,22 +970,61 @@ function orb105_run(array $arguments): CommandResult
     return new NativeProcessRunner(maxOutputBytes: 16_777_216)->run(new ProcessInvocation($arguments));
 }
 
+/** The scratch directory of the built agent's delivery and locks in these tests. */
+function orb105_agent_directory(): string
+{
+    $directory = sys_get_temp_dir().'/orbit-registration-agent-'.getmypid();
+    if (! is_dir($directory)) {
+        mkdir($directory, 0o700, true);
+    }
+
+    return $directory;
+}
+
+/**
+ * An agent command that the runner sent: the local arguments of the built binary, the envelope, and its input.
+ *
+ * @return array{arguments: list<string>, envelope: string, input: array<string, mixed>}
+ */
+function orb105_agent_call(RemoteCommand $command): array
+{
+    $arguments = LocalAgentBinary::localArguments($command->arguments) ?? throw new LogicException('Registration runs only agent commands.');
+    $envelope = (string) stream_get_contents($command->protectedInput?->stream());
+    $command->protectedInput?->close();
+
+    return ['arguments' => $arguments, 'envelope' => $envelope, 'input' => json_decode($envelope, true, flags: JSON_THROW_ON_ERROR)['input']];
+}
+
+/** @param array{arguments: list<string>, envelope: string} $call */
+function orb105_run_agent(array $call): CommandResult
+{
+    $process = new SymfonyProcess($call['arguments'], null, LocalAgentBinary::environment(orb105_agent_directory()), $call['envelope'], 120);
+    $process->run();
+
+    return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+}
+
+/** A run that a stopped process ended: no result reaches the Gateway. */
+function orb105_lost(): CommandResult
+{
+    return new CommandResult(137, '', 'Interrupted', 1, false);
+}
+
+/** @param array<string, mixed> $input */
+function orb105_operation(array $input): string
+{
+    return (string) ($input['operation'] ?? '');
+}
+
 final readonly class Orb105LocalSshExecutor implements SshExecutor
 {
-    /** @param array<string, string> $environment */
-    public function __construct(private array $environment = []) {}
-
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        return new NativeProcessRunner()->run(new ProcessInvocation(
-            arguments: $command->arguments,
-            input: $command->input,
-            protectedInput: $command->protectedInput,
-            environment: $this->environment,
-        ));
+        return orb105_run_agent(orb105_agent_call($command));
     }
 }
 
+/** Other agents move refs in the source while the adoption or the move runs; the digest leaves refs out. */
 final class Orb918ConcurrentRefsSshExecutor implements SshExecutor
 {
     /** @var list<string> */
@@ -981,34 +1032,20 @@ final class Orb918ConcurrentRefsSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        $operation = $command->arguments[3] ?? '';
+        $call = orb105_agent_call($command);
+        $operation = orb105_operation($call['input']);
         $this->operations[] = $operation;
         if (in_array($operation, ['adopt', 'prepare'], true)) {
-            $arguments = $command->arguments;
-            $hook = <<<'PYTHON'
-                import json, subprocess, sys
-                concurrent_member = json.loads(sys.argv[2])[0]
-                original_check_output = subprocess.check_output
-                checkpoint = 0
-                def concurrent_refs(arguments, **kwargs):
-                    global checkpoint
-                    output = original_check_output(arguments, **kwargs)
-                    if arguments[0] == 'git':
-                        checkpoint += 1
-                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/t3/test/918/' + str(checkpoint), concurrent_member['commit']])
-                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/heads/another-agent', concurrent_member['commit']])
-                    return output
-                subprocess.check_output = concurrent_refs
-
-                PYTHON;
-            $arguments[2] = $hook.$arguments[2];
-            $command = new RemoteCommand(arguments: $arguments);
+            $member = $call['input']['members'][0];
+            orb105_git($member['source'], ['update-ref', 'refs/t3/test/918/1', $member['commit']]);
+            orb105_git($member['source'], ['update-ref', 'refs/heads/another-agent', $member['commit']]);
         }
 
-        return new Orb105LocalSshExecutor()->execute($connection, $command);
+        return orb105_run_agent($call);
     }
 }
 
+/** The process stops after the step finished, before its result reaches the Gateway. */
 final class Orb918InterruptAdoptionSshExecutor implements SshExecutor
 {
     private bool $interrupted = false;
@@ -1020,34 +1057,33 @@ final class Orb918InterruptAdoptionSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        $operation = $command->arguments[3] ?? '';
+        $call = orb105_agent_call($command);
+        $operation = orb105_operation($call['input']);
         $this->operations[] = $operation;
-        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
+        $result = orb105_run_agent($call);
         if (! $this->interrupted && ($operation === $this->checkpoint || $operation === 'prepare') && $result->succeeded()) {
             $this->interrupted = true;
 
-            return new CommandResult(137, $result->stdout, 'Interrupted adoption', $result->durationMs, false);
+            return orb105_lost();
         }
 
         return $result;
     }
 }
 
+/** Another program commits in the checkout just after it moved, so the move must not count as complete. */
 final readonly class Orb918ChangeHeadAfterRenameSshExecutor implements SshExecutor
 {
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        if (($command->arguments[3] ?? null) === 'prepare') {
-            $arguments = $command->arguments;
-            $arguments[2] = str_replace(
-                'os.rename(source, destination)',
-                "os.rename(source, destination); subprocess.check_call(['git','-C',destination,'commit','--allow-empty','-m','Concurrent source change'], stdout=subprocess.DEVNULL)",
-                $arguments[2],
-            );
-            $command = new RemoteCommand(arguments: $arguments);
+        $call = orb105_agent_call($command);
+        if (orb105_operation($call['input']) === 'prepare') {
+            $member = $call['input']['members'][0];
+            rename($member['source'], $member['destination']);
+            orb105_run(['git', '-C', $member['destination'], '-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test', 'commit', '--allow-empty', '-m', 'Concurrent source change']);
         }
 
-        return new Orb105LocalSshExecutor()->execute($connection, $command);
+        return orb105_run_agent($call);
     }
 }
 
@@ -1057,24 +1093,20 @@ final class Orb105InterruptAfterPrepareSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
+        $call = orb105_agent_call($command);
+        $result = orb105_run_agent($call);
 
-        if (! $this->interrupted && ($command->arguments[3] ?? null) === 'prepare' && $result->succeeded()) {
+        if (! $this->interrupted && orb105_operation($call['input']) === 'prepare' && $result->succeeded()) {
             $this->interrupted = true;
 
-            return new CommandResult(
-                exitCode: 137,
-                stdout: $result->stdout,
-                stderr: 'Simulated process stop after remote prepare completed.',
-                durationMs: $result->durationMs,
-                truncated: $result->truncated,
-            );
+            return orb105_lost();
         }
 
         return $result;
     }
 }
 
+/** The process stops right after it moved one member of the set, before any other. */
 final class Orb105InterruptPartialPrepareSshExecutor implements SshExecutor
 {
     private bool $interrupted = false;
@@ -1086,32 +1118,25 @@ final class Orb105InterruptPartialPrepareSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        if ($this->interrupted || ($command->arguments[3] ?? null) !== 'prepare') {
-            return new Orb105LocalSshExecutor()->execute($connection, $command);
+        $call = orb105_agent_call($command);
+        if ($this->interrupted || orb105_operation($call['input']) !== 'prepare') {
+            return orb105_run_agent($call);
         }
 
         $this->interrupted = true;
-        $pauseAfterRename = <<<'PYTHON'
-            import os, signal
-            original_rename = os.rename
-            def rename_and_pause(source, destination, *args, **kwargs):
-                original_rename(source, destination, *args, **kwargs)
-                if source == %s:
-                    print('relocation-checkpoint', flush=True)
-                    signal.pause()
-            os.rename = rename_and_pause
-            PYTHON;
+        foreach ($call['input']['members'] as $member) {
+            if ($member['source'] === $this->movedSource) {
+                rename($member['source'], $member['destination']);
+            }
+        }
+        expect(file_exists($this->movedSource))->toBeFalse()
+            ->and(is_dir($this->unmovedSource))->toBeTrue();
 
-        return orb105_interrupt_at_checkpoint($command, sprintf(
-            $pauseAfterRename,
-            json_encode($this->movedSource, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-        ), function (): void {
-            expect(file_exists($this->movedSource))->toBeFalse()
-                ->and(is_dir($this->unmovedSource))->toBeTrue();
-        });
+        return orb105_lost();
     }
 }
 
+/** The process stops after cleanup removed one file of the original, before the rest. */
 final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
 {
     private bool $interrupted = false;
@@ -1123,71 +1148,18 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        if ($this->interrupted || ($command->arguments[3] ?? null) !== 'cleanup') {
-            return new Orb105LocalSshExecutor()->execute($connection, $command);
+        $call = orb105_agent_call($command);
+        if ($this->interrupted || orb105_operation($call['input']) !== 'cleanup') {
+            return orb105_run_agent($call);
         }
 
         $this->interrupted = true;
-        // Pause after the real unlink so cleanup cannot finish before the observer sends SIGKILL.
-        $pauseAfterUnlink = <<<'PYTHON'
-            import os, signal
-            trigger = %s
-            original_walk = os.walk
-            def walk_with_trigger_first(*args, **kwargs):
-                for current, directories, files in original_walk(*args, **kwargs):
-                    if current == os.path.dirname(trigger):
-                        files.sort(key=lambda name: name != os.path.basename(trigger))
-                    yield current, directories, files
-            os.walk = walk_with_trigger_first
-            original_unlink = os.unlink
-            def unlink_and_pause(path, *args, **kwargs):
-                directory = kwargs.get('dir_fd')
-                absolute = os.path.join(os.readlink('/proc/self/fd/' + str(directory)), path) if directory is not None else path
-                original_unlink(path, *args, **kwargs)
-                if absolute == trigger:
-                    print('relocation-checkpoint', flush=True)
-                    signal.pause()
-            os.unlink = unlink_and_pause
-            PYTHON;
+        unlink($this->trigger);
+        expect(file_exists($this->trigger))->toBeFalse()
+            ->and(is_dir($this->source))->toBeTrue();
 
-        return orb105_interrupt_at_checkpoint($command, sprintf(
-            $pauseAfterUnlink,
-            json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-        ), function (): void {
-            expect(file_exists($this->trigger))->toBeFalse()
-                ->and(is_dir($this->source))->toBeTrue();
-        });
+        return orb105_lost();
     }
-}
-
-/** Pause only after the real filesystem operation; the observer acknowledges it by killing the actual process. */
-function orb105_interrupt_at_checkpoint(RemoteCommand $command, string $hook, Closure $assertCheckpoint): CommandResult
-{
-    $arguments = $command->arguments;
-    $arguments[2] = $hook."\n".$arguments[2];
-    $process = new SymfonyProcess($arguments, timeout: 5);
-    $process->start();
-
-    try {
-        $acknowledged = $process->waitUntil(static fn (): bool => str_contains($process->getOutput(), "relocation-checkpoint\n"));
-        expect($acknowledged)->toBeTrue($process->getErrorOutput());
-        $assertCheckpoint();
-    } finally {
-        if ($process->isRunning()) {
-            $process->signal(SIGKILL);
-            $process->wait();
-        }
-    }
-
-    expect($process->getTermSignal())->toBe(SIGKILL);
-
-    return new CommandResult(
-        exitCode: $process->getExitCode(),
-        stdout: $process->getOutput(),
-        stderr: $process->getErrorOutput(),
-        durationMs: 0,
-        truncated: false,
-    );
 }
 
 it('closes a relocated Instance environment to other local users after the last verification', function (string $relative): void {

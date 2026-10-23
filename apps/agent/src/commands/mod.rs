@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod dev_source;
 pub mod instances;
+pub mod registration;
 pub mod source;
 
 use crate::command::registry::{entry, Entry};
@@ -48,5 +49,8 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::PrepareDevelopmentSource>(),
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
+        entry::<registration::InspectRegistrationSource>(),
+        entry::<registration::RelocateRegistrationSource>(),
+        entry::<registration::LaravelRegistrationReceipt>(),
     ]
 }
