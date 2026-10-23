@@ -31,9 +31,12 @@ it('provisions the first peer from the gateway console', function (): void {
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
-            return new NodeObservation('x86_64');
+            $observation = new NodeObservation('x86_64');
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -90,7 +93,7 @@ it('reports typed provisioning failures without leaking command output', functio
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             throw new NodeProvisioningException(
                 step: 'base-packages',
@@ -122,7 +125,7 @@ it('reports a bounded redacted command tail when diagnostics are requested', fun
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             throw new NodeProvisioningException(
                 step: 'base-packages',
@@ -154,7 +157,7 @@ it('reports a bounded redacted command tail when diagnostics are requested', fun
 it('reports unexpected causes only with redacted bounded diagnostics', function (bool $diagnostics): void {
     app()->instance(NodeConverger::class, new class implements NodeConverger
     {
-        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
         {
             throw new RuntimeException(str_repeat('old detail ', 500)."\nMissing agent delivery\nTOKEN=do-not-print");
         }
@@ -196,11 +199,14 @@ it('passes explicit console user identities', function (): void {
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             $this->identity = $identity;
 
-            return new NodeObservation('x86_64');
+            $observation = new NodeObservation('x86_64');
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -239,11 +245,14 @@ it('bootstraps as root for a new node and as the managed user for an existing no
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
             $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
 
-            return new NodeObservation('x86_64');
+            $observation = new NodeObservation('x86_64');
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger

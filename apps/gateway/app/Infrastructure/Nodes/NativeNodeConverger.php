@@ -13,6 +13,9 @@ use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -38,6 +41,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         private NodeBootstrapCommandFactory $bootstrapCommand,
         private WireGuardPeerConverger $wireGuard,
         private NodeRoleFirewallManager $firewall,
+        private AdmissionAgentRunner $agents,
         private ?Closure $sleep = null,
     ) {}
 
@@ -46,8 +50,9 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint = null,
         bool $rolelessOperator = false,
+        ?Closure $recordObservation = null,
     ): NodeObservation {
-        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation);
         $this->wireGuard->converge(
             $node,
             $this->connection($node, $identity->managedUser),
@@ -65,8 +70,9 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ?string $expectedSshHostFingerprint,
         Closure $completion,
         bool $rolelessOperator = false,
+        ?Closure $recordObservation = null,
     ): void {
-        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
+        [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation);
 
         /** Failed or unfinished first-role attempts may have rolled back the peer, even with multiple assignments. */
         if ($node->roles()->where('status', LifecycleStatus::Active)->exists()) {
@@ -105,7 +111,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     }
 
     /** @return array{0: HostKey, 1: string, 2: NodeObservation} */
-    private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, bool $rolelessOperator): array
+    private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, bool $rolelessOperator, ?Closure $recordObservation): array
     {
         if ($node->platform !== 'linux') {
             throw new NodeProvisioningException(
@@ -186,6 +192,19 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         }
 
         $observation = $this->observe($node, $managedConnection);
+        $recordObservation?->__invoke($observation);
+
+        try {
+            $this->agents->installOver($node, $managedConnection);
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new NodeProvisioningException(
+                'agent-install',
+                'agent.install_failed',
+                "Could not install the pinned agent on node [{$node->name}].",
+                previous: $exception,
+                result: $exception instanceof AgentRunnerFailure ? $exception->result : null,
+            );
+        }
 
         if (! is_string($node->wireguard_ip)) {
             throw new NodeProvisioningException(

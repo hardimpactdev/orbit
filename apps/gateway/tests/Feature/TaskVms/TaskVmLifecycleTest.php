@@ -530,7 +530,7 @@ describe(EnrollTaskVm::class, function (): void {
             /** @param list<array<string, mixed>> $converged */
             public function __construct(private array &$converged) {}
 
-            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false): NodeObservation
+            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
             {
                 $this->converged[] = [
                     'host' => $node->public_ssh_host, 'jump' => $node->ssh_jump_node_id, 'wireguard_ip' => $node->wireguard_ip,
@@ -538,7 +538,10 @@ describe(EnrollTaskVm::class, function (): void {
                     'linked' => TaskVm::query()->where('node_id', $node->id)->exists(),
                 ];
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger

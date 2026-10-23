@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeArchitectureMismatchException;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -11,6 +12,8 @@ use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -27,6 +30,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\SshCommandAgents;
 
 it('fails closed before SSH when no host adapter supports the node platform', function (): void {
     expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
@@ -230,6 +234,7 @@ it('pins the host and converges only base node identity and connectivity', funct
         }
     };
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: $knownHosts,
         sshKeys: base_test_keys(),
@@ -280,6 +285,63 @@ it('pins the host and converges only base node identity and connectivity', funct
         ->toBe(['true']);
 });
 
+it('records architecture and installs through pinned bootstrap SSH before firewall work', function (bool $recoverable): void {
+    $node = base_provisionable_node();
+    $node->roles()->delete();
+    $installed = false;
+    $agents = Mockery::mock(AdmissionAgentRunner::class);
+    $agents->shouldReceive('installOver')->once()->andReturnUsing(function (Node $target, SshConnection $connection) use (&$installed): bool {
+        expect($target->architecture)->toBe('x86_64');
+        expect($target->fresh()->architecture)->toBe('x86_64');
+        expect($connection->host)->toBe('192.0.2.10');
+        expect($connection->user)->toBe('orbit');
+        expect($connection->hostIdentity)->toBe('SHA256:pinned');
+        $installed = true;
+
+        return true;
+    });
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldReceive('convergeBase')->once()->andReturnUsing(function () use (&$installed): void {
+        expect($installed)->toBeTrue();
+    });
+    $firewall->shouldReceive('trustWireGuardMembers')->once();
+    $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall, agents: $agents);
+    $record = fn (NodeObservation $observation) => $node->update(['architecture' => $observation->architecture]);
+
+    if ($recoverable) {
+        $converger->convergeRecoverably($node, base_identity(), 'SHA256:pinned', static function (): void {}, recordObservation: $record);
+    } else {
+        $converger->converge($node, base_identity(), 'SHA256:pinned', recordObservation: $record);
+    }
+})->with([false, true]);
+
+it('stops admission before firewall work when the agent cannot install', function (): void {
+    $node = base_provisionable_node();
+    $node->roles()->delete();
+    $agents = Mockery::mock(AdmissionAgentRunner::class);
+    $agents->shouldReceive('installOver')->once()->andThrow(new AgentCommandRefused('agent.install', 'agent.install_failed', 'Install refused.'));
+    $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+    $firewall->shouldNotReceive('convergeBase', 'trustWireGuardMembers');
+    $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall, agents: $agents);
+
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
+        ->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->step)->toBe('agent-install');
+            expect($exception->errorCode)->toBe('agent.install_failed');
+        });
+});
+
+it('validates the observed architecture before installing the agent', function (): void {
+    $node = base_provisionable_node();
+    $agents = Mockery::mock(AdmissionAgentRunner::class);
+    $agents->shouldNotReceive('installOver');
+    $converger = base_node_converger(new BaseNodeSshExecutor, agents: $agents);
+
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned', recordObservation: static function (): void {
+        throw new NodeArchitectureMismatchException('base-node', 'aarch64', 'x86_64');
+    }))->toThrow(NodeArchitectureMismatchException::class);
+});
+
 it('reports a bounded failure when the machine architecture cannot be observed', function (CommandResult $result): void {
     $node = base_provisionable_node();
     $ssh = new class($result) implements SshExecutor
@@ -309,6 +371,7 @@ it('reports a bounded failure when the machine architecture cannot be observed',
         }
     };
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -380,6 +443,7 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
     $firewallRoles = [];
     $trustedNodes = [];
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: $scanner,
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -447,6 +511,7 @@ it('retries recoverable managed peer publication while no assigned role is activ
         }
     };
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -494,6 +559,7 @@ it('commits recoverable peer publication before activating orbit SSH for active 
     };
     $ssh = new BaseNodeSshExecutor;
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -568,6 +634,7 @@ it('rolls back recoverable peer publication when roleless private ssh verificati
         }
     };
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -616,6 +683,7 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
     };
     $sleeps = [];
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -665,6 +733,7 @@ it('preserves the final transient private SSH failure after retries', function (
     };
     $sleeps = [];
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -719,6 +788,7 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
     };
     $sleeps = [];
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -752,6 +822,7 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
     $factory = new NodeBootstrapCommandFactory(base_test_keys());
     $expected = $factory->makeWithPasswordlessSudo($node, 'orbit');
     $converger = new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -1085,8 +1156,10 @@ function base_node_converger(
     SshExecutor $ssh,
     ?HostKeyScanner $scanner = null,
     ?NodeRoleFirewallManager $firewall = null,
+    ?AdmissionAgentRunner $agents = null,
 ): NativeNodeConverger {
     return new NativeNodeConverger(
+        agents: $agents ?? new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: $scanner ?? base_test_scanner(),
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),
@@ -1272,6 +1345,7 @@ function jump_host_node(): Node
 function jump_node_converger(SshExecutor $ssh, HostKeyScanner $scanner, WireGuardPeerConverger $wireGuard): NativeNodeConverger
 {
     return new NativeNodeConverger(
+        agents: new SshCommandAgents(new BaseNodeSshExecutor),
         hostKeys: $scanner,
         knownHosts: base_test_known_hosts(),
         sshKeys: base_test_keys(),

@@ -44,9 +44,12 @@ it('publishes private DNS on the vpn node when node:add reprovisions a split gat
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
-            return new NodeObservation('x86_64');
+            $observation = new NodeObservation('x86_64');
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     });
     $metrics = Mockery::mock(MetricsFleetReconciler::class);

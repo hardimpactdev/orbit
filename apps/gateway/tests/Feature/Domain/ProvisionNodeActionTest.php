@@ -64,9 +64,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $metrics = Mockery::mock(MetricsFleetReconciler::class);
@@ -93,11 +96,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->jumpNodeIds[] = $node->ssh_jump_node_id;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -137,9 +143,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         // Role convergence runs while the node is still provisioning and
@@ -350,11 +359,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->converged = true;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -417,11 +429,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->converged = true;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -524,7 +539,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -697,7 +712,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
 
@@ -758,12 +773,15 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $materializer = new FakeToolManagerMaterializer;
@@ -837,11 +855,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->events[] = 'ordinary-converge';
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
 
             public function convergeRecoverably(
@@ -849,13 +870,15 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
 
                 try {
-                    $completion(new NodeObservation('x86_64'));
+                    $observation = new NodeObservation('x86_64');
+                    $recordObservation?->__invoke($observation);
+                    $completion($observation);
                 } catch (Throwable $throwable) {
                     $this->events[] = 'remote-rollback';
 
@@ -906,9 +929,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
 
             public function convergeRecoverably(
@@ -916,13 +942,15 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
 
                 try {
-                    $completion(new NodeObservation('x86_64'));
+                    $observation = new NodeObservation('x86_64');
+                    $recordObservation?->__invoke($observation);
+                    $completion($observation);
                 } catch (Throwable $throwable) {
                     throw new NodeProvisioningException(
                         step: 'wireguard-rollback',
@@ -986,7 +1014,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $node->update([
                     'ssh_host_key_type' => 'ecdsa',
@@ -1080,11 +1108,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->materializer->events[] = "base:{$node->status->value}";
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -1115,11 +1146,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->events[] = "ordinary:{$node->name}";
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
 
             public function convergeRecoverably(
@@ -1127,10 +1161,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
                 $this->events[] = "recoverable:{$node->name}";
-                $completion(new NodeObservation('x86_64'));
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+                $completion($observation);
             }
         });
 
@@ -1228,9 +1264,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
 
             public function convergeRecoverably(
@@ -1238,11 +1277,13 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
                 $fresh = Node::query()->whereKey($node->getKey())->sole();
                 $this->events[] = "before:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
-                $completion(new NodeObservation('x86_64'));
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+                $completion($observation);
                 $fresh = Node::query()->whereKey($node->getKey())->sole();
                 $this->events[] = "after:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
             }
@@ -1316,9 +1357,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
 
             public function convergeRecoverably(
@@ -1326,12 +1370,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
                 try {
-                    $completion(new NodeObservation('x86_64'));
+                    $observation = new NodeObservation('x86_64');
+                    $recordObservation?->__invoke($observation);
+                    $completion($observation);
                 } catch (Throwable $throwable) {
                     $this->events[] = 'remote-rollback';
                     throw $throwable;
@@ -1409,7 +1455,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new NodeProvisioningException('base-packages', 'node.package_install_failed', 'Base failed.');
             }
@@ -1443,9 +1489,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -1473,7 +1522,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new NodeProvisioningException('late-step', 'node.late_failed', 'Late failure.');
             }
@@ -1502,11 +1551,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->identity = $identity;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -1535,12 +1587,15 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $this->events[] = "base:{$node->status->value}:{$node->roles()->count()}";
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -1600,11 +1655,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -1632,9 +1690,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $roles = [];
@@ -1699,11 +1760,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -1729,9 +1793,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         Node::query()->create([
@@ -1763,7 +1830,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->observed = $node->only([
                     'platform',
@@ -1774,7 +1841,10 @@ describe(ProvisionNodeAction::class, function (): void {
                     'dns_server_override',
                 ]);
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -1825,11 +1895,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $nodeConverger);
@@ -1886,9 +1959,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $converger = new class implements AppDevTldConverger
@@ -1928,9 +2004,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $converger = new ProvisionNodeTldProjectionConverger([1]);
@@ -1960,9 +2039,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $converger = new ProvisionNodeTldProjectionConverger([1, 2]);
@@ -2001,11 +2083,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2059,11 +2144,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2111,11 +2199,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2149,11 +2240,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2294,7 +2388,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new LogicException('An active Node converges recoverably.');
             }
@@ -2304,9 +2398,11 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): void {
-                $completion(new NodeObservation('aarch64'));
+                $observation = new NodeObservation('aarch64');
+                $recordObservation?->__invoke($observation);
+                $completion($observation);
             }
         });
         $existing = Node::query()->create([
@@ -2334,9 +2430,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
@@ -2396,11 +2495,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2436,11 +2538,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2498,11 +2603,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->calls++;
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         };
         app()->instance(NodeConverger::class, $converger);
@@ -2530,9 +2638,12 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
 
@@ -2555,7 +2666,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 throw new NodeProvisioningException('base-packages', 'node.package_install_failed', 'Apt failed.');
             }
@@ -2596,11 +2707,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $action = app(ProvisionNodeAction::class);
@@ -2661,11 +2775,14 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
-                bool $rolelessOperator = false,
+                bool $rolelessOperator = false, ?Closure $recordObservation = null,
             ): NodeObservation {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
 
-                return new NodeObservation('x86_64');
+                $observation = new NodeObservation('x86_64');
+                $recordObservation?->__invoke($observation);
+
+                return $observation;
             }
         });
         $existing = Node::query()->create([
@@ -2716,9 +2833,12 @@ function provision_node_observing_converger(string $architecture): NodeConverger
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
-            bool $rolelessOperator = false,
+            bool $rolelessOperator = false, ?Closure $recordObservation = null,
         ): NodeObservation {
-            return new NodeObservation($this->architecture);
+            $observation = new NodeObservation($this->architecture);
+            $recordObservation?->__invoke($observation);
+
+            return $observation;
         }
     };
 }

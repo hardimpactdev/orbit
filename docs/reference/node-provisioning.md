@@ -26,14 +26,14 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | --- | --- |
 | 1 | Check the host key against the fingerprint. |
 | 2 | Connect as the bootstrap user, install the base packages, create the managed user, add its SSH key, and grant passwordless sudo. |
-| 3 | Connect as the managed user and read the machine architecture. |
+| 3 | Connect as the managed user, validate and record the machine architecture, and install the pinned agent over the bootstrap SSH connection before any agent command. |
 | 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
-| 5 | Record the architecture, install the `apt` [Tool Manager](/reference/tools#tool-managers), and converge each requested role. |
+| 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
 | 6 | Update Router LAN access and private DNS for the Node's Cluster. |
 | 7 | Mark the Node `active`. |
 | 8 | Store and prepare the [storage settings](/reference/node-settings). |
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
-| 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
+| 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
