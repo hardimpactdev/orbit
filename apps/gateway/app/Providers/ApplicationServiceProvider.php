@@ -355,6 +355,7 @@ use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
+use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -367,7 +368,6 @@ use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
-use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\LockRenewingProcessRunner;
@@ -721,7 +721,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 restoreTimeoutSeconds: Config::integer('orbit.hibernation.cold_wake_timeout_seconds'),
             ),
         );
-        $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
+        $this->app->singleton(ManagedUserAccountResolver::class, AgentManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
         $this->app->scoped(

@@ -557,7 +557,7 @@
         "Tests\\Feature\\Infrastructure\\Nodes\\RemoteNodeStorageRootPreparerTest": 0.0346,
         "Tests\\Feature\\Infrastructure\\Nodes\\RemotePhpPackageManagerTest": 8.5755,
         "Tests\\Feature\\Infrastructure\\Nodes\\RoleCatalogContractsTest": 0.369,
-        "Tests\\Feature\\Infrastructure\\Nodes\\SshManagedUserAccountResolverTest": 4.4231,
+        "Tests\\Feature\\Infrastructure\\Nodes\\AgentManagedUserAccountResolverTest": 4.4231,
         "Tests\\Feature\\Infrastructure\\Nodes\\SshNodeReachabilityProbeTest": 0.2332,
         "Tests\\Feature\\Infrastructure\\Processes\\PrometheusProcessRuntimeStatusIndexTest": 1.1938,
         "Tests\\Feature\\Infrastructure\\Processes\\PrometheusProcessUsageIndexTest": 0.3739,
