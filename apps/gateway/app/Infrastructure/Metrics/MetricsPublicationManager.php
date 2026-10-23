@@ -47,7 +47,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
             $gatewayAddress = $this->address($gateway);
             $this->address($metrics);
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
-            $this->certificatePublisher->publish($certificate);
+            $this->certificatePublisher->publish($gateway, $certificate);
             $this->certificateRecords()->record($gateway->id, MetricsCaddySiteSource::CertificateSlug);
             $this->firewall->converge($metrics, $gatewayAddress);
             $this->build($gateway);
@@ -91,7 +91,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
     private function removeUnusedCertificate(Node $gateway): void
     {
         if (CaddySiteRoles::serving(RoleName::Metrics) === []) {
-            $this->certificatePublisher->remove();
+            $this->certificatePublisher->remove($gateway);
             $this->certificateRecords()->forget($gateway->id, MetricsCaddySiteSource::CertificateSlug);
         }
     }

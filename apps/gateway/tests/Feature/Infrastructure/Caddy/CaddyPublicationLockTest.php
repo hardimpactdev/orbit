@@ -7,8 +7,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyPushScript;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Metrics\MetricsCertificatePublisher;
-use App\Infrastructure\Metrics\MetricsPublicationReceipt;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -44,7 +42,6 @@ describe('every Caddy writer', function (): void {
         'node caddy build' => [fn (): array => caddy_lock_remote_programs([
             new NodeCaddyPushScript()->command(caddy_lock_caddyfile()),
         ])],
-        'metrics certificate' => [fn (): array => caddy_lock_metrics_programs()],
         'metrics access reload' => [fn (): array => caddy_lock_access_programs()],
     ]);
 
@@ -56,7 +53,6 @@ describe('every Caddy writer', function (): void {
         expect($reloaders)->toEqualCanonicalizing([
             'app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php',
             'app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php',
-            'app/Infrastructure/Metrics/MetricsCertificatePublisher.php',
             'app/Infrastructure/Metrics/NativeMetricsAccessRevoker.php',
         ]);
 
@@ -154,17 +150,6 @@ function caddy_lock_caddyfile(): NodeCaddyfile
 }
 
 /** @return list<array{arguments: list<string>, program: string}> */
-function caddy_lock_metrics_programs(): array
-{
-    $processes = caddy_lock_process_runner();
-    $certificate = new MetricsCertificatePublisher($processes);
-
-    $certificate->restore(MetricsPublicationReceipt::created());
-    $certificate->remove();
-
-    return caddy_lock_invocation_programs($processes->invocations);
-}
-
 /** @return list<array{arguments: list<string>, program: string}> */
 function caddy_lock_access_programs(): array
 {

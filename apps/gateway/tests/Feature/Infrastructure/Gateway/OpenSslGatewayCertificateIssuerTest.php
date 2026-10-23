@@ -13,9 +13,11 @@ use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FixtureProcessRunner;
 use Tests\Support\RootCaFixture;
 
@@ -227,7 +229,8 @@ it('keeps an issued generation stable while later certificates are published', f
         };
 
         new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish($first);
-        new MetricsCertificatePublisher($publications)->publish($first);
+        $agents = new FakeAgentCommandRunner()->answer('metrics.certificate', ['change' => 'created', 'previous' => null]);
+        new MetricsCertificatePublisher($agents)->publish(new Node(['name' => 'gateway']), $first);
 
         $copySources = array_values(array_map(
             static function (ProcessInvocation $invocation): string {
@@ -243,7 +246,6 @@ it('keeps an issued generation stable while later certificates are published', f
                 ),
             ),
         ));
-        $metricsPublication = $publications->invocations[array_key_last($publications->invocations)];
 
         expect($first->certificatePath)
             ->toStartWith($orbitHome.'/ca/gateway-versions/')
@@ -256,8 +258,7 @@ it('keeps an issued generation stable while later certificates are published', f
         expect(file_get_contents($first->privateKeyPath))
             ->toBe($firstPrivateKey);
         expect($copySources)->toBe([$first->certificatePath, $first->privateKeyPath, $orbitHome.'/ca/root.pem']);
-        expect(array_slice($metricsPublication->arguments, 5, 2))
-            ->toBe([$first->certificatePath, $first->privateKeyPath]);
+        expect($agents->calls[0]['input'])->toMatchArray(['certificate' => $firstCertificate, 'key' => $firstPrivateKey]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

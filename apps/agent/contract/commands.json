@@ -800,6 +800,19 @@
       ]
     },
     {
+      "name": "metrics.certificate",
+      "summary": "Publish, restore, or remove the Metrics site's certificate for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.certificate_failed"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

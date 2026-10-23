@@ -15,6 +15,7 @@ pub mod firewall;
 pub mod health;
 pub mod instances;
 pub mod laravel;
+pub mod metrics_certificate;
 pub mod php_runtime;
 pub mod production;
 pub mod production_home;
@@ -110,6 +111,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy::RemoveCertificate>(),
         entry::<caddy::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
+        entry::<metrics_certificate::MetricsCertificate>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),

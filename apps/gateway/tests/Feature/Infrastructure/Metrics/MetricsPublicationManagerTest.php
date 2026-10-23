@@ -16,8 +16,6 @@ use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsPublicationSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -25,6 +23,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RecordingNodeCaddyBuilds;
 
 it('publishes the certificate and firewall, requests a Gateway build, and publishes DNS last', function (): void {
@@ -69,7 +68,7 @@ it('writes no Caddy file on the Gateway itself', function (): void {
     expect($invocations)->not->toBeEmpty();
 
     foreach ($invocations as $invocation) {
-        expect(implode(' ', $invocation->arguments)."\n".($invocation->input ?? ''))
+        expect(json_encode($invocation, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->not->toContain('orbit-versions')
             ->not->toContain('metrics.caddy');
     }
@@ -185,7 +184,7 @@ it('retains projection ownership when DNS publication fails', function (): void 
 /**
  * @param  list<string>  $events
  * @param  list<CommandResult>  $sshResults
- * @param  list<ProcessInvocation>  $invocations
+ * @param  list<array<string, mixed>>  $invocations  The input of each Metrics certificate agent call.
  */
 function metrics_publication_manager(
     array &$events,
@@ -195,11 +194,16 @@ function metrics_publication_manager(
     ?DevelopmentProjectionOperationLock $projection = null,
     array &$invocations = [],
 ): MetricsPublicationManager {
-    $processes = new MetricsPublicationManagerProcessRunner($events, $invocations);
+    $agents = new FakeAgentCommandRunner()->answer('metrics.certificate', static function (array $input) use (&$events, &$invocations): array {
+        $invocations[] = $input;
+        $events[] = 'process:certificate';
+
+        return $input['operation'] === 'publish' ? ['change' => 'created', 'previous' => null] : [];
+    });
 
     return new MetricsPublicationManager(
         certificates: new MetricsPublicationManagerCertificateIssuer($events),
-        certificatePublisher: new MetricsCertificatePublisher($processes),
+        certificatePublisher: new MetricsCertificatePublisher($agents),
         builds: new RecordingNodeCaddyBuilds($events, $buildFailure),
         firewall: new MetricsPublicationSshExecutor(
             new MetricsPublicationManagerSshExecutor($events, $sshResults),
@@ -247,26 +251,6 @@ function metrics_publication_manager_wireguard_firewall(): string
         STATUS;
 }
 
-final class MetricsPublicationManagerProcessRunner implements ProcessRunner
-{
-    /**
-     * @param  list<string>  $events
-     * @param  list<ProcessInvocation>  $invocations
-     */
-    public function __construct(
-        private array &$events,
-        private array &$invocations,
-    ) {}
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->invocations[] = $invocation;
-        $this->events[] = str_contains((string) $invocation->input, 'orbit-metrics-cert') ? 'process:certificate' : 'process:other';
-
-        return metrics_publication_manager_result();
-    }
-}
-
 final class MetricsPublicationManagerCertificateIssuer implements GatewayCertificateIssuer
 {
     /** @param list<string> $events */
@@ -277,8 +261,12 @@ final class MetricsPublicationManagerCertificateIssuer implements GatewayCertifi
     public function issue(string $domain, string $wireguardIp): GatewayCertificatePaths
     {
         $this->events[] = 'certificate:issue';
+        $directory = sys_get_temp_dir().'/orbit-metrics-manager-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+        file_put_contents("{$directory}/metrics.key", "KEY\n");
+        file_put_contents("{$directory}/metrics.pem", "CERTIFICATE\n");
 
-        return new GatewayCertificatePaths('/ca/metrics.key', '/ca/metrics.pem');
+        return new GatewayCertificatePaths("{$directory}/metrics.key", "{$directory}/metrics.pem");
     }
 }
 

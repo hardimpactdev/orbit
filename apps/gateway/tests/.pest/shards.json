@@ -815,7 +815,7 @@
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsConfigurationRendererTest": 0.0078,
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsExporterSshExecutorLifecycleTest": 0.0151,
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsInfrastructureTest": 0.0463,
-        "Tests\\Unit\\Infrastructure\\Metrics\\MetricsLocalPublicationTest": 0.0063,
+        "Tests\\Feature\\Infrastructure\\Metrics\\MetricsCertificatePublisherTest": 0.0063,
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsPublicationReceiptTest": 0.0067,
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsPublicationSshExecutorTest": 0.0131,
         "Tests\\Unit\\Infrastructure\\Metrics\\MetricsRemoteCommandTest": 0.0029,
