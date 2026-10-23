@@ -1,5 +1,6 @@
 //! The named commands this binary implements, by area.
 
+pub mod accounts;
 pub mod agent;
 pub mod application_log;
 pub mod caddy;
@@ -23,6 +24,7 @@ pub mod production;
 pub mod production_home;
 pub mod project_source;
 pub mod registration;
+pub mod schedules;
 pub mod source;
 pub mod sqlite_copy;
 pub mod sqlite_seed;
@@ -122,6 +124,12 @@ pub fn all() -> Vec<Entry> {
         entry::<hibernation::InspectCheckout>(),
         entry::<hibernation::PruneCheckout>(),
         entry::<hibernation::RestoreDependencies>(),
+        entry::<schedules::InstallSchedule>(),
+        entry::<schedules::ActivateSchedule>(),
+        entry::<schedules::RunSchedule>(),
+        entry::<schedules::ReadScheduleLogs>(),
+        entry::<schedules::RemoveSchedule>(),
+        entry::<accounts::LookupAccount>(),
         entry::<dev_certificates::RequestLeaf>(),
         entry::<dev_certificates::PublishLeaf>(),
         entry::<dev_certificates::InspectLeaf>(),

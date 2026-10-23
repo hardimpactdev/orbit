@@ -77,6 +77,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
@@ -446,12 +447,14 @@ it('captures production runtime definitions during clone and installs them only 
             return 'test-root-certificate';
         }
     };
+    $scheduleAgents = new FakeAgentCommandRunner;
+    foreach (['schedules.install', 'schedules.activate', 'schedules.remove'] as $command) {
+        $scheduleAgents->answer($command, []);
+    }
     $scheduleRuntime = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
         new ScheduleRenderer($certificates),
-        $ssh,
-        $keys,
-        $knownHosts,
+        $scheduleAgents,
     );
     $definitions = new InstantiateProjectRuntimeDefinitionsAction(
         app(ProcessAdmissionLock::class),
@@ -515,10 +518,9 @@ it('captures production runtime definitions during clone and installs them only 
         ->and($schedule->desired_timer_state)
         ->toBe(DesiredTimerState::Disabled)
         ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
-        ->toContain(
-            ['sudo', 'test', '-d', $target->production_home.'/current'],
-            ['sudo', '-u', $target->production_user, 'test', '-d', $target->production_home.'/current'],
-        );
+        ->toContain(['sudo', 'test', '-d', $target->production_home.'/current'])
+        ->and($scheduleAgents->calls[0]['input'])
+        ->toMatchArray(['user' => $target->production_user, 'working_directory' => $target->production_home.'/current']);
 });
 
 it('prepares a production target from an eligible production candidate', function (): void {

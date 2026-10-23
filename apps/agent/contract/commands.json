@@ -906,6 +906,109 @@
       ]
     },
     {
+      "name": "schedules.install",
+      "summary": "Write a Schedule's units and set its timer.",
+      "mutates": true,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.activate",
+      "summary": "Enable and start a Schedule's timer.",
+      "mutates": true,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.run",
+      "summary": "Start one run of a Schedule.",
+      "mutates": true,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.logs",
+      "summary": "Read a Schedule's newest journal entries.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "schedules.remove",
+      "summary": "Delete a Schedule's units.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "accounts.lookup",
+      "summary": "Read a local account's primary group, home, and shell.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "accounts.missing"
+      ]
+    },
+    {
       "name": "certificates.request-leaf",
       "summary": "Reuse a valid development leaf certificate, or make a new key and its signing request.",
       "mutates": true,

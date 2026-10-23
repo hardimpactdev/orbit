@@ -9,31 +9,24 @@ use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Schedule;
-use Illuminate\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
-use Tests\Support\HostBinary;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
-    $this->ssh = new ScheduleRuntimeFakeSshExecutor;
+    $this->agents = new FakeAgentCommandRunner;
+    foreach (['schedules.install', 'schedules.activate', 'schedules.run', 'schedules.remove'] as $command) {
+        $this->agents->answer($command, []);
+    }
+    $this->agents->answer('schedules.logs', ['output' => "older\nnewest\n", 'truncated' => false]);
     $this->manager = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
         new ScheduleRenderer(new ScheduleRuntimeFakeCertificates, 'https://10.44.0.1'),
-        $this->ssh,
-        new ScheduleRuntimeFakeKeys,
-        new ScheduleRuntimeFakeKnownHosts,
+        $this->agents,
     );
     $this->node = Node::query()->create([
         'name' => 'node',
@@ -93,176 +86,78 @@ it('requires the selected production release even when installing a disabled Sch
         'desired_timer_state' => DesiredTimerState::Disabled,
         'status' => LifecycleStatus::Provisioning,
     ]);
-    $this->ssh->responses = [schedule_runtime_result(exitCode: 1)];
+    $this->agents->refuse('schedules.install', 'schedules.target_unavailable');
 
     expect(fn () => $this->manager->install($schedule))
         ->toThrow(function (ScheduleOperationException $exception): void {
             expect($exception->error)->toBe(ScheduleErrorCode::TargetUnavailable);
         });
 
-    expect($this->ssh->commands)->toHaveCount(1)
-        ->and($this->ssh->commands[0]->arguments)
-        ->toBe(['sudo', '-u', 'managed', 'test', '-d', '/home/managed/current']);
+    expect($this->agents->calls)->toHaveCount(1)
+        ->and($this->agents->calls[0]['input'])
+        ->toMatchArray(['user' => 'managed', 'working_directory' => '/home/managed/current', 'desired' => 'disabled']);
 });
 
-it('installs through one locked protected-input transaction with fixed safe argv', function (): void {
+it('installs the rendered units, calendar, and desired timer state in one agent call', function (): void {
     $this->manager->install($this->schedule);
-    $command = $this->ssh->commands[1];
 
-    expect($this->ssh->commands[0]->arguments)->toBe([
-        'sudo',
-        '-u',
-        'orbit',
-        'test',
-        '-d',
-        '/home/orbit',
-    ]);
-
-    expect($command->arguments)->toBe([
-        'sudo',
-        'bash',
-        '-s',
-        '--',
-        $this->schedule->id,
-        'orbit',
-        'enabled',
-    ])->and(json_encode($command->arguments, JSON_THROW_ON_ERROR))
-        ->not->toContain($this->schedule->command)
-        ->and($command->input)->toBeNull()
-        ->and($command->protectedInput)->not->toBeNull();
-
-    $program = stream_get_contents($command->protectedInput?->stream());
-    expect($program)->toContain('flock --wait 30')
-        ->toContain('cleanup() { rm -rf -- "$work"; }')
-        ->toContain('trap cleanup EXIT')
-        ->toContain("rollback() {\n  set +e\n  systemctl disable --now \"\$timer\"")
-        ->toContain('systemd-analyze calendar')
-        ->toContain('systemd-analyze verify')
-        ->not->toContain($this->schedule->command);
+    $input = $this->agents->calls[0]['input'];
+    expect($this->agents->commands())->toBe(['schedules.install'])
+        ->and($input)->toMatchArray([
+            'id' => $this->schedule->id,
+            'user' => 'orbit',
+            'group' => 'orbit',
+            'desired' => 'enabled',
+            'calendar' => 'daily',
+        ])
+        ->and($input['script'])->toContain('sensitive command')
+        ->and($input['service'])->toContain('X-Orbit-Schedule-ID='.$this->schedule->id)
+        ->and($input['timer'])->toContain('OnCalendar=daily');
 });
 
-it('creates and repairs the shared Orbit directory before preserving protected Schedule siblings', function (): void {
-    $this->manager->install($this->schedule);
-    $program = stream_get_contents($this->ssh->commands[1]->protectedInput?->stream()) ?: '';
-    $root = sys_get_temp_dir().'/orbit-schedule-shared-parent-'.bin2hex(random_bytes(6));
-    $bin = $root.'/bin';
-    $missing = $root.'/missing/orbit';
-    $existing = $root.'/existing/orbit';
+it('maps each install refusal to its Schedule error', function (string $refusal, string $step, ScheduleErrorCode $error): void {
+    $this->agents->refuse('schedules.install', $refusal);
 
-    try {
-        mkdir($bin, 0700, true);
-        schedule_runtime_write_root_identity_commands($bin);
-        mkdir(dirname($missing), 0700, true);
+    expect(fn () => $this->manager->install($this->schedule))
+        ->toThrow(function (ScheduleOperationException $exception) use ($step, $error): void {
+            expect($exception->step)->toBe($step)->and($exception->error)->toBe($error);
+        });
+})->with([
+    ['schedules.artifact_conflict', 'inspect-artifacts', ScheduleErrorCode::ArtifactConflict],
+    ['schedules.calendar_invalid', 'validate-calendar', ScheduleErrorCode::CalendarInvalid],
+    ['schedules.rollback_failed', 'rollback', ScheduleErrorCode::RollbackFailed],
+    ['schedules.failed', 'install', ScheduleErrorCode::InstallFailed],
+]);
 
-        $missingResult = schedule_runtime_run_shared_directory_program($program, $missing, 42, $bin);
+it('reports a Node that does not answer as unreachable', function (): void {
+    $this->agents->answer('schedules.run', fn () => throw new RuntimeException('ssh failed'));
 
-        expect($missingResult->getExitCode())
-            ->toBe(0)
-            ->and(substr(sprintf('%o', fileperms($missing)), -3))
-            ->toBe('711');
-
-        mkdir($existing.'/php-fpm/private', 0700, true);
-        file_put_contents($existing.'/php-fpm/private/sentinel', "protected-php-state\n");
-        chmod($existing, 0700);
-        chmod($existing.'/php-fpm', 0700);
-        chmod($existing.'/php-fpm/private', 0700);
-        chmod($existing.'/php-fpm/private/sentinel', 0600);
-        $sentinelHash = hash_file('sha256', $existing.'/php-fpm/private/sentinel');
-
-        $first = schedule_runtime_run_shared_directory_program($program, $existing, 42, $bin);
-        $retry = schedule_runtime_run_shared_directory_program($program, $existing, 42, $bin);
-
-        expect($first->getExitCode())
-            ->toBe(0)
-            ->and($retry->getExitCode())
-            ->toBe(0)
-            ->and(substr(sprintf('%o', fileperms($existing)), -3))
-            ->toBe('711')
-            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm')), -3))
-            ->toBe('700')
-            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm/private')), -3))
-            ->toBe('700')
-            ->and(substr(sprintf('%o', fileperms($existing.'/php-fpm/private/sentinel')), -3))
-            ->toBe('600')
-            ->and(hash_file('sha256', $existing.'/php-fpm/private/sentinel'))
-            ->toBe($sentinelHash)
-            ->and(mb_strpos($program, 'converge_shared_orbit_directory /etc/orbit 42'))
-            ->toBeLessThan(mb_strpos($program, 'existed_script=0'));
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
+    expect(fn () => $this->manager->run($this->schedule))
+        ->toThrow(fn (ScheduleOperationException $exception) => expect($exception->error)->toBe(ScheduleErrorCode::NodeUnreachable));
 });
 
-it('uses the exact service for non-blocking runs and bounded newest complete logs', function (): void {
-    $this->ssh->responses = [
-        schedule_runtime_result(),
-        schedule_runtime_result(),
-        schedule_runtime_result(stdout: "newest\nolder\n"),
-    ];
-
+it('runs the Schedule and reads its bounded newest logs', function (): void {
     $this->manager->run($this->schedule);
     $logs = $this->manager->logs($this->schedule, 25);
 
-    expect($this->ssh->commands[1]->arguments)->toBe([
-        'sudo',
-        'systemctl',
-        'start',
-        '--no-block',
-        'orbit-schedule-'.$this->schedule->id.'.service',
-    ])->and($this->ssh->commands[2]->arguments)->toBe([
-        'sudo',
-        'journalctl',
-        '--unit',
-        'orbit-schedule-'.$this->schedule->id.'.service',
-        '--lines',
-        '25',
-        '--no-pager',
-        '--output',
-        'cat',
-        '--reverse',
-    ])->and($this->ssh->commands[2]->timeout)->toBe(10.0)
+    expect($this->agents->calls[1]['input'])->toBe(['id' => $this->schedule->id, 'lines' => 25, 'max_bytes' => 1_048_576])
         ->and($logs->output)->toBe("older\nnewest\n")
         ->and($logs->truncated)->toBeFalse();
 });
 
-it('retains standalone intent when direct service inspection finds an active command', function (): void {
-    $this->ssh->responses = [schedule_runtime_result(exitCode: 75)];
+it('retains standalone intent while a run is active, and removes on cascade', function (): void {
+    $this->agents->refuse('schedules.remove', 'schedules.run_active');
 
     expect($this->manager->remove($this->schedule, false))->toBeFalse()
-        ->and($this->ssh->commands[0]->arguments)->toBe([
-            'sudo',
-            'bash',
-            '-s',
-            '--',
-            $this->schedule->id,
-            'orbit',
-            'standalone',
-        ]);
-
-    $program = stream_get_contents($this->ssh->commands[0]->protectedInput?->stream());
-    expect($program)
-        ->toContain('systemctl is-active "$service"')
-        ->toContain("case \"\$service_state\" in ''|inactive|failed|unknown) ;; *) exit 75 ;; esac");
-});
-
-it('resets failed Schedule unit records after it removes the unit files', function (): void {
-    expect($this->manager->remove($this->schedule, true))->toBeTrue();
-
-    $program = (string) stream_get_contents($this->ssh->commands[0]->protectedInput?->stream());
-    expect($program)->toContain(
-        "systemctl daemon-reload\n"
-        ."systemctl reset-failed \"\$service\" >/dev/null 2>&1 || true\n"
-        ."systemctl reset-failed \"\$timer\" >/dev/null 2>&1 || true\n",
-    );
+        ->and($this->agents->calls[0]['input'])->toBe(['id' => $this->schedule->id, 'group' => 'orbit', 'cascade' => false])
+        ->and(fn () => $this->manager->remove($this->schedule, true))->toThrow(ScheduleOperationException::class);
 });
 
 it('maps root certificate rendering failures to the bounded install error', function (): void {
     $manager = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
         new ScheduleRenderer(new ScheduleRuntimeFailingCertificates),
-        $this->ssh,
-        new ScheduleRuntimeFakeKeys,
-        new ScheduleRuntimeFakeKnownHosts,
+        $this->agents,
     );
 
     expect(fn () => $manager->install($this->schedule))
@@ -271,56 +166,8 @@ it('maps root certificate rendering failures to the bounded install error', func
                 ->and($exception->error)->toBe(ScheduleErrorCode::InstallFailed)
                 ->and($exception->getMessage())->toBe('Schedule installation failed.');
         })
-        ->and($this->ssh->commands)->toHaveCount(1);
+        ->and($this->agents->calls)->toBe([]);
 });
-
-function schedule_runtime_result(
-    int $exitCode = 0,
-    string $stdout = '',
-    string $stderr = '',
-    bool $truncated = false,
-): CommandResult {
-    return new CommandResult($exitCode, $stdout, $stderr, 1, $truncated);
-}
-
-final class ScheduleRuntimeFakeSshExecutor implements SshExecutor
-{
-    /** @var list<RemoteCommand> */
-    public array $commands = [];
-
-    /** @var list<CommandResult> */
-    public array $responses = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = $command;
-
-        return array_shift($this->responses) ?? schedule_runtime_result();
-    }
-}
-
-final class ScheduleRuntimeFakeKeys implements SshKeyProvider
-{
-    public function privateKeyPath(): string
-    {
-        return '/orbit/ssh/id_ed25519';
-    }
-
-    public function publicKey(): string
-    {
-        return 'ssh-ed25519 test';
-    }
-}
-
-final class ScheduleRuntimeFakeKnownHosts implements KnownHostsStore
-{
-    public function path(): string
-    {
-        return '/orbit/ssh/known_hosts';
-    }
-
-    public function put(string $host, int $port, HostKey $key): void {}
-}
 
 final class ScheduleRuntimeFakeCertificates implements LeafCertificateSigner
 {
@@ -346,50 +193,4 @@ final class ScheduleRuntimeFailingCertificates implements LeafCertificateSigner
     {
         throw new RuntimeException('Sensitive root certificate failure.');
     }
-}
-
-function schedule_runtime_run_shared_directory_program(
-    string $program,
-    string $directory,
-    int $conflictExit,
-    string $bin,
-): Process {
-    $operation = mb_strpos($program, "\nset -Eeuo pipefail");
-    expect($operation)->not->toBeFalse();
-    $function = substr($program, 0, (int) $operation);
-    $process = new Process(
-        ['bash', '-seu', '--', $directory, (string) $conflictExit],
-        env: ['PATH' => $bin.':'.getenv('PATH')],
-    );
-    $process->setInput($function."\n".<<<'BASH'
-        converge_shared_orbit_directory "$1" "$2"
-        BASH);
-    $process->run();
-
-    return $process;
-}
-
-function schedule_runtime_write_root_identity_commands(string $bin): void
-{
-    file_put_contents($bin.'/install', <<<'BASH'
-        #!/bin/sh
-        for argument do directory=$argument; done
-        mkdir -m 0711 -- "$directory"
-        BASH);
-    chmod($bin.'/install', 0700);
-    file_put_contents($bin.'/stat', HostBinary::expand(<<<'BASH'
-        #!/bin/sh
-        if [ "$1" = -c ] && [ "$2" = %U:%G ]; then
-            printf 'root:root\n'
-            exit 0
-        fi
-        if [ "$1" = -c ] && [ "$2" = %U:%G:%a ]; then
-            shift 2
-            [ "$1" = -- ] && shift
-            printf 'root:root:%s\n' "$({{host:stat}} -c %a -- "$1")"
-            exit 0
-        fi
-        exec {{host:stat}} "$@"
-        BASH));
-    chmod($bin.'/stat', 0700);
 }
