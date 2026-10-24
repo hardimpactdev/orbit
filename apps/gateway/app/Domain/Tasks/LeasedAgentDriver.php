@@ -25,7 +25,12 @@ final readonly class LeasedAgentDriver implements AgentDriver
             && $pending->role === $intent->role->value) {
             app(TaskWorkspaceLease::class)->turn($group, $intent->role, 'thread:'.$pending->id, $pending->id);
             if (! $intent->deferOpeningTurn) {
-                app(TaskWorkspaceLease::class)->dispatch($pending, key: $intent->openingKey, message: $intent->prompt);
+                $key = app(TaskWorkspaceLease::class)->dispatch($pending, key: $intent->openingKey, message: $intent->prompt);
+                $intent = new AgentThreadStart(
+                    $intent->node, $intent->workspace, $intent->title, $intent->prompt,
+                    $intent->model, $intent->effort, $intent->role, $key,
+                    $intent->externalId, $intent->deferOpeningTurn, $intent->threadId,
+                );
             }
         } elseif (Task::topLevel()->where('taskable_id', $intent->workspace->id)->exists()) {
             throw new AgentDriverException('The task turn has no unambiguous workspace owner.');

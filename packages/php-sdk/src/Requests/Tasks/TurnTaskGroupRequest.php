@@ -28,6 +28,7 @@ final class TurnTaskGroupRequest extends GatewayRequest implements HasBody
         private readonly ?string $model = null,
         private readonly ?int $check = null,
         private readonly ?string $idempotencyKey = null,
+        private readonly ?TaskAnalysisReference $analysis = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -46,6 +47,7 @@ final class TurnTaskGroupRequest extends GatewayRequest implements HasBody
         return json_encode(array_filter([
             'subtask' => $this->subtask, 'role' => $this->role, 'prompt' => $this->prompt,
             'thread' => $this->thread, 'model' => $this->model, 'check' => $this->check,
+            'analysis' => $this->analysis?->toArray(),
         ], static fn (mixed $value): bool => $value !== null), JSON_THROW_ON_ERROR);
     }
 

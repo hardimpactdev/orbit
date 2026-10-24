@@ -16,6 +16,10 @@ covers:
 
 A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the first subtask writes the documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, merge, CI, the local checks, and the main caches that make those checks fast.
 
+The docs-first amendment for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) supplies complete candidate-bound evidence to existing turns; it is not another baseline or handoff lane. Its native implementation follows independent docs review. Run Orbit's existing checker with the complete cumulative plan, preserve all diagnostics and check-mode generator outcomes, and keep the docs gate that checks actual files at handoff.
+
+Edits invalidate the author evidence; analyze the current checked candidate for review rather than rerunning baseline. Unknown execution or descendants stay fenced until terminal proof, and a lost reply never authorizes a duplicate run or send. Record measured duration and zero mechanical LLM calls without claiming savings or live interruption proof from documentation checks.
+
 ## Review on Incus
 
 Orbit's independent reviewer checks the complete change and reproduces the feature on an [Incus topology](/reference/incus-topologies) before merge. Use the machines allocated to the review, and verify which source commit runs there. Exercise the feature and its important failure cases, then inspect the resulting state changes.

@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
@@ -502,19 +503,52 @@ describe('tasks:check', function (): void {
     ]);
 });
 
-it('follows a turn operation and renders its final receipt in JSON', function (): void {
+it('follows a turn operation and preserves an optional analysis reference in JSON', function (bool $withAnalysis): void {
     $seen = [];
     $mock = cli_deploy_gateway([
         cli_operation(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['receipt' => ['outcome' => 'ready_for_review'], 'thread' => 9], 'poll_after_seconds' => null]),
     ], $seen, TurnTaskGroupRequest::class, ['kind' => 'tasks.turn', 'target_type' => 'task_group']);
 
-    expect(Artisan::call('tasks:turn', ['group' => '17', '--subtask' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
+    $analysis = $withAnalysis ? ['operation' => 7, 'plan_sha256' => str_repeat('a', 64)] : null;
+    $arguments = $withAnalysis ? ['--analysis' => '7', '--analysis-plan-sha256' => str_repeat('a', 64)] : [];
+    expect(Artisan::call('tasks:turn', ['group' => '17', '--subtask' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true, ...$arguments]))->toBe(0);
     $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     expect($output['result']['receipt']['outcome'])->toBe('ready_for_review');
     $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskGroupRequest
         && $request->headers()->get('Idempotency-Key') === 'turn.c1'
-        && json_decode((string) $request->body(), true) === ['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
-});
+        && json_decode((string) $request->body(), true) === ['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen', ...($analysis === null ? [] : ['analysis' => $analysis])]);
+})->with([false, true]);
+
+it('rejects incomplete or malformed turn analysis references before Gateway access', function (array $arguments): void {
+    $mock = MockClient::global([]);
+    expect(Artisan::call('tasks:turn', ['group' => '17', '--subtask' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--json' => true, ...$arguments]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.analysis_invalid');
+    $mock->assertNothingSent();
+})->with([
+    [['--analysis' => '7']],
+    [['--analysis-plan-sha256' => str_repeat('a', 64)]],
+    [['--analysis' => '7', '--analysis-plan-sha256' => str_repeat('A', 64)]],
+    [['--analysis' => '7', '--analysis-plan-sha256' => 'short']],
+]);
+
+it('transports complete raw analysis manifests without lossy client normalization', function (string $mode): void {
+    $input = json_decode(gateway_fixture('tasks/tasks-analyze/queued')['body'], true, flags: JSON_THROW_ON_ERROR)['data']['input'];
+    $plan = json_encode($input['plan'], JSON_THROW_ON_ERROR);
+    if ($mode === 'duplicate') {
+        $plan = str_replace('"complete":true', '"complete":true,"complete":true', $plan);
+    } elseif ($mode === 'padded') {
+        $plan = str_repeat(' ', 36000).$plan;
+    }
+    $path = $this->orbitHome.'/analysis-plan.json';
+    file_put_contents($path, $plan);
+    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-analyze/not-orchestrated'));
+    expect(Artisan::call('tasks:analyze', ['group' => '1', '--subtask' => (string) $input['subtask'], '--plan' => $path,
+        '--plan-sha256' => $input['plan_sha256'], '--base' => $input['base'], '--head' => $input['head'], '--tree' => $input['tree'],
+        '--idempotency-key' => 'analysis.c1', '--json' => true]))->toBe(1);
+    $mock->assertSent(static fn ($request): bool => $request instanceof AnalyzeTaskGroupRequest
+        && $request->headers()->get('Idempotency-Key') === 'analysis.c1'
+        && str_contains((string) $request->body(), '"plan":'.$plan.'}'));
+})->with(['native', 'duplicate', 'padded']);
 
 describe('tasks:publish', function (): void {
     beforeEach(function (): void {

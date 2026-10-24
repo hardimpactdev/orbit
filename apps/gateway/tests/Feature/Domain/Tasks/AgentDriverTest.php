@@ -52,7 +52,7 @@ function driver_group(): array
         public function observe(AgentThread $thread): AgentObservation
         {
             return $thread->role === 'reviewer'
-                ? new AgentObservation(AgentThreadState::Done, turnId: 'reviewer-opening-done')
+                ? new AgentObservation(AgentThreadState::Done, turnId: $this->acceptedTurnKeys[$thread->external_id])
                 : parent::observe($thread);
         }
     };
@@ -60,7 +60,7 @@ function driver_group(): array
     app()->instance(AgentDriverRegistry::class, $registry);
     $spawner = app(AgentSpawner::class);
     $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($task)]);
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'reviewer-opening-done');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$group->reviewerThread->external_id]);
     $task->update(['implementer_agent_thread_id' => $spawner->spawnImplementer($task)]);
     $driver->observation = null;
 
@@ -77,11 +77,11 @@ it('creates the conversation for each role through the driver recorded for that 
     $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
     $implementer = new FakeAgentDriver('implementer-runtime');
     $reviewer = new FakeAgentDriver('reviewer-runtime');
-    $reviewer->observation = new AgentObservation(AgentThreadState::Done, turnId: 'role-reviewer-opening-done');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));
     $spawner = app(AgentSpawner::class);
 
     $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($task));
+    $reviewer->observation = new AgentObservation(AgentThreadState::Done, turnId: $reviewer->acceptedTurnKeys[$reviewerThread->external_id]);
     $implementerThread = AgentThread::query()->findOrFail($spawner->spawnImplementer($task));
 
     expect($reviewerThread->driver)->toBe('reviewer-runtime')
@@ -92,7 +92,7 @@ it('creates the conversation for each role through the driver recorded for that 
 
 it('creates and resumes conversations through a second driver without T3', function (): void {
     [$group, $task, $driver, $registry] = driver_group();
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$task->implementerThread->external_id]);
     $observer = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader);
     $observation = $observer->observe($group, $group->tasks()->firstOrFail());
     new TaskSessionActor($registry)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 1.0, 'Continue.'));
@@ -191,8 +191,9 @@ it('scopes external identifiers to the driver and runtime', function (): void {
 
 it('routes an attached conversation without a legacy pointer', function (): void {
     [$group, $task, $driver] = driver_group();
+    $turn = $driver->acceptedTurnKeys[$task->implementerThread->external_id];
     $task->update(['implementer_agent_thread_id' => null]);
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $turn);
     app(TaskExtensionState::class)->enable();
 
     $decisions = app(TaskScheduler::class)->tick();
@@ -206,8 +207,8 @@ it('routes an attached conversation without a legacy pointer', function (): void
 });
 
 it('rejects a drain when the requested input is no longer available', function (): void {
-    [$group, , $driver, $registry] = driver_group();
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'implementer-opening-done');
+    [$group, $task, $driver, $registry] = driver_group();
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$task->implementerThread->external_id]);
     $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
 
     expect(fn () => new TaskSessionActor($registry)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))

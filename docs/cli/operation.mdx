@@ -52,6 +52,8 @@ orbit operation:show <operation> [--json]
 
 JSON returns the record with every step, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome.
 
+For [`tasks.analyze`](/cli/tasks#orbit-tasksanalyze), inspect `result.outcome`, not just operation status. A successful operation can report `blocked` or a changed checkout. `result.artifact` retains the complete bounded report with its digest and byte length; step output tails are not a substitute. Use `operation:show <operation> --json` to recover that complete evidence after the starting command stops following.
+
 ```bash
 orbit operation:show 42
 ```

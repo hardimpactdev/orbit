@@ -25,6 +25,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
@@ -124,9 +125,10 @@ function task_spawner_stack(?TaskWorkspaceMcp $mcp = null): array
 
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $turns = count(array_filter($this->dispatcher->commands, static fn (array $command): bool => ($command['threadId'] ?? null) === $threadId));
+            $turn = collect($this->dispatcher->commands)->last(static fn (array $command): bool => ($command['threadId'] ?? null) === $threadId
+                && in_array($command['type'], ['create', 'send'], true) && ! ($command['deferOpeningTurn'] ?? false));
 
-            return ['thread' => ['id' => $threadId, 'session' => ['status' => 'done'], 'latestTurn' => ['id' => $threadId.':'.$turns, 'state' => 'completed']]];
+            return ['thread' => ['id' => $threadId, 'session' => ['status' => 'done'], 'latestTurn' => ['id' => $turn['commandId'] ?? null, 'state' => 'completed']]];
         }
     };
     $registry = test_snapshot_registry($dispatcher, $reader);
@@ -142,13 +144,32 @@ function task_spawner_fake_driver(): FakeAgentDriver
         #[Override]
         public function observe(AgentThread $thread): AgentObservation
         {
-            return new AgentObservation(AgentThreadState::Done, turnId: $thread->external_id.':'.count($this->calls));
+            return new AgentObservation(AgentThreadState::Done, turnId: $this->acceptedTurnKeys[$thread->external_id]);
         }
     };
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
 
     return $driver;
 }
+
+it('forwards the journaled generated opening key to the driver', function (): void {
+    $group = task_spawner_group();
+    $driver = new FakeAgentDriver('pi');
+    $registry = new AgentDriverRegistry([$driver]);
+    app()->instance(AgentDriverRegistry::class, $registry);
+    $spawner = new TaskAgentSpawner($registry, app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
+
+    $thread = AgentThread::query()->findOrFail($spawner->spawnImplementer($group->tasks->sole()));
+    $lease = TaskWorkspaceLeaseRecord::query()->where('thread_id', $thread->id)->where('status', 'held')->sole();
+
+    expect($lease->dispatch_key)->toBeString()->not->toBeEmpty();
+    expect($driver->acceptedTurnKeys)->toBe([$thread->external_id => $lease->dispatch_key]);
+    expect($lease->getAttribute('dispatch_completed'))->toBeFalse();
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$thread->external_id]);
+    app(TaskWorkspaceLease::class)->reconcile($group);
+    expect($lease->refresh()->status)->toBe('released');
+    expect($lease->getAttribute('dispatch_completed'))->toBeTrue();
+});
 
 it('spawns fresh role threads on the workspace Node with the configured model and opening prompt', function (): void {
     $group = task_spawner_group();
@@ -406,7 +427,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     $reviewer->update(['task_id' => $task->id]);
     $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
     $driver = task_spawner_fake_driver();
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'prior-rejected-review');
+    $driver->acceptedTurnKeys[$reviewer->external_id] = 'prior-rejected-review';
     $driver->failNextSend = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts

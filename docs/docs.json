@@ -551,6 +551,7 @@
               "GET /api/v1/task-groups/{group}/agents",
               "GET /api/v1/task-groups/{group}/agents/{session}",
               "GET /api/v1/task-groups/{group}/agents/{session}/stream",
+              "POST /api/v1/task-groups/{group}/analyze",
               "POST /api/v1/task-groups/{group}/cancel",
               "POST /api/v1/task-groups/{group}/check",
               "GET /api/v1/task-groups/{group}/comments",

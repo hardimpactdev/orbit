@@ -7,6 +7,7 @@ namespace App\Commands\Tasks;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\Requests\Tasks\TaskAnalysisReference;
 use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
@@ -23,6 +24,8 @@ final class TurnTaskGroupCommand extends TaskCommand
         {--thread= : new or an existing thread ID}
         {--model= : Model for a new thread}
         {--check= : Passed handoff check ID for a reviewer}
+        {--analysis= : Successful usable tasks.analyze operation ID}
+        {--analysis-plan-sha256= : Canonical plan digest for the analysis reference}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -31,6 +34,16 @@ final class TurnTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $analysisId = $this->option('analysis') === null ? null : $this->idOption('analysis', 'Analysis operation', 'analysis');
+        $analysisDigest = $this->option('analysis-plan-sha256');
+        if ($analysisId === false) {
+            return self::FAILURE;
+        }
+        if (($analysisId === null) !== ($analysisDigest === null)
+            || ($analysisDigest !== null && preg_match('/\A[a-f0-9]{64}\z/D', $analysisDigest) !== 1)) {
+            return $this->renderGatewayFailure('tasks.analysis_invalid', 'Supply analysis and its lowercase canonical plan SHA-256 together.');
+        }
+        $analysis = $analysisId !== null && $analysisDigest !== null ? new TaskAnalysisReference($analysisId, $analysisDigest) : null;
         $groupId = $this->idArgument('group', 'Task group', 'group');
         $subtask = $this->idOption('subtask', 'Subtask', 'subtask');
         $role = $this->choiceInput($this->option('role'), 'Role', 'role', ['implementer', 'reviewer', 'consult']);
@@ -71,7 +84,7 @@ final class TurnTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
         $key = $this->option('idempotency-key');
-        $operation = $this->send($connector, new TurnTaskGroupRequest($groupId, $subtask, $role, $prompt, $thread, $model, $check, is_string($key) ? $key : null), OperationResponse::class);
+        $operation = $this->send($connector, new TurnTaskGroupRequest($groupId, $subtask, $role, $prompt, $thread, $model, $check, is_string($key) ? $key : null, $analysis), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Turn on task group [{$groupId}]", 'Turn')

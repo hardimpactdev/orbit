@@ -1,0 +1,116 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// A fixed stdin-only repository adapter. It has no model, write-generator, shell-command or approval interface.
+use App\Documentation\DocsImpact;
+use App\Documentation\DocsImpactReport;
+use App\Domain\Tasks\TaskAnalysisPlan;
+use App\Domain\Tasks\TaskAnalysisReport;
+use App\Support\StrictJson;
+
+$root = dirname(__DIR__);
+// Failure stdout is a closed control object, never shortened evidence or stderr reconstruction.
+$failure = static function (string $code, ?int $requiredBytes = null): never {
+    fwrite(STDOUT, json_encode(['schema' => 1, 'error' => ['code' => $code, 'required_bytes' => $requiredBytes]], JSON_THROW_ON_ERROR)."\n");
+    exit(1);
+};
+try {
+    foreach (['apps/docs/vendor/autoload.php', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
+        if (! is_file($root.'/'.$path) || ! is_readable($root.'/'.$path)) {
+            throw new RuntimeException('Required analysis tooling is unavailable.');
+        }
+        require $root.'/'.$path;
+    }
+    if (! function_exists('proc_open') || ! class_exists(DocsImpact::class) || ! class_exists(DocsImpactReport::class)) {
+        throw new RuntimeException('Required analysis tooling is unavailable.');
+    }
+} catch (Throwable) {
+    $failure('tasks.analysis_unavailable');
+}
+
+try {
+    if ($argc !== 1 || realpath(getcwd()) !== $root) {
+        throw new InvalidArgumentException('Analysis takes no arguments and runs only in its repository root.');
+    }
+    $bytes = stream_get_contents(STDIN, TaskAnalysisPlan::RequestBytes + 1024);
+    if ($bytes === false) {
+        throw new InvalidArgumentException('Analysis input is unavailable.');
+    }
+    $input = StrictJson::fields(StrictJson::decode($bytes, TaskAnalysisPlan::RequestBytes + 512), ['execution_id', 'plan', 'plan_sha256', 'base', 'head', 'tree']);
+    if (! is_string($input['execution_id']) || preg_match('/\A[a-f0-9]{32}\z/D', $input['execution_id']) !== 1 || ! is_string($input['plan_sha256'])) {
+        throw new InvalidArgumentException('Invalid Gateway execution identity.');
+    }
+    foreach (['base', 'head', 'tree'] as $key) {
+        if (! is_string($input[$key]) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $input[$key]) !== 1) {
+            throw new InvalidArgumentException('Analysis revisions must be full object IDs.');
+        }
+    }
+    $plan = TaskAnalysisPlan::parse($input['plan'], $input['plan_sha256']);
+    $git = static function (array $arguments, bool $trim = true) use ($root, $failure): string {
+        $process = proc_open(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', $root, ...$arguments], [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+        if (! is_resource($process)) {
+            $failure('tasks.analysis_unavailable');
+        }
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $exit = proc_close($process);
+        if ($exit === 127) {
+            $failure('tasks.analysis_unavailable');
+        }
+        if ($exit !== 0 || $output === false) {
+            throw new RuntimeException('Git identity validation failed.');
+        }
+
+        return $trim ? trim($output) : $output;
+    };
+    if ($git(['rev-parse', 'HEAD']) !== $input['head'] || $git(['rev-parse', '--verify', $input['base'].'^{commit}']) !== $input['base']) {
+        throw new InvalidArgumentException('Candidate or base differs.');
+    }
+    $git(['merge-base', '--is-ancestor', $input['base'], $input['head']]);
+    $tracked = array_fill_keys(explode("\0", $git(['ls-files', '-z'], false)), true);
+    $basePaths = array_fill_keys(explode("\0", $git(['ls-tree', '-rz', '--name-only', $input['base']], false)), true);
+    foreach ($plan->manifest['paths'] as $entry) {
+        if (in_array($entry['change'], ['delete', 'rename'], true) && ! isset($tracked[$entry['from'] ?? $entry['path']]) && ! isset($basePaths[$entry['from'] ?? $entry['path']])) {
+            throw new InvalidArgumentException('A delete or rename source is not tracked in the base or current inventory.');
+        }
+    }
+    $safePath = static function (string $path) use ($root): void {
+        TaskAnalysisPlan::path($path);
+        $current = $root;
+        foreach (explode('/', $path) as $component) {
+            $current .= '/'.$component;
+            if (is_link($current) && (($resolved = realpath($current)) === false || ! str_starts_with($resolved, $root.'/'))) {
+                throw new InvalidArgumentException('Manifest path escapes through a symlink.');
+            }
+        }
+        if (is_dir($root.'/'.$path)) {
+            throw new InvalidArgumentException('Manifest entries must name files, not directories.');
+        }
+    };
+    foreach ($plan->paths as $path) {
+        $safePath($path);
+    }
+    $scanner = new DocsImpact($root);
+    $paths = $scanner->paths($input['base'], $plan->paths);
+    foreach ($paths as $path) {
+        $safePath($path);
+    }
+    $report = $scanner->report($input['base'], $plan->paths);
+    $status = DocsImpactReport::status($report, $input['base'], $paths);
+    $envelope = [
+        'schema' => 1, 'execution_id' => $input['execution_id'], 'plan_sha256' => $plan->sha256,
+        'base' => $input['base'], 'head' => $input['head'], 'tree' => $input['tree'], 'status' => $status,
+        'diagnostics' => [], 'report' => ['schema' => 'orbit.docs-impact.v1', 'data' => $report],
+    ];
+    $output = json_encode($envelope, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
+    if (strlen($output) > TaskAnalysisReport::MaxBytes) {
+        $failure('tasks.analysis_report_too_large', strlen($output));
+    }
+    StrictJson::decode($output, TaskAnalysisReport::MaxBytes, 24);
+    fwrite(STDOUT, $output);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage()."\n");
+    exit(1);
+}

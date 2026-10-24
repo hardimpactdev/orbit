@@ -1242,7 +1242,8 @@
                 "0218",
                 "0219",
                 "0224",
-                "0225"
+                "0225",
+                "0229"
             ]
         },
         {
@@ -2934,6 +2935,7 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "apps/web"
             ],
@@ -2963,6 +2965,7 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
+                "0225",
                 "0229"
             ]
         },

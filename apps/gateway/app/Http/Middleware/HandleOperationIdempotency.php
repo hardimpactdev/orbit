@@ -8,11 +8,13 @@ use App\Data\Operations\OperationData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\StrictJson;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use JsonException;
 use ReflectionMethod;
 use stdClass;
@@ -35,7 +37,15 @@ final readonly class HandleOperationIdempotency
 
         $attribute = new ReflectionMethod($controller, $route->getActionMethod())->getAttributes(StartsOperation::class)[0] ?? null;
 
-        if ($attribute === null || ! $request->headers->has('Idempotency-Key')) {
+        if ($attribute === null) {
+            return $next($request);
+        }
+        $start = $attribute->newInstance();
+        if (! $request->headers->has('Idempotency-Key')) {
+            if ($start->requiresKey) {
+                throw ValidationException::withMessages(['Idempotency-Key' => ['Idempotency-Key is required.']]);
+            }
+
             return $next($request);
         }
 
@@ -47,11 +57,11 @@ final readonly class HandleOperationIdempotency
         }
 
         $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
-        $this->idempotency->kind = $attribute->newInstance()->kind;
+        $this->idempotency->kind = $start->kind;
         $this->idempotency->key = $key;
         $this->idempotency->fingerprint = hash('sha256', json_encode([
             'target' => array_map(static fn (mixed $value): mixed => $value instanceof Model ? $value->getKey() : $value, $route->parameters()),
-            'input' => $this->input($request->getContent()),
+            'input' => $this->input($request->getContent(), $start->maxJsonBytes),
         ], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
 
         try {
@@ -66,17 +76,20 @@ final readonly class HandleOperationIdempotency
         }
     }
 
-    private function input(string $content): string
+    private function input(string $content, ?int $limit): string
     {
         try {
-            $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
-
-            if ($input instanceof stdClass) {
-                new TopLevelJsonObjectInspector()->inspect($content, array_keys(get_object_vars($input)));
+            if ($limit !== null) {
+                $input = StrictJson::decode($content, $limit);
+            } else {
+                $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
+                if ($input instanceof stdClass) {
+                    new TopLevelJsonObjectInspector()->inspect($content, array_keys(get_object_vars($input)));
+                }
             }
 
             return json_encode($this->canonical($input), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
-        } catch (JsonException|UnexpectedValueException) {
+        } catch (JsonException|InvalidArgumentException|UnexpectedValueException) {
             // Invalid input still conflicts with an existing key before the Form Request validates it.
             return 'invalid-json:'.hash('sha256', $content);
         }

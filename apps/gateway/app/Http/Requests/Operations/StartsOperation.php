@@ -10,5 +10,5 @@ use Attribute;
 #[Attribute(Attribute::TARGET_METHOD)]
 final readonly class StartsOperation
 {
-    public function __construct(public string $kind) {}
+    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null) {}
 }

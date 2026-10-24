@@ -16,6 +16,8 @@ check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 check snapshot CHECKOUT         print HEAD, its parent, its tree, and the working-tree hash, without touching the index
+check analysis-base CHECKOUT START
+                                read the merge base of the full starting commit and local origin/main, or an empty base
 
 The detached `run` process removes its allocated TMPDIR when it ends, including on INT, TERM, HUP, or cancel.
 It only removes a non-empty directory it owns that sits directly under the host temp root and matches
@@ -221,7 +223,7 @@ def recover_start(run_id):
     lock.close()
 
 
-def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
+def start(checkout, setup=None, deliverables=None, command=None, run_id=None, analysis=None):
     lock, record = None, None
     if run_id:
         lock, record, existing = start_record(run_id)
@@ -231,7 +233,8 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
         write_start_record(record, {'run_id': run_id, 'state': 'starting', 'starter_pid': os.getpid(),
                                     'starter_started': process_started(os.getpid()), 'boot': open('/proc/sys/kernel/random/boot_id').read().strip()})
 
-    retire_stale_base_directories()
+    if analysis is None:
+        retire_stale_base_directories()
     setup, deliverables = optional(setup), optional(deliverables)
     if command:
         with open(command) as source:
@@ -251,15 +254,20 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
                      '--property=Type=exec', '--property=ExitType=cgroup', '--property=RemainAfterExit=yes',
                      '--description=Orbit task check ' + run_id,
                      '--property=KillMode=control-group', '--property=WorkingDirectory=' + checkout]
-        for name in ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR', 'VP_HOME', 'COMPOSER_CACHE_DIR',
-                     'ORBIT_SEED_PATH', 'ORBIT_SEED_COMMIT', 'INERTIA_SSR_URL', 'INERTIA_SSR_PORT'):
+        names = ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR') if analysis is not None else (
+            'HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR', 'VP_HOME', 'COMPOSER_CACHE_DIR',
+            'ORBIT_SEED_PATH', 'ORBIT_SEED_COMMIT', 'INERTIA_SSR_URL', 'INERTIA_SSR_PORT')
+        for name in names:
             if name in os.environ:
                 arguments.append('--setenv=' + name + '=' + os.environ[name])
-        # FD3 can carry Composer auth. Use stdin, never argv, the environment, or the journal.
-        try:
-            auth = os.fdopen(os.dup(3), 'rb').read()
-        except OSError:
-            auth = b''
+        # FD3 belongs only to ordinary checks. Analysis receives its validated request, never auth.
+        if analysis is not None:
+            auth = analysis.encode('utf-8')
+        else:
+            try:
+                auth = os.fdopen(os.dup(3), 'rb').read()
+            except OSError:
+                auth = b''
         descriptor = os.memfd_create('orbit-check-auth', os.MFD_CLOEXEC)
         try:
             os.write(descriptor, auth)
@@ -267,7 +275,8 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
             arguments.extend(['--no-block', '--property=StandardInput=file:/proc/' + str(os.getpid()) + '/fd/' + str(descriptor),
                               '--property=StandardOutput=null', '--property=StandardError=null'])
             service = subprocess.run(arguments + ['--', sys.executable, os.path.abspath(__file__),
-                                     'run-owned', run_id, checkout, head, tree, setup or '-', deliverables or '-', command],
+                                     'run-owned', run_id, checkout, head, tree, setup or '-', deliverables or '-', command,
+                                     'analysis' if analysis is not None else 'check'],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             lock.close()
             if service.returncode != 0:
@@ -315,7 +324,7 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None):
     print(json.dumps(data))
 
 
-def run_owned(run_id, checkout, head, tree, setup, deliverables, command):
+def run_owned(run_id, checkout, head, tree, setup, deliverables, command, profile):
     global RESULT, LOG
     RESULT = managed_result_path(run_id)
     LOG = managed_log_path(run_id)
@@ -332,6 +341,9 @@ def run_owned(run_id, checkout, head, tree, setup, deliverables, command):
     write_start_record(record, {'run_id': run_id, 'state': 'started', 'pid': os.getpid(),
                                'started': process_started(os.getpid()), 'head': head, 'tree': tree, 'boot': boot})
     lock.close()
+    if profile == 'analysis':
+        run_analysis(run_id, checkout, head, tree, credentials)
+        return
     descriptor = os.memfd_create('orbit-check-auth', os.MFD_CLOEXEC)
     try:
         os.write(descriptor, credentials)
@@ -345,6 +357,117 @@ def run_owned(run_id, checkout, head, tree, setup, deliverables, command):
             os.close(3)
         except OSError:
             pass
+
+
+def analysis_base(checkout, start):
+    """Resolve the provisioned starting commit against local origin/main, without fetching or changing the checkout."""
+    base = ''
+    if re.fullmatch(r'(?:[a-f0-9]{40}|[a-f0-9]{64})', start):
+        try:
+            base = git(checkout, 'merge-base', 'refs/remotes/origin/main', start)
+        except subprocess.CalledProcessError:
+            pass
+    print(json.dumps({'base': base}))
+
+
+def analysis_inspect(checkout, base):
+    import hashlib
+    if (not re.fullmatch(r'(?:[a-f0-9]{40}|[a-f0-9]{64})', base)
+            or subprocess.run(git_arguments(checkout, 'merge-base', '--is-ancestor', base, 'HEAD'),
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0):
+        print(json.dumps({'stale': True}))
+        return
+    entrypoint = os.path.join(checkout, 'bin', 'task-analyze')
+    try:
+        details = os.lstat(entrypoint)
+        if not stat.S_ISREG(details.st_mode) or not details.st_mode & 0o111:
+            raise ValueError('The fixed analysis entrypoint is not a regular executable')
+        if os.path.realpath(entrypoint) != os.path.abspath(entrypoint):
+            raise ValueError('The fixed analysis entrypoint crosses a symlink')
+        tracked = subprocess.check_output(git_arguments(checkout, 'show', 'HEAD:bin/task-analyze'), stderr=subprocess.DEVNULL)
+        with open(entrypoint, 'rb') as source:
+            content = source.read()
+        if content != tracked:
+            raise ValueError('The fixed entrypoint differs from its tracked content')
+        if git(checkout, 'ls-tree', 'HEAD', '--', 'bin/task-analyze').split()[0] != '100755':
+            raise ValueError('The fixed entrypoint must be tracked executable')
+        print(json.dumps({'head': git(checkout, 'rev-parse', 'HEAD'), 'tree': working_tree(checkout),
+                          'base': base,
+                          'branch': git(checkout, 'symbolic-ref', '--short', 'HEAD'),
+                          'entrypoint_sha256': hashlib.sha256(content).hexdigest()}))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        print(json.dumps({'unavailable': True}))
+
+
+def run_analysis(run_id, checkout, head, tree, request):
+    """Fixed read-only profile of the existing owned run. Stdout is evidence, never a log tail."""
+    global CHILD_PROCESS
+    import base64
+    import datetime
+    import hashlib
+    signal.signal(signal.SIGTERM, cancelled)
+    signal.signal(signal.SIGINT, cancelled)
+    signal.signal(signal.SIGHUP, cancelled)
+    started = time.monotonic()
+    started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    content = bytearray()
+    total = 0
+    exit_code = 1
+    error = None
+    try:
+        payload = json.loads(request)
+        expected = payload.pop('entrypoint_sha256')
+        entrypoint = os.path.join(checkout, 'bin', 'task-analyze')
+        with open(entrypoint, 'rb') as source:
+            entry = source.read()
+        if (hashlib.sha256(entry).hexdigest() != expected or os.path.islink(entrypoint)
+                or git(checkout, 'rev-parse', 'HEAD') != payload['head'] or working_tree(checkout) != payload['tree']):
+            raise ValueError('Analysis identity changed before execution')
+        with tempfile.TemporaryFile() as incoming, open(LOG, 'wb') as log:
+            incoming.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
+            incoming.seek(0)
+            environment = {name: os.environ[name] for name in ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR') if name in os.environ}
+            environment.update({'ORBIT_CHECK_PROCESSES': '1', 'COMPOSER_NO_INTERACTION': '1'})
+            process = subprocess.Popen([entrypoint], cwd=checkout, env=environment, stdin=incoming,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            CHILD_PROCESS = process
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ, 'report')
+                selector.register(process.stderr, selectors.EVENT_READ, 'log')
+                log_bytes = 0
+                while selector.get_map() or process.poll() is None:
+                    if time.monotonic() - started > 3600:
+                        stop_child_process()
+                        raise TimeoutError('The fixed analysis profile timed out')
+                    for key, _ in selector.select(0.1):
+                        chunk = os.read(key.fd, 8192)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                        elif key.data == 'report':
+                            total += len(chunk)
+                            if len(content) < 65537:
+                                content.extend(chunk[:65537 - len(content)])
+                        elif log_bytes < OUTPUT_WINDOW_BYTES:
+                            log.write(chunk[:OUTPUT_WINDOW_BYTES - log_bytes])
+                            log_bytes += len(chunk)
+                exit_code = process.wait()
+            process.stdout.close()
+            process.stderr.close()
+            CHILD_PROCESS = None
+    except Exception:
+        error = 'The fixed repository analysis did not complete.'
+    finally:
+        stop_child_process()
+        after_head = git(checkout, 'rev-parse', 'HEAD')
+        after_tree = working_tree(checkout)
+        result = check_result(head, tree, after_head, after_tree, changed_paths(checkout, tree, after_tree),
+                              exit_code, None, None, None)
+        result.update({'checkout': checkout, 'analysis': True, 'report_bytes': total,
+                       'report_base64': base64.b64encode(content).decode('ascii') if total <= 65536 else None,
+                       'analysis_error': error, 'started_at': started_at,
+                       'finished_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                       'duration_ms': int((time.monotonic() - started) * 1000)})
+        write_check_result(result)
 
 
 def run_setup(checkout, setup, log, composer_auth=None):
@@ -992,7 +1115,13 @@ def main(arguments):
         start(*arguments[1:])
     elif command == 'recover-start' and len(arguments) == 2:
         recover_start(arguments[1])
-    elif command == 'run-owned' and len(arguments) == 8:
+    elif command == 'analysis-start' and len(arguments) == 4:
+        start(arguments[1], run_id=arguments[2], analysis=arguments[3])
+    elif command == 'analysis-inspect' and len(arguments) == 3:
+        analysis_inspect(*arguments[1:])
+    elif command == 'analysis-base' and len(arguments) == 3:
+        analysis_base(*arguments[1:])
+    elif command == 'run-owned' and len(arguments) == 9:
         run_owned(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])

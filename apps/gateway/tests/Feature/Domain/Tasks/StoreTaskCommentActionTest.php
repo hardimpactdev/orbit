@@ -112,9 +112,10 @@ function recording_t3_turns(?Closure $beforeAccept = null): object
 
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $turn = count(array_filter($this->dispatcher->threads, static fn (string $id): bool => $id === $threadId));
+            $turn = collect($this->dispatcher->commands)->last(static fn (array $command): bool => ($command['threadId'] ?? null) === $threadId
+                && in_array($command['type'], ['create', 'send'], true) && ! ($command['deferOpeningTurn'] ?? false));
 
-            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => $threadId.'-'.$turn, 'state' => 'completed']]];
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => $turn['commandId'] ?? null, 'state' => 'completed']]];
         }
     }));
 

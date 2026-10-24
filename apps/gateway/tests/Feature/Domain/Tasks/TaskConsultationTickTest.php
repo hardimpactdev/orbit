@@ -154,7 +154,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('idle', $threadId);
+            return tick_checked_thread('done', $threadId);
         }
     });
     $receipts = new FakeTaskTurnReceipts([null, null]);
@@ -797,12 +797,12 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     expect(app(AgentCommandDispatcher::class)->commands)->toHaveCount(1);
     Classification::assertNothingClassified();
 
-    $reader->turnId = 'after-findings';
+    $reader->turnId = tick_observed_turn('implementer-thread');
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect(app(AgentCommandDispatcher::class)->commands[1]['message']['text'])->toContain('No turn receipt was found.');
 
-    $reader->turnId = 'after-reminder';
+    $reader->turnId = tick_observed_turn('implementer-thread');
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running)
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running);

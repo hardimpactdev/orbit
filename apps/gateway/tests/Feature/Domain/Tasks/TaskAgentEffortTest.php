@@ -90,14 +90,14 @@ function fake_effort_pi(): void
         'http://10.44.0.110:3774/sessions' => Http::response(['id' => 'session'], 201),
         'http://10.44.0.110:3774/sessions/*/messages' => function (Request $request) use (&$turns) {
             $id = basename(dirname($request->url()));
-            $turns[$id] = ($turns[$id] ?? 0) + 1;
+            $turns[$id] = $request['key'];
 
             return Http::response(['duplicate' => false], 202);
         },
         'http://10.44.0.110:3774/sessions/*' => function (Request $request) use (&$turns) {
             $id = basename(parse_url($request->url(), PHP_URL_PATH));
 
-            return Http::response(['kind' => 'state', 'state' => 'done', 'session' => ['id' => $id], 'turnId' => $id.':'.($turns[$id] ?? 0)]);
+            return Http::response(['kind' => 'state', 'state' => 'done', 'session' => ['id' => $id], 'turnId' => $turns[$id] ?? null]);
         },
     ]);
 }

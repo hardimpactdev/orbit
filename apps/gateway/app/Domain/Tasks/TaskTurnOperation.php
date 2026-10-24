@@ -43,11 +43,13 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
         private TaskReviewReset $reset,
         private StopTaskSubtaskAction $interrupt,
         private TaskCheckedCandidate $candidates,
+        private TaskAnalysisEvidence $analysis,
     ) {}
 
     public function validate(Task $group, TaskTurnData $input): void
     {
         $task = $this->operations->requireCurrentSubtask($group, $input->subtask);
+        $this->analysis->resolve($group, $input);
         $thread = null;
         if ($input->thread !== 'new') {
             $thread = AgentThread::query()->where('task_group_id', $group->id)->find((int) $input->thread);
@@ -106,7 +108,7 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
         $run->step('turn_workspace', fn (): mixed => $this->read($run));
         $run->step('thread', fn (): int => $this->reserve($operation));
         $run->step('prepare_turn', fn (): mixed => $this->read($run));
-        $run->step('send_turn', fn () => $this->send($operation));
+        $run->step('send_turn', fn () => $this->send($operation, $run));
         $run->step('turn', fn (): mixed => $run->cancelRequested() ? $run->wait(10) : $this->read($run), cancellable: false);
         $result = $run->step('turn_result', fn (): array => $this->result($run), cancellable: false);
         if (! is_array($result)) {
@@ -170,6 +172,11 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
 
                     return null;
                 }
+                if ($operation->current_step === 'send_turn') {
+                    $this->send($operation, $run);
+
+                    return null;
+                }
                 $input = TaskTurnData::from($operation->input);
                 $thread = $this->thread($operation);
                 // Admission belongs to start. Board updates cannot end ownership of the recorded turn.
@@ -214,9 +221,9 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
         return $operation->idempotency_key ?? 'operation-'.$operation->id;
     }
 
-    private function send(Operation $operation): void
+    private function send(Operation $operation, OperationRun $run): void
     {
-        $this->execution->synchronized($operation->target_id, function () use ($operation): void {
+        $this->execution->synchronized($operation->target_id, function () use ($operation, $run): void {
             $group = Task::topLevel()->findOrFail($operation->target_id);
             $input = TaskTurnData::from($operation->input);
             $thread = $this->thread($operation);
@@ -225,17 +232,98 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
                 .'End this turn with "$(git rev-parse --git-path orbit)/turn" --thread='.$thread->id.'. Read that command for its outcomes and arguments.'
                 ."\n\n".$input->prompt;
             try {
-                if ($thread->isPending()) {
-                    $instance = $this->workspace($group);
-                    $id = $driver->create(new AgentThreadStart($instance->node, $instance, 'Orbit task #'.$group->id.' / subtask #'.$input->subtask,
-                        '', $thread->model ?? '', $thread->effort ?? 'high', $input->threadRole(), externalId: 'operation-'.$operation->id, deferOpeningTurn: true, threadId: $thread->id));
-                    $thread->update(['external_id' => $id]);
+                $dispatched = $input->analysis !== null && $this->analysisDispatched($thread, $this->key($operation), $driver);
+                $send = function () use ($operation, $run, $group, $input, $thread, $driver, $prompt, $dispatched): void {
+                    if ($input->analysis !== null) {
+                        $evidence = $this->analysis->resolve($group, $input) ?? throw new LogicException('A referenced analysis must resolve.');
+                        // A local dispatch journal alone does not prove Pi accepted the first send.
+                        if (! $dispatched) {
+                            try {
+                                $this->analysis->requireFresh($group, $this->workspace($group), $evidence);
+                                if ($input->role === 'reviewer' && $this->reviewCheck($group->tasks()->findOrFail($input->subtask), $input)->tree_after !== $this->analysis->candidateTree($evidence)) {
+                                    throw new ResourceOperationException('tasks.analysis_stale', 'Reviewer evidence must identify the same eligible handoff candidate.', 409);
+                                }
+                            } catch (ResourceOperationException $exception) {
+                                if ($exception->errorCode !== 'tasks.analysis_stale') {
+                                    throw $exception;
+                                }
+                                $dispatched = $this->analysisDispatched($thread, $this->key($operation), $driver);
+                                if (! $dispatched) {
+                                    if ($this->leases->pendingSend($thread, $this->key($operation), true) !== null) {
+                                        throw new TaskWorkspaceWaiting('The original Pi request may still be admitted; stale evidence cannot be resent.');
+                                    }
+                                    throw $exception;
+                                }
+                            }
+                        }
+                        $binding = $run->remember('analysis_binding', function () use ($prompt, $evidence, $input): array {
+                            $combined = $this->analysis->prompt($prompt, $evidence);
+
+                            return ['analysis' => $input->analysis, 'prompt' => $combined, 'sha256' => hash('sha256', $combined)];
+                        });
+                        $prompt = $this->analysisPrompt($binding, $input->analysis);
+                    }
+                    if ($thread->isPending()) {
+                        $instance = $this->workspace($group);
+                        $id = $driver->create(new AgentThreadStart($instance->node, $instance, 'Orbit task #'.$group->id.' / subtask #'.$input->subtask,
+                            '', $thread->model ?? '', $thread->effort ?? 'high', $input->threadRole(), externalId: 'operation-'.$operation->id, deferOpeningTurn: true, threadId: $thread->id));
+                        $thread->update(['external_id' => $id]);
+                    }
+                    $driver->send($thread, $prompt, $this->key($operation));
+                };
+                if ($input->analysis !== null && ! $dispatched) {
+                    $lease = $this->leases->acquire($group, $input->threadRole()->value, 'thread:'.$thread->id, $thread->id, $input->subtask);
+                    $this->leases->within($lease, $send);
+                } else {
+                    $send();
                 }
-                $driver->send($thread, $prompt, $this->key($operation));
+            } catch (TaskWorkspaceWaiting|TaskCheckException $exception) {
+                if ($input->analysis === null) {
+                    throw $exception;
+                }
+                $run->wait(10);
             } catch (AgentDriverException $exception) {
+                if ($input->analysis !== null && ! $exception->turnRejected && $this->leases->pendingSend($thread, $this->key($operation), true) !== null) {
+                    $run->wait(10);
+                }
                 throw new ResourceOperationException($exception->errorCode ?? 'tasks.turn_failed', $exception->getMessage(), previous: $exception);
             }
         });
+    }
+
+    private function analysisDispatched(AgentThread $thread, string $key, AgentDriver $driver): bool
+    {
+        if ($this->leases->pendingSend($thread, $key, true) === null) {
+            return false;
+        }
+        if ($this->leases->completedSend($thread, $key)) {
+            return true;
+        }
+        $observation = $driver->observe($thread);
+        if ($observation->turnId === $key) {
+            return true;
+        }
+        if (! in_array($observation->state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true)) {
+            throw new TaskWorkspaceWaiting('Pi has not confirmed the admitted analysis-bound send.');
+        }
+
+        return false;
+    }
+
+    /** @param array{operation: int, plan_sha256: string} $expected */
+    private function analysisPrompt(mixed $binding, array $expected): string
+    {
+        $reference = is_array($binding) ? ($binding['analysis'] ?? null) : null;
+        if (! is_array($binding) || count($binding) !== 3
+            || ! is_array($reference) || count($reference) !== 2
+            || ($reference['operation'] ?? null) !== $expected['operation']
+            || ($reference['plan_sha256'] ?? null) !== $expected['plan_sha256']
+            || ! is_string($binding['prompt'] ?? null) || ! is_string($binding['sha256'] ?? null)
+            || ! hash_equals(hash('sha256', $binding['prompt']), $binding['sha256'])) {
+            throw new LogicException('The bound analysis prompt was not retained intact.');
+        }
+
+        return $binding['prompt'];
     }
 
     /** @return array<string, mixed> */

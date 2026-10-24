@@ -27199,6 +27199,275 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/analyze": {
+      "post": {
+        "operationId": "tasks-analyze",
+        "summary": "tasks:analyze",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            },
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Starts keyed tasks.analyze with exactly subtask, plan, plan_sha256, base, head, and tree. Runs only tracked executable bin/task-analyze in the owned external workspace with a fixed stdin envelope, no agent and no TaskCheck. Retains bounded complete exact-byte evidence and native provenance. Outcomes ready, action_required, blocked, and changed are evidence, never approval. Uses the provisioned initial merge base and fresh whole-worktree identity, including untracked files. Recovery adopts the same reserved execution and report; cancellation retains the fence until terminal descendant proof. See /reference/tasks#analyze-a-repository.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subtask": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Numeric current subtask ID"
+                  },
+                  "plan": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "revision",
+                      "source",
+                      "asserted_by",
+                      "complete",
+                      "paths"
+                    ],
+                    "description": "Complete cumulative native manifest. At most 32 KiB of RFC 8785 canonical JSON. Entries already sorted by UTF-8 (path, change, from-or-empty); no conflicting/duplicate endpoints. Completeness is a provenance assertion, not mechanical approval.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "source": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "brief_id",
+                          "revision_sha256"
+                        ],
+                        "properties": {
+                          "brief_id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "revision_sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        }
+                      },
+                      "asserted_by": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "complete": {
+                        "const": true
+                      },
+                      "paths": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 256,
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "change",
+                                "path"
+                              ],
+                              "properties": {
+                                "change": {
+                                  "type": "string",
+                                  "enum": [
+                                    "add",
+                                    "modify",
+                                    "delete"
+                                  ]
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                                }
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "change",
+                                "from",
+                                "path"
+                              ],
+                              "properties": {
+                                "change": {
+                                  "const": "rename"
+                                },
+                                "from": {
+                                  "type": "string",
+                                  "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                                },
+                                "path": {
+                                  "type": "string",
+                                  "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "plan_sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "SHA-256 of RFC 8785 canonical manifest JSON."
+                  },
+                  "base": {
+                    "type": "string",
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+                  },
+                  "head": {
+                    "type": "string",
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+                  },
+                  "tree": {
+                    "type": "string",
+                    "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+                  }
+                },
+                "required": [
+                  "subtask",
+                  "plan",
+                  "plan_sha256",
+                  "base",
+                  "head",
+                  "tree"
+                ],
+                "description": "Exactly these fields. Complete UTF-8 JSON, at most 48 KiB and depth 24. Duplicate keys at every depth, trailing or truncated data, and unknown fields refuse the entire request.",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-orbit-operation": "start",
+        "responses": {
+          "202": {
+            "description": "Accepted. The operation is queued; follow it with `operation:show`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/analyze\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"subtask\": 1, \"plan\": {\"id\": \"example\", \"revision\": 1, \"source\": \"10.6.0.0/24\", \"asserted_by\": \"example\", \"complete\": \"example\", \"paths\": [\"example\"]}, \"plan_sha256\": \"example\", \"base\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"head\": \"cccccccccccccccccccccccccccccccccccccccc\", \"tree\": \"dddddddddddddddddddddddddddddddddddddddd\", \"planJson\": \"{\\\"asserted_by\\\":\\\"planning-owner\\\",\\\"complete\\\":true,\\\"id\\\":\\\"feature-2068\\\",\\\"paths\\\":[{\\\"change\\\":\\\"add\\\",\\\"path\\\":\\\"apps/gateway/new.php\\\"}],\\\"revision\\\":1,\\\"source\\\":{\\\"brief_id\\\":\\\"widget-brief\\\",\\\"revision_sha256\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}}\", \"planSha256\": \"7dece77e5bfcd673524f6c8d4297584ddc4aee01a2f4b031fd9bffd93e080626\", \"idempotencyKey\": \"analysis.c1\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\AnalyzeTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AnalyzeTaskGroupRequest(\n    groupId: 1,\n    subtask: 1,\n    planJson: '{\"asserted_by\":\"planning-owner\",\"complete\":true,\"id\":\"feature-2068\",\"paths\":[{\"change\":\"add\",\"path\":\"apps/gateway/new.php\"}],\"revision\":1,\"source\":{\"brief_id\":\"widget-brief\",\"revision_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}',\n    planSha256: '7dece77e5bfcd673524f6c8d4297584ddc4aee01a2f4b031fd9bffd93e080626',\n    base: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',\n    head: 'cccccccccccccccccccccccccccccccccccccccc',\n    tree: 'dddddddddddddddddddddddddddddddddddddddd',\n    idempotencyKey: 'analysis.c1',\n))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/cancel": {
       "post": {
         "operationId": "tasks-cancel",
@@ -29284,7 +29553,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model and reviewer check. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.",
+        "description": "Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model, reviewer check, and analysis reference {operation, plan_sha256}. Analysis must be successful usable evidence for this child, fresh under the turn lease before first send; dispatched recovery keeps the same complete prompt and key. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.",
         "requestBody": {
           "required": true,
           "content": {
@@ -29325,6 +29594,24 @@
                     "type": "integer",
                     "minimum": 1,
                     "description": "Conditionally required."
+                  },
+                  "analysis": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "operation",
+                      "plan_sha256"
+                    ],
+                    "properties": {
+                      "operation": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "plan_sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    }
                   }
                 },
                 "required": [

@@ -629,8 +629,7 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             $thread = AgentThread::query()->find($task->implementer_agent_thread_id)
                 ?? test_agent_thread($task->parent, 'fixup-implementer-'.$task->id, $task);
             app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
-            app(TaskWorkspaceLease::class)->dispatch($thread);
-            $this->spawnedTurns[$thread->external_id] = 'spawned-implementer-'.$task->id;
+            $this->spawnedTurns[$thread->external_id] = app(TaskWorkspaceLease::class)->dispatch($thread);
 
             return $thread->id;
         }

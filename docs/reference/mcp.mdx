@@ -86,6 +86,8 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `tasks-update` and `tasks-subtask-update` accept a `status` for an external group. The API enforces the [allowed moves](/reference/tasks#tasks-and-subtasks); a refused move returns `tasks.status_move_refused`. Repeating the current status needs no key. `tasks-comment-create` records subtask-owned assistance and resolution comments. An external resolution clears assistance without sending a turn. `tasks-subtask-cancel` interrupts external work without starting a successor or settling its group.
 
+The agreed docs-first [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) addition uses the native closed analyze request and the existing operation envelope, reads, and cancellation. Runtime generation must publish the new route and optional `tasks.turn` analysis reference with required key, bounds, and complete artifact types. The source brief's `tasks_analyze` is a logical label, not an extra tool alias: this repository generates hyphenated task tool IDs from OpenAPI operation IDs, so the generated spelling is `tasks-analyze`. Do not hand-maintain a second underscore schema. No analysis tool is delivered by this docs-only amendment, and no Swamp adapter is changed.
+
 ### Operations
 
 `instance-deploy` and `instance-rollback` start an [operation](/reference/operations) and return at once. They never hold the request open and never stream:

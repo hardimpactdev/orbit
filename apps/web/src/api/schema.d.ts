@@ -3575,6 +3575,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * tasks:analyze
+         * @description Starts keyed tasks.analyze with exactly subtask, plan, plan_sha256, base, head, and tree. Runs only tracked executable bin/task-analyze in the owned external workspace with a fixed stdin envelope, no agent and no TaskCheck. Retains bounded complete exact-byte evidence and native provenance. Outcomes ready, action_required, blocked, and changed are evidence, never approval. Uses the provisioned initial merge base and fresh whole-worktree identity, including untracked files. Recovery adopts the same reserved execution and report; cancellation retains the fence until terminal descendant proof. See /reference/tasks#analyze-a-repository.
+         */
+        post: operations["tasks-analyze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/cancel": {
         parameters: {
             query?: never;
@@ -3815,7 +3835,7 @@ export interface paths {
         put?: never;
         /**
          * Run one agent turn
-         * @description Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model and reviewer check. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.
+         * @description Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model, reviewer check, and analysis reference {operation, plan_sha256}. Analysis must be successful usable evidence for this child, fresh under the turn lease before first send; dispatched recovery keeps the same complete prompt and key. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.
          */
         post: operations["tasks-turn"];
         delete?: never;
@@ -19675,6 +19695,117 @@ export interface operations {
             };
         };
     };
+    "tasks-analyze": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Numeric current subtask ID */
+                    subtask: number;
+                    /** @description Complete cumulative native manifest. At most 32 KiB of RFC 8785 canonical JSON. Entries already sorted by UTF-8 (path, change, from-or-empty); no conflicting/duplicate endpoints. Completeness is a provenance assertion, not mechanical approval. */
+                    plan: {
+                        id: string;
+                        revision: number;
+                        source: {
+                            brief_id: string;
+                            revision_sha256: string;
+                        };
+                        asserted_by: string;
+                        /** @constant */
+                        complete: true;
+                        paths: ({
+                            /** @enum {string} */
+                            change: "add" | "modify" | "delete";
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            path: string;
+                        } | {
+                            /** @constant */
+                            change: "rename";
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            from: string;
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            path: string;
+                        })[];
+                    };
+                    /** @description SHA-256 of RFC 8785 canonical manifest JSON. */
+                    plan_sha256: string;
+                    base: string;
+                    head: string;
+                    tree: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "tasks-cancel": {
         parameters: {
             query?: never;
@@ -20798,6 +20929,10 @@ export interface operations {
                     model?: string;
                     /** @description Conditionally required. */
                     check?: number;
+                    analysis?: {
+                        operation: number;
+                        plan_sha256: string;
+                    };
                 };
             };
         };

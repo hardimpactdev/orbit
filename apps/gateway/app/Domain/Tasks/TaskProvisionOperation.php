@@ -30,6 +30,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         private TaskExecutionLock $execution,
         private TaskWorkspaceLease $leases,
         private TaskVmWorkspace $vms,
+        private TaskAnalysisRunner $analysis,
     ) {}
 
     public static function requireTodo(Task $group): void
@@ -53,7 +54,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         $run->step('provision', fn (): mixed => $this->read($run));
         $run->step('workspace', fn (): int => $this->createWorkspace($operation));
         $run->step('workspace_lease', fn (): mixed => $this->read($run));
-        $result = $run->step('route', fn (): array => $this->finishWorkspace($operation));
+        $result = $run->step('route', fn (): array => $this->finishWorkspace($operation, $run));
         if (! is_array($result)) {
             throw new LogicException('The provision result must be an object.');
         }
@@ -132,16 +133,26 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
     }
 
     /** @return array{instance_id: int, node_id: int, starting_commit: string|null} */
-    private function finishWorkspace(Operation $operation): array
+    private function finishWorkspace(Operation $operation, OperationRun $run): array
     {
-        return $this->execution->synchronized($operation->target_id, function () use ($operation): array {
+        return $this->execution->synchronized($operation->target_id, function () use ($operation, $run): array {
             $group = Task::topLevel()->with('taskable')->findOrFail($operation->target_id);
             $this->operations->requireOpenExternal($group);
-            $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group): void {
+            $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group, $run): void {
                 $failure = $this->routes->complete($group);
                 if ($failure !== null) {
                     throw new ResourceOperationException($failure->errorCode ?? 'tasks.provision_failed', $failure->cause);
                 }
+                $instance = $group->taskable;
+                if (! $instance instanceof Instance) {
+                    throw new LogicException('Provision has no workspace.');
+                }
+                $run->remember('analysis_base', fn (): array => [
+                    'base' => $this->analysis->initialAnalysisBase($instance),
+                    'instance_id' => $instance->id,
+                    'repository' => $group->project->repository_url,
+                    'branch' => $instance->branch,
+                ]);
             });
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
             $instance = $group->taskable;
