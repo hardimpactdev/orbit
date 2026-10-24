@@ -862,7 +862,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 fpmRenderer: app(GatewayFpmConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
                 checkout: new GatewayCheckoutAccessConverger(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 ),
                 webDirectory: new GatewayWebDirectoryConverger(

@@ -13,7 +13,6 @@ use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Projects\ProjectSourceAccess;
-use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -35,15 +34,12 @@ final readonly class GatewayReleaseBuilder
     /** @var Closure(string): (float|false) */
     private Closure $freeSpace;
 
-    /** @var Closure(string): void */
-    private Closure $checkoutAccess;
-
     /** @var Closure(): int */
     private Closure $reservedBytes;
 
     /**
      * @param  (Closure(string): (float|false))|null  $freeSpace
-     * @param  (Closure(string): void)|null  $checkoutAccess  Grants Caddy access to one release's Gateway application.
+     * @param  Closure(string): void  $checkoutAccess  Grants Caddy access to one release's Gateway application.
      * @param  int  $minimumFreeBytes  The free space prepare keeps in the releases directory.
      * @param  (Closure(): int)|null  $reservedBytes  Room prepare keeps on top of the floor, for the database snapshot a release with migrations takes.
      */
@@ -52,20 +48,17 @@ final readonly class GatewayReleaseBuilder
         private ProcessRunner $processes,
         private RepositoryReadAccess $readAccess,
         private GatewayReleaseWebBuild $web,
+        private Closure $checkoutAccess,
         private string $composer = 'composer',
         private string $php = '/usr/bin/php8.5',
         private float $composerTimeout = 900.0,
         ?Closure $freeSpace = null,
-        ?Closure $checkoutAccess = null,
         private int $minimumFreeBytes = self::MinimumFreeBytes,
         ?Closure $reservedBytes = null,
         private ?string $stepLock = null,
     ) {
         $this->reservedBytes = $reservedBytes ?? static fn (): int => 0;
         $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
-        $this->checkoutAccess = $checkoutAccess ?? static function (string $application) use ($processes): void {
-            new GatewayCheckoutAccessConverger($processes, $application)->converge();
-        };
     }
 
     /**

@@ -18,6 +18,8 @@ This guide helps an operator keep Gateway state safe during a source update and 
 
 ## Gateway request logs
 
+Gateway web convergence checks the checkout with `gateway.check-checkout` before installing Caddy. It then calls `gateway.prepare-checkout` to grant access. The agent resolves the managed release link, checks every path before mutation, and keeps public-file symlinks untouched. An in-place checkout gives Caddy traversal through its ancestors and read access only to its public tree; the environment stays mode `0600`. A prepared release keeps its read-only tree unchanged: convergence adjusts only its base and releases directories and the shared environment. Failed permission changes restore prior ownership and modes, and failed recovery is reported explicitly.
+
 The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.

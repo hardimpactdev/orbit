@@ -87,7 +87,7 @@ describe('footprint digests', function (): void {
         app(AiRouterState::class)->enable($services->id, 'valkey', 'http://127.0.0.1:8317', 'management', 'read', 'control');
         $footprint = app(NodeFootprint::class);
 
-        expect($footprint->expected($services)->artifacts)->toHaveKey('ai-router', hash('sha256', (string) file_get_contents(base_path('extensions/ai-router/resources/collector.py'))))
+        expect($footprint->expected($services)->artifacts)->toHaveKey('ai-router')
             ->and($footprint->expected($other)->artifacts)->not->toHaveKey('ai-router');
     });
 

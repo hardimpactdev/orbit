@@ -1076,6 +1076,36 @@
       ]
     },
     {
+      "name": "gateway.check-checkout",
+      "summary": "Check the Gateway checkout and managed release link before convergence.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.checkout_invalid",
+        "gateway.checkout_failed",
+        "gateway.checkout_recovery_failed"
+      ]
+    },
+    {
+      "name": "gateway.prepare-checkout",
+      "summary": "Grant Caddy checkout access while keeping private files and immutable releases protected.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.checkout_invalid",
+        "gateway.checkout_failed",
+        "gateway.checkout_recovery_failed"
+      ]
+    },
+    {
       "name": "caddy.order-after-vpn",
       "summary": "Order Caddy after the managed WireGuard interface.",
       "mutates": true,

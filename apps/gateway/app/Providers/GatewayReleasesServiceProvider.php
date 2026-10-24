@@ -23,9 +23,11 @@ use App\Console\Commands\SmokeGatewayReleaseCommand;
 use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -41,9 +43,11 @@ use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
+use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
@@ -77,6 +81,7 @@ use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -170,6 +175,13 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 processes: $app->make(ProcessRunner::class),
                 readAccess: $app->make(RepositoryReadAccess::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
+                checkoutAccess: static function (string $application) use ($app): void {
+                    $node = Node::query()->find($app->make(GatewayServingHost::class)->nodeId());
+                    if (! $node instanceof Node) {
+                        throw new GatewayReleaseException('access', 'gateway.release_gateway_node_missing', 'No serving Gateway Node exists to prepare checkout access.');
+                    }
+                    new GatewayCheckoutAccessConverger($app->make(AgentCommandRunner::class), $application)->converge($node);
+                },
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
                 reservedBytes: static fn (): int => $app->make(GatewayReleaseDatabase::class)->snapshotBytes(),
                 stepLock: self::stepLock(),

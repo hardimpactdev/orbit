@@ -65,8 +65,8 @@
                         ]
                     },
                     "footprints": {
-                        "app-dev": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9",
-                        "app-prod": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9"
+                        "app-dev": "f840502f929b70a5b7f9990e2e5d7a4a2994c1d685403c895321ccd2ee9152d8",
+                        "app-prod": "f840502f929b70a5b7f9990e2e5d7a4a2994c1d685403c895321ccd2ee9152d8"
                     }
                 },
                 "nodes": [
@@ -99,7 +99,7 @@
                         "evidence": null,
                         "cli_version": "0.4681.0",
                         "agent_version": "0.5.0",
-                        "footprint_digest": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9",
+                        "footprint_digest": "f840502f929b70a5b7f9990e2e5d7a4a2994c1d685403c895321ccd2ee9152d8",
                         "attempts": 1,
                         "started_at": "2026-10-07T12:00:00+00:00",
                         "finished_at": "2026-10-07T12:00:00+00:00"

@@ -31,6 +31,7 @@ use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -288,7 +289,7 @@ describe('Route removal certificate order', function (): void {
         [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
         $this->nodes->down = ['10.44.0.7'];
         $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
-        $footprint = new NodeFootprint([app(RouteResidueFootprintArtifact::class)]);
+        $footprint = new NodeFootprint(app(AgentDelivery::class), [app(RouteResidueFootprintArtifact::class)]);
         // The Node answers the probe, but its Caddy publish still fails.
         $this->nodes->down = [];
         $this->nodes->failCaddy = '10.44.0.7';
@@ -412,7 +413,7 @@ function certificate_order_node(string $name, int $octet, RoleName $role, ?Clust
         'cluster_id' => $cluster?->id,
         'name' => $name,
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => "192.0.2.{$octet}",
         'wireguard_ip' => "10.44.0.{$octet}",
         'user' => 'orbit',

@@ -16,7 +16,7 @@ The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, 
 
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
-Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs.
+Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins keep their recorded URLs. Fleet and Node convergence fixtures include footprint digests bound to the delivered agent pin; re-record them when that identity changes. See [Node provisioning](/reference/node-provisioning) for the footprint rule.
 
 Task group fixtures include nullable `vm_power`, separately from task status. CLI tests cover the **VM power** label for known states and omit the label and JSON field when power is null. The SDK accepts a missing power field and ignores unknown optional response fields, so a field rename does not make an older client reject the task group.
 

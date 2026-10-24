@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\NodeFootprint as NodeFootprintRecord;
 use Illuminate\Container\Attributes\Tag;
@@ -19,6 +20,7 @@ final readonly class NodeFootprint
 {
     /** @param iterable<NodeFootprintArtifact> $artifacts Core's artifacts, then contributions, in apply order. */
     public function __construct(
+        private AgentDelivery $delivery,
         #[Tag(NodeFootprintArtifact::class)] private iterable $artifacts,
     ) {}
 
@@ -30,7 +32,7 @@ final readonly class NodeFootprint
         foreach ($this->artifacts as $artifact) {
             try {
                 if ($artifact->applies($node)) {
-                    $digests[$artifact->name()] = $artifact->digest($node);
+                    $digests[$artifact->name()] = $this->artifactDigest($artifact, $node);
                 }
             } catch (\Throwable $exception) {
                 // A digest that cannot be computed never matches, so the next converge reports the failure.
@@ -39,6 +41,11 @@ final readonly class NodeFootprint
         }
 
         return NodeFootprintPlan::of($digests);
+    }
+
+    private function artifactDigest(NodeFootprintArtifact $artifact, Node $node): string
+    {
+        return hash('sha256', $this->delivery->pin($node)."\0".$artifact->digest($node));
     }
 
     /** The footprint the Node last received, or null when it never received one. */
@@ -77,7 +84,7 @@ final readonly class NodeFootprint
             }
 
             $name = $artifact->name();
-            $digest = $artifact->digest($node);
+            $digest = $this->artifactDigest($artifact, $node);
 
             $forced = $force === true || (is_array($force) && in_array($name, $force, true));
 

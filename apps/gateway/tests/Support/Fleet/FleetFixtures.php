@@ -148,7 +148,7 @@ final class FleetFixtures
         app()->instance(FleetNodeVisitor::class, $visitor);
         app()->instance(ReleaseAlertNotifier::class, $alerts);
         app()->instance(FleetConvergeUnits::class, $units);
-        app()->instance(NodeFootprint::class, new NodeFootprint($artifacts));
+        app()->instance(NodeFootprint::class, new NodeFootprint(app(AgentDelivery::class), $artifacts));
         // Keep agent versions out of the shared file store.
         app()->instance(AgentReportedVersions::class, new AgentReportedVersions(new Repository(new ArrayStore)));
 

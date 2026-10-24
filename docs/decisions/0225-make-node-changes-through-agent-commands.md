@@ -113,6 +113,8 @@ After the change merges, main CI builds and tests the merged source. Once its re
 
 The Gateway release takes its exact pins from that delivery manifest, which also supplies recipe and desired-fleet-state pins. This replaces the hard-coded agent hashes in the recipe and `NodeAgentFootprint`. The recipe identity hashes the resolved recipe together with the delivered Linux agent digests, keyed by platform. One identity covers all profiles and architectures because image promotion and fleet convergence share one desired generation. Changing either Linux digest invalidates that generation; macOS artifacts and artifact storage locations do not. Images, topology seeds, and Node convergence use that complete identity. Stored build recipes retain the resolved digests, and a build refuses if its target digest differs from the serving delivery. An image with an older agent cannot be current. There is no follow-up source commit to insert hashes after merge. A Gateway change that leaves agent build inputs unchanged can keep the existing delivery. A production release that needs new agent code waits for its published artifacts before deployment.
 
+The per-Node footprint combines each artifact digest with that Node's delivered agent digest. A native implementation change therefore re-applies the artifact even when its Gateway rendering code is unchanged. This composition lives at the footprint boundary, so core and extension artifacts use the same rule.
+
 ### Release and fleet rollout
 
 A Gateway release is the only step that updates agents. It delivers new agent code to every Node, as a release delivers a script today.

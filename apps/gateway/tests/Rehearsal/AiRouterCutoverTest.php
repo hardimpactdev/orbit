@@ -7,6 +7,7 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteKind;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -108,7 +109,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
     $newUnit = null;
     try {
         $wait(fn (): bool => is_file($home.'/probe.json'));
-        $node = Node::query()->create(['name' => 'rehearsal', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip]);
+        $node = Node::query()->create(['name' => 'rehearsal', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => $ip, 'public_ssh_host' => $ip]);
         $connection = DatabaseConnection::query()->create(['name' => 'Disposable Valkey', 'slug' => 'cache', 'driver' => 'redis', 'host' => '127.0.0.1', 'port' => 6379]);
         $cache = new ValkeyAiRouterCache($connection);
         app()->instance(AiRouterCache::class, $cache);
@@ -148,7 +149,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $oldUnit = 'orbit-process-163-cli-proxy-api-collector.service';
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active');
         $started = microtime(true);
-        $footprint = new NodeFootprint([app(AiRouterFootprintArtifact::class)]);
+        $footprint = new NodeFootprint(app(AgentDelivery::class), [app(AiRouterFootprintArtifact::class)]);
         $footprint->converge($node);
         expect(trim($run(['systemctl', 'is-active', $oldUnit])))->toBe('active')
             ->and(file_exists('/etc/systemd/system/orbit-process-163-ai-router-collector.service'))->toBeFalse();

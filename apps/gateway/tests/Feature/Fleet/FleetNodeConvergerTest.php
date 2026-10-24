@@ -113,7 +113,7 @@ function fleetConverger(ScriptedSshExecutor $ssh, array $options = []): FleetNod
         new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0),
         $options['cli'] ?? new FleetConvergerCli,
         FleetTestSsh::shell($ssh),
-        new NodeFootprint($options['artifacts'] ?? [new FakeFootprintArtifact('caddy', 'c1', changes: false)]),
+        new NodeFootprint(app(AgentDelivery::class), $options['artifacts'] ?? [new FakeFootprintArtifact('caddy', 'c1', changes: false)]),
         $options['verification'] ?? new FleetConvergerVerification,
         app(AgentDelivery::class),
     );
@@ -346,7 +346,7 @@ describe('fleet Node converge resilience', function (): void {
         $node = FleetFixtures::node('dev', [RoleName::AppDev]);
         $agent = new FakeFootprintArtifact('agent', 'a1');
         $caddy = new FakeFootprintArtifact('caddy', 'c1');
-        new NodeFootprint([$agent, $caddy])->converge($node);
+        new NodeFootprint(app(AgentDelivery::class), [$agent, $caddy])->converge($node);
         $agent->applied = $caddy->applied = [];
         $verification = new FleetConvergerVerification;
         $verification->baselineIssues = ['node.agent_inactive:node:'.$node->id, 'node.disk_low:node:'.$node->id];
@@ -438,7 +438,6 @@ it('looks at a foreign CLI again only when the Node answers', function (): void 
 
 it('keeps a refused validation skipped on the first Node when Caddy only repaired live drift', function (): void {
     $node = FleetFixtures::node('dev', [RoleName::AppDev]);
-    App\Models\NodeFootprint::query()->create(['node_id' => $node->id, 'digest' => str_repeat('d', 64), 'artifacts' => ['caddy' => 'code-v1'], 'converged_at' => now()]);
     $caddy = new class implements NodeFootprintArtifact
     {
         public int $applied = 0;
@@ -465,6 +464,8 @@ it('keeps a refused validation skipped on the first Node when Caddy only repaire
             throw new FootprintArtifactSkipped('caddy_validate_refused', 'A user site is invalid.');
         }
     };
+    $plan = new NodeFootprint(app(AgentDelivery::class), [$caddy])->expected($node);
+    App\Models\NodeFootprint::query()->create(['node_id' => $node->id, 'digest' => $plan->digest(), 'artifacts' => $plan->artifacts, 'converged_at' => now()]);
     $verification = new FleetConvergerVerification;
     $verification->baselineIssues = ['role.caddy_build_drift:node_role:1'];
     $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));

@@ -8,9 +8,11 @@ use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
@@ -23,6 +25,8 @@ use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\Fleet\FleetFixtures;
 
 /** A private property of a resolved object, so the test sees what the container wired. */
 function wired(object $object, string $property): mixed
@@ -101,4 +105,16 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and(app(GatewayReleaseDatabase::class))->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
             ->and(app(GatewayReleaseVerifier::class))->toBeInstanceOf(HttpGatewayReleaseVerifier::class);
     });
+});
+
+it('prepares release checkout access through the serving Node agent', function (): void {
+    $node = FleetFixtures::node('gateway');
+    app(GatewayServingHost::class)->remember($node);
+    $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-checkout', ['changed' => true]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $prepare = wired(app(GatewayReleaseBuilder::class), 'checkoutAccess');
+
+    $prepare('/home/orbit/releases/0123456789ab/apps/gateway');
+
+    expect($agents->calls)->toBe([['node' => 'gateway', 'command' => 'gateway.prepare-checkout', 'input' => ['path' => '/home/orbit/releases/0123456789ab/apps/gateway']]]);
 });

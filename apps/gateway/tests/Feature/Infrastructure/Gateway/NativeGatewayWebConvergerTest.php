@@ -136,63 +136,6 @@ it('refuses FPM reload or restart when cleanup invalidation fails during converg
     }
 });
 
-it('repairs restrictive public permissions without exposing private files or symlink targets', function (): void {
-    [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
-    $root = sys_get_temp_dir().'/orbit-gateway-public-'.Str::uuid();
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory("{$root}/public/assets", 0o700, true);
-    $filesystem->makeDirectory("{$root}/private", 0o700);
-    $filesystem->makeDirectory("{$root}/bin", 0o700);
-    foreach (['public/index.php', 'public/assets/app.css', 'private/secret', '.env'] as $path) {
-        $filesystem->put("{$root}/{$path}", 'fixture');
-        chmod("{$root}/{$path}", 0o600);
-    }
-    symlink("{$root}/private", "{$root}/public/linked-directory");
-    symlink("{$root}/private/secret", "{$root}/public/linked-file");
-    $filesystem->put("{$root}/bin/chown", "#!/bin/sh\nexit 0\n");
-    chmod("{$root}/bin/chown", 0o700);
-
-    try {
-        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
-        $publication = Collection::make($processes->calls)->first(
-            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === [
-                'sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway/public',
-            ],
-        );
-        expect($publication)->toBeInstanceOf(ProcessInvocation::class);
-        $process = new Process(['bash', '-seu', '--', "{$root}/public"], env: [
-            'PATH' => "{$root}/bin:".getenv('PATH'),
-        ]);
-        $process->setInput($publication->input);
-
-        foreach ([1, 2] as $attempt) {
-            expect($process->run())->toBe(0, $process->getErrorOutput());
-            clearstatcache();
-            foreach (['public', 'public/assets'] as $path) {
-                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o750);
-            }
-            foreach (['public/index.php', 'public/assets/app.css'] as $path) {
-                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o640);
-            }
-            foreach (['private/secret', '.env'] as $path) {
-                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o600);
-            }
-            expect(fileperms("{$root}/private") & 0o777)->toBe(0o700);
-        }
-
-        rename("{$root}/public", "{$root}/saved-public");
-        symlink("{$root}/private", "{$root}/public");
-
-        expect($process->run())->not->toBe(0);
-        clearstatcache();
-        expect(fileperms("{$root}/private") & 0o777)->toBe(0o700);
-        expect(fileperms("{$root}/private/secret") & 0o777)->toBe(0o600);
-    } finally {
-        $filesystem->deleteDirectory($root);
-        $filesystem->deleteDirectory($orbitHome);
-    }
-});
-
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
     [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger();
 
@@ -309,9 +252,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 ),
             ))
             ->toBeFalse()
-            ->and($commands->contains(['sudo', 'chmod', '0710', '/home/orbit', '/home/orbit/orbit-gateway']))
-            ->toBeTrue()
-            ->and($commands->contains(['sudo', 'chmod', '0600', '/home/orbit/orbit-gateway/.env']))
+            ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-checkout']))
             ->toBeTrue()
             ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-web-directory']))
             ->toBeTrue()
@@ -595,7 +536,7 @@ it('repeats the same idempotent install step on every web convergence', function
         expect($second)
             ->toEqual($first)
             ->and($first[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
+            ->toBe(['orbit-agent', 'command', 'gateway.check-checkout'])
             ->and($first[1]->arguments)
             ->toBe(['orbit-agent', 'command', 'caddy.install-package'])
             ->and($first[2]->arguments)
@@ -715,8 +656,8 @@ it('rejects a checkout outside the configured Orbit home before certificate or s
             })
             ->and($issuer->calls)
             ->toBeEmpty()
-            ->and($processes->calls)
-            ->toBeEmpty();
+            ->and(array_map(static fn (ProcessInvocation $call): array => $call->arguments, $processes->calls))
+            ->toBe([['orbit-agent', 'command', 'gateway.check-checkout']]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -945,7 +886,23 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             certificates: $issuer,
             fpmRenderer: new GatewayFpmConfigRenderer,
             files: new ProtectedFileWriter,
-            checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
+            checkout: new GatewayCheckoutAccessConverger(
+                new FakeAgentCommandRunner()
+                    ->answer('gateway.check-checkout', static function (array $input) use ($processes): array {
+                        $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'gateway.check-checkout'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+                        if ($input['path'] === '/srv/external/orbit-gateway') {
+                            throw new AgentCommandRefused('gateway.check-checkout', 'gateway.checkout_invalid', 'Unsafe checkout.');
+                        }
+
+                        return ['changed' => false];
+                    })
+                    ->answer('gateway.prepare-checkout', static function (array $input) use ($processes): array {
+                        $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'gateway.prepare-checkout'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+
+                        return ['changed' => true];
+                    }),
+                $checkoutPath,
+            ),
             webDirectory: new GatewayWebDirectoryConverger(
                 new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', static function (array $input) use ($processes): array {
                     $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'gateway.prepare-web-directory'], input: json_encode($input, JSON_THROW_ON_ERROR)));

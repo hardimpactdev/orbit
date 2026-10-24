@@ -28,6 +28,7 @@ mod doctor_route;
 pub mod environment;
 pub mod firewall;
 mod gateway_certificate;
+mod gateway_checkout;
 mod gateway_web;
 mod guest;
 pub mod health;
@@ -177,6 +178,8 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_runtime::Configure>(),
         entry::<gateway_web::PrepareDirectory>(),
         entry::<gateway_certificate::Publish>(),
+        entry::<gateway_checkout::Check>(),
+        entry::<gateway_checkout::Prepare>(),
         entry::<vpn_ordering::OrderCaddy>(),
         entry::<vpn_ordering::RemoveDnsOrdering>(),
         entry::<php_build::operations::Inspect>(),
