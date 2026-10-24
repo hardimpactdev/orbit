@@ -90,19 +90,21 @@ Each Schedule owns three files on the host Node. Only the UUID names them.
 
 | Artifact | Path | Owner and mode |
 | --- | --- | --- |
-| Script | `/etc/orbit/schedules/{uuid}.sh` | `root:<runtime group>`, `0750` |
+| Command file | `/etc/orbit/schedules/{uuid}.sh` | `root:<runtime group>`, `0750` |
 | Service | `/etc/systemd/system/orbit-schedule-{uuid}.service` | `root:root`, `0644` |
 | Timer | `/etc/systemd/system/orbit-schedule-{uuid}.timer` | `root:root`, `0644` |
 
-The script holds the command. The oneshot service sets the user, group, working directory, `HOME`, and the timeout as `TimeoutStartSec`. Its `ExecStart` runs the script, and its `ExecStopPost` sends the completion report. The timer uses the calendar with `Persistent=true`, so systemd runs one missed occurrence after the Node was down. systemd never starts the service while it still runs. The command text appears only in the script, never in an SSH, `sudo`, `systemctl`, `journalctl`, or `systemd-analyze` argument.
+The command file holds only the user command and its typed execution context. Rust owns the Schedule runtime; no generated shell implements Schedule management. The oneshot service sets the user, group, working directory, `HOME`, and the timeout as `TimeoutStartSec`. Its `ExecStart` calls the agent’s named Schedule runner as the target user. Its `ExecStopPost` calls the fixed completion handler as root so it can read the agent’s pinned CA; it runs no project code.
 
-Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mode `0711`, so the runtime user can reach its script but cannot list the directory. It refuses a symbolic link, a non-directory, or another owner there.
+The timer uses the calendar with `Persistent=true`, so systemd runs one missed occurrence after the Node was down. systemd never starts the service while it still runs. The command text appears only in the protected command file, never in an SSH, `sudo`, `systemctl`, `journalctl`, or `systemd-analyze` argument.
+
+Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mode `0711`, so the runtime user can reach its command file but cannot list the directory. It refuses a symbolic link, a non-directory, or another owner there.
 
 ## Install and recover
 
-Create validates the input and the target first. Then it installs the artifacts over SSH in one script that holds a lock on the host Node. The script checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
+Create validates the input and the target first. Then `schedules.install` installs the artifacts through the agent runner and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
-An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, the script restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
+An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
 
 ## Timer state
 
@@ -120,7 +122,7 @@ Logs read only the Schedule's service, with fixed `journalctl --output cat` argu
 
 ## Latest run
 
-When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. It uses `curl` with the Orbit root CA embedded in the script and an empty private CA directory, so the system trust store does not apply and the Node needs no Orbit CLI. The script removes that directory when it exits. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
+When the service stops, the agent sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. Its native HTTPS client trusts only `/etc/orbit/agent/ca.pem`, refuses redirects, and has a ten-second timeout. The system trust store does not apply. It reads no agent secret. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
 
 The Node does not retry a failed report. A lost report leaves the earlier values in place and does not affect the command or later runs.
 
@@ -148,7 +150,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 ## Inspect Schedule drift
 
-[Doctor](/cli/doctor) checks Schedules in its `schedule` family. It compares each Schedule with its script, service, and timer on the host Node: presence, owner and mode, content, timer state, calendar, execution context, completion report, and placement. It also reports Schedule artifacts that have no record. It changes nothing.
+[Doctor](/cli/doctor) checks Schedules in its `schedule` family. It uses `doctor.inspect-schedule` to compare each Schedule with its command file, service, and timer on the host Node: presence, owner and mode, content, timer state, calendar, execution context, completion report, and placement. `doctor.schedule-orphans` reports Schedule artifacts that have no record. Installation and inspection share Rust rendering and ownership rules. It changes nothing.
 
 ## Why it works this way
 
@@ -158,9 +160,9 @@ These reasons explain the design. Check them before you propose a change.
 
 systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one. The Gateway's own scheduler and its [queue](/reference/gateway-queue) run only Gateway work, such as the [task VM jobs](/reference/compute-drivers#jobs). They never run a Schedule.
 
-### The command only in a protected script
+### The command only in a protected file
 
-The command is operator input that runs as the target user. It must never become part of a root command line on the Node. So the Gateway writes it only into a script that root owns, and every infrastructure command uses fixed arguments.
+The command is operator input that runs as the target user. It must never become part of a root command line on the Node. The Gateway sends the command as typed input. Rust writes it into a file that root owns and runs it only as the target account. Every infrastructure command uses fixed arguments.
 
 ### No edit and no automatic move
 

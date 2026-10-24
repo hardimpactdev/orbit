@@ -3,13 +3,23 @@
 //! `schedules.run` starts one run; `schedules.logs` reads its journal; `schedules.remove` deletes its units. Each
 //! acts only on files that carry the Schedule's own marker.
 
+mod runtime;
+mod spec;
+
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod tls_tests;
+pub use doctor::{InspectSchedule, ScheduleOrphans};
+pub use runtime::service;
+
 use super::caddy::chown;
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command as Process, Stdio},
     time::Duration,
@@ -30,6 +40,39 @@ fn failed(step: &str) -> ScheduleError {
     ScheduleError::Failed { step: step.into() }
 }
 
+/// Production paths are fixed. Tests exercise the same operations in an isolated filesystem.
+struct Host {
+    root: PathBuf,
+    uid: u32,
+    gid: u32,
+    systemctl: PathBuf,
+    analyze: PathBuf,
+}
+
+impl Host {
+    fn system() -> Self {
+        Self {
+            root: "/".into(),
+            uid: 0,
+            gid: 0,
+            systemctl: "/usr/bin/systemctl".into(),
+            analyze: "/usr/bin/systemd-analyze".into(),
+        }
+    }
+
+    fn path(&self, path: &str) -> PathBuf {
+        self.root.join(path.trim_start_matches('/'))
+    }
+
+    fn paths(&self, id: &str) -> Result<Paths, ScheduleError> {
+        let mut paths = paths(id)?;
+        paths.script = self.path(paths.script.to_str().unwrap());
+        paths.service = self.path(paths.service.to_str().unwrap());
+        paths.timer = self.path(paths.timer.to_str().unwrap());
+        Ok(paths)
+    }
+}
+
 struct Paths {
     script: PathBuf,
     service: PathBuf,
@@ -39,11 +82,7 @@ struct Paths {
 }
 
 fn paths(id: &str) -> Result<Paths, ScheduleError> {
-    if id.is_empty()
-        || !id
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
-    {
+    if !spec::valid_id(id) {
         return Err(failed("schedule-id"));
     }
     Ok(Paths {
@@ -55,8 +94,8 @@ fn paths(id: &str) -> Result<Paths, ScheduleError> {
     })
 }
 
-fn systemctl(arguments: &[&str]) -> bool {
-    Process::new("systemctl")
+fn systemctl(host: &Host, arguments: &[&str]) -> bool {
+    Process::new(&host.systemctl)
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -66,8 +105,8 @@ fn systemctl(arguments: &[&str]) -> bool {
 }
 
 /// `systemctl is-enabled` or `is-active` of a unit, as it prints it.
-fn unit_state(query: &str, unit: &str) -> String {
-    Process::new("systemctl")
+fn unit_state(host: &Host, query: &str, unit: &str) -> String {
+    Process::new(&host.systemctl)
         .args([query, unit])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -81,12 +120,20 @@ fn group_id(name: &str) -> Option<u32> {
 }
 
 /// Whether the file is Orbit's: absent is fine; present must be a regular file with the mode, owner, and marker.
-fn owned(path: &Path, group: u32, mode: u32, marker: &str) -> Result<bool, ScheduleError> {
-    let Ok(metadata) = fs::symlink_metadata(path) else {
-        return Ok(false);
+fn owned(
+    host: &Host,
+    path: &Path,
+    group: u32,
+    mode: u32,
+    marker: &str,
+) -> Result<bool, ScheduleError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(failed("inspect-artifacts")),
     };
     let ours = metadata.is_file()
-        && metadata.uid() == 0
+        && metadata.uid() == host.uid
         && metadata.gid() == group
         && metadata.mode() & 0o7777 == mode
         && fs::read_to_string(path).is_ok_and(|text| text.lines().any(|line| line == marker));
@@ -98,29 +145,43 @@ fn owned(path: &Path, group: u32, mode: u32, marker: &str) -> Result<bool, Sched
 }
 
 /// `/etc/orbit` is root's, passable by every account, and nothing else.
-fn shared_orbit_directory() -> Result<(), ScheduleError> {
-    let directory = Path::new("/etc/orbit");
-    match fs::symlink_metadata(directory) {
-        Ok(metadata) if !metadata.is_dir() || metadata.uid() != 0 || metadata.gid() != 0 => {
+fn shared_orbit_directory(host: &Host) -> Result<(), ScheduleError> {
+    let directory = host.path("/etc/orbit");
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata)
+            if !metadata.is_dir() || metadata.uid() != host.uid || metadata.gid() != host.gid =>
+        {
             return Err(ScheduleError::ArtifactConflict {})
         }
         Ok(_) => {}
-        Err(_) => fs::create_dir(directory).map_err(|_| ScheduleError::ArtifactConflict {})?,
+        Err(_) => fs::create_dir(&directory).map_err(|_| ScheduleError::ArtifactConflict {})?,
     }
     fs::set_permissions(directory, fs::Permissions::from_mode(0o711))
         .map_err(|_| ScheduleError::ArtifactConflict {})
 }
 
-fn write(path: &Path, content: &str, group: u32, mode: u32) -> std::io::Result<()> {
-    let staged = path.with_extension("orbit-new");
-    fs::write(&staged, content)?;
-    chown(&staged, 0, group)?;
-    fs::set_permissions(&staged, fs::Permissions::from_mode(mode))?;
-    fs::rename(&staged, path)
+fn write(host: &Host, path: &Path, content: &str, group: u32, mode: u32) -> std::io::Result<()> {
+    use std::io::Write;
+    let staged = path.with_extension(format!("orbit-new-{:016x}", rand::random::<u64>()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staged)?;
+        file.write_all(content.as_bytes())?;
+        chown(&staged, host.uid, group)?;
+        file.set_permissions(fs::Permissions::from_mode(mode))?;
+        fs::rename(&staged, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(staged);
+    }
+    result
 }
 
 fn runnable(user: &str, directory: &Path) -> Result<(), ScheduleError> {
-    let mut command = Process::new("test");
+    let mut command = Process::new("/usr/bin/test");
     command
         .arg("-d")
         .arg(directory)
@@ -134,7 +195,7 @@ fn runnable(user: &str, directory: &Path) -> Result<(), ScheduleError> {
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub id: String,
@@ -144,9 +205,11 @@ pub struct InstallInput {
     /// `enabled` or `disabled`.
     pub desired: String,
     pub calendar: String,
-    pub script: String,
-    pub service: String,
-    pub timer: String,
+    pub home: String,
+    pub shell: String,
+    pub login_shell: bool,
+    pub command: String,
+    pub timeout_seconds: u32,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -161,62 +224,75 @@ struct Previous {
     active: bool,
 }
 
-fn restore(paths: &Paths, previous: &Previous, group: u32) -> bool {
-    systemctl(&["disable", "--now", &paths.timer_unit]);
+fn restore(host: &Host, paths: &Paths, previous: &Previous, group: u32) -> bool {
+    systemctl(host, &["disable", "--now", &paths.timer_unit]);
     let mut restored = true;
     for (path, content, file_group, mode) in [
         (&paths.script, &previous.script, group, 0o750),
-        (&paths.service, &previous.service, 0, 0o644),
-        (&paths.timer, &previous.timer, 0, 0o644),
+        (&paths.service, &previous.service, host.gid, 0o644),
+        (&paths.timer, &previous.timer, host.gid, 0o644),
     ] {
         restored &= match content {
-            Some(content) => write(path, content, file_group, mode).is_ok(),
+            Some(content) => write(host, path, content, file_group, mode).is_ok(),
             None => fs::remove_file(path).is_ok() || !path.exists(),
         };
     }
-    restored &= systemctl(&["daemon-reload"]);
+    restored &= systemctl(host, &["daemon-reload"]);
     if previous.timer.is_some() {
-        restored &= systemctl(&[
-            if previous.enabled {
-                "enable"
-            } else {
-                "disable"
-            },
-            &paths.timer_unit,
-        ]);
-        restored &= systemctl(&[
-            if previous.active { "start" } else { "stop" },
-            &paths.timer_unit,
-        ]);
+        restored &= systemctl(
+            host,
+            &[
+                if previous.enabled {
+                    "enable"
+                } else {
+                    "disable"
+                },
+                &paths.timer_unit,
+            ],
+        );
+        restored &= systemctl(
+            host,
+            &[
+                if previous.active { "start" } else { "stop" },
+                &paths.timer_unit,
+            ],
+        );
     } else {
-        systemctl(&["reset-failed", &paths.timer_unit]);
+        systemctl(host, &["reset-failed", &paths.timer_unit]);
     }
     restored
 }
 
-fn settle(timer: &str, enabled: bool) -> bool {
+fn settle(host: &Host, timer: &str, enabled: bool) -> bool {
     if enabled {
-        systemctl(&["enable", "--now", timer])
-            && unit_state("is-enabled", timer) == "enabled"
-            && unit_state("is-active", timer) == "active"
+        systemctl(host, &["enable", "--now", timer])
+            && unit_state(host, "is-enabled", timer) == "enabled"
+            && unit_state(host, "is-active", timer) == "active"
     } else {
-        systemctl(&["disable", "--now", timer])
-            && unit_state("is-enabled", timer) != "enabled"
-            && unit_state("is-active", timer) != "active"
+        systemctl(host, &["disable", "--now", timer])
+            && unit_state(host, "is-enabled", timer) == "disabled"
+            && matches!(
+                unit_state(host, "is-active", timer).as_str(),
+                "inactive" | "failed"
+            )
     }
 }
 
 pub fn install(input: &InstallInput) -> Result<Done, ScheduleError> {
-    let paths = paths(&input.id)?;
+    install_at(&Host::system(), input)
+}
+
+fn install_at(host: &Host, input: &InstallInput) -> Result<Done, ScheduleError> {
+    let paths = host.paths(&input.id)?;
     runnable(&input.user, &input.working_directory)?;
     let group = group_id(&input.group).ok_or_else(|| failed("schedule-group"))?;
-    shared_orbit_directory()?;
+    let artifacts = spec::render(input)?;
     let read = |path: &Path,
                 file_group: u32,
                 mode: u32,
                 marker: String|
      -> Result<Option<String>, ScheduleError> {
-        Ok(if owned(path, file_group, mode, &marker)? {
+        Ok(if owned(host, path, file_group, mode, &marker)? {
             Some(fs::read_to_string(path).map_err(|_| failed("inspect-artifacts"))?)
         } else {
             None
@@ -231,20 +307,20 @@ pub fn install(input: &InstallInput) -> Result<Done, ScheduleError> {
         )?,
         service: read(
             &paths.service,
-            0,
+            host.gid,
             0o644,
             format!("X-Orbit-Schedule-ID={}", input.id),
         )?,
         timer: read(
             &paths.timer,
-            0,
+            host.gid,
             0o644,
             format!("X-Orbit-Schedule-ID={}", input.id),
         )?,
-        enabled: unit_state("is-enabled", &paths.timer_unit) == "enabled",
-        active: unit_state("is-active", &paths.timer_unit) == "active",
+        enabled: unit_state(host, "is-enabled", &paths.timer_unit) == "enabled",
+        active: unit_state(host, "is-active", &paths.timer_unit) == "active",
     };
-    let calendar_valid = Process::new("systemd-analyze")
+    let calendar_valid = Process::new(&host.analyze)
         .args(["calendar", &input.calendar])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -254,20 +330,23 @@ pub fn install(input: &InstallInput) -> Result<Done, ScheduleError> {
     if !calendar_valid {
         return Err(ScheduleError::CalendarInvalid {});
     }
-    let candidates = Path::new("/etc/orbit/schedule-candidates");
+    shared_orbit_directory(host)?;
+    let candidates = host.path("/etc/orbit/schedule-candidates");
     let result = (|| -> Result<(), ScheduleError> {
-        for directory in [Path::new("/etc/orbit/schedules"), candidates] {
-            fs::create_dir_all(directory).map_err(|_| failed("install"))?;
+        for directory in [host.path("/etc/orbit/schedules"), candidates.clone()] {
+            fs::create_dir_all(&directory).map_err(|_| failed("install"))?;
             fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
                 .map_err(|_| failed("install"))?;
         }
         let service = candidates.join(&paths.service_unit);
         let timer = candidates.join(&paths.timer_unit);
-        write(&service, &input.service, 0, 0o644).map_err(|_| failed("install"))?;
-        write(&timer, &input.timer, 0, 0o644).map_err(|_| failed("install"))?;
-        systemctl(&["disable", "--now", &paths.timer_unit]);
-        write(&paths.script, &input.script, group, 0o750).map_err(|_| failed("install"))?;
-        let verified = Process::new("systemd-analyze")
+        write(host, &service, &artifacts.service, host.gid, 0o644)
+            .map_err(|_| failed("install"))?;
+        write(host, &timer, &artifacts.timer, host.gid, 0o644).map_err(|_| failed("install"))?;
+        systemctl(host, &["disable", "--now", &paths.timer_unit]);
+        write(host, &paths.script, &artifacts.script, group, 0o750)
+            .map_err(|_| failed("install"))?;
+        let verified = Process::new(&host.analyze)
             .arg("verify")
             .args([&service, &timer])
             .stdin(Stdio::null())
@@ -280,7 +359,8 @@ pub fn install(input: &InstallInput) -> Result<Done, ScheduleError> {
         }
         fs::rename(&service, &paths.service).map_err(|_| failed("install"))?;
         fs::rename(&timer, &paths.timer).map_err(|_| failed("install"))?;
-        if !systemctl(&["daemon-reload"]) || !settle(&paths.timer_unit, input.desired == "enabled")
+        if !systemctl(host, &["daemon-reload"])
+            || !settle(host, &paths.timer_unit, input.desired == "enabled")
         {
             return Err(failed("install"));
         }
@@ -290,7 +370,7 @@ pub fn install(input: &InstallInput) -> Result<Done, ScheduleError> {
         for candidate in [&paths.service_unit, &paths.timer_unit] {
             let _ = fs::remove_file(candidates.join(candidate));
         }
-        if !restore(&paths, &previous, group) {
+        if !restore(host, &paths, &previous, group) {
             return Err(ScheduleError::RollbackFailed {});
         }
     }
@@ -306,17 +386,27 @@ pub struct TargetInput {
 }
 
 pub fn activate(input: &TargetInput) -> Result<Done, ScheduleError> {
-    let paths = paths(&input.id)?;
+    activate_at(&Host::system(), input)
+}
+
+fn activate_at(host: &Host, input: &TargetInput) -> Result<Done, ScheduleError> {
+    let paths = host.paths(&input.id)?;
     runnable(&input.user, &input.working_directory)?;
-    let enabled = unit_state("is-enabled", &paths.timer_unit) == "enabled";
-    let active = unit_state("is-active", &paths.timer_unit) == "active";
-    if settle(&paths.timer_unit, true) {
+    let enabled = unit_state(host, "is-enabled", &paths.timer_unit) == "enabled";
+    let active = unit_state(host, "is-active", &paths.timer_unit) == "active";
+    if settle(host, &paths.timer_unit, true) {
         return Ok(Done {});
     }
-    let restored = systemctl(&[
-        if enabled { "enable" } else { "disable" },
-        &paths.timer_unit,
-    ]) && systemctl(&[if active { "start" } else { "stop" }, &paths.timer_unit]);
+    let restored = systemctl(
+        host,
+        &[
+            if enabled { "enable" } else { "disable" },
+            &paths.timer_unit,
+        ],
+    ) && systemctl(
+        host,
+        &[if active { "start" } else { "stop" }, &paths.timer_unit],
+    );
     Err(if restored {
         failed("activate")
     } else {
@@ -325,9 +415,13 @@ pub fn activate(input: &TargetInput) -> Result<Done, ScheduleError> {
 }
 
 pub fn run(input: &TargetInput) -> Result<Done, ScheduleError> {
-    let paths = paths(&input.id)?;
+    run_at(&Host::system(), input)
+}
+
+fn run_at(host: &Host, input: &TargetInput) -> Result<Done, ScheduleError> {
+    let paths = host.paths(&input.id)?;
     runnable(&input.user, &input.working_directory)?;
-    if systemctl(&["start", "--no-block", &paths.service_unit]) {
+    if systemctl(host, &["start", "--no-block", &paths.service_unit]) {
         Ok(Done {})
     } else {
         Err(failed("run"))
@@ -405,43 +499,53 @@ pub struct RemoveInput {
 }
 
 pub fn remove(input: &RemoveInput) -> Result<Done, ScheduleError> {
-    let paths = paths(&input.id)?;
+    remove_at(&Host::system(), input)
+}
+
+fn remove_at(host: &Host, input: &RemoveInput) -> Result<Done, ScheduleError> {
+    let paths = host.paths(&input.id)?;
     let group = group_id(&input.group).unwrap_or(u32::MAX);
     owned(
+        host,
         &paths.script,
         group,
         0o750,
         &format!("# X-Orbit-Schedule-ID={}", input.id),
     )?;
     owned(
+        host,
         &paths.service,
-        0,
+        host.gid,
         0o644,
         &format!("X-Orbit-Schedule-ID={}", input.id),
     )?;
-    owned(
+    let timer_present = owned(
+        host,
         &paths.timer,
-        0,
+        host.gid,
         0o644,
         &format!("X-Orbit-Schedule-ID={}", input.id),
     )?;
-    systemctl(&["disable", "--now", &paths.timer_unit]);
-    if !input.cascade
-        && !matches!(
-            unit_state("is-active", &paths.service_unit).as_str(),
-            "" | "inactive" | "failed" | "unknown"
-        )
-    {
-        return Err(ScheduleError::Busy {});
+    if !systemctl(host, &["disable", "--now", &paths.timer_unit]) && timer_present {
+        return Err(failed("remove"));
+    }
+    if !input.cascade {
+        match unit_state(host, "is-active", &paths.service_unit).as_str() {
+            "" => return Err(failed("inspect-service")),
+            "inactive" | "failed" | "unknown" => {}
+            _ => return Err(ScheduleError::Busy {}),
+        }
     }
     for path in [&paths.timer, &paths.service, &paths.script] {
         if fs::remove_file(path).is_err() && path.exists() {
             return Err(failed("remove"));
         }
     }
-    systemctl(&["daemon-reload"]);
-    systemctl(&["reset-failed", &paths.service_unit]);
-    systemctl(&["reset-failed", &paths.timer_unit]);
+    if !systemctl(host, &["daemon-reload"]) {
+        return Err(failed("remove"));
+    }
+    systemctl(host, &["reset-failed", &paths.service_unit]);
+    systemctl(host, &["reset-failed", &paths.timer_unit]);
     Ok(Done {})
 }
 
@@ -460,7 +564,7 @@ macro_rules! schedule_command {
 
             /// Schedule units belong to root and run as the Schedule's user.
             fn privilege(platform: Platform) -> Option<Privilege> {
-                super::linux_only(platform, Privilege::Root)
+                crate::commands::linux_only(platform, Privilege::Root)
             }
 
             fn target(input: &$input) -> Option<String> {
@@ -530,31 +634,4 @@ schedule_command!(
     |input: &RemoveInput| Some(format!("schedule:{}", input.id))
 );
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_schedule_id_names_only_its_own_units() {
-        let paths = paths("0b0e-42").unwrap();
-        assert_eq!(paths.timer_unit, "orbit-schedule-0b0e-42.timer");
-        assert_eq!(
-            paths.script,
-            PathBuf::from("/etc/orbit/schedules/0b0e-42.sh")
-        );
-        assert!(super::paths("../x").is_err() && super::paths("").is_err());
-    }
-
-    #[test]
-    fn a_foreign_file_at_a_schedule_path_is_a_conflict() {
-        let file =
-            std::env::temp_dir().join(format!("orbit-schedule-{:016x}", rand::random::<u64>()));
-        assert_eq!(owned(&file, 0, 0o644, "X-Orbit-Schedule-ID=1"), Ok(false));
-        fs::write(&file, "X-Orbit-Schedule-ID=1\n").unwrap();
-        assert_eq!(
-            owned(&file, 0, 0o644, "X-Orbit-Schedule-ID=1"),
-            Err(ScheduleError::ArtifactConflict {})
-        );
-        let _ = fs::remove_file(&file);
-    }
-}
+mod doctor;

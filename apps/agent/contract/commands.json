@@ -1585,6 +1585,42 @@
       ]
     },
     {
+      "name": "doctor.inspect-schedule",
+      "summary": "Inspect a Schedule's artifacts and timer.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
+      "name": "doctor.schedule-orphans",
+      "summary": "Find Schedule artifacts without recorded intent.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "schedules.target_unavailable",
+        "schedules.artifact_conflict",
+        "schedules.calendar_invalid",
+        "schedules.rollback_failed",
+        "schedules.failed",
+        "schedules.run_active"
+      ]
+    },
+    {
       "name": "schedules.install",
       "summary": "Write a Schedule's units and set its timer.",
       "mutates": true,

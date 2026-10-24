@@ -7,8 +7,8 @@ namespace App\Infrastructure\Schedules;
 use App\Data\Schedules\ScheduleLogsData;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -28,7 +28,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
 
     public function __construct(
         private ScheduleTargetResolver $targets,
-        private ScheduleRenderer $renderer,
+        private ScheduleSpecification $specification,
         private AgentCommandRunner $agents,
     ) {}
 
@@ -36,23 +36,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
     {
         $target = $this->targets->forInstallation($schedule);
 
-        try {
-            $units = [
-                'script' => $this->renderer->renderScript($schedule, $target),
-                'service' => $this->renderer->renderService($schedule, $target),
-                'timer' => $this->renderer->renderTimer($schedule),
-            ];
-        } catch (Throwable $exception) {
-            throw $this->failure('render', ScheduleErrorCode::InstallFailed, 'Schedule installation failed.', $exception);
-        }
-
-        $this->call($target, 'schedules.install', [
-            ...$this->runnable($schedule, $target),
-            'group' => $target->group,
-            'desired' => $schedule->desired_timer_state->value,
-            'calendar' => $schedule->calendar,
-            ...$units,
-        ], 'install', ScheduleErrorCode::InstallFailed, 'Schedule installation failed.');
+        $this->call($target, 'schedules.install', $this->specification->input($schedule, $target), 'install', ScheduleErrorCode::InstallFailed, 'Schedule installation failed.');
     }
 
     public function activate(#[SensitiveParameter] Schedule $schedule): void

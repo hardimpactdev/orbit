@@ -14,11 +14,13 @@ covers:
 
 # Node agent
 
-`orbit-agent` is a small Rust program on every managed Linux Node. It runs in two modes.
+`orbit-agent` is a small Rust program on every managed Linux Node. It observes Node state, runs typed commands, and supplies fixed service entry points.
 
 The **observer** is a long-running service. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live. The Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
 
 **Command mode** runs one named Node action, such as `agent.install`, and exits. The Gateway starts it over SSH, or as a local process on its own Node. See [Commands](#commands).
+
+Fixed **service entry points** run under their own Linux systemd units. `service schedules-run <uuid>` reads the protected Schedule command file and executes its project command as the service user. `service schedules-complete <uuid>` runs as root, reads only the pinned CA, and reports completion. It runs no project code and reads no agent secret. [Schedules](/reference/schedules#host-artifacts) owns their units and execution context.
 
 The observer listens on no port. Nothing reaches command mode over the network: only a process that SSH or the Gateway starts runs it. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 

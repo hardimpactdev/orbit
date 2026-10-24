@@ -14,7 +14,6 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
@@ -53,7 +52,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
-use App\Domain\Schedules\ScheduleRenderer;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -408,25 +407,13 @@ it('captures production runtime definitions during clone and installs them only 
         new SystemdProcessRenderer,
         new DockerProcessRenderer,
     );
-    $certificates = new class implements LeafCertificateSigner
-    {
-        public function sign(string $hostname, string $certificateRequest): string
-        {
-            return '';
-        }
-
-        public function rootCertificate(): string
-        {
-            return 'test-root-certificate';
-        }
-    };
     $scheduleAgents = new FakeAgentCommandRunner;
     foreach (['schedules.install', 'schedules.activate', 'schedules.remove'] as $command) {
         $scheduleAgents->answer($command, []);
     }
     $scheduleRuntime = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
-        new ScheduleRenderer($certificates),
+        new ScheduleSpecification,
         $scheduleAgents,
     );
     $definitions = new InstantiateProjectRuntimeDefinitionsAction(

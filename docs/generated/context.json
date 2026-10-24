@@ -2550,6 +2550,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Tool"

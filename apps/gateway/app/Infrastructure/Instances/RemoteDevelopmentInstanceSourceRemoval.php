@@ -22,7 +22,7 @@ use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectSourceAccess;
-use App\Domain\Schedules\ScheduleRenderer;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
@@ -1159,7 +1159,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     public static function ownUnits(Instance $instance): array
     {
         $systemd = app(SystemdProcessRenderer::class);
-        $schedules = app(ScheduleRenderer::class);
+        $schedules = app(ScheduleSpecification::class);
         $units = [];
         foreach ($instance->processes()->get() as $process) {
             if ($process->runtime === ProcessRuntime::Systemd) {

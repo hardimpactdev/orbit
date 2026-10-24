@@ -180,6 +180,8 @@ pub fn all() -> Vec<Entry> {
         entry::<hibernation::InspectCheckout>(),
         entry::<hibernation::PruneCheckout>(),
         entry::<hibernation::RestoreDependencies>(),
+        entry::<schedules::InspectSchedule>(),
+        entry::<schedules::ScheduleOrphans>(),
         entry::<schedules::InstallSchedule>(),
         entry::<schedules::ActivateSchedule>(),
         entry::<schedules::RunSchedule>(),

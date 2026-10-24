@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Schedules\ScheduleRenderer;
+use App\Domain\Schedules\ScheduleSpecification;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -25,7 +24,7 @@ beforeEach(function (): void {
     $this->agents->answer('schedules.logs', ['output' => "older\nnewest\n", 'truncated' => false]);
     $this->manager = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
-        new ScheduleRenderer(new ScheduleRuntimeFakeCertificates, 'https://10.44.0.1'),
+        new ScheduleSpecification,
         $this->agents,
     );
     $this->node = Node::query()->create([
@@ -98,7 +97,7 @@ it('requires the selected production release even when installing a disabled Sch
         ->toMatchArray(['user' => 'managed', 'working_directory' => '/home/managed/current', 'desired' => 'disabled']);
 });
 
-it('installs the rendered units, calendar, and desired timer state in one agent call', function (): void {
+it('sends only typed Schedule intent in one agent call', function (): void {
     $this->manager->install($this->schedule);
 
     $input = $this->agents->calls[0]['input'];
@@ -109,10 +108,11 @@ it('installs the rendered units, calendar, and desired timer state in one agent 
             'group' => 'orbit',
             'desired' => 'enabled',
             'calendar' => 'daily',
+            'command' => $this->schedule->command,
+            'timeout_seconds' => 3600,
+            'login_shell' => true,
         ])
-        ->and($input['script'])->toContain('sensitive command')
-        ->and($input['service'])->toContain('X-Orbit-Schedule-ID='.$this->schedule->id)
-        ->and($input['timer'])->toContain('OnCalendar=daily');
+        ->and(array_intersect(['script', 'service', 'timer'], array_keys($input)))->toBe([]);
 });
 
 it('maps each install refusal to its Schedule error', function (string $refusal, string $step, ScheduleErrorCode $error): void {
@@ -152,45 +152,3 @@ it('retains standalone intent while a run is active, and removes on cascade', fu
         ->and($this->agents->calls[0]['input'])->toBe(['id' => $this->schedule->id, 'group' => 'orbit', 'cascade' => false])
         ->and(fn () => $this->manager->remove($this->schedule, true))->toThrow(ScheduleOperationException::class);
 });
-
-it('maps root certificate rendering failures to the bounded install error', function (): void {
-    $manager = new RemoteScheduleRuntimeManager(
-        new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
-        new ScheduleRenderer(new ScheduleRuntimeFailingCertificates),
-        $this->agents,
-    );
-
-    expect(fn () => $manager->install($this->schedule))
-        ->toThrow(function (ScheduleOperationException $exception): void {
-            expect($exception->step)->toBe('render')
-                ->and($exception->error)->toBe(ScheduleErrorCode::InstallFailed)
-                ->and($exception->getMessage())->toBe('Schedule installation failed.');
-        })
-        ->and($this->agents->calls)->toBe([]);
-});
-
-final class ScheduleRuntimeFakeCertificates implements LeafCertificateSigner
-{
-    public function sign(string $domain, string $certificateRequest): string
-    {
-        throw new LogicException('Signing is not part of Schedule runtime tests.');
-    }
-
-    public function rootCertificate(): string
-    {
-        return 'TEST ROOT CERTIFICATE';
-    }
-}
-
-final class ScheduleRuntimeFailingCertificates implements LeafCertificateSigner
-{
-    public function sign(string $domain, string $certificateRequest): string
-    {
-        throw new LogicException('Signing is not part of Schedule runtime tests.');
-    }
-
-    public function rootCertificate(): string
-    {
-        throw new RuntimeException('Sensitive root certificate failure.');
-    }
-}
