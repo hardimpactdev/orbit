@@ -3,6 +3,7 @@ import {
   type AnalysisResult,
   briefSource,
   canonical,
+  planConsentNote,
   type ReportEnvelope,
   sha256,
   strictJson,
@@ -74,6 +75,18 @@ Deno.test("complete typed plan: native digest, rename endpoints, cumulative revi
   reordered.manifest.paths.reverse();
   reordered.plan_sha256 = await sha256(canonical(reordered.manifest));
   await assertRejects(() => validatePlan(reordered, briefSource(group), "tg-7"));
+});
+
+Deno.test("consent identifies the manifest and every plan scope field without delimiter ambiguity", () => {
+  const note = planConsentNote(f.plan);
+  for (
+    const edit of [{ plan_sha256: "c".repeat(64) }, { base: "d".repeat(40) }, { repository: `${f.plan.repository}:extra` }, { branch: "other" }, {
+      docsSubtask: 12,
+    }]
+  ) {
+    assert(note !== planConsentNote({ ...f.plan, ...edit }));
+  }
+  assert(planConsentNote({ ...f.plan, repository: "a", branch: "b:c" }) !== planConsentNote({ ...f.plan, repository: "a:b", branch: "c" }));
 });
 
 Deno.test("full report rejects duplicate/missing/malformed/truncated/oversize/wrong-candidate evidence", async () => {
@@ -148,7 +161,16 @@ Deno.test("exit zero is insufficient; errors, unresolved ownership and generator
 });
 
 function stageHarness(
-  responses: { start?: "lost" | "busy"; status?: string; result?: unknown; code?: string; group?: typeof group; docsReview?: Record<string, unknown> } = {},
+  responses: {
+    start?: "lost" | "busy";
+    status?: string;
+    result?: unknown;
+    code?: string;
+    group?: typeof group;
+    docsReview?: Record<string, unknown>;
+    operation?: Record<string, unknown>;
+    operationId?: number;
+  } = {},
 ) {
   let job: Job | null = null;
   const calls: { method: string; path: string; body?: Record<string, unknown>; key?: string }[] = [];
@@ -162,9 +184,12 @@ function stageHarness(
       starts++;
       if (starts === 1 && responses.start === "lost") return Promise.resolve({ status: 0, body: null });
       if (starts === 1 && responses.start === "busy") return Promise.resolve({ status: 409, body: { error: { code: "operation.target_busy" } } });
-      return ok({ id: 899, status: "queued", poll_after_seconds: 1 }, 202);
+      return ok({ id: responses.operationId ?? 899, status: "queued", poll_after_seconds: 1 }, 202);
     }
-    return ok({ id: 899, status: responses.status ?? "succeeded", result: responses.result ?? f.result, error_code: responses.code });
+    return ok(
+      responses.operation ??
+        { id: responses.operationId ?? 899, status: responses.status ?? "succeeded", result: responses.result ?? f.result, error_code: responses.code },
+    );
   };
   const deps = {
     http,
@@ -193,6 +218,187 @@ Deno.test("lost response/restart recovers exact persisted analysis key and reque
   assertEquals(done.artifacts.analysis.outcome, "stale");
   assertEquals(done.artifacts.analysis.result, f.result);
   assertEquals(h.calls.filter((c) => c.method === "POST").length, 2);
+});
+
+Deno.test("failed and cancelled turns retain only scoped terminal candidates, with no receipt approval or snapshot fallback", async () => {
+  const edited = { head: HEAD, tree: "c".repeat(40) }, reset = { head: HEAD, tree: "d".repeat(40) };
+  for (const stage of ["implement", "review"] as const) {
+    for (const status of ["failed", "cancelled"]) {
+      const operation = {
+        id: 899,
+        kind: "tasks.turn",
+        target_type: "task_group",
+        target_id: 7,
+        status,
+        input: { subtask: 11, role: stage === "implement" ? "implementer" : "reviewer", thread: "new" },
+        result: { thread: 44, state: "failed", receipt: { outcome: "approved" }, after: edited, after_reset: reset },
+      };
+      const cases = [
+        { operation, candidate: stage === "implement" ? edited : reset },
+        ...[
+          { result: null },
+          { result: { ...operation.result, after: {}, after_reset: null } },
+          { id: 900 },
+          { kind: "tasks.check" },
+          { target_id: 8 },
+          { target_type: "instance" },
+          { input: { ...operation.input, subtask: 12 } },
+          { input: { ...operation.input, role: "consult" } },
+          { input: { ...operation.input, thread: "45" } },
+        ].map((edit) => ({ operation: { ...operation, ...edit }, candidate: null })),
+      ];
+      for (const c of cases) {
+        const h = stageHarness({ operation: c.operation });
+        const args: StageArgs = {
+          ...h.args,
+          stage,
+          key: `tg-7.${stage}.c1`,
+          analysis: f.analysis(stage),
+          ...(stage === "review"
+            ? { handoff: bound({ subtask: 11, outcome: "passed", checkId: 88, commit: HEAD, candidate: { head: HEAD, tree: TREE } }) }
+            : {}),
+        };
+        // The turn role is "implement" in the factory and "implementer" on the wire.
+        args.analysis = f.analysis(stage === "review" ? "review" : "implement");
+        await runStage(args, h.deps);
+        const failed = await runStage(args, h.deps);
+        assertEquals(failed.state, "failed");
+        assertEquals(failed.evidence!.status, "failed");
+        assertEquals(failed.evidence!.operation, c.operation);
+        const artifact = failed.artifacts[stage === "implement" ? "change" : "review"];
+        assertEquals(artifact.outcome, "blocked");
+        assertEquals(artifact.candidate, c.candidate);
+        assertEquals(artifact.attempt, 1);
+        assertEquals(artifact.operationId, 899);
+        assertEquals(artifact.subtask, 11);
+        assertEquals(artifact.role, operation.input.role);
+        assertEquals(artifact.threadId, c.candidate ? 44 : null);
+        assert(!h.calls.some((x) => x.method === "PATCH" && x.body?.status === "completed"));
+        const next = { ...args, stage: "analyze" as const, [stage === "implement" ? "change" : "review"]: bound(artifact, "2026-10-24T11:00:00Z") };
+        if (c.candidate) assertEquals(analysisCandidate(next), { candidate: c.candidate, purpose: stage });
+        else assertThrows(() => analysisCandidate(next), Error, "complete native candidate");
+        await runStage(args, h.deps);
+        assertEquals(h.calls.filter((x) => x.method === "POST").length, 1);
+      }
+    }
+  }
+  const waiting = stageHarness({ operation: { status: "waiting", result: { after: edited } } });
+  const args: StageArgs = { ...waiting.args, stage: "implement", key: "tg-7.implement.c1", analysis: f.analysis() };
+  await runStage(args, waiting.deps);
+  const pending = await runStage(args, waiting.deps);
+  assertEquals(pending.state, "running");
+  assertEquals(pending.artifacts, {}); // An unproven termination never releases a snapshot.
+  const refused = stageHarness();
+  const predispatch = await runStage({ ...args, analysis: null }, refused.deps);
+  assertEquals(predispatch.state, "failed");
+  assertEquals(predispatch.operationId, null);
+  assertEquals(predispatch.artifacts, {});
+  assert(!refused.calls.some((x) => x.method === "POST"));
+});
+
+Deno.test("failed author edits recover through fresh analysis, preserving counters, thread and original same-key send", async () => {
+  const after = { head: HEAD, tree: "c".repeat(40) };
+  const operation = {
+    id: 900,
+    kind: "tasks.turn",
+    target_type: "task_group",
+    target_id: 7,
+    status: "failed",
+    error_code: "tasks.turn_failed",
+    input: { subtask: 11, role: "implementer", thread: "new" },
+    result: { receipt: null, thread: 44, state: "failed", after, after_reset: null },
+  };
+  const h = stageHarness({ start: "lost", operationId: 900, operation });
+  const args: StageArgs = { ...h.args, stage: "implement", key: "tg-7.implement.c1", analysis: f.analysis() };
+  await runStage(args, h.deps); // Server may have admitted the original send.
+  const persisted = structuredClone(h.get()!.request);
+  await runStage(args, h.deps); // Recovery uses only the persisted request/key.
+  const failed = await runStage(args, h.deps);
+  assertEquals(failed.state, "failed");
+  assertEquals(failed.evidence!.operation, operation);
+  assertEquals(failed.artifacts.change.candidate, after);
+  assertEquals(failed.artifacts.change.attempt, 1);
+  assertEquals(failed.artifacts.change.threadId, 44);
+  await runStage(args, h.deps);
+  const sends = h.calls.filter((x) => x.method === "POST");
+  assertEquals(sends.length, 2);
+  assertEquals(sends[0], sends[1]);
+  assertEquals(h.get()!.request, persisted);
+  // The real-factory regression proves implement-retry requires approval.
+  // Simulate its next stage here, with the terminal artifact recorded by that driver.
+  const change = bound(failed.artifacts.change, "2026-10-24T11:00:00Z");
+  const analysisArgs: StageArgs = { ...h.args, key: "tg-7.analyze.c2", change };
+  assertEquals(analysisCandidate(analysisArgs).candidate, after);
+  const result = await reportResult((e) => {
+    e.tree = after.tree;
+  });
+  result.provenance.operation_id = 901;
+  result.provenance.before = after;
+  result.provenance.after = after;
+  const analysis = stageHarness({ operationId: 901, result });
+  await runStage(analysisArgs, analysis.deps);
+  assertEquals(analysis.calls.find((x) => x.method === "POST")!.body!.tree, after.tree);
+  const usable = await runStage(analysisArgs, analysis.deps);
+  assertEquals(usable.artifacts.analysis.outcome, "ready");
+  for (const evidence of [null, f.analysis(), bound({ ...usable.artifacts.analysis, outcome: "blocked" })]) {
+    const invalid = stageHarness();
+    const refused = await runStage({ ...args, key: "tg-7.implement.c2", change, analysis: evidence }, invalid.deps);
+    assertEquals(refused.state, "failed");
+    assert(!invalid.calls.some((x) => x.method === "POST"));
+  }
+  const retry = stageHarness({
+    operationId: 902,
+    start: "lost",
+    operation: {
+      id: 902,
+      status: "succeeded",
+      result: { thread: 44, state: "done", receipt: { outcome: "ready_for_review" }, after },
+    },
+  });
+  const retryArgs = { ...args, key: "tg-7.implement.c2", change, analysis: bound(usable.artifacts.analysis) };
+  await runStage(retryArgs, retry.deps);
+  const original = structuredClone(retry.get()!.request);
+  await runStage(retryArgs, retry.deps);
+  const done = await runStage(retryArgs, retry.deps);
+  assertEquals(done.state, "succeeded");
+  assertEquals(done.artifacts.change.attempt, 2);
+  assertEquals(done.artifacts.change.threadId, 44);
+  const posts = retry.calls.filter((x) => x.method === "POST");
+  assertEquals(posts.length, 2);
+  assertEquals(posts[0], posts[1]);
+  assertEquals(posts[0].key, "tg-7.implement.s11.c2");
+  assertEquals(posts[0].body!.thread, "44");
+  assertEquals(posts[0].body!.analysis, { operation: 901, plan_sha256: f.plan.plan_sha256 });
+  assertEquals(retry.get()!.request, original);
+});
+
+Deno.test("terminal check snapshots stay blocked and scoped; missing or cancelled results never become passes", async () => {
+  for (const stage of ["baseline", "handoff"] as const) {
+    for (const status of ["failed", "cancelled"]) {
+      const operation = {
+        id: 899,
+        kind: "tasks.check",
+        target_type: "task_group",
+        target_id: 7,
+        status,
+        input: { subtask: 11, phase: stage },
+        result: { check_id: 70, outcome: "passed", commit: "c".repeat(40), head: HEAD, tree: TREE },
+      };
+      for (const op of [operation, { ...operation, result: null }, { ...operation, input: { subtask: 12, phase: stage } }]) {
+        const h = stageHarness({ operation: op });
+        const args: StageArgs = { ...h.args, stage, key: `tg-7.${stage}.c1` };
+        await runStage(args, h.deps);
+        const done = await runStage(args, h.deps);
+        assertEquals(done.state, "failed");
+        assertEquals(done.evidence!.status, "failed");
+        assertEquals(done.artifacts[stage].outcome, "blocked");
+        assertEquals(done.artifacts[stage].commit, null);
+        assertEquals(done.artifacts[stage].candidate, op === operation ? { head: "c".repeat(40), tree: TREE } : null);
+        assertEquals(done.artifacts[stage].operationId, 899);
+        assertEquals(h.calls.filter((c) => c.method === "POST").length, 1);
+      }
+    }
+  }
 });
 
 Deno.test("unknown termination holds the client stage; cancellation/unavailable/oversize retain typed failure without green fallback", async () => {
@@ -263,13 +469,19 @@ Deno.test("a feature child refuses absent/stale/foreign semantic docs review and
     input: { subtask: 11, role: "reviewer", analysis: { operation: 897, plan_sha256: fixture.plan.plan_sha256 } },
     result: { receipt: { outcome: "approved" } },
   };
-  for (const review of [undefined, bound({ docsReview: { ...pointer, plan_sha256: "c".repeat(64) } }), bound({ docsReview: pointer })]) {
+  for (
+    const review of [
+      undefined,
+      bound({ docsReview: { ...pointer, plan_sha256: "c".repeat(64) }, candidate: { head: HEAD, tree: TREE } }),
+      bound({ docsReview: pointer, candidate: { head: HEAD, tree: TREE } }),
+    ]
+  ) {
     const h = stageHarness({ group: view, docsReview: { ...approved, target_id: 8 } });
     assertEquals((await runStage({ ...args, review }, h.deps)).state, "failed");
     assert(!h.calls.some((c) => c.method === "POST"));
   }
   const h = stageHarness({ group: view, docsReview: approved });
-  assertEquals((await runStage({ ...args, review: bound({ docsReview: pointer }) }, h.deps)).state, "running");
+  assertEquals((await runStage({ ...args, review: bound({ docsReview: pointer, candidate: { head: HEAD, tree: TREE } }) }, h.deps)).state, "running");
   assertEquals(h.calls.filter((c) => c.method === "POST").length, 1);
 });
 

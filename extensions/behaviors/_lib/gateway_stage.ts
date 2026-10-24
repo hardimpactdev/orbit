@@ -243,6 +243,11 @@ async function turnAnalysis(args: StageArgs, g: GroupRow, t: TaskRow, http: Http
   const plan = await authorized(args, g);
   const a = envelope(args.analysis)?.payload;
   if (!a || a.subtask !== t.id || a.plan_sha256 !== plan.plan_sha256 || !["ready", "action_required"].includes(String(a.outcome)) || a.purpose !== (args.stage === "review" ? "review" : "implement")) throw new Error("turn requires usable current-plan analysis for this child and role");
+  if ([args.baseline, args.change, args.handoff, args.review].some((r) => envelope(r) !== null)) {
+    const latest = analysisCandidate(args).candidate;
+    const analyzed = a.candidate as Candidate | undefined;
+    if (analyzed?.head !== latest.head || analyzed?.tree !== latest.tree) throw new Error("turn analysis does not cover the latest native candidate; obtain fresh analysis before retry");
+  }
   // Revalidate complete stored evidence, not a green summary or an arbitrary operation reference.
   const checked = await validateAnalysis(a.result, { operation: Number(a.operationId), group: g.id, subtask: t.id, plan, candidate: a.candidate as Candidate,
     instanceId: Number(envelope(args.workspace)?.payload.instanceId), nodeId: Number(envelope(args.workspace)?.payload.nodeId) });
@@ -385,6 +390,41 @@ export function counters(stage: Stage, subtask: number | null, outcome: string, 
       return { attempt: count(ofSubtask(args.review, subtask)?.attempt) + 1, implementAttempts: count(change?.attempt) };
   }
   return {};
+}
+
+/** A terminal failure can leave edits. Keep its public snapshot without approving
+ * a receipt or implying success/lease release. A missing snapshot shadows older
+ * artifacts, so reanalysis parks instead of silently reusing a stale baseline.
+ */
+function failureArtifacts(job: Job, op: Record<string, unknown>, args: StageArgs): Job["artifacts"] {
+  const turn = job.stage === "implement" || job.stage === "review";
+  const check = job.stage === "baseline" || job.stage === "handoff";
+  if (!turn && !check) return {};
+  const result = (op.result ?? {}) as Record<string, unknown>;
+  const input = (op.input ?? {}) as Record<string, unknown>;
+  const role = job.stage === "implement" ? "implementer" : "reviewer";
+  const scoped = op.id === job.operationId && op.kind === (turn ? "tasks.turn" : "tasks.check") &&
+    op.target_type === "task_group" && op.target_id === job.group && input.subtask === job.subtask &&
+    (turn ? input.role === role && input.thread === job.request?.body.thread : input.phase === job.stage);
+  const thread = turn && Number.isSafeInteger(result.thread) && Number(result.thread) > 0 &&
+      (input.thread === "new" || input.thread === String(result.thread)) ? result.thread : null;
+  const raw = turn ? (job.stage === "review" ? result.after_reset : result.after) : { head: result.commit ?? result.head, tree: result.tree };
+  const snapshot = raw as Candidate | null | undefined;
+  const oid = (value: unknown) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
+  const resultIdentity = turn ? thread !== null : Number.isSafeInteger(result.check_id) && Number(result.check_id) > 0;
+  const candidate = scoped && resultIdentity && snapshot && oid(snapshot.head) && oid(snapshot.tree)
+    ? { head: snapshot.head, tree: snapshot.tree } : null;
+  const common = {
+    subtask: job.subtask, group: job.group, operationId: job.operationId, operationStatus: op.status,
+    outcome: "blocked", candidate, snapshotUnavailable: candidate ? null : "no validated scoped terminal snapshot",
+    ...counters(job.stage, job.subtask, "blocked", args),
+  };
+  if (turn) return { [job.stage === "implement" ? "change" : "review"]: {
+    ...common, role, threadId: candidate ? thread : null, threadState: scoped ? result.state ?? null : null,
+    summary: "The native turn ended without success. Retry requires the existing approval and fresh analysis.",
+    docsReview: envelope(args.review)?.payload.docsReview ?? null,
+  } };
+  return { [job.stage]: { ...common, checkId: scoped ? result.check_id ?? null : null, commit: null, deliverables: [], output: "" } };
 }
 
 /** Map a succeeded operation's result to the factory products of its stage. */
@@ -592,7 +632,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     } else {
       const error = `${status}${op.error_code ? ` ${op.error_code}` : ""}${op.failed_step ? ` at ${op.failed_step}` : ""}`;
       job = await withGroupOutcome(
-        { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error, code: op.error_code ?? null,
+        { ...job, state: "failed", lastError: error, artifacts: failureArtifacts(job, op, args), evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error, code: op.error_code ?? null,
           // Public OperationData does not expose private analysis failure metadata.
           // Keep the whole supported read. Never reconstruct required_bytes from a tail.
           operation: op, requiredBytes: null, diagnosticsAvailability: "public operation fields only" } },

@@ -67,7 +67,7 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.24.1",
+  version: "2026.10.25.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     job: {

@@ -120,6 +120,20 @@ globalArguments:
           gates:
             - { type: artifact-exists, config: { artifact: plan } }
             - { type: human-approval, config: { id: plan-authorized } }
+            # Exact consent uses the existing approval note, not another ledger.
+            # planConsentNote() emits this unambiguous length-prefixed tuple.
+            - type: cel
+              config:
+                expr: >-
+                  approvals.plan_authorized.exists(a,
+                    a.stageId == state.stageId && a.cycle == state.cycles[state.stageId] &&
+                    a.decision == "approved" && has(a.note) &&
+                    a.note == "plan-v1:" + string(size(artifacts.plan.plan_sha256)) + ":" + artifacts.plan.plan_sha256 +
+                      string(size(artifacts.plan.base)) + ":" + artifacts.plan.base +
+                      string(size(artifacts.plan.repository)) + ":" + artifacts.plan.repository +
+                      string(size(artifacts.plan.branch)) + ":" + artifacts.plan.branch +
+                      string(size(string(artifacts.plan.docsSubtask))) + ":" + string(artifacts.plan.docsSubtask))
+                message: "authorize this exact plan with note=planConsentNote(fresh plan payload); generic or replaced-plan approval does not apply"
 
     - id: analyze
       description: fixed read-only repository analysis; no agent turn (tasks.analyze)

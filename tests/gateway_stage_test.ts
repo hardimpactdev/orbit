@@ -16,7 +16,7 @@ import {
   syncAssistance,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
 
-import { analysisFixture } from "./_support/analysis_fixture.ts";
+import { analysisFixture, HEAD, TREE } from "./_support/analysis_fixture.ts";
 const task = (id: number, position: number) => ({ id, position, title: `Subtask ${id}`, brief: "Update dependencies.", deliverables: [{ id: "lock", type: "file", description: "composer.lock modified" }] });
 const fixture = await analysisFixture({ title: "Deps", brief: "Group brief.", tasks: [task(11, 1)] });
 
@@ -266,7 +266,7 @@ Deno.test("a turn result's thread id becomes the change artifact's thread", asyn
 
 Deno.test("review needs a passed handoff of the current subtask and passes its check", async () => {
   const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
-  await runStage(args("review", { handoff: env({ subtask: 11, outcome: "passed", checkId: 31, commit: "def" }, "t") }), harness().deps(gw.http));
+  await runStage(args("review", { handoff: env({ subtask: 11, outcome: "passed", checkId: 31, commit: HEAD, candidate: { head: HEAD, tree: TREE } }, "t") }), harness().deps(gw.http));
   const start = gw.calls.find((c) => c.method === "POST")!.body!;
   assertEquals(start.check, 31);
   assertEquals(start.role, "reviewer");
@@ -280,7 +280,7 @@ Deno.test("an approval completes the subtask and reports whether another remains
     operation: { id: 900, status: "succeeded", result: turnResult({ outcome: "approved", summary: "Fine." }, 45) },
   });
   const multi = await analysisFixture({ title: "Deps", brief: "Group brief.", tasks: [task(11, 1), task(12, 2)] });
-  const job = await settle(args("review", { ...multi.inputs, analysis: multi.analysis("review"), handoff: env({ subtask: 11, outcome: "passed", checkId: 31 }, "t") }), gw.http);
+  const job = await settle(args("review", { ...multi.inputs, analysis: multi.analysis("review"), handoff: env({ subtask: 11, outcome: "passed", checkId: 31, candidate: { head: HEAD, tree: TREE } }, "t") }), gw.http);
   assertEquals(gw.tasks[0].status, "completed");
   assertEquals(job.artifacts.review.outcome, "approved");
   assertEquals(job.artifacts.review.threadId, 45);

@@ -125,6 +125,15 @@ export const PlanSchema = z.strictObject({
 });
 export type AuthorizedPlan = z.infer<typeof PlanSchema>;
 
+/** Exact consent in the existing approval note; length prefixes prevent scope ambiguity.
+ * The manifest digest is verified by validatePlan before any native request.
+ * Keep this tuple identical to the official factory's plan-authorized CEL gate.
+ */
+export function planConsentNote(plan: AuthorizedPlan): string {
+  const fields = [plan.plan_sha256, plan.base, plan.repository, plan.branch, String(plan.docsSubtask)];
+  return `plan-v1:${fields.map((v) => `${[...v].length}:${v}`).join("")}`;
+}
+
 export function paths(manifest: Manifest): string[] {
   return manifest.paths.flatMap((p) => p.change === "rename" ? [p.from, p.path] : [p.path]);
 }

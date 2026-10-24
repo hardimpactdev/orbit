@@ -1,6 +1,6 @@
 # Swamp repository-analysis adoption
 
-Status: implementation for independent review, 2026-10-24. This changes the
+Status: implementation for independent review, 2026-10-25. This changes the
 official `orbit-groups` factory and its existing Gateway behavior. It has not
 been deployed or exercised against a live group. Dependency adoption follows
 independent acceptance of this slice.
@@ -80,8 +80,24 @@ infer a complete inventory from prose or existing files.
 
 The owner reviews all intended source, tests, documentation, generated outputs,
 new files and both rename endpoints, then explicitly authorizes the existing
-`plan-authorized` human gate. This implementation grants no such approval.
-The factory versions the artifact and approval using its existing records.
+`plan-authorized` human gate. Fetch the actual current artifact before consent.
+Pass `note=planConsentNote(payload)` to the existing factory `approve` method.
+The exported helper returns `plan-v1:` followed by length-prefixed strings for
+`[plan_sha256, base, repository, branch, String(docsSubtask)]`; lengths count
+Unicode code points. The manifest digest covers every manifest field and is
+recomputed by `validatePlan` before any native request. The closed plan schema
+and remaining tuple fields bind the complete plan payload, including scope.
+Identical content retains its identity; any changed manifest or scope needs
+its own explicit consent.
+
+The official `human-approval` gate still enforces approval/rejection and cycle
+rules. An additional official CEL gate requires a matching note in this run's
+approval records for the current stage/cycle. A generic approval or driver
+preapproval cannot authorize an unspecified future plan. Replacing v1 with v2
+in the same cycle leaves the transition closed until v2 is explicitly approved.
+The factory versions the artifact and approval using its existing records;
+there is no second ledger or factory fork. This implementation grants no
+approval outside its isolated simulated fixtures.
 Swamp validates the closed manifest, digest, brief revision, UTF-8 byte ordering,
 unique safe file endpoints, 256-entry/32-KiB bounds, and cumulative revisions
 before an analysis start. Native validation also checks tracked delete/rename
@@ -115,6 +131,23 @@ tail parser, report shortening, second scanner or second worker.
 Candidate HEAD/tree come from native baseline/check and turn results. Passed
 handoff uses `commit` as HEAD, rather than the check's pre-commit `head`.
 Reviewer completion uses `after_reset`; author completion uses `after`.
+This also applies to proven terminal failed/cancelled turns with supported
+results: retain a **blocked** change/review artifact bound to the actual
+operation, group, child, role and thread. Preserve failed evidence and the
+existing retry approval; never approve a receipt or complete a child from that
+result. Keep attempt counters and the existing author thread. Retry analysis
+uses the terminal candidate, and a turn refuses analysis for an older candidate.
+Missing, malformed or foreign result identity/snapshots produce a blocked
+artifact with `candidate:null`, which shadows the old baseline and parks
+reanalysis. Pre-dispatch refusal has no terminal result to adopt. Waiting or
+unknown termination releases no snapshot.
+
+The delivered [failed/cancelled turn result](https://github.com/hardimpactdev/orbit/blob/8b6fb914c6fbab3abd70459afe832f7307e4d5c6/apps/gateway/app/Domain/Tasks/TaskTurnOperation.php#L119-L126)
+contains the [captured after/reset snapshots](https://github.com/hardimpactdev/orbit/blob/8b6fb914c6fbab3abd70459afe832f7307e4d5c6/apps/gateway/app/Domain/Tasks/TaskTurnOperation.php#L336-L363).
+Terminal check results receive the same scoped blocked treatment using their
+[recorded commit/head/tree](https://github.com/hardimpactdev/orbit/blob/8b6fb914c6fbab3abd70459afe832f7307e4d5c6/apps/gateway/app/Domain/Tasks/TaskCheckOperation.php#L345-L347).
+Their failed evidence still requires the existing check retry gate. None of
+these records infer termination or lease release from elapsed time.
 Gateway remains authoritative for fresh whole-workspace snapshots, the pinned
 entrypoint, target ownership and leases. Swamp also validates group/child,
 workspace Instance/Node, repository/branch, fixed base, plan ID/revision/digest,
@@ -210,12 +243,32 @@ source file hashes, durations and zero mechanical LLM calls. Planning, writing
 and review remain explicit judgment steps, outside this fixture. There is no
 comparable before-workflow measurement and no savings claim.
 
-Recorded local validation: 64 focused producer/client/driver/assistance tests
-passed; the separate official-factory test passed its 13 simulated scenarios in
-3m31s with the original 70-tick/call bounds. Lint passed for all nine changed
-TypeScript files, type checks passed for the Gateway behavior and driver, and
-the 13 current-source citations and local links were checked. No tests were
-skipped and no test timeout or existing cap was raised.
+Initial validation at `cd257d20213ebd6098deefbe49e242c28b6fec17`: 64 focused
+producer/client/driver/assistance tests passed; the official-factory test passed
+its 13 simulated scenarios in 3m31s with the original 70-tick/call bounds.
+That unchanged producer/driver/assistance evidence is retained, rather than
+claiming a new full-suite run for the corrections below.
+
+R1 correction validation: 36 affected consumer/stage tests passed. Two targeted
+real-factory tests passed in 55s (31s consent, 24s failed-author recovery).
+Consent reproduced both generic-preapproval and v1-approved/v2-replaced defects
+before the gate change, then proved zero analysis/turn starts until exact v2
+consent. Recovery proved the failed author parks without direct dispatch until
+`implement-retry` approval, then analyzes T1 and reuses the author thread with
+attempt 2. Client simulations also cover cancelled turns, absent/malformed or
+foreign results, reviewer reset identity, stale evidence, and same-key lost
+replies/restart. Native terminal/check ownership was not fault-injected.
+The original 13-scenario test is explicitly filtered out of this targeted run;
+no test timeout, assertion, call or tick limit was relaxed. Current lint, type
+checks, source citations and local links were checked.
+
+Current targeted evidence on Beast:
+`/tmp/swamp-plan-consent-evidence-6a0bf1a9770aa493`,
+`/tmp/swamp-failed-author-evidence-46b1bef256e135ff`, and
+`/tmp/swamp-pr9-r1-r2-{focused,factory}.log`. They retain gate status, the exact
+admitted request, failed stage evidence/artifact and recovery operation identities.
+These are real official factory/driver runs with fake Gateway transport, not
+live approval, failure, cancellation or interruption proof.
 
 The final producer run retained evidence at
 `/tmp/swamp-analysis-evidence-39d3b35d20cfdef9` on Beast. Fixed-command durations
@@ -241,13 +294,16 @@ its throwaway repository. It does not modify their source checkout, runtime
 data or services. Existing tick/call/test limits are retained.
 
 Parent owns independent exact-head review, merge and any rollout. Before rollout,
-resolve the native metadata gaps for the intended adoption case, preserve
+resolve and adopt the supported native metadata fields, preserve
 operation evidence and reconcile any in-flight entry. New factory entries need
 an authorized typed plan and docs child. Existing entries without evidence fail
 closed; no implicit migration dispatches an author. Rollback is a normal reviewed
 revert of this consumer/model change after native in-flight work reaches proven
 terminal state. Keep admitted keys/results; never clear leases or restart work
 under a replacement identity to make rollback proceed.
+Full adoption acceptance, rollout and dependency adoption remain blocked until
+those native fields are delivered and adopted. Parent tracks that prerequisite
+through ORB2074 (docs2075, implementation2076); this PR does not implement it.
 
 External review-and-merge/topology admission remains closed. ADR0229's bounded
 worker/orchestrator interruption proof, engine retirement, incoming-PR support,
