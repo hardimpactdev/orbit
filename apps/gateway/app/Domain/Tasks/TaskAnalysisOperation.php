@@ -147,12 +147,14 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
 
                         return $this->finishTerminal($lease, $terminal);
                     }
+                    $this->requireProcessIdentity($lease, $process);
                     $lease->update(['pid' => $process->pid, 'process_started' => $process->started]);
                     $reading = $this->runner->readAnalysis($instance, $process);
                     if (! in_array($reading['state'] ?? null, ['finished', 'interrupted'], true)) {
                         $run->wait(10);
                     }
                     $error = null;
+                    $failure = null;
                     try {
                         $this->result($operation, $reading);
                         $after = new TaskWorkspaceSnapshot($reading['result']['head_after'], $reading['result']['tree_after']);
@@ -161,11 +163,15 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
                     } catch (ResourceOperationException $exception) {
                         // Rejected completion metadata cannot become the lease's release snapshot.
                         $after = app(TaskCheckRunner::class)->snapshot($instance);
+                        if ($exception instanceof TaskAnalysisFailure && (! is_array($reading['result'] ?? null) || ($reading['result']['head_after'] ?? null) !== $after->head || ($reading['result']['tree_after'] ?? null) !== $after->tree)) {
+                            $exception = new ResourceOperationException('tasks.analysis_report_invalid', 'The analysis failure completion does not match the owned workspace.', 422);
+                        }
                         $error = ['code' => $exception->errorCode, 'message' => $exception->getMessage(), 'status' => $exception->status];
+                        $failure = $exception instanceof TaskAnalysisFailure ? $exception->result : null;
                         $reading = null;
                     }
                     // Both success and rejection survive a crash after release, before step/result persistence.
-                    $terminal = $run->remember('analysis_terminal', fn (): array => ['lease_id' => $lease->id, 'after' => ['head' => $after->head, 'tree' => $after->tree], 'reading' => $reading, 'error' => $error]);
+                    $terminal = $run->remember('analysis_terminal', fn (): array => ['lease_id' => $lease->id, 'after' => ['head' => $after->head, 'tree' => $after->tree], 'reading' => $reading, 'error' => $error, 'failure' => $failure]);
 
                     return $this->finishTerminal($lease, $terminal);
                 });
@@ -193,8 +199,16 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         $execution = is_array($checkpoint) ? TaskAnalysisExecutionData::from($checkpoint) : null;
         if ($lease->kind !== 'analysis' || $lease->group_id !== $group->id || $lease->instance_id !== $instance->id || $lease->owner !== 'operation:'.$operation->id
             || ($execution !== null && ($execution->lease_id !== $lease->id || $execution->instance_id !== $instance->id
+                || $execution->execution_id !== $lease->check_run_id || $execution->head !== $lease->head_before || $execution->tree !== $lease->tree_before
                 || ($lease->status === 'held' && $execution->node_id !== $instance->node_id)))) {
             throw new TaskWorkspaceWaiting('The reserved analysis belongs to another workspace, Node, or owner.');
+        }
+    }
+
+    private function requireProcessIdentity(TaskWorkspaceLeaseRecord $lease, TaskCheckProcess $process): void
+    {
+        if ($process->runId !== $lease->check_run_id || $process->head !== $lease->head_before || $process->tree !== $lease->tree_before) {
+            throw new TaskWorkspaceWaiting('The recovered process does not identify the reserved analysis.');
         }
     }
 
@@ -211,11 +225,9 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         $instance = $group->taskable;
         $provision = Operation::query()->where('kind', OperationKinds::TasksProvision)->where('target_type', OperationKinds::TaskGroupTarget)
             ->where('target_id', $group->id)->where('status', OperationStatus::Succeeded->value)->orderBy('id')->first();
-        $recorded = $provision?->state['analysis_base'] ?? null;
-        if (! $instance instanceof Instance || ! is_array($recorded) || ! is_string($recorded['base'] ?? null)
-            || ($recorded['instance_id'] ?? null) !== $instance->id
-            || ($recorded['repository'] ?? null) !== $group->project->repository_url
-            || ($recorded['branch'] ?? null) !== $instance->branch) {
+        $recorded = $instance instanceof Instance ? TaskAnalysisBase::fromRecord($provision?->state['analysis_base'] ?? null, $instance->id) : null;
+        if ($recorded === null || $recorded['repository'] !== $group->project->repository_url
+            || $recorded['branch'] !== $instance->branch) {
             throw new ResourceOperationException('tasks.analysis_unavailable', 'Provision did not record an initial analysis base for this workspace.', 422);
         }
         if ($recorded['base'] !== $operation->input['base'] || $inspection['head'] !== $operation->input['head'] || $inspection['tree'] !== $operation->input['tree']) {
@@ -234,7 +246,7 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         if (($reading['state'] ?? null) !== 'finished') {
             throw new ResourceOperationException('tasks.analysis_failed', 'The analysis outcome is unknown after terminal proof.', 422);
         }
-        if (! is_array($result)) {
+        if (! is_array($result) || ($result['analysis'] ?? null) !== true) {
             throw new ResourceOperationException('tasks.analysis_report_invalid', 'The analysis completion is not an object.', 422);
         }
         foreach (['head_after', 'tree_after'] as $identity) {
@@ -243,14 +255,17 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
             }
         }
         if (! is_int($result['exit_code'] ?? null) || ! is_int($result['duration_ms'] ?? null) || $result['duration_ms'] < 0
-            || ! is_string($result['started_at'] ?? null) || ! is_string($result['finished_at'] ?? null)) {
+            || ! is_string($result['started_at'] ?? null) || ! is_string($result['finished_at'] ?? null)
+            || ! is_int($result['report_bytes'] ?? null) || $result['report_bytes'] < 0) {
             throw new ResourceOperationException('tasks.analysis_report_invalid', 'Analysis completion timing or exit status is invalid.', 422);
         }
-        if (($result['report_bytes'] ?? 0) > TaskAnalysisReport::MaxBytes) {
-            throw new ResourceOperationException('tasks.analysis_report_too_large', 'The complete analysis report exceeds 64 KiB.', 422);
+        if ($result['report_bytes'] > TaskAnalysisReport::MaxBytes) {
+            // The transport retains a bounded prefix, not the complete oversized envelope.
+            // Its reported count alone cannot establish an exact public required size.
+            throw new TaskAnalysisFailure('tasks.analysis_report_too_large');
         }
         $bytes = is_string($result['report_base64'] ?? null) ? base64_decode($result['report_base64'], true) : false;
-        if (! is_string($bytes) || strlen($bytes) !== ($result['report_bytes'] ?? null)) {
+        if (! is_string($bytes) || strlen($bytes) !== $result['report_bytes']) {
             throw new ResourceOperationException('tasks.analysis_report_invalid', 'The complete analysis report is missing.', 422);
         }
         if ($result['exit_code'] !== 0) {
@@ -316,6 +331,7 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         if (is_string($id)) {
             $process = $this->runner->recoverStart($instance, $id);
             if ($process !== null) {
+                $this->requireProcessIdentity($lease, $process);
                 $this->runner->cancel($instance, $process);
                 $reading = $this->runner->readAnalysis($instance, $process);
                 if (! in_array($reading['state'] ?? null, ['finished', 'interrupted'], true)) {
@@ -343,6 +359,26 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         }
 
         $this->stopOwned($operation);
+
+        // The kind, not the generic runner, owns this closed failure contract. A lost
+        // failed-step/result write must retain the original typed refusal, not worker_lost.
+        $checkpoint = $operation->state['analysis_terminal'] ?? null;
+        if ($failure->status === OperationStatus::Failed && $failedStep === 'analysis' && is_array($checkpoint)) {
+            $terminal = TaskAnalysisTerminalData::from($checkpoint);
+            if ($terminal->failure !== null) {
+                $group = Task::topLevel()->with('taskable')->findOrFail($operation->target_id);
+                $instance = $group->taskable;
+                $lease = TaskWorkspaceLeaseRecord::query()->findOrFail($terminal->lease_id);
+                if (! $instance instanceof Instance || ! is_array($operation->state['execution'] ?? null)) {
+                    return $failure;
+                }
+                $this->requireOwnership($operation, $group, $instance, $lease);
+                $typed = TaskAnalysisFailure::fromResult($terminal->failure);
+                if ($lease->status === 'released' && $terminal->reading === null && ($terminal->error['code'] ?? null) === $typed->errorCode) {
+                    return OperationOutcome::failed($typed->errorCode, $typed->result);
+                }
+            }
+        }
 
         return $failure;
     }

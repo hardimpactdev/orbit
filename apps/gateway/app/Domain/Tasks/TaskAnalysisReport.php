@@ -66,13 +66,11 @@ final class TaskAnalysisReport
             if ($value['schema'] !== 1) {
                 throw new InvalidArgumentException('Invalid analysis failure version.');
             }
-            if ($error['code'] === 'tasks.analysis_unavailable' && $error['required_bytes'] === null) {
-                throw new ResourceOperationException('tasks.analysis_unavailable', 'Required repository analysis tooling is unavailable.', 422);
+            // An adapter overflow must know its exact size. Only Gateway-side overflow may lack it.
+            if ($error['code'] === 'tasks.analysis_report_too_large' && $error['required_bytes'] === null) {
+                throw new InvalidArgumentException('Invalid analysis failure code or required size.');
             }
-            if ($error['code'] === 'tasks.analysis_report_too_large' && is_int($error['required_bytes']) && $error['required_bytes'] > self::MaxBytes) {
-                throw new ResourceOperationException('tasks.analysis_report_too_large', 'The complete analysis envelope requires '.$error['required_bytes'].' bytes; the maximum is '.self::MaxBytes.'.', 422);
-            }
-            throw new InvalidArgumentException('Invalid analysis failure code or required size.');
+            throw TaskAnalysisFailure::fromResult(StrictJson::associative($object));
         } catch (InvalidArgumentException $exception) {
             throw new ResourceOperationException('tasks.analysis_report_invalid', $exception->getMessage(), 422, $exception);
         }

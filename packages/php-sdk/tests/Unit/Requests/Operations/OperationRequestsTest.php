@@ -164,6 +164,27 @@ describe('operation requests', function (): void {
         $mock->assertSentCount(1);
     });
 
+    it('preserves recorded public task failure metadata and provision pins without interpreting them', function (string $fixture): void {
+        $record = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/'.$fixture.'.json'), true, flags: JSON_THROW_ON_ERROR);
+        $data = $record['body']['data'];
+        $mock = new MockClient([
+            ShowOperationRequest::class => MockResponse::make($record['body'], $record['status']),
+            ListOperationsRequest::class => MockResponse::make(['data' => [$data], 'meta' => $record['body']['meta']]),
+        ]);
+        $connector = operation_connector($mock);
+        $shown = $connector->send(new ShowOperationRequest($data['id'], 0))->dto();
+        $listed = $connector->send(new ListOperationsRequest(kind: $data['kind']))->dto()->operations[0];
+        foreach ([$shown, $listed] as $operation) {
+            expect($operation)->toBeInstanceOf(OperationResponse::class)
+                ->and($operation->status)->toBe($data['status'])
+                ->and($operation->errorCode)->toBe($data['error_code'])
+                ->and($operation->failedStep)->toBe($data['failed_step'])
+                ->and($operation->result)->toBe($data['result'])
+                ->and($operation->toArray()['result'])->toBe($data['result']);
+        }
+        $mock->assertSentCount(2);
+    })->with(['tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable', 'tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable']);
+
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([
             [new ShowOperationRequest(42), Method::GET, '/api/v1/operations/42', []],

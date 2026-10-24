@@ -161,6 +161,8 @@ The tests for PostgreSQL statements and pool integrity share a fixture that redu
 
 An explicit `\quit` still ends the real client, including transaction rollback, and the next command starts a fresh client. Clusters and clients remain private to each case. Only the process that created the seed removes it, so a forked contender cannot delete its parent’s fixture.
 
+When a pool-integrity test releases a blocking PDO session, the fixture waits up to one second for that exact backend to leave `pg_stat_activity` before retrying removal. Closing the client alone does not prove that the server has finished disconnecting it. A regression pauses only that private backend and resumes it after observing the pending exit, so the check does not depend on scheduler timing.
+
 The privileged MySQL removal test keeps its real Docker server but sends SQL through PDO to the container's private loopback port. Each call opens a fresh connection and consumes every result set, preserving session isolation and SQL errors without starting Docker and MySQL clients for each statement. Separate connections still prove active sessions and metadata locks block removal; outside definers and incoming foreign keys remain real server checks.
 
 CLI and Docs limit each local test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.

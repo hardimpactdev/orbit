@@ -138,7 +138,9 @@ describe('managed database removal preflight', function (): void {
 
             server_database_assert_pool_present($psql);
             $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
             $session = null;
+            postgres_wait_for_backend_exit($backend, $psql);
             $this->deleteJson('/api/v1/database-connections/app')->assertOk();
             expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
             expect($psql("SELECT count(*) FROM pg_roles WHERE rolname = 'dlf_feature_x';"))->toBe('0');
@@ -202,7 +204,9 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
 
             server_database_assert_pool_present($psql);
             $this->assertDatabaseCount('database_connections', 2);
+            $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
             $session = null;
+            postgres_wait_for_backend_exit($backend, $psql);
 
             app(DropOwnedDatabasesAction::class)->execute($this->instance->id);
 
@@ -243,7 +247,9 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
                     if ($contenderFirst && $server->id === $other->id && str_starts_with($sql, 'SELECT DISTINCT blocker')) {
                         expect($output)->toBe('other_test_test_2');
                         $hook = null;
+                        $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
                         $session = null;
+                        postgres_wait_for_backend_exit($backend, $second);
                         expect(fn () => app(DropOwnedDatabasesAction::class)->execute($this->instance->id))
                             ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('database.server_in_use'));
                         $overlapped = true;
@@ -304,7 +310,9 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
             expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
             server_database_assert_pool_present($psql);
             $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+            $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
             $session = null;
+            postgres_wait_for_backend_exit($backend, $psql);
 
             $this->deleteJson('/api/v1/database-connections/app')->assertOk();
 
@@ -352,7 +360,9 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
                 expect($psql('SELECT count(*) FROM orbit_admin.database_removal_fences;'))->toBe('0');
                 server_database_assert_pool_present($psql);
                 $this->assertDatabaseHas('database_connections', ['slug' => 'app']);
+                $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
                 $session = null;
+                postgres_wait_for_backend_exit($backend, $psql);
             }
             $this->deleteJson('/api/v1/database-connections/app')->assertOk();
 
@@ -361,6 +371,58 @@ CREATE PUBLICATION orbit_removal; SELECT slot_name FROM pg_create_logical_replic
             $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
         });
     })->with([false, true]);
+
+    it('waits for a disconnected fixture backend before retrying PostgreSQL removal', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            server_database_live_postgres($this, $psql);
+            $session = new PDO('pgsql:host='.$directory.';dbname=app_test_test_2', 'orbit_test');
+            $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
+            $resumed = false;
+            expect(posix_kill($backend, SIGSTOP))->toBeTrue();
+
+            try {
+                $session = null;
+                postgres_wait_for_backend_exit($backend, function (string $sql) use ($psql, $backend, &$resumed): string {
+                    $output = $psql($sql);
+                    if (! $resumed) {
+                        expect($output)->toBe('t');
+                        expect(posix_kill($backend, SIGCONT))->toBeTrue();
+                        $resumed = true;
+                    }
+
+                    return $output;
+                });
+
+                $this->deleteJson('/api/v1/database-connections/app')->assertOk();
+
+                expect($resumed)->toBeTrue()->and($session)->toBeNull();
+                expect($psql("SELECT count(*) FROM pg_stat_activity WHERE pid = {$backend};"))->toBe('0');
+                expect($psql("SELECT count(*) FROM pg_database WHERE datname LIKE 'app%';"))->toBe('0');
+                $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
+            } finally {
+                if (! $resumed) {
+                    posix_kill($backend, SIGCONT);
+                }
+            }
+        });
+    });
+
+    it('bounds waiting for a PostgreSQL fixture backend that is still connected', function (): void {
+        postgres_statements_server(function (Closure $psql, string $directory): void {
+            $session = new PDO('pgsql:host='.$directory.';dbname=postgres', 'orbit_test');
+            $backend = (int) $session->query('SELECT pg_backend_pid();')->fetchColumn();
+
+            try {
+                expect(fn () => postgres_wait_for_backend_exit($backend, $psql))
+                    ->toThrow(RuntimeException::class, 'The disposable PostgreSQL backend did not exit.');
+                expect($psql("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = {$backend});"))->toBe('t');
+            } finally {
+                $session = null;
+            }
+            postgres_wait_for_backend_exit($backend, $psql);
+        });
+    });
+
     it('rolls back an uncommitted PostgreSQL fence when the admin session exits', function (): void {
         postgres_statements_server(function (Closure $psql): void {
             server_database_live_postgres($this, $psql);

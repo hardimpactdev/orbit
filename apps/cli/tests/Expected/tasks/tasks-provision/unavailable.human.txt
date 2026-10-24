@@ -1,0 +1,47 @@
+Loading operation...
+
+┌  Show operation
+│
+├  ● Loaded operation
+│
+└  Loaded operation.
+
+
+┌  Operation: 1
+│
+├  Kind               tasks.provision
+│
+├  Target             task_group 1
+│
+├  Status             succeeded
+│
+├  Current step       —
+│
+├  Failed step        —
+│
+├  Error code         —
+│
+├  Result             {"instance_id":1,"node_id":1,"starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","analysi
+│                     s_base":null}
+│
+├  Cancel requested   —
+│
+├  Attempts           1
+│
+├  By                 provision-gateway
+│
+├  Created            2026-11-01T10:00:00+00:00
+│
+├  Started            2026-11-01T10:00:00+00:00
+│
+└  Finished           2026-11-01T10:00:00+00:00
+
+ ┌─────────────────┬───────────┬───────────────────────────┬───────────────────────────┬───────┐
+ │ STEP            │ STATUS    │ STARTED                   │ FINISHED                  │ ERROR │
+ ├─────────────────┼───────────┼───────────────────────────┼───────────────────────────┼───────┤
+ │ provision       │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
+ │ workspace       │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
+ │ workspace_lease │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
+ │ route           │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
+ └─────────────────┴───────────┴───────────────────────────┴───────────────────────────┴───────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

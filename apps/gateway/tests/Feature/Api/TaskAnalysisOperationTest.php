@@ -16,6 +16,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAnalysisRunner;
+use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskOrchestration;
@@ -91,6 +92,170 @@ function analysis_operation_finish(Operation $operation): void
     app(OperationRunner::class)->read($operation->id);
     $operation->refresh();
 }
+
+/** Configure only complete stdout; error strings and runner hints are never metadata. */
+function analysis_failure_mode(FakeTaskAnalysisRunner $runner, string $mode): void
+{
+    if ($mode === 'invalid') {
+        $runner->bytes = '{"malformed":';
+    } elseif (in_array($mode, ['overflow', 'unavailable'], true)) {
+        $runner->bytes = json_encode(['schema' => 1, 'error' => [
+            'code' => $mode === 'overflow' ? 'tasks.analysis_report_too_large' : 'tasks.analysis_unavailable',
+            'required_bytes' => $mode === 'overflow' ? 216325 : null,
+        ]], JSON_THROW_ON_ERROR);
+        $runner->completion['exit_code'] = 1;
+    }
+}
+
+it('publishes closed failure fixtures and preserves them across public reads and keyed replay', function (string $mode): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, $mode);
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    $expected = json_decode($runner->bytes, true, flags: JSON_THROW_ON_ERROR);
+    $response = $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()
+        ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', $expected['error']['code'])
+        ->assertJsonPath('data.failed_step', 'analysis')->assertJsonPath('data.result', $expected);
+    record_fixture($response, 'tasks/tasks-analyze/failure-'.$mode, ShowOperationRequest::class, 'GET /api/v1/operations/{operation}');
+    app(CancelOperationAction::class)->execute($operation);
+    $this->getJson('/api/v1/operations/'.$operation->id.'?after_sequence=0')->assertOk()->assertJsonPath('data.result', $expected);
+    $this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', $operation->input, ['Idempotency-Key' => 'analysis-one'])
+        ->assertAccepted()->assertJsonPath('data.result', $expected)->assertJsonPath('data.status', 'failed');
+    expect($runner->starts)->toBe(1);
+})->with(['overflow', 'unavailable']);
+
+it('rejects unsafe adapter failure numbers and closed-schema violations through the public operation', function (string $bytes): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    $runner->bytes = $bytes;
+    $runner->completion['exit_code'] = 1;
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.error_code', 'tasks.analysis_report_invalid')->assertJsonPath('data.result', null);
+    expect(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+})->with([
+    ...array_map(fn (string $size): string => '{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":'.$size.'}}',
+        ['null', 'true', '"70000"', '70000.0', '1e999', '-1', '65536', '9007199254740992']),
+    '{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":70000,"message":"secret-sentinel"}}',
+    '{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":70000,"required_bytes":80000}}',
+    '{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":70000}}',
+    '{"schema":1,"error":{"code":"foreign.failure","required_bytes":70000}}',
+    '{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null},"report":{}}',
+]);
+
+it('preserves the largest safe exact adapter size without rounding', function (): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    $runner->bytes = '{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":9007199254740991}}';
+    $runner->completion['exit_code'] = 1;
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.result.error.required_bytes', 9007199254740991);
+});
+
+it('does not recover a size from forged completion evidence', function (string $field, mixed $value): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, 'overflow');
+    $runner->completion[$field] = $value;
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.error_code', 'tasks.analysis_report_invalid')->assertJsonPath('data.result', null);
+})->with([['head_after', 'forged'], ['tree_after', 'forged'], ['head_after', str_repeat('f', 40)], ['tree_after', str_repeat('f', 40)],
+    ['analysis', false], ['duration_ms', -1], ['exit_code', 0], ['report_bytes', 200], ['report_bytes', -1], ['report_bytes', '99'], ['report_bytes', 99.5]]);
+
+it('never diagnoses a foreign run, owner or execution from valid failure stdout', function (string $foreign): void {
+    $group = analysis_operation_group();
+    $operation = analysis_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, 'overflow');
+    $state = $operation->refresh()->state;
+    $execution = $state['execution'];
+    $lease = TaskWorkspaceLeaseRecord::query()->findOrFail($execution['lease_id']);
+    if ($foreign === 'run') {
+        $process = $runner->processes[$execution['execution_id']];
+        $runner->processes[$execution['execution_id']] = new TaskCheckProcess($process->pid, $process->started, $process->head, $process->tree, 'foreign-run');
+    } elseif ($foreign === 'owner') {
+        $lease->update(['owner' => 'operation:foreign']);
+    } else {
+        $state['execution'][$foreign] = in_array($foreign, ['instance_id', 'node_id'], true) ? 999 : str_repeat('f', 40);
+        $operation->update(['state' => $state]);
+    }
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.result', null);
+    expect($operation->refresh()->state['analysis_terminal'] ?? null)->toBeNull()->and($lease->refresh()->status)->toBe('held');
+    if ($foreign === 'run') {
+        app(CancelOperationAction::class)->execute($operation);
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+        $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.result', null);
+        expect($runner->cancels)->toBe(0)->and($lease->refresh()->status)->toBe('held');
+    }
+})->with(['run', 'owner', 'instance_id', 'node_id', 'execution_id', 'head', 'tree']);
+
+it('never diagnoses valid failure stdout while terminal proof is unknown or running', function (bool $uncertain): void {
+    $group = analysis_operation_group();
+    $operation = analysis_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, 'overflow');
+    $runner->uncertain = $uncertain;
+    $runner->terminal = false;
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.result', null);
+    expect($operation->refresh()->state['analysis_terminal'] ?? null)->toBeNull()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('held');
+})->with([true, false]);
+
+it('cancels without adopting unobserved valid failure stdout', function (): void {
+    $group = analysis_operation_group();
+    $operation = analysis_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    analysis_failure_mode(app(TaskAnalysisRunner::class), 'overflow');
+    app(CancelOperationAction::class)->execute($operation);
+    $this->travel(10)->seconds();
+    app(OperationRunner::class)->read($operation->id);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.result', null);
+    expect($operation->refresh()->state['analysis_terminal'] ?? null)->toBeNull()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+});
+
+it('retains the original failed code and exact size if terminal result persistence crashes', function (): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, 'overflow');
+    $operation = analysis_operation_start($group);
+    app(OperationRunner::class)->run($operation->id);
+    $crash = true;
+    Operation::updating(function (Operation $saving) use (&$crash, $operation): void {
+        if ($crash && $saving->id === $operation->id && $saving->status === OperationStatus::Failed) {
+            throw new RuntimeException('Injected lost terminal result write.');
+        }
+    });
+    $this->travel(10)->seconds();
+    try {
+        app(OperationRunner::class)->read($operation->id);
+        $this->fail('Expected result persistence to crash.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toBe('Injected lost terminal result write.');
+    } finally {
+        $crash = false;
+    }
+    expect(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+    // The worker died after the failed step, before the atomic terminal write.
+    $operation->refresh()->update(['status' => 'queued', 'worker' => null]);
+    $runner->uncertain = true;
+    app(OperationRunner::class)->run($operation->id);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.error_code', 'tasks.analysis_report_too_large')->assertJsonPath('data.failed_step', 'analysis')
+        ->assertJsonPath('data.result.error.required_bytes', 216325);
+    expect($runner->starts)->toBe(1);
+});
 
 it('retains the complete exact report and native provenance without a check, agent, or board transition', function (string $status): void {
     $group = analysis_operation_group();
@@ -245,7 +410,7 @@ it('retains typed real adapter failures only after terminal proof and never stor
         $runner->terminal = true;
         analysis_operation_finish($operation);
         expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($code)
-            ->and($operation->result)->toBeNull()->and($operation->state['analysis_terminal']['reading'])->toBeNull()
+            ->and($operation->state['analysis_terminal']['reading'])->toBeNull()
             ->and($operation->state['analysis_terminal']['error']['code'])->toBe($code)
             ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
         $failure = json_decode($runner->bytes, true, flags: JSON_THROW_ON_ERROR)['error'];
@@ -255,9 +420,17 @@ it('retains typed real adapter failures only after terminal proof and never stor
             expect($failure['required_bytes'])->toBeInt()->toBeGreaterThan(65536);
         }
         expect($operation->state['analysis_terminal']['error']['message'])->toContain((string) ($failure['required_bytes'] ?? 'tooling'));
+        $expected = ['schema' => 1, 'error' => $failure];
+        foreach (['', '?after_sequence=0'] as $query) {
+            $this->getJson('/api/v1/operations/'.$operation->id.$query)->assertOk()
+                ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', $code)
+                ->assertJsonPath('data.failed_step', 'analysis')->assertJsonPath('data.result', $expected);
+        }
+        $this->getJson('/api/v1/operations?target_type=task_group&target_id='.$operation->target_id)->assertOk()
+            ->assertJsonPath('data.0.result', $expected);
         expect($fixture->capture())->toBe(['head' => $runner->head, 'tree' => $runner->tree]);
         $this->postJson('/api/v1/task-groups/'.$operation->target_id.'/analyze', $operation->input, ['Idempotency-Key' => 'real-adapter'])
-            ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.error_code', $code);
+            ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.error_code', $code)->assertJsonPath('data.result', $expected);
         expect($runner->starts)->toBe(1);
     } finally {
         $fixture->close();
@@ -292,8 +465,10 @@ it('refuses malformed and oversized complete evidence without retaining a partia
     $operation = analysis_operation_start($group);
     analysis_operation_finish($operation);
     expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($code)
-        ->and($operation->result)->toBeNull()->and($operation->state['analysis_terminal']['reading'])->toBeNull()
+        ->and($operation->state['analysis_terminal']['reading'])->toBeNull()
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.result',
+        $code === 'tasks.analysis_report_too_large' ? ['schema' => 1, 'error' => ['code' => $code, 'required_bytes' => null]] : null);
 })->with(['malformed' => ['{"schema":', 'tasks.analysis_report_invalid'], 'oversized' => [str_repeat('x', 65537), 'tasks.analysis_report_too_large']]);
 
 it('does not classify zero-exit failure objects or infer adapter failures from unstructured diagnostics', function (string $bytes, int $exit): void {
@@ -752,12 +927,10 @@ function analysis_resume_before_terminal_checkpoint(Operation $operation): void
     $operation->steps()->where('name', 'report')->update(['status' => 'pending', 'error_code' => null, 'finished_at' => null]);
 }
 
-it('adopts the cached terminal outcome after release without rereading or rerunning evidence', function (bool $invalid): void {
+it('adopts the cached terminal outcome after release without rereading or rerunning evidence', function (string $mode): void {
     $group = analysis_operation_group();
     $runner = app(TaskAnalysisRunner::class);
-    if ($invalid) {
-        $runner->bytes = '{"malformed":';
-    }
+    analysis_failure_mode($runner, $mode);
     $operation = analysis_operation_start($group);
     analysis_operation_finish($operation);
     $status = $operation->status;
@@ -773,7 +946,38 @@ it('adopts the cached terminal outcome after release without rereading or rerunn
     expect($operation->status)->toBe($status)->and($operation->result)->toBe($result)->and($operation->error_code)->toBe($error)
         ->and($runner->starts)->toBe(1)->and($runner->recovers)->toBe($recovers)
         ->and(json_encode($operation->state, JSON_THROW_ON_ERROR))->not->toContain('{"malformed":');
-})->with([false, true]);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.result', $result)
+        ->assertJsonPath('data.status', $status->value)->assertJsonPath('data.error_code', $error);
+})->with(['success', 'invalid', 'overflow', 'unavailable']);
+
+it('revalidates retained failure fields instead of publishing malformed checkpoint diagnostics', function (array $failure): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    analysis_failure_mode($runner, 'overflow');
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    analysis_resume_before_terminal_checkpoint($operation);
+    $state = $operation->refresh()->state;
+    $state['analysis_terminal']['failure'] = $failure;
+    $operation->update(['state' => $state]);
+    $recovers = $runner->recovers;
+    $runner->uncertain = true;
+    app(OperationRunner::class)->read($operation->id);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.error_code', 'tasks.analysis_report_too_large')->assertJsonPath('data.result', null);
+    expect($runner->starts)->toBe(1)->and($runner->recovers)->toBe($recovers)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+})->with([
+    'wrong schema' => [['schema' => 2, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 216325]]],
+    'missing size' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large']]],
+    'string size' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => '216325']]],
+    'unsafe size' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 9007199254740992]]],
+    'false overflow' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 65536]]],
+    'different typed code' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_unavailable', 'required_bytes' => null]]],
+    'foreign code' => [['schema' => 1, 'error' => ['code' => 'foreign.failure', 'required_bytes' => 216325]]],
+    'extra diagnostic' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 216325, 'message' => 'secret-sentinel']]],
+    'extra envelope field' => [['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 216325], 'artifact' => 'secret-sentinel']],
+]);
 
 it('tombstones an orphan reservation and caches its refusal before release even without an execution checkpoint', function (): void {
     $group = analysis_operation_group();
@@ -796,10 +1000,11 @@ it('tombstones an orphan reservation and caches its refusal before release even 
     expect($operation->fresh()->status)->toBe(OperationStatus::Failed)->and($runner->starts)->toBe(0)->and($runner->recovers)->toBe($recovers);
 });
 
-it('recovers the cached safe terminal outcome when release fails before its checkpoint', function (bool $invalid): void {
+it('recovers the cached safe terminal outcome when release fails before its checkpoint', function (string $mode): void {
     $group = analysis_operation_group();
     $runner = app(TaskAnalysisRunner::class);
-    if ($invalid) {
+    analysis_failure_mode($runner, $mode);
+    if ($mode === 'invalid') {
         $runner->completion['head_after'] = 'invalid-completion-identity';
     }
     $operation = analysis_operation_start($group);
@@ -814,6 +1019,7 @@ it('recovers the cached safe terminal outcome when release fails before its chec
     expect($operation->status)->toBe(OperationStatus::Waiting)
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('held');
     $terminal = $operation->state['analysis_terminal'];
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'waiting')->assertJsonPath('data.result', null);
     expect($terminal['after']['head'])->not->toBe('invalid-completion-identity');
     $recovers = $runner->recovers;
     $runner->uncertain = true;
@@ -822,12 +1028,15 @@ it('recovers the cached safe terminal outcome when release fails before its chec
     $this->travel(10)->seconds();
     app(OperationRunner::class)->read($operation->id);
     $operation->refresh();
-    expect($operation->status)->toBe($invalid ? OperationStatus::Failed : OperationStatus::Succeeded)
-        ->and($operation->error_code)->toBe($invalid ? 'tasks.analysis_report_invalid' : null)
+    expect($operation->status)->toBe($mode === 'success' ? OperationStatus::Succeeded : OperationStatus::Failed)
+        ->and($operation->error_code)->toBe(match ($mode) {
+            'invalid' => 'tasks.analysis_report_invalid', 'overflow' => 'tasks.analysis_report_too_large', 'unavailable' => 'tasks.analysis_unavailable', default => null,
+        })
         ->and($runner->starts)->toBe(1)->and($runner->recovers)->toBe($recovers)
         ->and($operation->state['analysis_terminal'])->toBe($terminal)
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
-})->with([false, true]);
+    $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.result', $mode === 'success' ? $operation->result : ($terminal['failure'] ?? null));
+})->with(['success', 'invalid', 'overflow', 'unavailable']);
 
 it('refuses an absent initial base and never substitutes the first analysis base', function (bool $missing): void {
     $group = analysis_operation_group();
