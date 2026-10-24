@@ -982,7 +982,7 @@ function taskAnalysisAdapterFixture(): string
 {
     $root = docsImpactFixture();
     $repository = dirname(__DIR__, 4);
-    foreach (['bin/task-analyze', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php'] as $path) {
+    foreach (['bin/task-analyze', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
         if (! is_dir(dirname($root.'/'.$path))) {
             mkdir(dirname($root.'/'.$path), 0777, true);
         }

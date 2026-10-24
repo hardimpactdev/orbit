@@ -30,7 +30,11 @@ final class TaskAnalysisAdapterFixture
         }
         chmod($this->checkout.'/bin/task-analyze', 0755);
         File::ensureDirectoryExists($this->checkout.'/apps/docs/vendor');
-        file_put_contents($this->checkout.'/apps/docs/vendor/autoload.php', '<?php require '.var_export($root.'/apps/docs/vendor/autoload.php', true).';');
+        $autoload = '<?php';
+        foreach (['apps/gateway/vendor/autoload.php', 'apps/docs/app/Documentation/DocsImpact.php', 'apps/docs/app/Documentation/DocsImpactReport.php'] as $path) {
+            $autoload .= ' require '.var_export($root.'/'.$path, true).';';
+        }
+        file_put_contents($this->checkout.'/apps/docs/vendor/autoload.php', $autoload);
         File::ensureDirectoryExists($this->checkout.'/docs/reference');
         file_put_contents($this->checkout.'/docs/reference/test.md', "---\ntitle: Test\n---\nTest\n");
         foreach ([['init', '--quiet'], ['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'real adapter']] as $arguments) {
@@ -47,16 +51,19 @@ final class TaskAnalysisAdapterFixture
         if ($mode === 'missing-scanner') {
             file_put_contents($this->checkout.'/apps/docs/vendor/autoload.php', '<?php');
         }
-        if (in_array($mode, ['missing-git', 'missing-proc-open'], true)) {
-            // Only the adapter's PHP loses tooling; the existing Python supervisor keeps its real Git.
-            $tools = $this->checkout.'/.git/adapter-tools';
-            File::ensureDirectoryExists($tools);
-            $path = $mode === 'missing-git' ? 'export PATH='.escapeshellarg($tools)."\n" : '';
-            $flags = $mode === 'missing-proc-open' ? '-d disable_functions=proc_open ' : '';
-            file_put_contents($tools.'/php', "#!/bin/sh\n".$path.'exec '.escapeshellarg(PHP_BINARY).' '.$flags.'"$@"'."\n");
-            chmod($tools.'/php', 0755);
-            $this->environment = ['PATH' => $tools.':'.getenv('PATH')];
+        // CI installs only Gateway dependencies. Deny Docs vendor access even in a fully bootstrapped checkout.
+        // Only the adapter's PHP loses tooling; the existing Python supervisor keeps its real Git.
+        $tools = $this->checkout.'/.git/adapter-tools';
+        File::ensureDirectoryExists($tools);
+        $path = $mode === 'missing-git' ? 'export PATH='.escapeshellarg($tools)."\n" : '';
+        $allowed = $this->checkout.PATH_SEPARATOR.$root.'/apps/gateway'.PATH_SEPARATOR.$root.'/apps/docs/app'.PATH_SEPARATOR.'/dev/null';
+        $flags = '-d '.escapeshellarg('open_basedir='.$allowed).' ';
+        if ($mode === 'missing-proc-open') {
+            $flags .= '-d disable_functions=proc_open ';
         }
+        file_put_contents($tools.'/php', "#!/bin/sh\n".$path.'exec '.escapeshellarg(PHP_BINARY).' '.$flags.'"$@"'."\n");
+        chmod($tools.'/php', 0755);
+        $this->environment = ['PATH' => $tools.':'.getenv('PATH')];
     }
 
     /** @param array<string, mixed>|null $input

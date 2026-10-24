@@ -116,6 +116,8 @@ The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's t
 
 The `test` script in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts.
 
+Test fixtures must work with the dependencies their CI job installs. For cross-project source fixtures, load the real source with the test project's dependency autoloader and include every adapter bootstrap file. Do not rely on another project's `vendor/` directory unless the job explicitly installs it.
+
 The Gateway's package-cache integration tests run real npm and Bun installs. Keep Node/npm and Bun available locally. CI supplies Bun 1.4.2 in the Gateway project and shard jobs.
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
