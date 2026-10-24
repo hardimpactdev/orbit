@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -40,6 +41,7 @@ final readonly class RecipeImageBuildSteps
 
     public function run(TaskVmImageBuild $build, TaskVmImageBuildStep $step, ?string $program): bool
     {
+        $this->requireServingDelivery($build);
         $host = $this->settings->host($build->host_node_id);
         $node = $build->hostNode;
         $name = (string) $build->builder_vm_name;
@@ -207,6 +209,7 @@ final readonly class RecipeImageBuildSteps
 
     public function promote(TaskVmImageBuild $build): void
     {
+        $this->requireServingDelivery($build);
         DB::transaction(function () use ($build): void {
             $current = DB::table('task_vm_image_recipe')->where('id', 1)->where('identity', $build->recipe_identity)
                 ->where('generation', $build->recipe_generation)->update(['identity' => $build->recipe_identity]);
@@ -222,6 +225,14 @@ final readonly class RecipeImageBuildSteps
             $build->promoted_at = now();
             $build->save();
         });
+    }
+
+    private function requireServingDelivery(TaskVmImageBuild $build): void
+    {
+        $recipe = new RecipeLoader()->decode((string) $build->recipe_json);
+        if ($recipe->agentDigest((string) $build->hostNode->architecture) !== app(AgentDelivery::class)->pin($build->hostNode)) {
+            throw new TaskVmException(TaskVmError::ImageRecipeSuperseded, 'The serving recipe delivery changed. This build cannot continue or promote.');
+        }
     }
 
     private function alias(TaskVmImageBuild $build, string $profile): string

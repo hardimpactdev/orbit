@@ -12,7 +12,6 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
@@ -25,9 +24,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\PhpBuildAnswers;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -90,9 +87,9 @@ function nightlyRecipeFleet(bool $newerUbuntu = false): array
         'changed_packages' => $newerUbuntu ? [] : ['curl'], 'restarted_services' => [], 'changed_tools' => $newerUbuntu ? [] : ['curl'], 'healthy' => true,
         'newer_than_recipe' => $newerUbuntu ? ['curl' => ['installed' => $newerCurl, 'version' => $recipe->tools['curl']->version]] : [],
     ]);
+    FleetFixtures::recipeDelivery($agents);
     app()->instance(AgentCommandRunner::class, $agents);
     app()->instance(PhpBuildAnswers::class, (new PhpBuildAnswers)->register($agents));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $doctor = new NightlyRecipeDoctor;
     app()->instance(FleetNodeVerification::class, $doctor);
     $alerts = new RecordingReleaseAlertNotifier;
@@ -142,8 +139,8 @@ it('skips Docker CE Nodes with the typed reason instead of halting fleet converg
     $agents = new FakeAgentCommandRunner;
     $agents->refuse('recipe.inspect', 'recipe.failed', ['stage' => 'recipe-stage:docker-provider:docker-ce']);
     (new PhpBuildAnswers)->register($agents);
+    FleetFixtures::recipeDelivery($agents);
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $action = app(ConvergeFleetRecipeAction::class);
     $action->execute();
     $action->execute();
@@ -440,8 +437,8 @@ it('converges non-Incus pins and alerts once per held version across fleet gener
         return $tools;
     });
     $agents->answer('recipe.apply', ['healthy' => true]);
+    FleetFixtures::recipeDelivery($agents);
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $php = new PhpBuildAnswers(['apply' => ['applied', ['changed' => ['php8.5-cli']]]]);
     $php->register(app(AgentCommandRunner::class));
 

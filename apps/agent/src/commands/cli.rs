@@ -52,7 +52,7 @@ pub enum State {
 }
 
 /// `orbit-0.N.0`, the name a release link may point at.
-fn release_name(name: &str) -> bool {
+pub(super) fn release_name(name: &str) -> bool {
     name.strip_prefix("orbit-0.")
         .and_then(|rest| rest.strip_suffix(".0"))
         .is_some_and(|minor| {
@@ -102,29 +102,44 @@ fn elf(path: &Path) -> bool {
         && magic == *b"\x7fELF"
 }
 
-pub fn inspect(link: &Path, user: &str) -> State {
+fn checked_binary(link: &Path) -> Result<PathBuf, State> {
     let binary = match fs::symlink_metadata(link) {
-        Err(_) => return State::Missing,
+        Err(_) => return Err(State::Missing),
         Ok(metadata) if metadata.file_type().is_symlink() => {
             let Some(target) = fs::read_link(link)
                 .ok()
                 .and_then(|target| target.to_str().map(String::from))
             else {
-                return State::Foreign;
+                return Err(State::Foreign);
             };
             if !release_name(&target) {
-                return State::Foreign;
+                return Err(State::Foreign);
             }
             link.with_file_name(target)
         }
         Ok(_) => link.to_path_buf(),
     };
     let Ok(metadata) = fs::symlink_metadata(&binary) else {
-        return State::Foreign;
+        return Err(State::Foreign);
     };
     if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o111 == 0 || !elf(&binary) {
-        return State::Foreign;
+        return Err(State::Foreign);
     }
+    Ok(binary)
+}
+
+/// Reads an Orbit-owned executable as the enrolled account. The caller owns update locking.
+pub(super) fn installed_version(link: &Path, user: &str) -> Option<String> {
+    let binary = checked_binary(link).ok()?;
+    let line = run_as(user, &binary, &["--version"])?;
+    orbit_version(&line).then(|| line.trim_start_matches("Orbit ").to_owned())
+}
+
+pub fn inspect(link: &Path, user: &str) -> State {
+    let binary = match checked_binary(link) {
+        Ok(binary) => binary,
+        Err(state) => return state,
+    };
     if !run_as(user, &binary, &["--version"]).is_some_and(|line| orbit_version(&line)) {
         return State::Foreign;
     }

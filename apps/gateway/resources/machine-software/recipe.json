@@ -1,5 +1,6 @@
 {
     "schema_version": 1,
+    "agent": null,
     "ubuntu": {
         "release": "26.04",
         "snapshot": "20261022T000000Z"
@@ -342,20 +343,6 @@
             "source": "ubuntu",
             "package": "openssl",
             "version": "3.5.5-1ubuntu3.7"
-        },
-        "orbit-agent": {
-            "source": "artifact",
-            "version": "0.4.4",
-            "artifacts": {
-                "amd64": {
-                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-x86_64",
-                    "sha256": "b2abfa992720645087929f3fed83fbfa8e92fbdcb510d5b755a030b01f305fdf"
-                },
-                "arm64": {
-                    "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.4.4/orbit-agent-0.4.4-linux-aarch64",
-                    "sha256": "b5a3ddbd25a4b8f546967f56e7d057fc110e880f526cf7fa97ca5409450c7632"
-                }
-            }
         },
         "php-common": {
             "source": "artifact",
@@ -1232,7 +1219,6 @@
         "rust-std",
         "clippy",
         "rustfmt",
-        "orbit-agent",
         "pi",
         "openssh-server",
         "rsync",

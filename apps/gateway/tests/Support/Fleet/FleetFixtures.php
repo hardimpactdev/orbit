@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support\Fleet;
 
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\FleetNodeVisitor;
 use App\Domain\Fleet\FleetServingRelease;
@@ -15,8 +16,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
@@ -25,6 +26,7 @@ use App\Models\TaskVm;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Config;
+use Tests\Support\FakeAgentCommandRunner;
 
 /** Nodes, roles, and fakes for the fleet rollout tests. */
 final class FleetFixtures
@@ -111,6 +113,21 @@ final class FleetFixtures
         return $node->load('roles');
     }
 
+    /** The requested delivery and typed final verification for recipe tests. */
+    public static function recipeDelivery(FakeAgentCommandRunner $agents, bool $available = true): void
+    {
+        Config::set('app.version', self::Commit);
+        app()->instance(DesiredFleetState::class, new DesiredFleetState(
+            new FakeReleaseHistory,
+            new FakeCliReleaseCatalog($available),
+            new Repository(new ArrayStore),
+            app(AgentDelivery::class),
+        ));
+        $agents->answer('recipe.verify-delivery', static fn (array $input): array => [
+            'identity' => $input['identity'], 'agent_sha256' => $input['agent_sha256'], 'cli_version' => $input['cli_version'],
+        ]);
+    }
+
     /**
      * Binds a published CLI release, a fake Node visitor, the alert recorder, and units, with the rollout on.
      *
@@ -132,8 +149,7 @@ final class FleetFixtures
         app()->instance(ReleaseAlertNotifier::class, $alerts);
         app()->instance(FleetConvergeUnits::class, $units);
         app()->instance(NodeFootprint::class, new NodeFootprint($artifacts));
-        // Never reach a real Node, and keep agent versions out of the shared file store.
-        app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
+        // Keep agent versions out of the shared file store.
         app()->instance(AgentReportedVersions::class, new AgentReportedVersions(new Repository(new ArrayStore)));
 
         return ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts, 'units' => $units];

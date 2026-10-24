@@ -20,6 +20,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -758,6 +759,18 @@ describe('sweep', function (): void {
 
 describe('image build', function (): void {
     beforeEach(fn () => tvm_up_image_artifact());
+
+    it('refuses a stored agent pin from another release before allocating a cloud builder', function (): void {
+        $document = json_decode(app(RecipeImageBuilds::class)->currentRecipe()->json, true, flags: JSON_THROW_ON_ERROR);
+        $document['agent']['linux-x86_64'] = str_repeat('e', 64);
+        $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+
+        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(machineRecipe: $recipe))
+            ->toThrow(TaskVmException::class, 'serving recipe delivery changed');
+        expect($this->upcloud->requests)->toBe([]);
+        expect($this->ssh->calls)->toBe([]);
+        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 0);
+    });
 
     it('builds the template with the shared recipe, smoke-boots it, promotes it, and keeps two', function (): void {
         $cleanupAfterFirewall = false;

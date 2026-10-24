@@ -28,7 +28,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      * How long one converge may hold the Node's agent lock. A converge that crashes without releasing
      * it, such as a PHP-FPM worker killed at `request_terminate_timeout`, blocks the Node's next agent
      * converge for at most this long. It covers the wait for the Node's update lock, which a self-update
-     * holds for up to {@see NodeUpdateLock::WaitSeconds} seconds.
+     * may hold while the native installer waits up to 300 seconds.
      */
     private const int LockSeconds = 420;
 

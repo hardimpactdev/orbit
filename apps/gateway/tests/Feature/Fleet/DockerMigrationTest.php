@@ -6,44 +6,40 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use Illuminate\Support\Facades\Artisan;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-it('requires explicit Docker maintenance consent before any SSH', function (bool $restorePolicies): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('requires explicit Docker maintenance consent before any agent command', function (bool $restorePolicies): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--restore-policies' => $restorePolicies]))->toBe(1)
         ->and(Artisan::output())->toContain('--yes is required')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 })->with([false, true]);
 
-it('refuses policy recovery combined with migration options before any SSH', function (string $option): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('refuses policy recovery combined with migration options before any agent command', function (string $option): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--restore-policies' => true, $option => true]))->toBe(1)
         ->and(Artisan::output())->toContain('--restore-policies cannot be combined')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 })->with(['--dry-run', '--fallback']);
 
-it('refuses a Docker migration recipe mismatch before any SSH', function (): void {
-    $ssh = new ScriptedSshExecutor;
-    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+it('refuses a Docker migration recipe mismatch before any agent command', function (): void {
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
 
     expect(Artisan::call('node:migrate-docker', ['node' => 'Beast', '--yes' => true, '--recipe' => 'sha256:other']))->toBe(1)
         ->and(Artisan::output())->toContain('differs from this checkout')
-        ->and($ssh->commands)->toBe([]);
+        ->and($agents->calls)->toBe([]);
 });
 
 it('translates the Docker CE recipe refusal to a typed reason with the explicit migration command', function (): void {
@@ -111,7 +107,6 @@ it('reports final states after reconciling stored specs for migration and policy
         return ['healthy' => true, 'containers' => [['name' => 'mysql', 'state' => 'running']]];
     });
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
 
     expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true, '--restore-policies' => $restorePolicies]))->toBe($failConverge ? 1 : 0);
     $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -129,7 +124,6 @@ it('reports remote failures with recovery advice for the failed action', functio
         'failure' => $failure, 'containers' => [['name' => 'mailpit', 'state' => 'unreadable']],
     ]);
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
     $runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
@@ -157,7 +151,6 @@ it('does not reconcile Processes after a native migration refusal', function ():
     $agents = new FakeAgentCommandRunner;
     $agents->refuse('docker.prepare-migration', 'docker.migration_failed', ['failure' => 'docker-migration:insufficient-space']);
     app()->instance(AgentCommandRunner::class, $agents);
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell(new ScriptedSshExecutor)));
 
     expect(Artisan::call('node:migrate-docker', ['node' => $node->name, '--yes' => true]))->toBe(1)
         ->and($runtime->convergedProcessIds)->toBe([])

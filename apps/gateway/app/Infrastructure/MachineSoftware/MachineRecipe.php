@@ -14,6 +14,7 @@ final readonly class MachineRecipe
      * @param  array<string, ToolPin>  $tools
      * @param  array<string, list<string>>  $profiles  Effective, sorted tool sets, including common tools.
      * @param  array<string, PhpBuild>  $php  Keyed by PHP version, such as 8.5.
+     * @param  array<string, string>  $agentDigests  Resolved Linux delivery pins; empty only for source intent.
      */
     public function __construct(
         public string $identity,
@@ -28,7 +29,19 @@ final readonly class MachineRecipe
         public PhpPolicy $phpPolicy = new PhpPolicy,
         public string $artifactMirror = '',
         public array $gitPackages = [],
+        public array $agentDigests = [],
     ) {}
+
+    public function agentDigest(string $architecture): string
+    {
+        $platform = match ($architecture) {
+            'amd64', 'x86_64' => 'linux-x86_64',
+            'arm64', 'aarch64' => 'linux-aarch64',
+            default => throw new InvalidArgumentException("The recipe has no agent platform for [{$architecture}]."),
+        };
+
+        return $this->agentDigests[$platform] ?? throw new InvalidArgumentException("The recipe has no resolved agent digest for [{$platform}].");
+    }
 
     public function php(string $version): PhpBuild
     {

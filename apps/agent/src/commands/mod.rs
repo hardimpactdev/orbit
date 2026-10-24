@@ -55,6 +55,7 @@ pub mod production;
 pub mod production_home;
 pub mod project_source;
 pub mod recipe;
+pub mod recipe_delivery;
 pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
@@ -174,6 +175,7 @@ pub fn all() -> Vec<Entry> {
         entry::<docker_migration::Prepare>(),
         entry::<docker_migration::Restore>(),
         entry::<docker_migration::Report>(),
+        entry::<recipe_delivery::Verify>(),
         entry::<recipe::operations::Inspect>(),
         entry::<recipe::operations::IncusPreflight>(),
         entry::<recipe::operations::Apply>(),

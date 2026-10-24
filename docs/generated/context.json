@@ -2916,6 +2916,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Node agent",

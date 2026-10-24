@@ -52,6 +52,21 @@ it('sends the complete base recipe as typed data with the delivery pin and one P
     expect($payload['rust'])->toHaveKeys(['rust', 'cargo', 'rust-std', 'clippy', 'rustfmt']);
 });
 
+it('refuses a stored recipe from another delivery before observing or restarting a phase', function (): void {
+    [$programs, $agents, $guest, $recipe] = nativePhaseFixture();
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
+    $document['agent']['linux-x86_64'] = str_repeat('e', 64);
+    $stale = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $state = [];
+
+    expect(fn () => $programs->poll($guest, $stale, 'base', 'agent', '23', $state))
+        ->toThrow(TaskVmException::class, 'stored recipe agent pin differs');
+    expect(fn () => $programs->verify($guest, $stale, 'base'))
+        ->toThrow(TaskVmException::class, 'stored recipe agent pin differs');
+    expect($agents->calls)->toBe([]);
+    expect($state)->toBe([]);
+});
+
 it('persists the boot fence before issuing a start and observes a lost acknowledgement', function (): void {
     [$programs, $agents, $guest, $recipe] = nativePhaseFixture();
     $saved = [];

@@ -11,11 +11,10 @@ use App\Domain\Tools\ToolInspectionData;
 use App\Domain\Tools\ToolInspector;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Fleet\NodeShell;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -25,8 +24,6 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Artisan;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 use Tests\Support\InspectsToolsIndividually;
 use Tests\Support\PhpBuildAnswers;
 
@@ -70,11 +67,9 @@ function recipeAgents(array|AgentCommandRefused|null $application = null, ?Closu
     } else {
         $agents->answer('recipe.incus-preflight', ['ready' => true]);
     }
+    FleetFixtures::recipeDelivery($agents);
     app()->instance(AgentCommandRunner::class, $agents);
-    $shell = FleetTestSsh::shell(new ScriptedSshExecutor);
-    app()->instance(NodeShell::class, $shell);
     app()->instance(PhpBuildAnswers::class, (new PhpBuildAnswers)->register($agents));
-    app()->instance(NodeUpdateLock::class, new NodeUpdateLock($shell));
 
     return $agents;
 }
@@ -83,6 +78,20 @@ function recipeFailure(array $details): AgentCommandRefused
 {
     return new AgentCommandRefused('recipe.apply', 'recipe.failed', 'Recipe failed.', $details);
 }
+
+it('refuses a recipe from another delivery before contacting the Node or changing its marker', function (): void {
+    $node = FleetFixtures::node('stale-delivery', [RoleName::AppProd]);
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    $document = json_decode(new RecipeLoader()->load()->json, true, flags: JSON_THROW_ON_ERROR);
+    $document['agent']['linux-x86_64'] = str_repeat('e', 64);
+    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, $recipe))
+        ->toThrow(ResourceOperationException::class, 'recipe agent pin differs');
+    expect($agents->calls)->toBe([]);
+    expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+});
 
 it('keeps Node recipe execution behind the typed command boundary', function (): void {
     $source = file_get_contents(app_path('Infrastructure/MachineSoftware/NodeRecipeProgram.php'));
@@ -129,7 +138,7 @@ it('does not add operator-only tools to a Node with a production role', function
     $node = FleetFixtures::node('recipe-operator-filter', [RoleName::AppProd]);
     $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
     $document['roles']['operator'][] = 'rust';
-    $recipe = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $recipe = new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
@@ -153,7 +162,7 @@ it('refuses a missing service role profile before SSH', function (): void {
     $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
     unset($document['roles']['vpn']);
     $document['base'][] = 'dnsmasq';
-    $incomplete = new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+    $incomplete = new RecipeLoader()->resolve(json_encode($document, JSON_THROW_ON_ERROR), app(AgentDelivery::class));
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, $incomplete))
         ->toThrow(InvalidArgumentException::class, 'Unknown role/profile [vpn]');
@@ -351,6 +360,16 @@ it('records the complete identity only after inventory health and Doctor pass an
     $verification = new RecipeVerification;
     app()->instance(FleetNodeVerification::class, $verification);
     $recipe = new RecipeLoader()->load();
+    $agents->answer('recipe.verify-delivery', static function (array $input) use ($verification, $node, $recipe): array {
+        expect($verification->calls)->toBe(1);
+        expect($node->refresh()->settings)->not->toHaveKey('machine_recipe');
+        expect($input)->toBe([
+            'user' => $node->user, 'identity' => $recipe->identity,
+            'agent_sha256' => app(AgentDelivery::class)->pin($node), 'cli_version' => '0.4681.0',
+        ]);
+
+        return ['agent_sha256' => $input['agent_sha256'], 'cli_version' => $input['cli_version'], 'identity' => $input['identity']];
+    });
 
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
@@ -361,7 +380,45 @@ it('records the complete identity only after inventory health and Doctor pass an
             't3' => ['keep' => true],
             'machine_recipe' => ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String()],
         ]);
-    expect(array_column($agents->calls, 'command'))->toBe(['recipe.inspect', 'recipe.apply']);
+    expect(array_column($agents->calls, 'command'))->toBe(['recipe.inspect', 'recipe.apply', 'recipe.verify-delivery']);
+});
+
+it('does not record a recipe when the final locked delivery check refuses', function (string $code): void {
+    $node = FleetFixtures::node('recipe-final-refusal');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    $agents->refuse('recipe.verify-delivery', $code);
+    $verification = new RecipeVerification;
+    app()->instance(FleetNodeVerification::class, $verification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'Final recipe delivery verification failed');
+    expect($node->refresh()->settings)->toBe([]);
+    expect($verification->calls)->toBe(1);
+    expect($agents->commands())->toBe(['recipe.inspect', 'recipe.apply', 'recipe.verify-delivery']);
+})->with(['recipe.update_busy', 'recipe.update_lock_failed', 'recipe.delivery_mismatch']);
+
+it('refuses an unavailable requested CLI release before application', function (): void {
+    $node = FleetFixtures::node('recipe-unpublished');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $agents = recipeAgents();
+    FleetFixtures::recipeDelivery($agents, available: false);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'requested CLI release to be available');
+    expect($agents->commands())->toBe(['recipe.inspect']);
+    expect($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+});
+
+it('does not record an unexpected verification reply', function (): void {
+    $node = FleetFixtures::node('recipe-invalid-verification');
+    $agents = recipeAgents();
+    $agents->answer('recipe.verify-delivery', ['identity' => 'wrong']);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(ResourceOperationException::class, 'returned another delivery');
+    expect($node->refresh()->settings)->toBe([]);
 });
 
 it('stops after health or package failure with no retry rollback Doctor or success marker', function (string $stage): void {

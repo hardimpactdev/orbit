@@ -14,7 +14,6 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Node;
@@ -29,7 +28,6 @@ final readonly class MigrateDockerAction
     public function __construct(
         private ManagedNodeEligibility $eligibility,
         private NodeRoleConvergeLock $roles,
-        private NodeUpdateLock $updates,
         private ToolManagerScopeLock $tools,
         private AgentCommandRunner $agents,
         private ProcessTargetResolver $targets,
@@ -51,7 +49,7 @@ final readonly class MigrateDockerAction
             return $this->remote($node, $recipe, $ids, $states, $processes, 'plan', $fallback);
         }
 
-        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, fn (): array => $this->updates->run($node, function () use ($node, $recipe, $processes, $ids, $states, $fallback, $restorePolicies): array {
+        return $this->roles->run($node, fn (): array => $this->tools->run($node->id, ToolManagerName::Apt, function () use ($node, $recipe, $processes, $ids, $states, $fallback, $restorePolicies): array {
             foreach ($processes as $process) {
                 if ($this->targets->forInstallation($process)->node->id !== $node->id) {
                     throw new RuntimeException('The Docker Process target changed. Nothing was migrated.');
@@ -84,7 +82,7 @@ final readonly class MigrateDockerAction
             }
 
             return $report;
-        })), errorCode: 'node.docker_migration_failed');
+        }), errorCode: 'node.docker_migration_failed');
     }
 
     /**

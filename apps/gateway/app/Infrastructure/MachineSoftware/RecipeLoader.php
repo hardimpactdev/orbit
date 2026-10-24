@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\MachineSoftware;
 
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use JsonException;
@@ -28,7 +29,7 @@ final readonly class RecipeLoader
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
+        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
@@ -37,7 +38,7 @@ final readonly class RecipeLoader
         return $catalog;
     }
 
-    public function load(?string $path = null): MachineRecipe
+    public function load(?string $path = null, ?AgentDelivery $delivery = null): MachineRecipe
     {
         $path ??= resource_path('machine-software/recipe.json');
         $bytes = @file_get_contents($path);
@@ -45,17 +46,43 @@ final readonly class RecipeLoader
             throw new InvalidArgumentException("Recipe [{$path}]: file is missing or unreadable.");
         }
         try {
-            return $this->decode($bytes);
+            return $this->resolve($bytes, $delivery ?? app(AgentDelivery::class));
         } catch (InvalidArgumentException|JsonException $exception) {
             throw new InvalidArgumentException("Recipe [{$path}]: {$exception->getMessage()}", previous: $exception);
         }
+    }
+
+    /** Resolve source intent for this release; decode() alone preserves a stored build snapshot. */
+    public function resolve(string $json, AgentDelivery $delivery): MachineRecipe
+    {
+        $this->decode($json);
+        $document = $this->object(json_decode($json, false, 64, JSON_THROW_ON_ERROR), '$');
+        $digests = [];
+        foreach ($delivery->artifacts() as $platform => $artifact) {
+            if (in_array($platform, ['linux-x86_64', 'linux-aarch64'], true)) {
+                $digests[$platform] = $artifact['sha256'];
+            }
+        }
+        $this->require($digests !== [], 'agent: the delivery has no Linux artifacts.');
+        $document->agent = (object) $digests;
+
+        return $this->decode(json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
     }
 
     public function decode(string $json): MachineRecipe
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);
-        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git']);
+        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git', 'agent']);
+        $rawAgent = $root->agent === null ? [] : get_object_vars($this->object($root->agent, 'agent'));
+        $this->require($root->agent === null || $rawAgent !== [], 'agent: expected resolved Linux digests or null source intent.');
+        $agent = [];
+        foreach ($rawAgent as $platform => $rawDigest) {
+            $digest = $this->text($rawDigest, 'agent digest');
+            $this->require(in_array($platform, ['linux-x86_64', 'linux-aarch64'], true)
+                && preg_match('/\A[0-9a-f]{64}\z/D', $digest) === 1, 'agent: expected Linux platform SHA-256 digests.');
+            $agent[$this->text($platform, 'agent platform')] = $digest;
+        }
         $mirror = $this->text($root->artifact_mirror, 'artifact_mirror');
         $url = parse_url($mirror);
         $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! isset($url['fragment']) && ! str_ends_with($mirror, '/'), 'artifact_mirror: expected an HTTPS base URL without a final slash.');
@@ -189,7 +216,7 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages);
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['opentelemetry']), $mirror, $gitPackages, $agent);
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -397,14 +398,47 @@ it('records native phase failures without inventing an exit code', function (str
 ]);
 
 describe('recipe image triggers', function (): void {
+    it('starts a new desired generation when only the delivered agent changes', function (): void {
+        $host = recipeImageHost();
+        recipeImageTransport($host);
+        recipeImageCurrent(recipeImageDocument());
+        $old = app(RecipeImageBuilds::class)->reconcile()[0];
+        runRecipeImageBuild($old);
+        $snapshot = $old->recipe_json;
+        $manifest = ['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => app(AgentDelivery::class)->artifacts()];
+        $manifest['artifacts']['linux-x86_64']['sha256'] = str_repeat('e', 64);
+        $path = tempnam(sys_get_temp_dir(), 'recipe-delivery-');
+        file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR));
+        try {
+            app()->instance(AgentDelivery::class, new AgentDelivery($path, '/unused'));
+
+            expect(fn () => app(RecipeImageBuildSteps::class)->run($old, TaskVmImageBuildStep::Promote, null))
+                ->toThrow(TaskVmException::class, 'serving recipe delivery changed');
+            expect(fn () => app(RecipeImageBuildSteps::class)->promote($old))
+                ->toThrow(TaskVmException::class, 'serving recipe delivery changed');
+            $next = app(RecipeImageBuilds::class)->reconcile()[0];
+
+            expect($next->id)->not->toBe($old->id);
+            expect($next->recipe_identity)->not->toBe($old->recipe_identity);
+            expect($next->recipe_generation)->toBe($old->recipe_generation + 1);
+            expect(DB::table('task_vm_image_recipe')->where('id', 1)->value('identity'))->toBe($next->recipe_identity);
+            expect($old->refresh()->recipe_json)->toBe($snapshot);
+            expect(new RecipeLoader()->decode($snapshot)->identity)->toBe($old->recipe_identity);
+            expect(new RecipeLoader()->decode($next->recipe_json)->agentDigest('amd64'))->toBe(str_repeat('e', 64));
+            expect(app(RecipeImageBuilds::class)->reconcile()[0]->id)->toBe($next->id);
+        } finally {
+            unlink($path);
+        }
+    });
+
     it('starts a deployed recipe immediately and reuses unchanged running and succeeded builds', function (): void {
         $host = recipeImageHost();
         recipeImageTransport($host);
         recipeImageCurrent(recipeImageDocument());
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
         $build = TaskVmImageBuild::query()->sole();
-        expect($build->recipe_identity)->toBe(new RecipeLoader()->decode(recipeImageDocument())->identity);
-        expect($build->recipe_json)->toBe(recipeImageDocument());
+        expect($build->recipe_identity)->toBe(app(RecipeImageBuilds::class)->currentRecipe()->identity);
+        expect(new RecipeLoader()->decode($build->recipe_json)->identity)->toBe($build->recipe_identity);
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
         expect(TaskVmImageBuild::query()->count())->toBe(1);
         runRecipeImageBuild($build);

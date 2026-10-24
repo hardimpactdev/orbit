@@ -1135,6 +1135,22 @@
       ]
     },
     {
+      "name": "recipe.verify-delivery",
+      "summary": "Verify the installed agent and CLI under the update lock before recording a recipe.",
+      "mutates": false,
+      "timeout_seconds": 365,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "recipe.delivery_invalid",
+        "recipe.update_busy",
+        "recipe.update_lock_failed",
+        "recipe.delivery_mismatch"
+      ]
+    },
+    {
       "name": "recipe.inspect",
       "summary": "Inspect recipe versions, package origins, and planned ownership changes.",
       "mutates": false,

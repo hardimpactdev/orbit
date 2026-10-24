@@ -70,6 +70,7 @@ final readonly class UpCloudTaskVmImageBuilder
     public function build(?Closure $progress = null, ?MachineRecipe $machineRecipe = null, ?int $afterAttemptId = null, ?int $generation = null): string
     {
         $machineRecipe ??= $this->builds->currentRecipe();
+        $this->requireServingDelivery($machineRecipe);
         $lock = Cache::lock(self::Lock, self::LockSeconds);
         if (! $lock->get()) {
             throw new TaskVmException('task_vm.image_build_running', 'An UpCloud task VM template build is already running.');
@@ -113,6 +114,7 @@ final readonly class UpCloudTaskVmImageBuilder
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
             $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
             $this->stage($progress, 'promote', fn () => DB::transaction(function () use ($template, $title, $machineRecipe, $generation): void {
+                $this->requireServingDelivery($machineRecipe);
                 if ($generation !== null) {
                     $this->fence($machineRecipe, $generation);
                 }
@@ -153,6 +155,13 @@ final readonly class UpCloudTaskVmImageBuilder
             ->where('generation', $generation)->update(['generation' => $generation]);
         if ($matched !== 1) {
             throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'A newer recipe image generation is desired. This UpCloud build cannot continue or promote.');
+        }
+    }
+
+    private function requireServingDelivery(MachineRecipe $recipe): void
+    {
+        if ($this->builds->currentRecipe()->agentDigest('amd64') !== $recipe->agentDigest('amd64')) {
+            throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'The serving recipe delivery changed. This UpCloud build cannot continue or promote.');
         }
     }
 

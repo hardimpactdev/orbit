@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Node;
 use RuntimeException;
 use Throwable;
 
@@ -17,6 +19,14 @@ final readonly class RecipeValidator
 
     public function validate(MachineRecipe $recipe, string $artifactDirectory): void
     {
+        foreach ($recipe->agentDigests as $platform => $digest) {
+            $node = new Node(['platform' => 'linux', 'architecture' => substr($platform, strlen('linux-'))]);
+            $delivery = app(AgentDelivery::class);
+            if ($delivery->pin($node) !== $digest) {
+                throw new RuntimeException('The recipe agent pin differs from the serving delivery.');
+            }
+            $delivery->localFile($node);
+        }
         if (isset($recipe->tools['vp'])) {
             VitePlusRuntimeLock::read($recipe->tools['vp']);
         }

@@ -385,6 +385,8 @@ Each Gateway release pins one agent build: the delivery of the last commit that 
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
+The manifest also supplies the Linux pins in the [recipe identity](/reference/compute-drivers#recipe-identity). The recipe source carries no separate agent version or hashes. `python3 tools/check_agent_release.py <production-manifest.json>` checks a production delivery against its published commit tag, manifest, and checksums. This production check does not gate local or CI builds that use unpublished artifacts.
+
 Convergence, Doctor's binary check, the fleet verifier, the release handoff, and the [desired fleet state](/reference/self-update#desired-fleet-state) all read this one pin.
 
 ## Install and upgrade

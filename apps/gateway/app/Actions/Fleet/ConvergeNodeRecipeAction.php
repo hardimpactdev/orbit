@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Data\Fleet\NodeRecipePlan;
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -16,12 +17,13 @@ use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\VersionConstraint;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
-use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -35,7 +37,8 @@ final readonly class ConvergeNodeRecipeAction
     public function __construct(
         private ManagedNodeEligibility $eligibility,
         private NodeRoleConvergeLock $lock,
-        private NodeUpdateLock $updateLock,
+        private DesiredFleetState $desired,
+        private AgentCommandRunner $agents,
         private ToolManagerScopeLock $toolLocks,
         private NodeRecipeProgram $program,
         private ToolInspector $inspector,
@@ -50,6 +53,9 @@ final readonly class ConvergeNodeRecipeAction
     public function execute(Node $node, MachineRecipe $recipe, bool $dryRun = false, bool $automatic = false): array
     {
         $this->eligible($node);
+        if ($recipe->agentDigest((string) $node->architecture) !== $this->delivery->pin($node)) {
+            throw new ResourceOperationException('node.recipe_delivery_unavailable', 'The recipe agent pin differs from the serving delivery. Nothing was applied.', 409);
+        }
         if ($dryRun) {
             return ['plan' => $this->plan($node, $recipe), 'applied' => false, 'changes' => []];
         }
@@ -60,6 +66,11 @@ final readonly class ConvergeNodeRecipeAction
             $plan = $this->plan($node, $recipe);
 
             $tools = $this->program->tools($node, $recipe);
+            $cli = $this->desired->current()->cli;
+            if (! $cli->isAvailable() || $cli->version === null) {
+                throw new ResourceOperationException('node.recipe_delivery_unavailable', 'Recipe convergence requires the requested CLI release to be available. Nothing was applied.', 409);
+            }
+            $expected = ['identity' => $recipe->identity, 'agent_sha256' => $recipe->agentDigest((string) $node->architecture), 'cli_version' => $cli->version];
             $held = $automatic && $plan->changesIncus();
             if ($held) {
                 $this->holdIncus($node, array_intersect_key($tools, array_flip(RecipeLoader::IncusPackages)));
@@ -77,26 +88,37 @@ final readonly class ConvergeNodeRecipeAction
 
             $this->program->incusPreflight($node, $recipe, $tools);
 
-            return $this->updateLock->run($node, function () use ($node, $recipe, $plan, $tools, $held): array {
-                // Clear the success marker before a run that may leave the Node partly changed.
-                $settings = $node->settings ?? [];
-                unset($settings['machine_recipe']);
-                $node->update(['settings' => $settings]);
-                $changes = $this->program->apply($node, $recipe, $tools);
-                $this->verifyTools($node);
-                $report = $this->verifier->verify($node, [], $this->delivery->reportedVersion($node));
-                if (! $report['passed']) {
-                    throw new ResourceOperationException('node.recipe_doctor_failed', 'Recipe convergence stopped at Doctor. The Node may be partly changed. No automatic rollback was attempted. Run Doctor for this Node before continuing.', 502);
-                }
-                $settings = $node->refresh()->settings ?? [];
-                $settings['machine_recipe'] = [($held ? 'partial_version' : 'version') => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), ...(($changes['newer_than_recipe'] ?? []) === [] ? [] : ['newer_than_recipe' => $changes['newer_than_recipe']])];
-                if (! $held) {
-                    unset($settings['machine_recipe_incus_hold']);
-                }
-                $node->update(['settings' => $settings]);
+            // Clear the success marker before a run that may leave the Node partly changed.
+            $settings = $node->settings ?? [];
+            unset($settings['machine_recipe']);
+            $node->update(['settings' => $settings]);
+            $changes = $this->program->apply($node, $recipe, $tools);
+            $this->verifyTools($node);
+            $report = $this->verifier->verify($node, [], $this->delivery->reportedVersion($node));
+            if (! $report['passed']) {
+                throw new ResourceOperationException('node.recipe_doctor_failed', 'Recipe convergence stopped at Doctor. The Node may be partly changed. No automatic rollback was attempted. Run Doctor for this Node before continuing.', 502);
+            }
+            try {
+                $verified = $this->agents->run($node, 'recipe.verify-delivery', ['user' => $node->user, ...$expected]);
+            } catch (AgentCommandRefused $error) {
+                throw new ResourceOperationException(
+                    $error->errorCode === 'recipe.update_busy' ? 'node.update_busy' : 'node.recipe_delivery_failed',
+                    'Final recipe delivery verification failed. No recipe identity was recorded.',
+                    $error->errorCode === 'recipe.update_busy' ? 409 : 502,
+                    $error,
+                );
+            }
+            if (count($verified) !== count($expected) || array_any($expected, static fn (string $value, string $key): bool => ($verified[$key] ?? null) !== $value)) {
+                throw new ResourceOperationException('node.recipe_delivery_failed', 'Final recipe verification returned another delivery. No recipe identity was recorded.', 502);
+            }
+            $settings = $node->refresh()->settings ?? [];
+            $settings['machine_recipe'] = [($held ? 'partial_version' : 'version') => $verified['identity'], 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), ...(($changes['newer_than_recipe'] ?? []) === [] ? [] : ['newer_than_recipe' => $changes['newer_than_recipe']])];
+            if (! $held) {
+                unset($settings['machine_recipe_incus_hold']);
+            }
+            $node->update(['settings' => $settings]);
 
-                return ['plan' => $plan, 'applied' => true, 'changes' => $changes];
-            });
+            return ['plan' => $plan, 'applied' => true, 'changes' => $changes];
         }), errorCode: 'node.recipe_failed');
     }
 
