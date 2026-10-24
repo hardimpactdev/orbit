@@ -136,7 +136,6 @@ describe('footprint digests', function (): void {
             ->and($artifact->applies($dev))->toBeTrue()
             ->and($artifact->applies($database))->toBe($caddy->applies($database))
             ->and($artifact->digest($dev))->toBe(SourceDigest::of([
-                'app/Infrastructure/Nodes/CaddyPackageProgram.php',
                 'app/Infrastructure/Nodes/AgentCaddyPackage.php',
                 'app/Domain/Nodes/CaddyRelease.php',
             ]))

@@ -12,25 +12,30 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
 /**
- * Installs the pinned Caddy release through the agent's `caddy.install-package` (`CaddyPackageProgram` holds the pin).
- * The result prints `CaddyPackageProgram::Changed` when the Node changed, as callers read it.
+ * Installs the pinned Caddy release through the agent's `caddy.install-package` (this adapter holds the release pin).
+ * The result prints `self::Changed` when the Node changed, as callers read it.
  */
 final readonly class AgentCaddyPackage
 {
+    public const string RELEASE = '2.11.7';
+
+    /** From `caddy_2.11.7_checksums.txt`, whose sigstore signature names Caddy's release workflow. */
+    public const string AMD64_SHA512 = '47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9';
+
+    public const string ARM64_SHA512 = 'ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a';
+
+    public const string Changed = 'orbit-caddy-package-result=changed';
+
     public function __construct(private AgentCommandRunner $agents) {}
 
     /** @return array<string, mixed> */
     public static function input(): array
     {
         return [
-            'release' => CaddyPackageProgram::RELEASE,
-            'release_url' => CaddyPackageProgram::RELEASE_URL,
-            'amd64_sha512' => CaddyPackageProgram::AMD64_SHA512,
-            'arm64_sha512' => CaddyPackageProgram::ARM64_SHA512,
+            'release' => self::RELEASE,
+            'amd64_sha512' => self::AMD64_SHA512,
+            'arm64_sha512' => self::ARM64_SHA512,
             'minimum_version' => CaddyRelease::MINIMUM,
-            'kernel_setting_path' => CaddyPackageProgram::KERNEL_SETTING_PATH,
-            'kernel_setting' => CaddyPackageProgram::KERNEL_SETTING,
-            'legacy_paths' => ['/usr/share/keyrings/orbit-caddy.gpg', '/etc/apt/sources.list.d/orbit-caddy.sources'],
         ];
     }
 
@@ -46,7 +51,7 @@ final readonly class AgentCaddyPackage
             return $failure->result ?? new CommandResult(255, '', $failure->getMessage(), 0, false);
         }
 
-        $line = ($result['changed'] ?? false) === true ? CaddyPackageProgram::Changed : 'orbit-caddy-package-result=unchanged';
+        $line = ($result['changed'] ?? false) === true ? self::Changed : 'orbit-caddy-package-result=unchanged';
 
         return new CommandResult(0, $line."\n", '', 0, false);
     }

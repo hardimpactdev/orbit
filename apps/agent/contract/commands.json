@@ -2907,7 +2907,7 @@
     },
     {
       "name": "caddy.install-package",
-      "summary": "Install the pinned Caddy release when the Node's Caddy is older than Orbit's floor.",
+      "summary": "Install the pinned Caddy package when the Node is below the version floor.",
       "mutates": true,
       "timeout_seconds": 600,
       "privilege": {
@@ -2915,6 +2915,7 @@
         "macos": null
       },
       "errors": [
+        "caddy.package_invalid",
         "caddy.package_unsafe",
         "caddy.package_failed"
       ]

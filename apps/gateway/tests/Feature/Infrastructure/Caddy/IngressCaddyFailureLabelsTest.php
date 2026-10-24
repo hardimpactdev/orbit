@@ -10,7 +10,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -207,7 +206,7 @@ function caddy_failure_builds(): FakeNodeCaddyBuilds
 /** Binds the SSH fake and an agent that answers the role prerequisites, refusing the Caddy package for `source`. */
 function caddy_failure_bind(?string $fail = null): void
 {
-    $ssh = caddy_failure_ssh($fail);
+    $ssh = caddy_failure_ssh();
     $agents = (new FakeAgentCommandRunner)->answer('roles.install-prerequisites', [])->answer('nodes.os-release', ['id' => 'ubuntu', 'codename' => 'resolute']);
     $fail === 'source'
         ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
@@ -219,22 +218,12 @@ function caddy_failure_bind(?string $fail = null): void
     app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $agents));
 }
 
-function caddy_failure_ssh(?string $fail = null): SshExecutor
+function caddy_failure_ssh(): SshExecutor
 {
-    return new class($fail) implements SshExecutor
+    return new class implements SshExecutor
     {
-        public function __construct(private ?string $fail) {}
-
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            $ordering = ($command->arguments[4] ?? null) === 'caddy'
-                && str_contains($command->input ?? '', 'orbit-vpn.conf');
-            $source = in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true);
-
-            if (($this->fail === 'ordering' && $ordering) || ($this->fail === 'source' && $source)) {
-                return new CommandResult(1, '', 'forced failure', 1, false);
-            }
-
             return new CommandResult(0, '', '', 1, false);
         }
     };

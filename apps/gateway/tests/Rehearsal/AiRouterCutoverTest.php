@@ -12,9 +12,8 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -128,7 +127,7 @@ it('rehearses the automatic rename with native services and continuous held-key 
         $run(['sudo', 'install', '-d', '-m', '0755', '/var/lib/orbit/proxycli']);
         $run(['sudo', 'tee', '/var/lib/orbit/proxycli/server.py'], $script);
         app(ProcessRuntimeManager::class)->converge($collector);
-        expect(app(NodeShell::class)->run($node, CaddyPackageProgram::command())->succeeded())->toBeTrue();
+        expect(app(AgentCaddyPackage::class)->install($node)->succeeded())->toBeTrue();
         app(NodeCaddyBuilds::class)->build($node);
         app(PrivateDnsManager::class)->converge();
         // Recorded pre-release site, not a Route: only the management Route existed on the Gateway.

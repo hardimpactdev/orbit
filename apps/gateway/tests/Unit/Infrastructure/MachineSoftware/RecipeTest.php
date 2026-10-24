@@ -12,7 +12,7 @@ use App\Infrastructure\MachineSoftware\RecipeValidator;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\TaskVms\TaskVmCloudInit;
@@ -318,9 +318,9 @@ describe('machine recipe structure and identity', function (): void {
                 }
             }
         }
-        expect($recipe->tools['caddy']->version)->toBe(CaddyPackageProgram::RELEASE)
-            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(CaddyPackageProgram::AMD64_SHA512)
-            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(CaddyPackageProgram::ARM64_SHA512);
+        expect($recipe->tools['caddy']->version)->toBe(AgentCaddyPackage::RELEASE)
+            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(AgentCaddyPackage::AMD64_SHA512)
+            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(AgentCaddyPackage::ARM64_SHA512);
     });
 
     it('names the rollback tool, the PCOV profiles and the mirror', function (): void {

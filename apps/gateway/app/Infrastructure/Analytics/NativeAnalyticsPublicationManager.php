@@ -62,7 +62,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
     /**
      * The analytics role has no package step of its own, so the dashboard host is the point where
-     * this Node needs a Caddy Orbit can render against. `CaddyPackageProgram` owns the pin and floor.
+     * this Node needs a Caddy Orbit can render against. `AgentCaddyPackage` owns the pin and floor.
      */
     private function ensureCaddy(Node $node): void
     {

@@ -56,7 +56,6 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
@@ -1561,7 +1560,7 @@ function baseline_ssh(array &$events): SshExecutor
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $label = $command->arguments[4] ?? 'unknown';
-            $this->events[] = 'ssh:'.(in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true) ? 'caddy-source' : $label);
+            $this->events[] = 'ssh:'.$label;
 
             return new CommandResult(0, '', '', 1, false);
         }

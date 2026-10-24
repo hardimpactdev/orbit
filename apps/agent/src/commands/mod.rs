@@ -6,6 +6,7 @@ pub mod agent_footprint;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
+mod caddy_package;
 mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
@@ -290,7 +291,7 @@ pub fn all() -> Vec<Entry> {
         entry::<doctor_route::InspectCustomProxy>(),
         entry::<doctor_route::ResolveRouteDns>(),
         entry::<caddy::RemoveCertificate>(),
-        entry::<caddy::InstallPackage>(),
+        entry::<caddy_package::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
         entry::<metrics_exporter::NodeExporter>(),
