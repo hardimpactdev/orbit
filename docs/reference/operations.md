@@ -77,6 +77,10 @@ Use the kind and target type to start or find the work of a command.
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
+A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, ci }` under the agreed [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group). This is a docs-first extension, not a runtime delivery claim or supported external review-and-merge admission. The input remains `{ subtask, phase }` with the existing optional key.
+
+`head` is the pre-commit check snapshot; `commit` is the candidate HEAD. Baseline/no-policy has `ci: null`. A required-CI handoff adds persisted handoff-push and hosted-CI-read steps after the existing commit step. Before push, state pins the branch and required check name; it retains CI evidence while waiting, so recovery cannot reinterpret a later Project edit. The terminal result carries that evidence. A failed code/workflow check ends `succeeded` with `outcome: failed`, not an operation failure. Consumers need `outcome: passed` and the shared checked-candidate eligibility rule, not just `status: succeeded` or a locally passed check.
+
 ## Start an operation
 
 After the access and idempotency checks, a start request validates the input, creates the record as `queued`, queues its job, and answers `202` with the record:
@@ -187,7 +191,9 @@ Each active run has a deadline of 1,600 seconds; time between waiting reads does
 
 ### A waiting step
 
-A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`. `tasks.provision` waits for VM capacity and readiness, `tasks.check` waits for VM resume, workspace ownership, and its detached check, and `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end; deploy and rollback keep their current execution. `tasks.publish` waits for VM resume and its queued push.
+A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`.
+
+`tasks.provision` waits for VM capacity and readiness. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [agreed prerequisite](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
 
 A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
 
@@ -254,6 +260,8 @@ A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [de
 ### A task check returns evidence
 
 `tasks.check` holds the group while its detached check runs, without holding the operations worker. A failed check returns a successful operation with a failed outcome so the orchestrator can decide its next step. An unconfirmed stop retains the target and retries, because a cancel request alone does not prove the workspace is free. Group cancellation can end the operation when the VM is unreachable because the group's existing removal rule retains the workspace and requests assistance.
+
+The [hosted-CI prerequisite](/reference/tasks#check-an-external-group) uses delayed bounded reads for pending, missing and unreadable evidence, with no worker held and no Gateway-owned time budget or next turn. Recovery retains one commit per operation and reconciles the existing VM push record and remote tip. Cancellation can invalidate a queued push, but a started push must reconcile before ownership ends. Once only CI waits, cancel stops observation without cancelling workflows or erasing evidence. The owning operation must succeed with passed CI before either reviewer or publish admission can use its check; cancellation cannot turn a local pass into a completed candidate.
 
 These reasons explain the design. Check them before you propose a change.
 

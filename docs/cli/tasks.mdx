@@ -440,12 +440,14 @@ orbit tasks:check <group> --subtask=<id> --phase=baseline|handoff [--idempotency
 
 Run a baseline or handoff check through `tasks.check` on the Gateway. The group must use external orchestration and have a workspace. The subtask must be its current open subtask. A terminal prompts for missing inputs; machine mode requires them. The command follows waits for VM resume, workspace ownership, and the detached check. A failed check is a successful operation with `result.outcome=failed`; inspect the result, including deliverables and redacted output. A passed handoff records its commit. Ctrl-C stops following. Use `operation:cancel` to stop the check, or `tasks:cancel` to end the group. See [Check an external group](/reference/tasks#check-an-external-group).
 
+The agreed [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) adds `result.ci` to JSON output without changing these inputs or adding a caller-selected CI option. This is docs-first, not a runtime delivery claim: external review-and-merge admission remains unsupported. For a Project requiring CI, the operation also waits for its handoff push and hosted check on `result.commit`, the candidate HEAD; `result.head` is the earlier pre-commit snapshot. Baseline/no-policy returns `ci: null`. Waiting observation is not a usable passed candidate. Cancellation after push stops observation, not GitHub workflows, and retains check evidence. Reviewer and publish commands require the shared candidate eligibility rule, including passed CI from the owning successful operation when required.
+
 ## orbit tasks:publish
 
-Push a passed handoff check's commit for an external group. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
+Push an [eligible checked candidate's](/reference/tasks#check-an-external-group) commit for an external group. When hosted CI is required, the owning handoff operation must have succeeded with passed CI on that check/commit. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
 ```bash
 orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."
 ```
 
-The optional `group` argument is the numeric task group ID. `--check` supplies the passed handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.
+The optional `group` argument is the numeric task group ID. `--check` supplies the eligible handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.

@@ -179,6 +179,8 @@ Enabling review and merge requires readable branch rules that do not require an 
 
 [Tasks: Review and merge](/reference/tasks#review-and-merge) describes what the switch changes.
 
+The agreed [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) follows this same policy through `Project::handoffCheckName()`, not a new caller option. When CI is required, the check operation pins its check name and handoff branch before push. A later Project edit does not reinterpret its candidate evidence. This docs-first prerequisite does not deliver external review-and-merge admission: external create and topology append retain `tasks.orchestration_unsupported`. No live Project policy change is needed to test it.
+
 ### Update lifecycle
 
 The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as one recorded operation:
