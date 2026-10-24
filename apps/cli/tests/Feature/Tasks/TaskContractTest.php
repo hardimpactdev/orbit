@@ -66,17 +66,23 @@ describe('tasks contract', function (): void {
     it('renders native complete analysis outcomes honestly in human and JSON modes', function (string $fixture): void {
         Sleep::fake(syncWithCarbon: true);
         $queued = json_decode(gateway_fixture('tasks/tasks-analyze/queued')['body'], true, flags: JSON_THROW_ON_ERROR)['data']['input'];
+        $terminal = json_decode(gateway_fixture($fixture)['body'], true, flags: JSON_THROW_ON_ERROR)['data'];
         $path = $this->orbitHome.'/plan.json';
         file_put_contents($path, json_encode($queued['plan'], JSON_THROW_ON_ERROR));
         $arguments = ['group' => '1', '--subtask' => (string) $queued['subtask'], '--plan' => $path, '--plan-sha256' => $queued['plan_sha256'], '--base' => $queued['base'], '--head' => $queued['head'], '--tree' => $queued['tree'], '--idempotency-key' => 'analysis.c1'];
         try {
             foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
-                run_contract(['tasks/tasks-analyze/queued', $fixture, 'realtime/realtime-show/unconfigured'], 'tasks:analyze', [...$arguments, ...$mode], $fixture.'.'.$extension, 0);
+                run_contract(['tasks/tasks-analyze/queued', $fixture, 'realtime/realtime-show/unconfigured'], 'tasks:analyze', [...$arguments, ...$mode], $fixture.'.'.$extension, $terminal['status'] === 'failed' ? 1 : 0);
             }
         } finally {
             Sleep::fake(false);
         }
-    })->with(['tasks/tasks-analyze/ready', 'tasks/tasks-analyze/action_required', 'tasks/tasks-analyze/blocked', 'tasks/tasks-analyze/changed']);
+    })->with(['tasks/tasks-analyze/ready', 'tasks/tasks-analyze/action_required', 'tasks/tasks-analyze/blocked', 'tasks/tasks-analyze/changed',
+        'tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable']);
+
+    it('renders the immutable public provision identity without interpreting the pin', function (string $fixture): void {
+        run_task_contract($fixture, 'operation:show', ['operation' => '1'], 0);
+    })->with(['tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable']);
 
     it('renders the native analysis refusal without generic success', function (): void {
         $input = json_decode(gateway_fixture('tasks/tasks-analyze/queued')['body'], true, flags: JSON_THROW_ON_ERROR)['data']['input'];

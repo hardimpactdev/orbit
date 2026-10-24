@@ -55,7 +55,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         $run->step('workspace', fn (): int => $this->createWorkspace($operation));
         $run->step('workspace_lease', fn (): mixed => $this->read($run));
         $result = $run->step('route', fn (): array => $this->finishWorkspace($operation, $run));
-        if (! is_array($result)) {
+        if (! is_array($result) || ! is_int($result['instance_id'] ?? null)) {
             throw new LogicException('The provision result must be an object.');
         }
 
@@ -63,6 +63,7 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
             'instance_id' => $result['instance_id'],
             'node_id' => $result['node_id'],
             'starting_commit' => $result['starting_commit'],
+            'analysis_base' => TaskAnalysisBase::fromRecord($result['analysis_base'] ?? null, $result['instance_id']),
         ]);
     }
 
@@ -132,13 +133,13 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
         });
     }
 
-    /** @return array{instance_id: int, node_id: int, starting_commit: string|null} */
+    /** @return array{instance_id: int, node_id: int, starting_commit: string|null, analysis_base: array{base: string, instance_id: int, repository: string, branch: string}|null} */
     private function finishWorkspace(Operation $operation, OperationRun $run): array
     {
         return $this->execution->synchronized($operation->target_id, function () use ($operation, $run): array {
             $group = Task::topLevel()->with('taskable')->findOrFail($operation->target_id);
             $this->operations->requireOpenExternal($group);
-            $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group, $run): void {
+            $identity = $this->leases->run($group, 'provision', 'operation:'.$operation->id, function () use ($group, $run): array {
                 $failure = $this->routes->complete($group);
                 if ($failure !== null) {
                     throw new ResourceOperationException($failure->errorCode ?? 'tasks.provision_failed', $failure->cause);
@@ -147,21 +148,22 @@ final readonly class TaskProvisionOperation implements OperationWaitingKind, Ope
                 if (! $instance instanceof Instance) {
                     throw new LogicException('Provision has no workspace.');
                 }
-                $run->remember('analysis_base', fn (): array => [
+                $base = $run->remember('analysis_base', fn (): array => [
                     'base' => $this->analysis->initialAnalysisBase($instance),
                     'instance_id' => $instance->id,
                     'repository' => $group->project->repository_url,
                     'branch' => $instance->branch,
                 ]);
+
+                // The existing route-step checkpoint retains this identity on recovery.
+                return [
+                    'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'starting_commit' => $instance->starting_commit,
+                    'analysis_base' => TaskAnalysisBase::fromRecord($base, $instance->id),
+                ];
             });
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
-            $instance = $group->taskable;
-            if (! $instance instanceof Instance) {
-                throw new LogicException('A provisioned task group must have a workspace Instance.');
-            }
-            $instance->refresh();
 
-            return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'starting_commit' => $instance->starting_commit];
+            return $identity;
         });
     }
 

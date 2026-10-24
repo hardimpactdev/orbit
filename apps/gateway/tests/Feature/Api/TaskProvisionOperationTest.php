@@ -43,8 +43,17 @@ use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Queue;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskAnalysisRunner;
+use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TaskAnalysisAdapterFixture;
+
+require_once __DIR__.'/../../Support/TaskCheckRunnerFixtures.php';
+use App\Domain\Tasks\TaskProvisionOperation;
+use App\Models\TaskWorkspaceLeaseRecord;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -78,7 +87,7 @@ function provision_operation_group(TaskGroupStatus $status = TaskGroupStatus::To
     return $group;
 }
 
-function provision_operation_fakes(bool $routeFails = false): void
+function provision_operation_fakes(bool $routeFails = false, ?string $startingCommit = null): void
 {
     mock(ManagedUserAccountResolver::class)->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     mock(InstanceDestinationGuard::class)->shouldReceive('assertUnoccupied');
@@ -86,7 +95,7 @@ function provision_operation_fakes(bool $routeFails = false): void
     $source->shouldReceive('prepare')->once()->withArgs(fn (Instance $instance, bool $allowExisting): bool => $instance->project->default_branch === 'main' && ! $allowExisting);
     $source->shouldReceive('inspectPrepared');
     $source->shouldReceive('inspectResolved')->andReturnUsing(fn (Instance $instance): DevelopmentSourceResolution => new DevelopmentSourceResolution((string) $instance->branch, (string) $instance->starting_commit));
-    $source->shouldReceive('resolve')->once()->andReturnUsing(fn (Instance $instance): DevelopmentSourceResolution => new DevelopmentSourceResolution($instance->name, str_repeat('a', 40)));
+    $source->shouldReceive('resolve')->once()->andReturnUsing(fn (Instance $instance): DevelopmentSourceResolution => new DevelopmentSourceResolution($instance->name, $startingCommit ?? str_repeat('a', 40)));
     $development = mock(DevelopmentInstanceProvisioner::class);
     $development->shouldReceive('reserve');
     $development->shouldReceive('prepare')->andReturnUsing(fn (Instance $instance): Instance => $instance);
@@ -242,7 +251,7 @@ describe('tasks.provision', function (): void {
         app(OperationRunner::class)->read($operation->id);
 
         expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
-        expect($operation->result)->toBe(['instance_id' => $group->fresh()->taskable_id, 'node_id' => $node->id, 'starting_commit' => str_repeat('a', 40)]);
+        expect($operation->result)->toBe(['instance_id' => $group->fresh()->taskable_id, 'node_id' => $node->id, 'starting_commit' => str_repeat('a', 40), 'analysis_base' => $operation->state['analysis_base']]);
         expect($operation->attempts)->toBe(1);
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
         expect($group->reserved_at)->toBeNull();
@@ -272,6 +281,7 @@ describe('tasks.provision', function (): void {
     });
 
     it('records the initial analysis base once at provision and retains unavailable bases without guessing later', function (bool $available): void {
+        $this->travelTo('2026-11-01T10:00:00+00:00');
         $group = provision_operation_group();
         test_task_vm($group, $this->gatewayNode);
         provision_operation_fakes();
@@ -285,12 +295,131 @@ describe('tasks.provision', function (): void {
             'repository' => $group->project->repository_url, 'branch' => $instance->branch];
         expect($operation->status)->toBe(OperationStatus::Succeeded)->and($operation->state['analysis_base'])->toBe($recorded)
             ->and($analysis->baseReads)->toBe(1)->and($analysis->starts)->toBe(0);
+        $shown = $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()
+            ->assertJsonPath('data.result.starting_commit', str_repeat('a', 40))
+            ->assertJsonPath('data.result.analysis_base', $available ? $recorded : null);
+        record_fixture($shown, 'tasks/tasks-provision/'.($available ? 'pinned' : 'unavailable'), ShowOperationRequest::class, 'GET /api/v1/operations/{operation}');
+        $this->getJson('/api/v1/operations?target_type=task_group&target_id='.$group->id)->assertOk()
+            ->assertJsonPath('data.0.result.analysis_base', $available ? $recorded : null);
         $analysis->initialBase = str_repeat('c', 40);
         app(OperationRunner::class)->run($operation->id);
         $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', [], ['Idempotency-Key' => 'provision.fixed-base'])
-            ->assertAccepted()->assertJsonPath('data.id', $operation->id);
+            ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.result.analysis_base', $available ? $recorded : null);
         expect($operation->fresh()->state['analysis_base'])->toBe($recorded)->and($analysis->baseReads)->toBe(1);
     })->with([false, true]);
+
+    it('publishes the real divergent merge base accepted by analyze and never follows moving origin main on replay', function (): void {
+        $fixture = new TaskAnalysisAdapterFixture('normal');
+        $this->directory = $fixture->checkout;
+        try {
+            $git = fn (array $arguments): string => trim(new Process(['git', ...$arguments], $fixture->checkout)->mustRun()->getOutput());
+            $base = $git(['rev-parse', 'HEAD']);
+            $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'starting workspace']);
+            $starting = $git(['rev-parse', 'HEAD']);
+            $git(['update-ref', 'refs/remotes/origin/main', $base]);
+            $group = provision_operation_group();
+            test_task_vm($group, $this->gatewayNode);
+            provision_operation_fakes(startingCommit: $starting);
+            $native = check_runner(new LocalShellSshExecutor);
+            $execution = new FakeTaskAnalysisRunner;
+            $analysis = mock(TaskAnalysisRunner::class);
+            $analysis->shouldReceive('initialAnalysisBase')->once()->andReturnUsing(function (Instance $instance) use ($native, $fixture): ?string {
+                // Only the source/VM lifecycle is faked: base and entrypoint inspection run on this real checkout.
+                $instance->update(['checkout_path' => $fixture->checkout]);
+
+                return $native->initialAnalysisBase($instance);
+            });
+            $analysis->shouldReceive('inspectAnalysis')->andReturnUsing(fn (Instance $instance, string $pin): array => $native->inspectAnalysis($instance, $pin));
+            $analysis->shouldReceive('startAnalysis')->once()->andReturnUsing(fn (Instance $instance, array $input, string $id) => $execution->startAnalysis($instance, $input, $id));
+            $analysis->shouldReceive('recoverStart')->andReturnUsing(fn (Instance $instance, string $id) => $execution->recoverStart($instance, $id));
+            $analysis->shouldReceive('readAnalysis')->andReturnUsing(fn (Instance $instance, $process): array => $execution->readAnalysis($instance, $process));
+            $provision = provision_operation_start($group, 'provision.divergent');
+            app(OperationRunner::class)->run($provision->id);
+            $identity = $this->getJson('/api/v1/operations/'.$provision->id)->assertOk()->assertJsonPath('data.status', 'succeeded')
+                ->assertJsonPath('data.result.starting_commit', $starting)->assertJsonPath('data.result.analysis_base.base', $base)->json('data.result');
+            expect($starting)->not->toBe($base);
+            $instance = $group->fresh()->taskable;
+            $git(['checkout', '--quiet', '-b', $instance->branch]);
+            $git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'later candidate']);
+            $candidate = $git(['rev-parse', 'HEAD']);
+            $git(['update-ref', 'refs/remotes/origin/main', $candidate]);
+            expect($native->initialAnalysisBase($instance))->toBe($starting)->not->toBe($base);
+            $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', [], ['Idempotency-Key' => 'provision.divergent'])
+                ->assertAccepted()->assertJsonPath('data.result', $identity);
+            $inspection = $native->inspectAnalysis($instance, $base);
+            $execution->head = $inspection['head'];
+            $execution->tree = $inspection['tree'];
+            $checks = new FakeTaskCheckRunner;
+            $checks->head = $execution->head;
+            $checks->tree = $execution->tree;
+            app()->instance(TaskCheckRunner::class, $checks);
+            $plan = ['asserted_by' => 'orchestrator', 'complete' => true, 'id' => 'public-pin', 'paths' => [['change' => 'add', 'path' => 'new.php']],
+                'revision' => 1, 'source' => ['brief_id' => 'brief:1', 'revision_sha256' => str_repeat('d', 64)]];
+            $input = ['subtask' => $group->tasks()->sole()->id, 'plan' => $plan, 'plan_sha256' => hash('sha256', json_encode($plan, JSON_THROW_ON_ERROR)),
+                'base' => $identity['analysis_base']['base'], 'head' => $inspection['head'], 'tree' => $inspection['tree']];
+            $id = $this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', $input, ['Idempotency-Key' => 'analyze.public-pin'])->assertAccepted()->json('data.id');
+            app(OperationRunner::class)->run($id);
+            $this->travel(10)->seconds();
+            app(OperationRunner::class)->read($id);
+            $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.status', 'succeeded')
+                ->assertJsonPath('data.result.provenance.base', $base);
+            // The tempting starting_commit substitute is rejected before any second dispatch.
+            $wrong = $this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', [...$input, 'base' => $starting], ['Idempotency-Key' => 'analyze.wrong-pin'])->assertAccepted()->json('data.id');
+            app(OperationRunner::class)->run($wrong);
+            $this->getJson('/api/v1/operations/'.$wrong)->assertOk()->assertJsonPath('data.error_code', 'tasks.analysis_stale')->assertJsonPath('data.result', null);
+            expect($execution->starts)->toBe(1);
+        } finally {
+            $fixture->close();
+        }
+    });
+
+    it('recovers the public provision identity after release before terminal persistence without resolving again', function (): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $analysis = app(TaskAnalysisRunner::class);
+        $analysis->initialBase = str_repeat('b', 64);
+        $operation = provision_operation_start($group, 'provision.recovery');
+        // Stop the worker after the kind has durably completed its steps, before
+        // OperationRunner persists its returned outcome. No exception cleanup runs.
+        $store = app(OperationStore::class);
+        $store->claim($operation, 'lost-provision-worker:123:1');
+        app(TaskProvisionOperation::class)->run($operation, new OperationRun($operation, $store));
+        $operation->refresh();
+        expect($operation->result)->toBeNull()->and($operation->status)->toBe(OperationStatus::Running);
+        $identity = $operation->state['steps']['route'];
+        expect($identity['analysis_base']['base'])->toBe(str_repeat('b', 64))
+            ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'provision')->sole()->status)->toBe('released');
+        $analysis->initialBase = str_repeat('c', 40);
+        $instance = $group->fresh()->taskable;
+        $instance->update(['branch' => 'moved-branch', 'starting_commit' => str_repeat('d', 40)]);
+        $group->project->update(['repository_url' => 'git@github.com:other/repository.git', 'default_branch' => 'changed']);
+        $operation->update(['status' => 'queued', 'worker' => null]);
+        app(OperationRunner::class)->run($operation->id);
+        $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertJsonPath('data.result', $identity);
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', [], ['Idempotency-Key' => 'provision.recovery'])
+            ->assertAccepted()->assertJsonPath('data.result', $identity);
+        expect($analysis->baseReads)->toBe(1);
+    });
+
+    it('publishes null for an invalid retained provision pin instead of substituting workspace identity', function (array $changes): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $operation = provision_operation_start($group);
+        // The retained checkpoint must be validated even when it survived a previous worker.
+        $record = ['base' => str_repeat('b', 40), 'instance_id' => 1, 'repository' => $group->project->repository_url, 'branch' => 'main'];
+        $operation->update(['state' => ['analysis_base' => [...$record, ...$changes]]]);
+        app(OperationRunner::class)->run($operation->id);
+        $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->assertJsonPath('data.status', 'succeeded')
+            ->assertJsonPath('data.result.analysis_base', null)->assertJsonPath('data.result.starting_commit', str_repeat('a', 40));
+        expect(app(TaskAnalysisRunner::class)->baseReads)->toBe(0);
+    })->with([
+        [['base' => null]], [['base' => 'short']], [['base' => str_repeat('B', 40)]],
+        [['instance_id' => 999]], [['instance_id' => '1']],
+        [['repository' => 'https://user:secret-sentinel@example.com/private.git']],
+        [['repository' => "git@github.com:acme/repo.git\n"]], [['branch' => 'main..secret']], [['branch' => "main\n"]],
+    ]);
 
     it('ends the group after a Route effect fails and never retries it', function (): void {
         $group = provision_operation_group();

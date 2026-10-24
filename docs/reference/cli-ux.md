@@ -211,6 +211,8 @@ The Tasks JSON rendering preserves the distinction between a watched branch pull
 
 Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
 
+`tasks:analyze` keeps a failed operation failed: human output names its failed step and error code, while JSON retains the operation and its closed [public failure metadata](/reference/tasks#public-analysis-failure-metadata). `operation:show --json` also preserves the [immutable provision identity](/reference/tasks#public-provision-identity), including an unavailable `analysis_base: null`. Consumers read these fields from the operation result, never from human text. The `failure-overflow`, `failure-unavailable`, `pinned`, and `unavailable` recordings under [Tasks expectations](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/tasks) check human and JSON rendering.
+
 `tasks:status` includes workspace lease holders and queued actors in its human detail tree. JSON preserves the typed `workspace_leases` array. A busy checkout is a wait, so its queued actors do not appear as command failures. Doctor reports unresolved ownership without clearing it. See the [workspace lease contract](/reference/tasks#workspace-lease).
 
 ## Command reference
