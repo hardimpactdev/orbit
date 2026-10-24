@@ -7,12 +7,28 @@ declare(strict_types=1);
 use App\Documentation\DocsImpact;
 use App\Documentation\DocsImpactReport;
 use App\Domain\Tasks\TaskAnalysisPlan;
+use App\Domain\Tasks\TaskAnalysisReport;
 use App\Support\StrictJson;
 
 $root = dirname(__DIR__);
-require $root.'/apps/docs/vendor/autoload.php';
-require $root.'/apps/gateway/app/Support/StrictJson.php';
-require $root.'/apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php';
+// Failure stdout is a closed control object, never shortened evidence or stderr reconstruction.
+$failure = static function (string $code, ?int $requiredBytes = null): never {
+    fwrite(STDOUT, json_encode(['schema' => 1, 'error' => ['code' => $code, 'required_bytes' => $requiredBytes]], JSON_THROW_ON_ERROR)."\n");
+    exit(1);
+};
+try {
+    foreach (['apps/docs/vendor/autoload.php', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
+        if (! is_file($root.'/'.$path) || ! is_readable($root.'/'.$path)) {
+            throw new RuntimeException('Required analysis tooling is unavailable.');
+        }
+        require $root.'/'.$path;
+    }
+    if (! function_exists('proc_open') || ! class_exists(DocsImpact::class) || ! class_exists(DocsImpactReport::class)) {
+        throw new RuntimeException('Required analysis tooling is unavailable.');
+    }
+} catch (Throwable) {
+    $failure('tasks.analysis_unavailable');
+}
 
 try {
     if ($argc !== 1 || realpath(getcwd()) !== $root) {
@@ -32,14 +48,18 @@ try {
         }
     }
     $plan = TaskAnalysisPlan::parse($input['plan'], $input['plan_sha256']);
-    $git = static function (array $arguments, bool $trim = true) use ($root): string {
+    $git = static function (array $arguments, bool $trim = true) use ($root, $failure): string {
         $process = proc_open(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', $root, ...$arguments], [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
         if (! is_resource($process)) {
-            throw new RuntimeException('Git is unavailable.');
+            $failure('tasks.analysis_unavailable');
         }
         $output = stream_get_contents($pipes[1]);
         fclose($pipes[1]);
-        if (proc_close($process) !== 0 || $output === false) {
+        $exit = proc_close($process);
+        if ($exit === 127) {
+            $failure('tasks.analysis_unavailable');
+        }
+        if ($exit !== 0 || $output === false) {
             throw new RuntimeException('Git identity validation failed.');
         }
 
@@ -85,7 +105,10 @@ try {
         'diagnostics' => [], 'report' => ['schema' => 'orbit.docs-impact.v1', 'data' => $report],
     ];
     $output = json_encode($envelope, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n";
-    StrictJson::decode($output, 65536, 24);
+    if (strlen($output) > TaskAnalysisReport::MaxBytes) {
+        $failure('tasks.analysis_report_too_large', strlen($output));
+    }
+    StrictJson::decode($output, TaskAnalysisReport::MaxBytes, 24);
     fwrite(STDOUT, $output);
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage()."\n");

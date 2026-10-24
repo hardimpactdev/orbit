@@ -53,6 +53,31 @@ final class TaskAnalysisReport
         return StrictJson::associative($object);
     }
 
+    /** A nonzero adapter exit may carry a bounded failure, never a successful artifact. */
+    public static function rejectFailure(string $bytes): void
+    {
+        try {
+            $object = StrictJson::decode($bytes, self::MaxBytes);
+            if (! $object instanceof \stdClass || ! property_exists($object, 'error')) {
+                return;
+            }
+            $value = StrictJson::fields($object, ['schema', 'error']);
+            $error = StrictJson::fields($value['error'], ['code', 'required_bytes']);
+            if ($value['schema'] !== 1) {
+                throw new InvalidArgumentException('Invalid analysis failure version.');
+            }
+            if ($error['code'] === 'tasks.analysis_unavailable' && $error['required_bytes'] === null) {
+                throw new ResourceOperationException('tasks.analysis_unavailable', 'Required repository analysis tooling is unavailable.', 422);
+            }
+            if ($error['code'] === 'tasks.analysis_report_too_large' && is_int($error['required_bytes']) && $error['required_bytes'] > self::MaxBytes) {
+                throw new ResourceOperationException('tasks.analysis_report_too_large', 'The complete analysis envelope requires '.$error['required_bytes'].' bytes; the maximum is '.self::MaxBytes.'.', 422);
+            }
+            throw new InvalidArgumentException('Invalid analysis failure code or required size.');
+        } catch (InvalidArgumentException $exception) {
+            throw new ResourceOperationException('tasks.analysis_report_invalid', $exception->getMessage(), 422, $exception);
+        }
+    }
+
     private static function finite(mixed $value): void
     {
         if (is_float($value) && ! is_finite($value)) {

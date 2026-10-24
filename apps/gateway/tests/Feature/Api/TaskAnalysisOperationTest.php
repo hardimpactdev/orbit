@@ -39,6 +39,7 @@ use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskAnalysisRunner;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\TaskAnalysisAdapterFixture;
 
 beforeEach(function (): void {
     enable_operation_queue();
@@ -197,6 +198,91 @@ it('rejects stale whole-worktree identity before dispatch and releases its pre-d
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
 });
 
+/** @return array{Operation, FakeTaskAnalysisRunner, array<string, mixed>} */
+function analysis_adapter_operation(TaskAnalysisAdapterFixture $fixture): array
+{
+    $snapshot = $fixture->capture();
+    $group = analysis_operation_group();
+    $group->taskable->update(['checkout_path' => $fixture->checkout]);
+    $provision = Operation::query()->where('kind', 'tasks.provision')->where('target_id', $group->id)->sole();
+    $state = $provision->state;
+    $state['analysis_base']['base'] = $snapshot['head'];
+    $provision->update(['state' => $state]);
+    $runner = app(TaskAnalysisRunner::class);
+    $runner->head = $snapshot['head'];
+    $runner->tree = $snapshot['tree'];
+    $runner->entrypoint = hash_file('sha256', $fixture->checkout.'/bin/task-analyze');
+    $runner->terminal = false;
+    $checks = new FakeTaskCheckRunner;
+    $checks->head = $snapshot['head'];
+    $checks->tree = $snapshot['tree'];
+    app()->instance(TaskCheckRunner::class, $checks);
+    $input = array_replace(analysis_operation_input($group), ['base' => $snapshot['head'], ...$snapshot]);
+    $response = test()->postJson('/api/v1/task-groups/'.$group->id.'/analyze', $input, ['Idempotency-Key' => 'real-adapter'])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    app(OperationRunner::class)->run($operation->id);
+    // Exercise the real run-owned analysis profile, adapter, scanner and byte transport.
+    // Only remote lifecycle observations are controlled by the fake; this is not systemd terminal proof.
+    $completion = $fixture->capture($runner->input);
+    $runner->completion = $completion;
+    $runner->bytes = base64_decode($completion['report_base64'], true);
+
+    return [$operation, $runner, $completion];
+}
+
+it('retains typed real adapter failures only after terminal proof and never stores a partial artifact', function (string $mode, string $code): void {
+    $fixture = new TaskAnalysisAdapterFixture($mode);
+    try {
+        [$operation, $runner, $completion] = analysis_adapter_operation($fixture);
+        expect($completion['exit_code'])->not->toBe(0)
+            ->and($completion['head_after'])->toBe($runner->head)
+            ->and($completion['tree_after'])->toBe($runner->tree);
+        $this->travel(10)->seconds();
+        app(OperationRunner::class)->read($operation->id);
+        expect($operation->refresh()->error_code)->toBeNull()
+            ->and($operation->state['analysis_terminal'] ?? null)->toBeNull()
+            ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('held');
+        $runner->terminal = true;
+        analysis_operation_finish($operation);
+        expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($code)
+            ->and($operation->result)->toBeNull()->and($operation->state['analysis_terminal']['reading'])->toBeNull()
+            ->and($operation->state['analysis_terminal']['error']['code'])->toBe($code)
+            ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
+        $failure = json_decode($runner->bytes, true, flags: JSON_THROW_ON_ERROR)['error'];
+        expect($completion['report_bytes'])->toBeGreaterThan(0)->toBeLessThanOrEqual(65536)
+            ->and($failure['code'])->toBe($code);
+        expect($operation->state['analysis_terminal']['error']['message'])->toContain((string) ($failure['required_bytes'] ?? 'tooling'));
+        expect($fixture->capture())->toBe(['head' => $runner->head, 'tree' => $runner->tree]);
+        $this->postJson('/api/v1/task-groups/'.$operation->target_id.'/analyze', $operation->input, ['Idempotency-Key' => 'real-adapter'])
+            ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.error_code', $code);
+        expect($runner->starts)->toBe(1);
+    } finally {
+        $fixture->close();
+    }
+})->with([
+    'real scanner overflow' => ['overflow', 'tasks.analysis_report_too_large'],
+    'missing autoload' => ['missing-tooling', 'tasks.analysis_unavailable'],
+    'autoload without required scanner classes' => ['missing-scanner', 'tasks.analysis_unavailable'],
+    'adapter Git unavailable' => ['missing-git', 'tasks.analysis_unavailable'],
+    'adapter PHP proc_open unavailable' => ['missing-proc-open', 'tasks.analysis_unavailable'],
+]);
+
+it('retains the complete normal real adapter report through the same owned profile and Gateway operation', function (): void {
+    $fixture = new TaskAnalysisAdapterFixture('normal');
+    try {
+        [$operation, $runner, $completion] = analysis_adapter_operation($fixture);
+        $runner->terminal = true;
+        analysis_operation_finish($operation);
+        expect($completion['exit_code'])->toBe(0)->and($completion['tree_after'])->toBe($runner->tree)
+            ->and($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->result['artifact']['content'])->toBe($runner->bytes)
+            ->and($operation->result['artifact']['bytes'])->toBe($completion['report_bytes'])
+            ->and($runner->starts)->toBe(1);
+    } finally {
+        $fixture->close();
+    }
+});
+
 it('refuses malformed and oversized complete evidence without retaining a partial artifact', function (string $bytes, string $code): void {
     $group = analysis_operation_group();
     app(TaskAnalysisRunner::class)->bytes = $bytes;
@@ -206,6 +292,20 @@ it('refuses malformed and oversized complete evidence without retaining a partia
         ->and($operation->result)->toBeNull()->and($operation->state['analysis_terminal']['reading'])->toBeNull()
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
 })->with(['malformed' => ['{"schema":', 'tasks.analysis_report_invalid'], 'oversized' => [str_repeat('x', 65537), 'tasks.analysis_report_too_large']]);
+
+it('does not classify zero-exit failure objects or infer adapter failures from unstructured diagnostics', function (string $bytes, int $exit): void {
+    $group = analysis_operation_group();
+    $runner = app(TaskAnalysisRunner::class);
+    $runner->bytes = $bytes;
+    $runner->completion = ['exit_code' => $exit, 'analysis_error' => 'tasks.analysis_unavailable'];
+    $operation = analysis_operation_start($group);
+    analysis_operation_finish($operation);
+    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('tasks.analysis_report_invalid')
+        ->and($operation->result)->toBeNull()->and($operation->state['analysis_terminal']['reading'])->toBeNull();
+})->with([
+    'failure object on exit zero' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}', 0],
+    'no structured bytes' => ['', 1],
+]);
 
 it('keeps uncertain descendants fenced and stops the exact owned run on cancellation recovery', function (): void {
     $group = analysis_operation_group();

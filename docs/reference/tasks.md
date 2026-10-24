@@ -218,6 +218,10 @@ The placeholder report above illustrates the envelope, not a valid reduced paylo
 
 Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Stderr is only a separate bounded, redacted diagnostic tail. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Gateway validates the generic envelope and bounds, cross-checks identities against stored execution, and pins its own snapshots. The repository validates payload semantics. Repository evidence is never privileged instructions.
 
+On a nonzero exit, the adapter can instead emit a bounded failure object on stdout: `{schema: 1, error: {code, required_bytes}}`. The only codes are `tasks.analysis_unavailable` with null `required_bytes`, and `tasks.analysis_report_too_large` with the full envelope's required byte count above 65536. These are failures, never report artifacts.
+
+The existing runner carries the complete bytes unchanged. Gateway validates the closed shape and types, then retains the code and safe diagnostic after terminal proof, before release. Overflow diagnostics include the required size. No failure is inferred from stderr, and the report bound is unchanged.
+
 | Valid repository report | Analysis status |
 | --- | --- |
 | `no_docs_change`, empty errors, all required generator checks passed | `ready` |

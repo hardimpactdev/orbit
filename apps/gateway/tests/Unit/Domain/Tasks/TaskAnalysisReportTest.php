@@ -69,3 +69,35 @@ it('rejects duplicate keys at every depth, trailing data, invalid encoding and n
     'unpaired surrogate' => [fn ($bytes) => str_replace('é', '\\ud800', $bytes)],
     'non-finite payload' => [fn ($bytes) => str_replace('"complete":"é"', '"complete":1e999', $bytes)],
 ]);
+
+it('accepts only closed typed adapter failures with safe diagnostic values', function (string $bytes, string $code, string $message): void {
+    try {
+        TaskAnalysisReport::rejectFailure($bytes);
+        test()->fail('Expected a typed analysis failure.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe($code)->and($exception->status)->toBe(422)
+            ->and($exception->getMessage())->toContain($message)->not->toContain('secret-value');
+    }
+})->with([
+    'overflow with exact required size' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":123456}}', 'tasks.analysis_report_too_large', 'requires 123456 bytes; the maximum is 65536'],
+    'missing tooling without raw diagnostics' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}', 'tasks.analysis_unavailable', 'tooling is unavailable'],
+    'unknown code' => ['{"schema":1,"error":{"code":"secret-value","required_bytes":null}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'false overflow' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":65536}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'negative size' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":-1}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'string size' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":"70000"}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'float size' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large","required_bytes":70000.0}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'missing size' => ['{"schema":1,"error":{"code":"tasks.analysis_report_too_large"}}', 'tasks.analysis_report_invalid', 'fields differ'],
+    'unavailable with size' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":70000}}', 'tasks.analysis_report_invalid', 'Invalid analysis failure code'],
+    'wrong schema' => ['{"schema":2,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}', 'tasks.analysis_report_invalid', 'version'],
+    'extra diagnostic cannot inject raw secrets' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null,"message":"secret-value"}}', 'tasks.analysis_report_invalid', 'fields differ'],
+    'mixed report and failure' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null},"report":{}}', 'tasks.analysis_report_invalid', 'fields differ'],
+    'duplicate nested code' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","code":"tasks.analysis_unavailable","required_bytes":null}}', 'tasks.analysis_report_invalid', 'duplicate'],
+    'trailing bytes' => ['{"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}{}', 'tasks.analysis_report_invalid', 'Invalid complete'],
+]);
+
+it('does not classify an ordinary report as a typed adapter failure', function (): void {
+    $value = analysis_report_fixture();
+    $bytes = json_encode($value, JSON_THROW_ON_ERROR);
+    TaskAnalysisReport::rejectFailure($bytes);
+    expect(TaskAnalysisReport::validate($bytes, $value)['status'])->toBe('ready');
+});

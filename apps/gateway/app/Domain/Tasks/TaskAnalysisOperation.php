@@ -253,6 +253,9 @@ final readonly class TaskAnalysisOperation implements OperationWaitingKind, Oper
         if (! is_string($bytes) || strlen($bytes) !== ($result['report_bytes'] ?? null)) {
             throw new ResourceOperationException('tasks.analysis_report_invalid', 'The complete analysis report is missing.', 422);
         }
+        if ($result['exit_code'] !== 0) {
+            TaskAnalysisReport::rejectFailure($bytes);
+        }
         $execution = TaskAnalysisExecutionData::from($operation->state['execution'] ?? []);
         $envelope = TaskAnalysisReport::validate($bytes, $execution->toArray());
         $changed = $result['head_after'] !== $execution->head || $result['tree_after'] !== $execution->tree;

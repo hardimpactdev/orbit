@@ -295,7 +295,10 @@ final class TaskOrchestrationEntryPoints
             'parse' => 'Validates the closed canonical manifest and digest without effects.',
             'path' => 'Validates an exact relative file path without effects.',
         ],
-        TaskAnalysisReport::class => ['validate' => 'Validates complete original report bytes and execution identity without effects.'],
+        TaskAnalysisReport::class => [
+            'validate' => 'Validates complete original report bytes and execution identity without effects.',
+            'rejectFailure' => 'Validates bounded typed adapter failures without dispatch or lease effects.',
+        ],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         TaskPublishOperation::class => [
             'requireCheck' => 'Requires the passed handoff commit of this group and unchanged HEAD.',
