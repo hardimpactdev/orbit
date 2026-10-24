@@ -275,7 +275,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                     $deadline,
                     // The handoff branch holds only commits for CI, and the workspace can leave its history, as when it
                     // follows an incoming pull request's head. So a handoff replaces it, over the tip just fetched.
-                    replace: $branch === TaskRemoteBranch::handoff($group),
+                    replace: $branch === TaskRemoteBranch::handoff($group) && $group->groupOrchestration() !== TaskOrchestration::External,
                     checkedPublish: $group->groupOrchestration() === TaskOrchestration::External,
                 );
             } catch (RuntimeConvergenceException $exception) {

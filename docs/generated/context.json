@@ -65,6 +65,7 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
@@ -2631,8 +2632,10 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task check",
                 "Tool"
@@ -2959,7 +2962,9 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0229"
+            ]
         },
         {
             "path": "docs/reference/tools.md",
@@ -3024,6 +3029,7 @@
                 "Route",
                 "Subtask",
                 "Task",
+                "Task check",
                 "Task workspace",
                 "Tool"
             ],

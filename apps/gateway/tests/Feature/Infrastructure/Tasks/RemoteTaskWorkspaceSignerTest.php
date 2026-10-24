@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskCheckedTreeChanged;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -82,11 +84,11 @@ function task_signer_admitted(SshExecutor $transport): object
     {
         public function __construct(private RemoteTaskWorkspaceSigner $signer) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
 
-            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message, $allowEmpty));
+            return app(TaskWorkspaceLease::class)->run($group, 'publication', 'signer-test', fn (): ?string => $this->signer->commit($instance, $message, $allowEmpty, $receipt));
         }
     };
 }
@@ -199,3 +201,52 @@ it('keeps a synchronous lease when a swallowed commit failure has an unknown rem
         expect(fn () => $leases->acquire($group, 'check', 'next'))->toThrow(TaskWorkspaceWaiting::class);
     }
 })->with([[1, false], [255, true], [124, true]]);
+
+it('atomically receipts a checked commit and permits an unchanged-tree H2 only for another operation', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-task-receipt-'.bin2hex(random_bytes(6));
+    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
+    $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
+    $tree = task_signer_git($checkout, ['write-tree']);
+    $instance = task_signer_instance($checkout);
+    $signer = task_signer_admitted(new LocalShellSshExecutor);
+    $receipt = new TaskWorkspaceCommitReceipt(1, $head, $tree);
+    try {
+        $h = $signer->commit($instance, 'H', true, $receipt);
+        expect($h)->not->toBe($head);
+        expect($signer->commit($instance, 'H', true, $receipt))->toBe($h);
+        expect(task_signer_git($checkout, ['rev-parse', $receipt->ref()]))->toBe($h);
+        expect(task_signer_git($checkout, ['rev-list', '--count', 'HEAD']))->toBe('2');
+        $h2 = $signer->commit($instance, 'H2', true, new TaskWorkspaceCommitReceipt(2, $h, $tree));
+        expect($h2)->not->toBe($h);
+        expect(task_signer_git($checkout, ['rev-parse', 'HEAD^{tree}']))->toBe($tree);
+        expect(task_signer_git($checkout, ['rev-list', '--count', 'HEAD']))->toBe('3');
+        // An older receipt is still H, never another commit, even after HEAD moved.
+        expect($signer->commit($instance, 'H', true, $receipt))->toBe($h);
+        expect(task_signer_git($checkout, ['rev-parse', 'HEAD']))->toBe($h2);
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+});
+
+it('refuses to receipt or commit a different head or tree than the passed snapshot', function (bool $headChanged): void {
+    $checkout = sys_get_temp_dir().'/orbit-task-receipt-'.bin2hex(random_bytes(6));
+    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
+    $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
+    $receipt = new TaskWorkspaceCommitReceipt(1, $head, task_signer_git($checkout, ['write-tree']));
+    if ($headChanged) {
+        task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'Moved']);
+    } else {
+        file_put_contents($checkout.'/moved', 'not checked');
+    }
+    $before = task_signer_git($checkout, ['rev-parse', 'HEAD']);
+    try {
+        $instance = task_signer_instance($checkout);
+        expect(fn () => task_signer_admitted(new LocalShellSshExecutor)->commit($instance, 'H', true, $receipt))->toThrow(TaskCheckedTreeChanged::class);
+        expect(task_signer_git($checkout, ['rev-parse', 'HEAD']))->toBe($before);
+        expect(task_signer_git($checkout, ['for-each-ref', '--format=%(refname)', 'refs/orbit/check-operations/']))->toBe('');
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+})->with([true, false]);

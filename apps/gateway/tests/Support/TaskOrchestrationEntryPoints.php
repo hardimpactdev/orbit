@@ -66,6 +66,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckedCandidate;
 use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckReading;
@@ -83,6 +84,7 @@ use App\Domain\Tasks\TaskGitHubReviewObservations;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskHandoffCi;
+use App\Domain\Tasks\TaskHandoffCiChecks;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskObservationAvailability;
@@ -133,6 +135,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOperation;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceLeaseRecovery;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
@@ -275,6 +278,17 @@ final class TaskOrchestrationEntryPoints
             'abandon' => 'Removes queued workspace ownership without retries.',
         ],
         StartTaskCheckAction::class => ['execute' => 'Explicit external check start through shared admission.'],
+        TaskCheckedCandidate::class => [
+            'eligible' => 'Reads owning operation, checked snapshot, deliverables and hosted CI for reviewer/publish admission without dispatching work.',
+        ],
+        TaskHandoffCiChecks::class => [
+            'push' => 'Shared handoff publication; native and external callers own orchestration admission and workspace leases, with no lifecycle advancement here.',
+            'read' => 'Observes and classifies hosted CI without sending turns, raising assistance or advancing task lifecycle.',
+            'message' => 'Sanitizes the candidate commit message without executing task work.',
+        ],
+        TaskWorkspaceCommitReceipt::class => [
+            'ref' => 'Names the operation-keyed Git receipt without executing a workspace effect.',
+        ],
         TaskCheckOperation::class => [
             'requireCheck' => 'Validates the workspace, current subtask, and baseline eligibility.',
             'run' => 'Runs the external check operation without advancing task lifecycle.',

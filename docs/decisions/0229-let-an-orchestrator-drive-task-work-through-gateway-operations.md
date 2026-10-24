@@ -130,15 +130,20 @@ To stop a waiting provision, the orchestrator cancels the group with `tasks:canc
 
 #### Check
 
-`tasks.check` takes a `subtask` and a `phase`: `baseline` or `handoff`. It runs that check as Tasks runs it today: detached in the workspace, with deliverable verification. A baseline after an implementer started in the group answers `409 tasks.baseline_done`.
+`tasks.check` keeps its request exactly `{ subtask, phase }`: a positive integer subtask ID and `baseline` or `handoff`. Its optional `Idempotency-Key` uses the [shared start contract](/reference/operations#retry-a-start-with-a-key); Swamp always supplies one. There is no caller-selected CI switch, check name, branch, or SHA. The detached check verifies deliverables in the workspace. A baseline after an implementer started in the group answers `409 tasks.baseline_done`.
 
-- A handoff check takes its own check lease after the implementer's turn has released its lease. It does not start inside the turn's receipt scope.
-- A handoff check that passes commits the checked tree, as an approval does today, and records the commit.
-- The result holds the `outcome`: `passed`, `failed`, or `changed`, as the [Project check](/reference/tasks#project-check) defines them. A failing check is a result, not an operation failure.
-- The result also holds each deliverable's result, the check ID, the commit, HEAD and the tree hash, and the redacted [check output](/reference/tasks#check-output).
-- A `lost` check keeps the group held, as today. Once ADR 0223's terminal rule for a lost check is built, the operation stays `waiting` until Orbit proves the check ended. Until then, and whenever that proof never comes, the orchestrator cancels the group.
+The hosted handoff CI prerequisite extends this existing operation. Its implementation does not open external review-and-merge admission. Create and topology append retain `tasks.orchestration_unsupported`; the wider ADR stays in progress.
 
-The commit moves the point where Orbit commits. Today an approval commits the reviewed tree. For an external group, the handoff check commits it, so a review and a publish both refer to one recorded commit.
+- A handoff check takes its own check lease after the implementer's turn releases its lease. It does not start inside the turn's receipt scope. Baseline and Projects without hosted handoff CI keep their existing path.
+- When `Project::handoffCheckName()` is non-null, the existing commit step creates one fresh commit per new operation, with `allowEmpty: true` even for an unchanged checked tree. Its subtask-title/summary message removes CI-skip directives under the [handoff policy](/reference/tasks#handoff-ci). Sanitizing a proposed message while reusing an inherited commit is not enough. The step records the commit on the check and verifies its tree against the passed tree. Same-operation replay or recovery retains that commit, including after a lost reply; a newly authorized operation with a new key creates a new one, even after cancelled CI on unchanged work.
+- Two persisted steps follow commit: handoff push, then hosted CI read. Before push, operation state pins the required check name and `task-{group}-handoff` branch. Recovery uses that plan, not Project edits made after planning. This policy follows `reviewsAndMerges()` today, not a new input. Push only the recorded commit to that branch, without force or a pull request. Reconcile the existing VM push record and remote tip before repeating an interrupted push; never push the task branch or make a second CI commit.
+- Extract and reuse `TaskHandoffCi`'s push, classification and output helpers without its scheduler callbacks. An external operation never calls the tick-guarded `test()`, posts a reminder or assistance, sends a next turn, or implicitly merges main.
+- The result keeps `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, and redacted `output`. `head` is the pre-commit check snapshot; **`commit` is the candidate HEAD**. Add `ci: null | { branch, commit, check_name, state, fault, pushed_at, observed_at, runs, suites }`. [Check an external group](/reference/tasks#check-an-external-group) owns the field types and bounded, redacted evidence. Baseline/no-policy returns `ci: null`. Persist the same CI evidence in operation state while waiting; add no second check-status schema.
+- Pending, missing or unreadable CI leaves the operation `waiting`, retaining its target with delayed bounded reads and no worker held. No suite after 600 seconds or completed suites missing the named job reports the existing fault classification while waiting. The orchestrator owns the wall-clock budget, cancel and assistance decisions. Infrastructure or configuration evidence never silently becomes a failed-code charge or a fixup.
+- A code/workflow failure ends the operation `succeeded` with `outcome: failed`, check `failed_step: ci`, and redacted evidence. A pass ends with `outcome: passed`; if the workspace moves after the check, the outcome is `changed`. A local pass is not a completed candidate while required CI waits.
+- Cancellation stops a local check or queued push under the existing stop rules. A started push is reconciled before ownership ends; uncertain local work stays fenced. Once only hosted CI waits, cancellation ends observation without cancelling GitHub workflows or erasing pushed-branch/check evidence. A `lost` local check keeps the group held until its end or stop is proven; group cancellation follows the existing unreachable-workspace rule.
+
+Only a completed successful `tasks.check` with `outcome: passed`, a handoff `TaskCheck`, non-null commit, checked tree and satisfied deliverables supplies a candidate. Its identity comes from the operation ID, check ID, owning child, commit and tree, never a caller-supplied SHA. Reviewer admission and publish admission use one shared hosted-CI eligibility predicate: for a Project requiring CI, the owning handoff operation must have succeeded with passed CI on that check and commit. A locally passed `TaskCheck` alone, including one left by cancelled observation, passes neither consumer. This narrow guard does not deliver final-review publication gating; the orchestrator still owns the lifecycle and the wider contract for review and merge remains separate.
 
 #### Turn
 
@@ -146,7 +151,7 @@ The commit moves the point where Orbit commits. Today an approval commits the re
 
 - `thread` is `new` or a thread of the group with the same role, or a reviewer thread for `consult`. Another thread answers `422 tasks.thread_role_mismatch`. A continued thread keeps its model: a `model` with a thread ID answers `422 tasks.model_fixed`.
 - A Claude model answers `422 tasks.model_refused`, as the [Pi driver](/reference/tasks#drivers) refuses it. A model that the VM does not offer fails the step with `model.unavailable`.
-- A `reviewer` turn takes the `check` ID of a passed handoff check. The workspace HEAD must be that check's commit, or the start answers `409 tasks.head_moved`. After the turn, Orbit resets the checkout to that commit and removes untracked files, and the result records any difference it removed. A `consult` turn runs read-only on a reviewer thread. Orbit does not reset after it, because the implementer's uncommitted work is in the tree; the result shows any change.
+- A `reviewer` turn takes the `check` ID of an [eligible checked candidate](#check), including the owning operation's passed CI when the Project requires it. The workspace HEAD must be that check's commit, or the start answers `409 tasks.head_moved`. After the turn, Orbit resets the checkout to that commit and removes untracked files, and the result records any difference it removed. A `consult` turn runs read-only on a reviewer thread. Orbit does not reset after it, because the implementer's uncommitted work is in the tree; the result shows any change.
 - Orbit keeps its fixed instructions: no fetch or push, a read-only reviewer, the turn command, and the workspace's MCP configuration. The task prompt is the orchestrator's. Orbit adds no rubric, reminder, or nudge.
 - The send key of the Pi server message is the `Idempotency-Key`, or `operation-{id}` without one, so a repeat never starts a second turn.
 - The turn's agent session attaches to its subtask, and the board shows it.
@@ -157,11 +162,11 @@ A Pi server restart leaves the turn `working` while Durable resumes it, and the 
 
 #### Publish
 
-`tasks.publish` takes the `check` ID of a passed handoff check and an optional `pull_request` with `title` and `body`. It imports that check's commit from the VM into the Gateway mirror and pushes it to `task-{id}`, as an approval does today. A push is never forced. With `pull_request`, it opens the group's pull request against the default branch, or updates an open one for the branch. Without it, the step only pushes. It runs no brief coverage and requests no reviewers. The VM and the agent never hold a GitHub token.
+`tasks.publish` takes the `check` ID of an [eligible checked candidate](#check) and an optional `pull_request` with `title` and `body`. It shares reviewer admission's hosted-CI predicate; a local pass alone is not enough when CI is required. It imports that check's commit from the VM into the Gateway mirror and pushes it to `task-{id}`, as an approval does today. A push is never forced. With `pull_request`, it opens the group's pull request against the default branch, or updates an open one for the branch. Without it, the step only pushes. It runs no brief coverage and requests no reviewers. The VM and the agent never hold a GitHub token.
 
 | Case | Result |
 | --- | --- |
-| The check did not pass, or belongs to another group | `422 tasks.commit_not_checked` |
+| The check is ineligible under the shared candidate rule, or belongs to another group | `422 tasks.commit_not_checked` |
 | The workspace HEAD is no longer the check's commit | `409 tasks.head_moved` |
 | `task-{id}` exists and is not an ancestor of the commit | The step fails with `tasks.not_fast_forward` |
 | `task-{id}` already points at the commit | Succeeds without a push |
@@ -240,7 +245,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - **Step 1 after ADR 0224.** The first external run would wait for ADR 0223's remaining steps and all of ADR 0224, and much of ADR 0224 reworks the tick engine that step 3 removes.
 - **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would not run unchanged on UpCloud overflow.
 - **A generic command operation.** Feature work needs only the checks and the agent. A generic run would need ADR 0225's agent commands, because check supervision is not a generic command runner.
-- **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes a passed handoff check, so it pushes only the commit that the check recorded. The orchestrator owns the review gate.
+- **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes an eligible checked candidate, so it pushes only the commit that the check recorded, with passed hosted CI from its owning operation when required. The orchestrator owns the review gate.
 - **A long step as one blocking step.** A 15-minute test suite would hold the single `operations` worker and stall every deploy.
 - **Per-step jobs for every operation.** The target would be free between steps. Only a waiting step ends its job, and it keeps the target.
 - **Endpoints named after one orchestrator.** They would tie Orbit to one tool.

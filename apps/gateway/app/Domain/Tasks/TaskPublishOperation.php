@@ -15,13 +15,13 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStepPlan;
-use App\Domain\Operations\OperationStopPending;
 use App\Domain\Operations\OperationWaitingKind;
 use App\Domain\Operations\OperationWaitingStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmPublishState;
+use App\Domain\TaskVms\TaskVmPublishStop;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
@@ -42,6 +42,8 @@ final readonly class TaskPublishOperation implements OperationWaitingKind, Opera
         private TaskPullRequestPublisher $publisher,
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
+        private TaskVmPublishStop $pushStop,
+        private TaskCheckedCandidate $candidates,
     ) {}
 
     public function requireCheck(Task $group, int $checkId): string
@@ -50,7 +52,7 @@ final readonly class TaskPublishOperation implements OperationWaitingKind, Opera
             throw new ResourceOperationException('tasks.no_workspace', 'This task group has no workspace.', 409);
         }
         $check = TaskCheck::query()->whereKey($checkId)->whereHas('task', fn ($tasks) => $tasks->where('parent_id', $group->id))->first();
-        if (! $check instanceof TaskCheck || $check->kind !== TaskCheckKind::Handoff || $check->status !== TaskCheckStatus::Passed || $check->commit_sha === null) {
+        if (! $check instanceof TaskCheck || $check->commit_sha === null || ! $this->candidates->eligible($group, $check)) {
             throw new ResourceOperationException('tasks.commit_not_checked', 'Publish requires a passed handoff check of this group with its recorded commit.', 422);
         }
         if (TaskVm::forGroup($group)?->state === TaskVmState::Ready) {
@@ -198,14 +200,7 @@ final readonly class TaskPublishOperation implements OperationWaitingKind, Opera
             return;
         }
         $vm = $this->publishRecord($operation);
-        $cancelled = TaskVm::query()->whereKey($vm->id)->where('publish_commit', $vm->publish_commit)->where('publish_branch', $vm->publish_branch)
-            ->where('publish_state', TaskVmPublishState::Queued)->whereNull('publish_started_at')->update(['publish_state' => null]);
-        if ($cancelled === 1) {
-            $group = Task::topLevel()->findOrFail($operation->target_id);
-            $this->leases->cancelQueued($group, 'publish-vm:'.$vm->id.':'.$vm->publish_commit);
-        } elseif ($vm->refresh()->publish_state === TaskVmPublishState::Queued) {
-            throw new OperationStopPending;
-        }
+        $this->pushStop->stop(Task::topLevel()->findOrFail($operation->target_id), (string) $vm->publish_commit, (string) $vm->publish_branch);
     }
 
     public function abandon(Operation $operation, OperationOutcome $failure, ?string $failedStep): OperationOutcome

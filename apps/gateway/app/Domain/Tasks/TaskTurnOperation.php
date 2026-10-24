@@ -42,6 +42,7 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
         private TaskReviewDiff $diffs,
         private TaskReviewReset $reset,
         private StopTaskSubtaskAction $interrupt,
+        private TaskCheckedCandidate $candidates,
     ) {}
 
     public function validate(Task $group, TaskTurnData $input): void
@@ -75,7 +76,7 @@ final readonly class TaskTurnOperation implements OperationWaitingKind, Operatio
     private function reviewCheck(Task $task, TaskTurnData $input): TaskCheck
     {
         $check = $task->checks()->find($input->check);
-        if (! $check instanceof TaskCheck || $check->kind !== TaskCheckKind::Handoff || $check->status !== TaskCheckStatus::Passed || $check->commit_sha === null) {
+        if (! $check instanceof TaskCheck || ! $this->candidates->eligible($task->parent()->with('project')->firstOrFail(), $check)) {
             throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires a passed handoff check with a recorded commit for this subtask.', 422);
         }
 
