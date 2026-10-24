@@ -59,7 +59,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
         ?HomebrewMacCommand $mac = null,
         private ?ToolCommandBudget $budget = null,
     ) {
-        $this->mac = $mac ?? new HomebrewMacCommand($commands);
+        $this->mac = $mac ?? new HomebrewMacCommand($commands, $agents);
     }
 
     public function name(): ToolManagerName

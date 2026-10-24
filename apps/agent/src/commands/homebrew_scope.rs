@@ -1,4 +1,5 @@
-//! Linux Homebrew ownership and pinned first-use setup. Package policy stays in the Gateway.
+//! Homebrew ownership and Linux pinned first-use setup. Package policy stays in the Gateway.
+mod macos;
 use super::recipe::{self, store::Account, Files, Host, Invocation, WorkDir};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,7 @@ pub struct Input {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Output {
     prefix: PathBuf,
+    home: PathBuf,
 }
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Done {}
@@ -139,7 +141,10 @@ fn inspect(host: &mut impl Host, files: &Files, account: &Account) -> Result<Out
     directory(&files.path("/home/linuxbrew"), files.uid, files.gid)?;
     let prefix = files.path(PREFIX);
     inspect_at(host, &prefix, account)?;
-    Ok(Output { prefix })
+    Ok(Output {
+        prefix,
+        home: account.home.clone(),
+    })
 }
 fn brew_call(account: &Account, prefix: &Path, args: &[&str]) -> Result<Invocation> {
     let path = format!("PATH={}/bin:/usr/bin:/bin", prefix.display());
@@ -350,19 +355,26 @@ pub struct Inspect;
 impl Command for Inspect {
     const NAME: &'static str = "tools.inspect-homebrew-scope";
     const SUMMARY: &'static str =
-        "Inspect the enrolled account's Linux Homebrew prefix without changing it.";
+        "Inspect the enrolled account's Homebrew prefix without changing it.";
     const MUTATES: bool = false;
     const TIMEOUT: Duration = Duration::from_secs(30);
     type Input = Empty;
     type Output = Output;
     type Error = Error;
     fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
+        match platform {
+            Platform::Linux | Platform::Macos => Some(Privilege::Account),
+        }
     }
     fn run(_: Empty, context: &Context) -> Result<Output> {
         let name = identity::user_name(identity::effective_uid()).ok_or(Error::Invalid {})?;
         let account = Account::named(&name).map_err(|_| Error::Invalid {})?;
-        inspect(&mut recipe::Native(context), &Files::system(), &account)
+        match context.platform {
+            Platform::Linux => inspect(&mut recipe::Native(context), &Files::system(), &account),
+            Platform::Macos => {
+                macos::inspect(&mut recipe::Native(context), &Files::system(), &account)
+            }
+        }
     }
 }
 pub struct Materialize;

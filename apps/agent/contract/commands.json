@@ -222,12 +222,12 @@
     },
     {
       "name": "tools.inspect-homebrew-scope",
-      "summary": "Inspect the enrolled account's Linux Homebrew prefix without changing it.",
+      "summary": "Inspect the enrolled account's Homebrew prefix without changing it.",
       "mutates": false,
       "timeout_seconds": 30,
       "privilege": {
         "linux": "account",
-        "macos": null
+        "macos": "account"
       },
       "errors": [
         "tools.homebrew_account_invalid",

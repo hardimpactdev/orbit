@@ -914,13 +914,13 @@ it('discovers an unsupported cask through the shared inventory without writing t
     ];
     $toolsBefore = Tool::query()->count();
     [$ssh, $agent] = tool_doctor_bind_inventory([
-        tool_doctor_result("/opt/homebrew\n"),
         tool_doctor_result("27.0.1\n"),
         tool_doctor_result(tool_doctor_inventory_json($formulae)),
         tool_doctor_result("jq\nripgrep\n"),
         tool_doctor_result(tool_doctor_inventory_json([], $casks)),
         tool_doctor_result("docker\nfont-hack\n"),
     ], [['name' => 'left-pad', 'version' => '1.0.0']]);
+    $agent->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini']);
     DB::flushQueryLog();
     DB::enableQueryLog();
 
@@ -943,7 +943,7 @@ it('discovers an unsupported cask through the shared inventory without writing t
         expect(strtolower((string) $query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
     }
     tool_doctor_assert_read_only($ssh);
-    expect($agent->commands())->toBe(['tools.vp-inventory']);
+    expect($agent->commands())->toBe(['tools.inspect-homebrew-scope', 'tools.vp-inventory']);
     expect(json_encode($report))->not->toContain($sha)->not->toContain('/opt/homebrew')->not->toContain('/Users/mini');
 });
 

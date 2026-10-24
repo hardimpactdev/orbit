@@ -99,7 +99,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
             homebrew_inventory_cask('unchecked', '1.2.0', sha256: 'no_check'),
         ];
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json($formulae)),
             homebrew_inventory_names(array_map(static fn (array $formula): string => $formula['name'], $formulae)),
@@ -203,7 +202,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
         $brewArguments = homebrew_inventory_mac_arguments();
         expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$brewArguments, 'info', '--json=v2', '--formula', '--installed'],
             [...$brewArguments, 'list', '--formula', '-1'],
@@ -211,19 +209,16 @@ describe(HomebrewInventoryInspector::class, function (): void {
             [...$brewArguments, 'list', '--cask', '-1'],
         ])
             ->and($ssh->commands[0]->maxOutputBytes)->toBeNull()
-            ->and($ssh->commands[2]->maxOutputBytes)->toBe(HomebrewCaskToolManager::MAX_INVENTORY_LENGTH)
-            ->and($ssh->commands[3]->maxOutputBytes)->toBe(131_072)
-            ->and($ssh->commands[4]->maxOutputBytes)->toBe(HomebrewCaskToolManager::MAX_INVENTORY_LENGTH)
-            ->and($ssh->commands[5]->maxOutputBytes)->toBe(131_072)
-            ->and($ssh->commands[0]->input)->toContain('https://github.com/Homebrew/brew')
-            ->and($ssh->commands[0]->input)->not->toContain('apt-get');
+            ->and($ssh->commands[1]->maxOutputBytes)->toBe(HomebrewCaskToolManager::MAX_INVENTORY_LENGTH)
+            ->and($ssh->commands[2]->maxOutputBytes)->toBe(131_072)
+            ->and($ssh->commands[3]->maxOutputBytes)->toBe(HomebrewCaskToolManager::MAX_INVENTORY_LENGTH)
+            ->and($ssh->commands[4]->maxOutputBytes)->toBe(131_072);
         homebrew_inventory_assert_read_only($ssh);
     });
 
     it('uses the intel bottle tag and ignores an older tag when all is absent', function (): void {
         $sha = str_repeat('d', 64);
-        [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/usr/local\n"),
+        [$inspector, $ssh, $agent] = homebrew_inventory_inspector([
             homebrew_inventory_result("15.4\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep', files: [
@@ -244,6 +239,7 @@ describe(HomebrewInventoryInspector::class, function (): void {
             homebrew_inventory_names(['font-hack']),
         ]);
 
+        $agent->answer('tools.inspect-homebrew-scope', ['prefix' => '/usr/local', 'home' => '/Users/mini']);
         $scans = $inspector->inspect(homebrew_inventory_node(saved: false, architecture: 'x86_64'));
 
         expect($scans[0]->scanState)->toBe(ToolInventoryScanState::Complete)
@@ -252,15 +248,14 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($scans[0]->packages[1]->package)->toBe('wget')
             ->and($scans[0]->packages[1]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_BOTTLE)
             ->and($scans[1]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION)
-            ->and($ssh->arguments()[1])->toBe(['/usr/bin/sw_vers', '-productVersion'])
-            ->and($ssh->arguments()[2])->toContain('PATH=/usr/local/bin:/usr/bin:/bin');
+            ->and($ssh->arguments()[0])->toBe(['/usr/bin/sw_vers', '-productVersion'])
+            ->and($ssh->arguments()[1])->toContain('PATH=/usr/local/bin:/usr/bin:/bin');
         homebrew_inventory_assert_read_only($ssh);
     });
 
     it('classifies an expanded home font as supported and a path outside that home as authorization', function (): void {
         $home = '/Users/mini';
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n{$home}\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json()),
             homebrew_inventory_names([]),
@@ -290,32 +285,8 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($casks['font-outside']->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
     });
 
-    it('keeps a scan complete when the account home is not a safe path', function (): void {
-        $home = '/Users/Ada Lovelace';
-        [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n{$home}\n"),
-            homebrew_inventory_result("27.0.1\n"),
-            homebrew_inventory_result(homebrew_inventory_json()),
-            homebrew_inventory_names([]),
-            homebrew_inventory_result(homebrew_inventory_json([], [
-                homebrew_inventory_cask('font-hack', '2.0.0', artifacts: [[
-                    'font' => ['Hack-Regular.ttf'],
-                    'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
-                ]]),
-            ])),
-            homebrew_inventory_names(['font-hack']),
-        ]);
-
-        $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
-
-        expect($scans[0]->scanState)->toBe(ToolInventoryScanState::Complete)
-            ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Complete)
-            ->and($scans[1]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
-    });
-
     it('keeps a readable non-SemVer version supported and stores no normalized version', function (): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n/Users/mini\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('node', version: '25.8.1_1'),
@@ -343,7 +314,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('keeps a non-SemVer formula blocked when its bottle is missing and a cask blocked when it needs authorization', function (): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n/Users/mini\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('node', version: '25.8.1_1', files: []),
@@ -370,7 +340,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('keeps an empty finished read complete and a failed read incomplete', function (CommandResult $formula, ToolInventoryScanState $state): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             $formula,
             homebrew_inventory_result(homebrew_inventory_json([], [
@@ -413,7 +382,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('marks a truncated or deeply nested formula read incomplete without dropping the cask read', function (CommandResult $formula): void {
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             $formula,
             homebrew_inventory_result(homebrew_inventory_json([], [
@@ -436,7 +404,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('marks a failed cask read incomplete without dropping a finished formula read', function (): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep'),
@@ -454,10 +421,11 @@ describe(HomebrewInventoryInspector::class, function (): void {
     });
 
     it('reports an absent, conflicting, or unreadable macOS prefix for both managers', function (
-        CommandResult $prefix,
+        string $code,
         ToolInventoryScanState $state,
     ): void {
-        [$inspector, $ssh] = homebrew_inventory_inspector([$prefix]);
+        [$inspector, $ssh, $agent] = homebrew_inventory_inspector([]);
+        $agent->refuse('tools.inspect-homebrew-scope', $code);
 
         $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
 
@@ -465,17 +433,17 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($scans[1]->scanState)->toBe($state)
             ->and($scans[0]->packages)->toBe([])
             ->and($scans[1]->packages)->toBe([])
-            ->and($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']]);
+            ->and($ssh->arguments())->toBe([])
+            ->and($agent->commands())->toBe(['tools.inspect-homebrew-scope']);
         homebrew_inventory_assert_read_only($ssh);
     })->with([
-        'absent' => [homebrew_inventory_result('', 42), ToolInventoryScanState::Absent],
-        'conflicting' => [homebrew_inventory_result('', 43), ToolInventoryScanState::Conflicting],
-        'unreadable' => [homebrew_inventory_result('', 1), ToolInventoryScanState::Incomplete],
+        'absent' => ['tools.homebrew_scope_absent', ToolInventoryScanState::Absent],
+        'conflicting' => ['tools.homebrew_scope_conflict', ToolInventoryScanState::Conflicting],
+        'unreadable' => ['tools.homebrew_scope_unreadable', ToolInventoryScanState::Incomplete],
     ]);
 
     it('marks both macOS managers incomplete when the bottle tag cannot be read', function (): void {
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result('', 1),
         ]);
 
@@ -484,7 +452,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
         expect($scans[0]->scanState)->toBe(ToolInventoryScanState::Incomplete)
             ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Incomplete)
             ->and($ssh->arguments())->toBe([
-                ['/bin/bash', '-su', '--', 'mini'],
                 ['/usr/bin/sw_vers', '-productVersion'],
             ]);
     });
@@ -592,7 +559,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('does not query tools for an unsaved node', function (): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json()),
             homebrew_inventory_names([]),
@@ -609,7 +575,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
     it('keeps an empty macOS read complete when both name lists are empty', function (): void {
         [$inspector] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json()),
             homebrew_inventory_names([]),
@@ -633,7 +598,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
         ]);
         $bun = homebrew_inventory_tool($node, $brew, 'bun');
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep', version: '14.1.1'),
@@ -678,8 +642,8 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($casks['logi-options+']->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_SOURCE)
             ->and($casks['logi-options+']->registered)->toBeFalse();
         homebrew_inventory_assert_read_only($ssh);
-        expect($ssh->arguments()[3])->toContain('list', '--formula', '-1')
-            ->and($ssh->arguments()[5])->toContain('list', '--cask', '-1');
+        expect($ssh->arguments()[2])->toContain('list', '--formula', '-1')
+            ->and($ssh->arguments()[4])->toContain('list', '--cask', '-1');
     });
 
     it('marks the scan incomplete when the name list fails or disagrees with info', function (array $results): void {
@@ -694,7 +658,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
         homebrew_inventory_assert_read_only($ssh);
     })->with([
         'list failed' => [[
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep'),
@@ -706,7 +669,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
             homebrew_inventory_names(['font-hack']),
         ]],
         'invalid name' => [[
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json()),
             homebrew_inventory_result("Foo\n"),
@@ -716,7 +678,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
             homebrew_inventory_names(['font-hack']),
         ]],
         'duplicate name' => [[
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep'),
@@ -728,7 +689,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
             homebrew_inventory_names(['font-hack']),
         ]],
         'metadata name missing from the list' => [[
-            homebrew_inventory_result("/opt/homebrew\n"),
             homebrew_inventory_result("27.0.1\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep'),
@@ -748,7 +708,7 @@ describe(HomebrewInventoryInspector::class, function (): void {
  */
 function homebrew_inventory_inspector(array $results): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => HomebrewToolManager::LINUX_PREFIX_PATH]);
+    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', fn (array $input, Node $node): array => ['prefix' => $node->platform === 'macos' ? '/opt/homebrew' : HomebrewToolManager::LINUX_PREFIX_PATH, 'home' => '/Users/mini']);
     $ssh = new ToolManagerFakeSshExecutor($results);
     $commands = new RemoteToolCommandRunner(
         ssh: $ssh,
@@ -762,7 +722,8 @@ function homebrew_inventory_inspector(array $results): array
             commands: $commands,
             versions: $versions,
             formulae: new HomebrewToolManager($commands, $versions, $agent),
-            casks: new HomebrewCaskToolManager($commands, $versions),
+            casks: new HomebrewCaskToolManager($commands, $versions, $agent),
+            agents: $agent,
         ),
         $ssh,
         $agent,

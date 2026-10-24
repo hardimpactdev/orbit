@@ -201,7 +201,7 @@ describe('tool inventory scans', function (): void {
             "openssl@3\nripgrep\nwireguard-tools\n",
             scan_inventory_json([], $casks),
             "docker\nfont-hack\n",
-        ), new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
+        ), new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
         $before = Tool::query()->count();
 
         DB::flushQueryLog();
@@ -237,6 +237,7 @@ describe('tool inventory scans', function (): void {
             ->and($codex->refresh()->installed_version)->toBe('0.150.0');
         scan_assert_read_only($ssh);
         expect(app(AgentCommandRunner::class)->calls)->toBe([
+            ['node' => $node->name, 'command' => 'tools.inspect-homebrew-scope', 'input' => []],
             ['node' => $node->name, 'command' => 'tools.vp-inventory', 'input' => []],
         ]);
         $writes = collect(DB::getQueryLog())
@@ -252,12 +253,11 @@ describe('tool inventory scans', function (): void {
         $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
         $formulae = [scan_formula('ripgrep', '14.1.1')];
         $ssh = scan_bind([
-            scan_result("/opt/homebrew\n"),
             scan_result("27.0.1\n"),
             scan_result(scan_inventory_json($formulae)),
             scan_result("ripgrep\n"),
             scan_result('secret cask output', exitCode: 1, stderr: 'secret cask'),
-        ], new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_scope_conflict'));
+        ], new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->refuse('tools.vp-inventory', 'tools.vp_scope_conflict'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -310,7 +310,7 @@ describe('tool inventory scans', function (): void {
             "ripgrep\n",
             scan_inventory_json([], $casks),
             "font-hack\n",
-        ), new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
+        ), new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -362,7 +362,7 @@ function scan_tool(Node $node, ToolManagerName $manager, string $package): Tool
  */
 function scan_bind(array $results, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
-    app()->instance(AgentCommandRunner::class, $agents ?? new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]));
+    app()->instance(AgentCommandRunner::class, $agents ?? new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]));
     $ssh = new ToolManagerFakeSshExecutor($results);
     app()->instance(SshExecutor::class, $ssh);
 
@@ -379,7 +379,6 @@ function scan_mac_results(
     string $caskNames,
 ): array {
     return [
-        scan_result("/opt/homebrew\n"),
         scan_result("27.0.1\n"),
         scan_result($formulaJson),
         scan_result($formulaNames),

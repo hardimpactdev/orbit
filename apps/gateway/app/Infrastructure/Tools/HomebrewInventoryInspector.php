@@ -13,6 +13,7 @@ use App\Domain\Tools\ToolInventoryScan;
 use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\Tool;
@@ -43,9 +44,10 @@ final readonly class HomebrewInventoryInspector
         private SemverVersionNormalizer $versions,
         private HomebrewToolManager $formulae,
         private HomebrewCaskToolManager $casks,
+        AgentCommandRunner $agents,
         ?HomebrewMacCommand $mac = null,
     ) {
-        $this->mac = $mac ?? new HomebrewMacCommand($commands);
+        $this->mac = $mac ?? new HomebrewMacCommand($commands, $agents);
         $this->json = new BoundedJsonObject(HomebrewCaskToolManager::MAX_INVENTORY_LENGTH, self::JSON_DEPTH);
     }
 

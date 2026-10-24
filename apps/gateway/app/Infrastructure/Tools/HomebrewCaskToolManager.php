@@ -16,6 +16,7 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use JsonException;
@@ -95,9 +96,10 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private SemverVersionNormalizer $versions,
+        AgentCommandRunner $agents,
         ?HomebrewMacCommand $mac = null,
     ) {
-        $this->mac = $mac ?? new HomebrewMacCommand($commands);
+        $this->mac = $mac ?? new HomebrewMacCommand($commands, $agents);
     }
 
     public function name(): ToolManagerName

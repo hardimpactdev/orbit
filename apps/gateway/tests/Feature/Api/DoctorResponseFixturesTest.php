@@ -28,7 +28,6 @@ describe('doctor discovery fixtures', function (): void {
         $node = doctor_fixture_node('mini', '10.44.0.3', 'macos', 'mini');
         $sha = str_repeat('ab', 32);
         $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'macos', 'arm64', true), [
-            doctor_fixture_result("/opt/homebrew\n"),
             doctor_fixture_result("27.0.1\n"),
             doctor_fixture_result(doctor_fixture_json([
                 doctor_fixture_formula('jq', '1.7.1', $sha),
@@ -43,7 +42,7 @@ describe('doctor discovery fixtures', function (): void {
                 ]]),
             ])),
             doctor_fixture_result("docker\nfont-hack\n"),
-        ], new FakeAgentCommandRunner()->answer('tools.vp-inventory', [
+        ], new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->answer('tools.vp-inventory', [
             'packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true,
         ]));
         $toolsBefore = Tool::query()->count();

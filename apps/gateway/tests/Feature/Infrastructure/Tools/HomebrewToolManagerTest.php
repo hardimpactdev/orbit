@@ -258,84 +258,41 @@ describe(HomebrewToolManager::class, function (): void {
         'truncated' => [homebrew_result('secret', truncated: true)],
     ]);
 
-    it('accepts the Apple silicon repository layout and the Intel symlink layout', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
-        ]);
-
+    it('verifies the existing macOS prefix through the account command', function (): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
         $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini'));
-        $program = $ssh->commands[0]->input;
-        $repositoryLayout = strpos($program, '[ -d "$prefix/.git" ] && [ ! -L "$prefix/.git" ]');
-        $regularBrew = strpos($program, '[ -L "$brew_link" ] || [ ! -f "$brew_link" ] || [ ! -x "$brew_link" ]');
-        $nestedLayout = strpos($program, '[ -d "$nested/.git" ] && [ ! -L "$nested" ] && [ ! -L "$nested/.git" ]');
-        $symlinkBrew = strpos($program, '[ "$target" != "../Homebrew/bin/brew" ]');
-
-        expect($repositoryLayout)->toBeInt()
-            ->and($regularBrew)->toBeInt()->toBeGreaterThan($repositoryLayout)
-            ->and($nestedLayout)->toBeInt()
-            ->and($symlinkBrew)->toBeInt()->toBeGreaterThan($nestedLayout)
-            ->and($program)->toContain('https://github.com/Homebrew/brew');
+        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tools.inspect-homebrew-scope', 'input' => []]])
+            ->and($ssh->commands)->toBe([]);
     });
 
-    it('verifies an existing macOS Homebrew prefix without installing or repinning it', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
-        ]);
-
-        $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini'));
-
-        $program = $ssh->commands[0]->input;
-        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']])
-            ->and($ssh->connections[0]->user)->toBe('mini')
-            ->and($program)->toContain('/usr/bin/dscacheutil')
-            ->and($program)->toContain("/usr/bin/stat -f '%Su'")
-            ->and($program)->toContain('https://github.com/Homebrew/brew')
-            ->and($program)->not->toContain('getent')
-            ->and($program)->not->toContain('stat -c')
-            ->and($program)->not->toContain('/home/')
-            ->and($program)->not->toContain('systemd')
-            ->and($program)->not->toContain('apt-get')
-            ->and($program)->not->toContain('checkout')
-            ->and($program)->not->toContain('brew update');
-
-        $script = tempnam(sys_get_temp_dir(), 'orbit-mac-homebrew-');
-        file_put_contents($script, $program);
-
-        try {
-            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
-            expect($syntaxStatus)->toBe(0);
-        } finally {
-            unlink($script);
-        }
-    });
-
-    it('reports a missing or conflicting macOS Homebrew prefix without raw output', function (int $exitCode, string $step): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result('secret prefix', exitCode: $exitCode, stderr: 'secret stat'),
-        ]);
+    it('requires both typed scope fields before using Homebrew', function (array $scope): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->answer('tools.inspect-homebrew-scope', $scope);
 
         expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)->toBe($step)
-                    ->and($exception->result?->stdout)->toBeEmpty()
-                    ->and($exception->result?->stderr)->toBeEmpty()
-                    ->and($exception->getMessage())->not->toContain('secret');
-            });
+            ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('manager-probe'));
+        expect($ssh->commands)->toBe([]);
     })->with([
-        'absent' => [42, 'manager-absent'],
-        'conflicting owner or origin' => [43, 'manager-conflict'],
-        'unreadable probe' => [1, 'manager-probe'],
+        'missing home' => [['prefix' => '/opt/homebrew']],
+        'missing prefix' => [['home' => '/Users/mini']],
+        'invalid home type' => [['prefix' => '/opt/homebrew', 'home' => null]],
+        'invalid prefix type' => [['prefix' => false, 'home' => '/Users/mini']],
     ]);
 
-    it('rejects a macOS prefix probe that is not one owned Homebrew location', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/tmp/not-homebrew\n"),
-        ]);
-
-        expect(fn () => $manager->install(homebrew_tool_node('macos', null, 'arm64', 'mini'), 'ripgrep'))
-            ->toThrow(ToolManagerException::class, 'malformed output');
-        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']]);
-    });
+    it('maps macOS scope refusals before reading packages', function (string $code, string $step): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->refuse('tools.inspect-homebrew-scope', $code);
+        expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
+            ->toThrow(function (ToolManagerException $error) use ($step): void {
+                expect($error->step)->toBe($step)->and($error->result)->toBeNull();
+            });
+        expect($agent->commands())->toBe(['tools.inspect-homebrew-scope'])
+            ->and($ssh->commands)->toBe([]);
+    })->with([
+        ['tools.homebrew_scope_absent', 'manager-absent'],
+        ['tools.homebrew_scope_conflict', 'manager-conflict'],
+        ['tools.homebrew_scope_unreadable', 'manager-probe'],
+    ]);
 
     it('selects the macOS bottle for the stored CPU and product version', function (
         string $architecture,
@@ -343,7 +300,6 @@ describe(HomebrewToolManager::class, function (): void {
         string $tag,
     ): void {
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result($productVersion."\n"),
             homebrew_result(homebrew_formula(architecture: $tag)),
         ]);
@@ -354,7 +310,6 @@ describe(HomebrewToolManager::class, function (): void {
             ToolOperation::Install,
         ))->toBe('0.9.0');
         expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...homebrew_mac_arguments(refreshApi: true), 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
         ]);
@@ -366,7 +321,6 @@ describe(HomebrewToolManager::class, function (): void {
     it('uses the all bottle only when the current macOS tag is absent', function (): void {
         $sha = str_repeat('c', 64);
         [$manager] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result("26.0\n"),
             homebrew_result(homebrew_formula([
                 'omit_tag' => true,
@@ -383,7 +337,6 @@ describe(HomebrewToolManager::class, function (): void {
 
     it('does not accept an older macOS bottle or the all bottle when the current tag is present', function (array $changes): void {
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result("27.0\n"),
             homebrew_result(homebrew_formula($changes, 'arm64_golden_gate')),
         ]);
@@ -406,7 +359,6 @@ describe(HomebrewToolManager::class, function (): void {
 
     it('refuses a macOS product version with no bottle symbol before formula metadata', function (): void {
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result("10.16\n"),
         ]);
 
@@ -416,7 +368,6 @@ describe(HomebrewToolManager::class, function (): void {
             ToolOperation::Install,
         ))->toThrow(ToolManagerException::class, 'no compatible Homebrew bottle');
         expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
         ]);
     });
@@ -431,30 +382,23 @@ describe(HomebrewToolManager::class, function (): void {
 
     it('installs, updates, and removes one macOS formula with fixed bottle argv', function (): void {
         $node = homebrew_tool_node('macos', null, 'arm64', 'mini');
-        $prefix = homebrew_result("/Users/mini/homebrew\n");
         $version = homebrew_result("27.0.1\n");
         $metadata = homebrew_result(homebrew_formula(architecture: 'arm64_golden_gate'));
-        [$manager, $ssh] = homebrew_tool_manager([
-            $prefix,
+        [$manager, $ssh, $agent] = homebrew_tool_manager([
             homebrew_result("Homebrew 4.6.15\n"),
-            $prefix,
             $version,
             $metadata,
-            $prefix,
             homebrew_result("ripgrep 0.8.2\n"),
-            $prefix,
             $version,
             $metadata,
-            $prefix,
             homebrew_result(),
-            $prefix,
             $version,
             $metadata,
-            $prefix,
             homebrew_result(),
-            $prefix,
             homebrew_result(),
         ]);
+
+        $agent->answer('tools.inspect-homebrew-scope', ['prefix' => '/Users/mini/homebrew', 'home' => '/Users/mini']);
 
         expect($manager->managerVersion($node))->toBe('Homebrew 4.6.15');
         expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('0.9.0');
@@ -468,24 +412,16 @@ describe(HomebrewToolManager::class, function (): void {
         $refresh = homebrew_mac_arguments('/Users/mini/homebrew', true);
         $formula = ['info', '--json=v2', '--formula', 'homebrew/core/ripgrep'];
         expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-su', '--', 'mini'],
             [...$brew, '--version'],
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$formula],
-            ['/bin/bash', '-su', '--', 'mini'],
             [...$brew, 'list', '--versions', '--formula'],
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$formula],
-            ['/bin/bash', '-su', '--', 'mini'],
             [...$refresh, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            ['/bin/bash', '-su', '--', 'mini'],
             ['/usr/bin/sw_vers', '-productVersion'],
             [...$refresh, ...$formula],
-            ['/bin/bash', '-su', '--', 'mini'],
             [...$refresh, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            ['/bin/bash', '-su', '--', 'mini'],
             [...$brew, 'uninstall', '--formula', 'homebrew/core/ripgrep'],
         ]);
         expect(json_encode($ssh->arguments()))
@@ -498,7 +434,6 @@ describe(HomebrewToolManager::class, function (): void {
 
     it('accepts the installed macOS Homebrew version and rejects a malformed probe', function (string $version, bool $valid): void {
         [$manager] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result($version."\n"),
         ]);
         $read = fn () => $manager->managerVersion(homebrew_tool_node('macos', null, 'arm64', 'mini'));
@@ -558,10 +493,7 @@ describe(HomebrewToolManager::class, function (): void {
     it('refreshes only the macOS bottle API while checking an installed formula', function (): void {
         $sha = str_repeat('b', 64);
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/opt/homebrew\n"),
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result("ripgrep 14.1.1\n"),
-            homebrew_result("/opt/homebrew\n"),
             homebrew_result("27.0.1\n"),
             homebrew_result(adopt_formula_json($sha, true, 'ripgrep', 'arm64_golden_gate')),
         ]);
@@ -569,7 +501,7 @@ describe(HomebrewToolManager::class, function (): void {
         expect($manager->inspectForAdoption(homebrew_tool_node('macos', null, 'arm64', 'mini'), 'ripgrep'))
             ->toEqual(new ToolAdoptionFact('14.1.1', null));
 
-        $info = $ssh->arguments()[5];
+        $info = $ssh->arguments()[2];
         expect($info)->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE=1')
             ->and($info)->toContain('info')
             ->and(json_encode($ssh->arguments()))->not->toContain('install')
@@ -584,7 +516,7 @@ describe(HomebrewToolManager::class, function (): void {
  */
 function homebrew_tool_manager(array $results): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => HomebrewToolManager::LINUX_PREFIX_PATH]);
+    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', fn (array $input, Node $node): array => ['prefix' => $node->platform === 'macos' ? '/opt/homebrew' : HomebrewToolManager::LINUX_PREFIX_PATH, 'home' => '/Users/mini']);
     $ssh = new ToolManagerFakeSshExecutor($results);
 
     return [
@@ -784,11 +716,8 @@ function adopt_formula_json(
 }
 
 it('reads one fresh formula inventory per Node after the normal scope probe', function (string $platform): void {
-    $scope = $platform === 'macos' ? [homebrew_result("/opt/homebrew\n")] : [];
     [$manager, $ssh] = homebrew_tool_manager([
-        ...$scope,
         homebrew_result("jq 1.7.1\ngh 2.88.1\nambiguous 1.0 2.0\n"),
-        ...$scope,
         homebrew_result("jq 1.8.0\n"),
     ]);
     $node = homebrew_tool_node($platform, architecture: 'arm64');
@@ -798,10 +727,9 @@ it('reads one fresh formula inventory per Node after the normal scope probe', fu
         ->and($first->versionFor('absent'))->toBeNull();
     expect(fn () => $first->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
     expect($manager->installedInventory($node)->versionFor('jq'))->toBe('1.8.0');
-    expect($ssh->commands)->toHaveCount($platform === 'macos' ? 4 : 2);
+    expect($ssh->commands)->toHaveCount(2);
     if ($platform === 'macos') {
-        expect($ssh->commands[0]->input)->toContain('Orbit Homebrew account mismatch');
-        expect($ssh->commands[1]->arguments)->toBe([...homebrew_mac_arguments('/opt/homebrew'), 'list', '--versions', '--formula']);
+        expect($ssh->commands[0]->arguments)->toBe([...homebrew_mac_arguments('/opt/homebrew'), 'list', '--versions', '--formula']);
     }
 })->with(['linux', 'macos']);
 
