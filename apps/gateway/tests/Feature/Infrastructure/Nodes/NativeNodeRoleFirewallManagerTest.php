@@ -8,7 +8,6 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\Doctor\UfwManagedRulesCheck;
 use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
@@ -26,7 +25,7 @@ use App\Models\Node;
 use App\Models\Project;
 use Tests\Support\SshCommandAgents;
 
-it('replaces the analytics database port in one converge and clears Doctor drift', function (): void {
+it('replaces the analytics database port in one converge and restores exact ownership', function (): void {
     $storage = analytics_storage_processes();
     $node = $storage['node'];
     app(AnalyticsRoleSettingsRepository::class)->store(
@@ -52,13 +51,13 @@ it('replaces the analytics database port in one converge and clears Doctor drift
     $rules = new NodeFirewallRuleCatalog()->forRole($node, RoleName::Analytics);
     $connection = new SshConnection('10.44.0.200', 'orbit', 22, '/tmp/key', '/tmp/hosts');
     $status = new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']);
-    $doctor = new UfwManagedRulesCheck;
+    $matches = static fn (CommandResult $result): bool => array_all($rules, static fn ($rule): bool => new UfwStatusParser()->ownership($result->stdout, $rule->shape) === UfwRuleOwnership::Exact);
 
-    expect($doctor->matches($ssh->execute($connection, $status), $rules))->toBeFalse();
+    expect($matches($ssh->execute($connection, $status)))->toBeFalse();
 
     $manager->converge($node, RoleName::Analytics, 'orbit');
 
-    expect($doctor->matches($ssh->execute($connection, $status), $rules))->toBeTrue();
+    expect($matches($ssh->execute($connection, $status)))->toBeTrue();
     $mutations = $ssh->mutations();
     expect($mutations)->toHaveCount(2)
         ->and($mutations[0])->toBe(['sudo', 'ufw', '--force', 'delete', '4'])

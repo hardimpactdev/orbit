@@ -59,16 +59,11 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                 || ($runtime['caddy_version'] !== null && ! is_string($runtime['caddy_version']))) {
                 throw new DoctorInspectionException;
             }
-            $status = $this->agents->run($node, 'firewall.status', ['stored' => false], $this->deadline->cap(30.0));
-            if (! is_string($status['status'] ?? null)) {
-                throw new DoctorInspectionException;
-            }
-            $firewall = new CommandResult(0, $status['status'], '', 0, false);
 
             return new RoleInspectionData(
                 $runtime['packages'],
                 $runtime['services'],
-                $this->firewallMatches($firewall, $node, $role),
+                $this->firewallMatches($node, $role),
                 $runtime['caddy_version'],
                 $role->role === RoleName::Gateway ? $this->privateDnsRouteMatches($connection) : null,
                 $role->role === RoleName::CiRunner
@@ -140,12 +135,14 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         };
     }
 
-    private function firewallMatches(CommandResult $result, Node $node, NodeRole $role): bool
+    private function firewallMatches(Node $node, NodeRole $role): bool
     {
         return $this->firewallCheck->matches(
-            $result,
+            $this->agents,
+            $node,
             $this->firewall->forRole($node, $role->role),
             $role->role === RoleName::Router ? array_keys(RouterLanIngressPolicy::Families) : [],
+            $this->deadline->cap(30.0),
         );
     }
 }

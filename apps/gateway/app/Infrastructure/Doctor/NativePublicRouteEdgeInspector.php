@@ -13,7 +13,6 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\Route;
 use Throwable;
@@ -133,12 +132,6 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
             return true;
         }
 
-        $status = $this->agents->run($node, 'firewall.status', ['stored' => false]);
-        if (! is_string($status['status'] ?? null)) {
-            throw new DoctorInspectionException;
-        }
-        $result = new CommandResult(0, $status['status'], '', 0, false);
-
-        return $this->ufw->matches($result, $rules);
+        return $this->ufw->matches($this->agents, $node, $rules);
     }
 }

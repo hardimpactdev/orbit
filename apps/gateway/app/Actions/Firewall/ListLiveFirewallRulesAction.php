@@ -11,7 +11,6 @@ use App\Infrastructure\Firewall\FirewallLiveDriftClassifier;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\UfwRuleShape;
-use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Models\FirewallRule;
 use App\Models\Node;
 
@@ -20,7 +19,6 @@ final readonly class ListLiveFirewallRulesAction
     public function __construct(
         private NativeLiveUfwReader $live,
         private NodeFirewallDesiredRules $desired,
-        private UfwStatusParser $parser = new UfwStatusParser,
         private FirewallLiveDriftClassifier $classifier = new FirewallLiveDriftClassifier,
     ) {}
 
@@ -47,7 +45,7 @@ final readonly class ListLiveFirewallRulesAction
             ...array_map(static fn (DesiredFirewallRule $rule): UfwRuleShape => $rule->shape, $desired),
             ...$operator->map(static fn (FirewallRule $rule): UfwRuleShape => self::operatorShape($rule))->all(),
         ];
-        $classified = $this->classifier->classify($this->parser->liveShapes($status['stdout']), $expected);
+        $classified = $this->classifier->classify($status['shapes'], $expected);
         $desiredByComment = [];
 
         foreach ($desired as $rule) {

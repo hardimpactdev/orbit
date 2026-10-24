@@ -23,18 +23,6 @@ use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeAgentCommandRunner;
 
-const PUBLIC_EDGE_UFW_ACTIVE = <<<'UFW'
-    Status: active
-
-         To                         Action      From
-         --                         ------      ----
-    [ 1] 80/tcp                     ALLOW IN    Anywhere                   # orbit:ingress-http
-    [ 2] 443/tcp                    ALLOW IN    Anywhere                   # orbit:ingress-https
-    [ 3] 80/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:ingress-http
-    [ 4] 443/tcp (v6)               ALLOW IN    Anywhere (v6)              # orbit:ingress-https
-
-    UFW;
-
 describe('an Ingress whose role is converging', function (): void {
     beforeEach(function (): void {
         $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
@@ -246,7 +234,7 @@ function public_edge_agents(): FakeAgentCommandRunner
 {
     return new FakeAgentCommandRunner()
         ->answer('doctor.inspect-public-route', ['ingress' => true, 'forwarding' => true, 'tls' => true])
-        ->answer('firewall.status', ['status' => PUBLIC_EDGE_UFW_ACTIVE, 'stored' => []]);
+        ->answer('firewall.inspect', ['matches' => true]);
 }
 
 /** @return array{Node, Route} */
@@ -275,7 +263,7 @@ it('sends the composed site and forwarding intent for the selected Ingress place
     $result = new NativePublicRouteEdgeInspector($agents)->inspect($ingress, $route);
 
     expect((array) $result)->toBe(['ingressProjectionMatches' => true, 'privateForwardingMatches' => true, 'publicTlsMatches' => true, 'firewallMatches' => true]);
-    expect($agents->commands())->toBe(['doctor.inspect-public-route', 'firewall.status'])
+    expect($agents->commands())->toBe(['doctor.inspect-public-route', 'firewall.inspect'])
         ->and($agents->calls[0]['node'])->toBe($ingress->name)
         ->and($agents->calls[0]['input'])->toMatchArray([
             'domain' => $route->domain,
@@ -298,12 +286,12 @@ it('maps native drift without changing other observations', function (): void {
         ->toBe(['ingressProjectionMatches' => false, 'privateForwardingMatches' => true, 'publicTlsMatches' => false, 'firewallMatches' => true]);
 });
 
-it('reports missing public rules and an inactive firewall', function (string $status): void {
+it('reports native firewall drift', function (): void {
     [$node, $route] = public_edge_fixture();
-    $agents = public_edge_agents()->answer('firewall.status', ['status' => $status, 'stored' => []]);
+    $agents = public_edge_agents()->answer('firewall.inspect', ['matches' => false]);
 
     expect(new NativePublicRouteEdgeInspector($agents)->inspect($node, $route)->firewallMatches)->toBeFalse();
-})->with(["Status: inactive\n", "Status: active\n[ 1] 80/tcp ALLOW IN Anywhere # orbit:ingress-http\n"]);
+});
 
 it('reports failed and malformed observations as unavailable', function (string $failure): void {
     [$node, $route] = public_edge_fixture();
@@ -311,7 +299,7 @@ it('reports failed and malformed observations as unavailable', function (string 
     match ($failure) {
         'refused' => $agents->refuse('doctor.inspect-public-route', 'doctor.public_route_unavailable'),
         'incomplete' => $agents->answer('doctor.inspect-public-route', ['ingress' => true]),
-        'firewall' => $agents->answer('firewall.status', ['status' => 'ERROR: unavailable']),
+        'firewall' => $agents->answer('firewall.inspect', ['matches' => 'private']),
     };
 
     expect(fn () => new NativePublicRouteEdgeInspector($agents)->inspect($node, $route))->toThrow(DoctorInspectionException::class);

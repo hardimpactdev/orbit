@@ -11,6 +11,9 @@ use std::{
     time::Duration,
 };
 
+mod inventory;
+pub mod native;
+
 command_errors! {
     pub enum UfwError {
         Failed { exit_code: i32, stdout: String, stderr: String } => "firewall.ufw_failed", "UFW failed.";

@@ -148,6 +148,8 @@ pub fn all() -> Vec<Entry> {
         entry::<vite::SetViteTraffic>(),
         entry::<firewall::FirewallStatus>(),
         entry::<firewall::ChangeFirewall>(),
+        entry::<firewall::native::Inspect>(),
+        entry::<firewall::native::Rule>(),
         entry::<tls_check::VerifyCertificate>(),
         entry::<caddy::InstallCertificate>(),
         entry::<caddy::Reload>(),

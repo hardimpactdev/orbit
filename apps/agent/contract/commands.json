@@ -939,6 +939,48 @@
       ]
     },
     {
+      "name": "firewall.inspect",
+      "summary": "Inspect typed firewall shapes and exact managed ownership.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed"
+      ]
+    },
+    {
+      "name": "firewall.rule",
+      "summary": "Converge or remove one owned named firewall rule.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed"
+      ]
+    },
+    {
       "name": "routes.verify-certificate",
       "summary": "Check that a workload serves a trusted certificate for a Route's domain.",
       "mutates": false,
