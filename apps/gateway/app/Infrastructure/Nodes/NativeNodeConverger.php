@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -19,9 +19,7 @@ use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
@@ -37,7 +35,6 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         private HostKeyScanner $hostKeys,
         private KnownHostsStore $knownHosts,
         private SshKeyProvider $sshKeys,
-        private SshExecutor $ssh,
         private NodeBootstrapCommandFactory $bootstrapCommand,
         private WireGuardPeerConverger $wireGuard,
         private NodeRoleFirewallManager $firewall,
@@ -157,45 +154,17 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         // Named after the pinned host key now, so a connection through the jump host can be shared.
         $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
 
-        $bootstrapCommand = $identity->bootstrapUser === 'root'
-            ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
-            : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator);
-        // Task VM enrollment trusts the software in its image.
-        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::Bootstrap)) {
-            $bootstrap = $this->ssh->execute($bootstrapConnection, $bootstrapCommand);
-
-            if (! $bootstrap->succeeded()) {
-                throw new NodeProvisioningException(
-                    'base-host',
-                    'node.bootstrap_failed',
-                    "Could not bootstrap node [{$node->name}].",
-                    result: $bootstrap,
-                );
-            }
+        try {
+            $architecture = $this->agents->architectureOver($node, $bootstrapConnection);
+        } catch (AgentRunnerFailure $exception) {
+            throw new NodeProvisioningException('machine-architecture', 'node.architecture_unavailable', "Could not observe the machine architecture of node [{$node->name}].", $exception, $exception->result);
         }
-
-        $managedConnection = $this->connection(
-            $node,
-            $identity->managedUser,
-            $bootstrapConnection->host,
-            $bootstrapConnection->port,
-        );
-        $verification = $this->ssh->execute($managedConnection, new RemoteCommand(['true']));
-
-        if (! $verification->succeeded()) {
-            throw new NodeProvisioningException(
-                'orbit-ssh',
-                'node.orbit_ssh_failed',
-                "Could not connect to node [{$node->name}] as {$identity->managedUser}.",
-                result: $verification,
-            );
-        }
-
-        $observation = $this->observe($node, $managedConnection);
+        $observation = new NodeObservation($architecture);
         $recordObservation?->__invoke($observation);
+        $node->architecture ??= $architecture;
 
         try {
-            $this->agents->installOver($node, $managedConnection);
+            $this->agents->installOver($node, $bootstrapConnection);
         } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
             throw new NodeProvisioningException(
                 'agent-install',
@@ -204,6 +173,31 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 previous: $exception,
                 result: $exception instanceof AgentRunnerFailure ? $exception->result : null,
             );
+        }
+
+        // Task VM enrollment trusts the software in its image.
+        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::Bootstrap)) {
+            try {
+                $this->agents->runOver($node, $bootstrapConnection, 'nodes.bootstrap', $this->bootstrapCommand->input($node, $identity->managedUser, $rolelessOperator));
+            } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+                $message = $exception instanceof AgentCommandRefused && $exception->errorCode === 'nodes.bootstrap_os_unsupported'
+                    ? UbuntuRelease::unsupportedText(
+                        is_string($exception->details['id'] ?? null) ? $exception->details['id'] : null,
+                        is_string($exception->details['codename'] ?? null) ? $exception->details['codename'] : null,
+                    )
+                    : "Could not bootstrap node [{$node->name}].";
+                throw new NodeProvisioningException('base-host', 'node.bootstrap_failed', $message, $exception, $exception instanceof AgentRunnerFailure ? $exception->result : null);
+            }
+        }
+
+        $managedConnection = $this->connection($node, $identity->managedUser, $bootstrapConnection->host, $bootstrapConnection->port);
+        try {
+            $observed = $this->agents->runOver($node, $managedConnection, 'agent.status');
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new NodeProvisioningException('orbit-ssh', 'node.orbit_ssh_failed', "Could not connect to node [{$node->name}] as {$identity->managedUser}.", $exception, $exception instanceof AgentRunnerFailure ? $exception->result : null);
+        }
+        if (($observed['architecture'] ?? null) !== $architecture) {
+            throw new NodeProvisioningException('machine-architecture', 'node.architecture_unavailable', "Could not verify the machine architecture of node [{$node->name}].");
         }
 
         if (! is_string($node->wireguard_ip)) {
@@ -233,23 +227,6 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         return [$hostKey, $wireguardIp, $observation];
     }
 
-    private function observe(Node $node, SshConnection $connection): NodeObservation
-    {
-        $architecture = $this->ssh->execute($connection, new RemoteCommand(['uname', '-m']));
-        $observed = trim($architecture->stdout);
-
-        if (! $architecture->succeeded() || ! MachineArchitecture::isValid($observed)) {
-            throw new NodeProvisioningException(
-                'machine-architecture',
-                'node.architecture_unavailable',
-                "Could not observe the machine architecture of node [{$node->name}].",
-                result: $architecture,
-            );
-        }
-
-        return new NodeObservation($observed);
-    }
-
     private function finishWireGuard(
         Node $node,
         string $managedUser,
@@ -257,33 +234,21 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         string $wireguardIp,
     ): void {
         $this->knownHosts->put($wireguardIp, 22, $hostKey);
-        $privateVerification = $this->ssh->execute(
-            $this->connection($node, $managedUser, $wireguardIp, 22),
-            new RemoteCommand(['true']),
-        );
-        foreach (self::WIREGUARD_SSH_RETRY_DELAYS as $delay) {
-            if (
-                $privateVerification->succeeded()
-                || $privateVerification->exitCode !== 255
-                || ! str_starts_with($privateVerification->stderr, 'ssh: connect to host ')
-            ) {
+        $connection = $this->connection($node, $managedUser, $wireguardIp, 22);
+        $delays = self::WIREGUARD_SSH_RETRY_DELAYS;
+        while (true) {
+            try {
+                $this->agents->runOver($node, $connection, 'agent.status');
                 break;
+            } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+                $result = $exception instanceof AgentRunnerFailure ? $exception->result : null;
+                if ($result?->exitCode === 255 && str_starts_with($result->stderr, 'ssh: connect to host ') && $delays !== []) {
+                    ($this->sleep ?? usleep(...))(array_shift($delays));
+
+                    continue;
+                }
+                throw new NodeProvisioningException('wireguard-ssh', 'vpn.peer_ssh_failed', "Could not reach node [{$node->name}] through WireGuard.", $exception, $result);
             }
-
-            ($this->sleep ?? usleep(...))($delay);
-            $privateVerification = $this->ssh->execute(
-                $this->connection($node, $managedUser, $wireguardIp, 22),
-                new RemoteCommand(['true']),
-            );
-        }
-
-        if (! $privateVerification->succeeded()) {
-            throw new NodeProvisioningException(
-                'wireguard-ssh',
-                'vpn.peer_ssh_failed',
-                "Could not reach node [{$node->name}] through WireGuard.",
-                result: $privateVerification,
-            );
         }
 
         // Membership trust only: a Node provisioned without roles stays

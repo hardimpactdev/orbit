@@ -63,6 +63,12 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         return $this->installPin($node, $this->transports->over($node, $connection), $this->delivery->pin($node), null);
     }
 
+    #[\Override]
+    public function architectureOver(Node $node, SshConnection $connection): string
+    {
+        return $this->transports->architectureOver($node, $connection);
+    }
+
     /**
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>

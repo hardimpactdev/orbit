@@ -19,7 +19,7 @@ impl Guard {
     pub(crate) fn install() -> Result<Self, Failure> {
         INTERRUPTED.store(false, Ordering::Relaxed);
         let mut guard = Self { old: vec![] };
-        for signal in [libc::SIGTERM, libc::SIGINT] {
+        for signal in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
             // SAFETY: both sigactions are initialized, and the handler only writes a lock-free atomic.
             let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
             action.sa_sigaction = interrupted as *const () as usize;

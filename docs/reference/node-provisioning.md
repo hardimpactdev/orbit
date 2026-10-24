@@ -25,8 +25,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | Step | Work |
 | --- | --- |
 | 1 | Check the host key against the fingerprint. |
-| 2 | Connect as the bootstrap user, install the base packages, create the managed user, add its SSH key, and grant passwordless sudo. |
-| 3 | Connect as the managed user, validate and record the machine architecture, and install the pinned agent over the bootstrap SSH connection before any agent command. |
+| 2 | Validate and record the candidate architecture. Install the pinned agent through the bootstrap login, then run `nodes.bootstrap` for base packages and managed SSH access. |
+| 3 | Connect as the managed user and verify the architecture with `agent.status`. |
 | 4 | Publish the Node's WireGuard peer and pin SSH over the tunnel. |
 | 5 | Install the `apt` [Tool Manager](/reference/tools#tool-managers) and converge each requested role. |
 | 6 | Update Router LAN access and private DNS for the Node's Cluster. |
@@ -34,6 +34,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 8 | Store and prepare the [storage settings](/reference/node-settings). |
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
+
+`nodes.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 
 A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
 
@@ -71,7 +73,7 @@ Name a bootstrap user with `--user` when root cannot log in, or when the managed
 
 ### Machine architecture
 
-After it connects as the managed user, the Gateway reads the architecture with `uname -m`, such as `x86_64` or `aarch64`. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before any role converges.
+Before staging the first agent binary, the runner selects its architecture with a fixed `uname -m` probe over the pinned bootstrap connection. After bootstrap, `agent.status` verifies the same architecture as the managed user. A Node without a recorded architecture stores it. The value stays even when a later step fails. An existing Node keeps its recorded value. An explicit `--architecture` for a new Node must equal the observed value. A mismatch fails with `node.architecture_mismatch` (HTTP 409) at step `machine-architecture`, before agent installation or any role convergence.
 
 ### Failure codes
 
@@ -584,7 +586,9 @@ For a Node that does not answer, the API needs `force`, or the Gateway refuses w
 
 After an online removal, the machine keeps its WireGuard tunnel, which can still point DNS at Orbit. When a new bootstrap cannot resolve the package sources for that reason, and the request names at least one role and no `--dns-server` override, it clears only the DNS server and route-all domain that match Orbit's ownership record on the `orbit` link.
 
-The bootstrap then uses the machine's own DNS for the base packages and restores the earlier link values. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. When the machine's own DNS cannot resolve the sources either, the bootstrap fails before it sets up the managed user. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
+The native `nodes.bootstrap` command holds the peer lock while it uses the machine's own DNS for the base packages and restores the earlier link values. It tries APT first, so working proxies and custom transports need no local DNS probe. After a failed update, it inspects source hosts without executing source text. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. It attempts to restore both resolver properties on failure or interruption.
+
+Account setup starts only after packages and DNS restoration succeed. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
 
 Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. When the Node sends private DNS through WireGuard, the configuration has a `PostUp` hook that sends only the [rendered Orbit private domains](/reference/private-dns#resolver-selection) to Orbit DNS. Public names keep the provider or DHCP resolver. Every split-DNS apply first requires a non-`orbit` per-link or global DNS server; absent one, it refuses with exit 47 (`vpn.peer_dns_uplink_missing`). Existing per-Node DNS overrides and global DNS overrides outside the usable WireGuard subnet are cleared by migrations; endpoint overrides stay unchanged. It never has a `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
 

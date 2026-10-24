@@ -17,7 +17,6 @@ use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NativeNodeConverger;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -69,6 +68,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     };
     app()->instance(SshExecutor::class, $ssh);
     $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', [])
+        ->answer('nodes.bootstrap', [])->answer('agent.status', ['architecture' => 'x86_64'])
         ->answer('hibernation.prepare-directories', [])
         ->answer('tools.materialize-composer', [])
         ->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])
@@ -78,6 +78,8 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         ->answer('tools.inspect-vp-scope', ['binary' => '/opt/orbit/vite-plus/bin/vp']);
     app()->instance(AgentCommandRunner::class, $agents);
     $admission = Mockery::mock(AdmissionAgentRunner::class);
+    $admission->shouldReceive('architectureOver')->once()->andReturn('x86_64');
+    $admission->shouldReceive('runOver')->andReturnUsing(fn (Node $target, SshConnection $connection, string $command, array $input = []) => $agents->run($target, $command, $input));
     $admission->shouldReceive('installOver')->once()->with($node, Mockery::type(SshConnection::class))->andReturn(false);
     app()->instance(AdmissionAgentRunner::class, $admission);
     $keys = Mockery::mock(SshKeyProvider::class);
@@ -111,10 +113,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     $storage->shouldReceive('prepare')->once();
     app()->instance(NodeStorageRootPreparer::class, $storage);
 
-    $agentPrograms = ['caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'roles.install-prerequisites', 'vp-manager' => 'tools.materialize-vp', 'composer-manager' => 'tools.materialize-composer'];
-    $programs = [
-        'bootstrap' => app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit'),
-    ];
+    $agentPrograms = ['bootstrap' => 'nodes.bootstrap', 'caddy-package' => 'caddy.install-package', 'app-dev-prerequisites' => 'roles.install-prerequisites', 'vp-manager' => 'tools.materialize-vp', 'composer-manager' => 'tools.materialize-composer'];
 
     app(NativeNodeConverger::class)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
     app(DevelopmentRoleBaseline::class)->converge($node, $assignment);
@@ -122,13 +121,6 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
 
     foreach ($agentPrograms as $name => $command) {
         expect(array_keys($agents->commands(), $command, true), $name)->toHaveCount($taskVm ? 0 : 1);
-        if ($taskVm) {
-            Log::shouldHaveReceived('info')->with('Task VM program skipped: its image ran it.', ['task_vm' => $node->name, 'program' => $name])->once();
-        }
-    }
-    foreach ($programs as $name => $program) {
-        $executed = array_filter($ssh->commands, static fn (RemoteCommand $command): bool => $command->arguments === $program->arguments && $command->input === $program->input);
-        expect($executed, $name)->toHaveCount($taskVm ? 0 : 1);
         if ($taskVm) {
             Log::shouldHaveReceived('info')->with('Task VM program skipped: its image ran it.', ['task_vm' => $node->name, 'program' => $name])->once();
         }

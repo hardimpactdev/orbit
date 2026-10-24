@@ -1908,6 +1908,24 @@
       ]
     },
     {
+      "name": "nodes.bootstrap",
+      "summary": "Install base packages and prepare managed SSH access, restoring retained Orbit DNS.",
+      "mutates": true,
+      "timeout_seconds": 660,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "nodes.bootstrap_invalid",
+        "nodes.bootstrap_os_unsupported",
+        "nodes.bootstrap_unsafe",
+        "nodes.bootstrap_dns_refused",
+        "nodes.bootstrap_failed",
+        "nodes.bootstrap_dns_recovery_failed"
+      ]
+    },
+    {
       "name": "roles.install-prerequisites",
       "summary": "Install a role's packages, and the Composer home and JavaScript runtime of an application role.",
       "mutates": true,

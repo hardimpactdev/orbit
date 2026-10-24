@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\Nodes\MachineArchitecture;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -48,7 +49,23 @@ final readonly class SshAgentTransport implements AgentTransport
     #[\Override]
     public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
     {
+        if ($this->connection($timeout)->user === 'root' && array_slice($arguments, 0, 2) === ['sudo', '-n']) {
+            $arguments = array_slice($arguments, 2);
+        }
+
         return $this->ssh->execute($this->connection($timeout), new RemoteCommand($arguments, protectedInput: $envelope, timeout: $timeout, maxOutputBytes: self::ResultBytes));
+    }
+
+    /** A fixed probe used only to select the first candidate binary during admission. */
+    public function architecture(): string
+    {
+        $result = $this->ssh->execute($this->connection(10.0), new RemoteCommand(['uname', '-m'], timeout: 10.0));
+        $architecture = trim($result->stdout);
+        if (! $result->succeeded() || ! MachineArchitecture::isValid($architecture)) {
+            throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'Could not select the agent architecture.', result: $result);
+        }
+
+        return $architecture;
     }
 
     #[\Override]

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\NodeEnrollmentPrograms;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -103,10 +102,10 @@ describe('orbit:node-programs', function (): void {
 
     it('renders only the roleless operator bootstrap without roles', function (): void {
         $programs = render_node_programs([]);
-        $roleless = app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo(new Node(['platform' => 'linux', 'user' => 'orbit']), 'orbit', rolelessOperator: true);
-
-        expect($programs)->toBe([['name' => 'bootstrap', 'arguments' => $roleless->arguments, 'input' => $roleless->input, 'fingerprint' => $roleless->fingerprint()]])
-            ->and($programs[0]['arguments'])->toContain('preserve')->not->toContain('managed');
+        expect($programs)->toHaveCount(1)
+            ->and($programs[0]['name'])->toBe('bootstrap')
+            ->and($programs[0]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'nodes.bootstrap'])
+            ->and(json_decode($programs[0]['input'], true, flags: JSON_THROW_ON_ERROR)['input']['dns_policy'])->toBe('preserve');
     });
 
     it('prints one program name per line without --json', function (): void {

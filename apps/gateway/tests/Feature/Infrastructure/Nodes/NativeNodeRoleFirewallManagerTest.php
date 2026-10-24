@@ -222,6 +222,11 @@ final class RoleFirewallAgents implements AdmissionAgentRunner
         return $this->runner->run($node, $command, $input, $deadlineSeconds);
     }
 
+    public function architectureOver(Node $node, SshConnection $connection): string
+    {
+        throw new LogicException('No staging during firewall work.');
+    }
+
     public function installOver(Node $node, SshConnection $connection): bool
     {
         throw new LogicException('Unexpected installation.');

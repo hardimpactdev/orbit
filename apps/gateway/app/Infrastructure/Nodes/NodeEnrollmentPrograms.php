@@ -64,7 +64,7 @@ final readonly class NodeEnrollmentPrograms
         $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser, 'architecture' => $architecture]);
         $account = new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser);
 
-        $programs = [EnrollmentProgram::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, self::ManagedUser, rolelessOperator: $roles === [])];
+        $programs = [EnrollmentProgram::Bootstrap => $this->agent->command($node, 'nodes.bootstrap', $this->bootstrap->input($node, self::ManagedUser, rolelessOperator: $roles === []))];
         $rendered = [];
         foreach ($roles as $role) {
             if (in_array($role, $rendered, strict: true)) {

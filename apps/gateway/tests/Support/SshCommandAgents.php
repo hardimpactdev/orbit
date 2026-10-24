@@ -27,6 +27,11 @@ final readonly class SshCommandAgents implements AdmissionAgentRunner, AgentComm
         return $this->runOver($node, new SshConnection((string) $node->wireguard_ip, $node->user, 22, '/tmp/orbit-test-key', '/tmp/orbit-test-known-hosts', commandTimeout: $deadlineSeconds ?? 900.0), $command, $input, $deadlineSeconds);
     }
 
+    public function architectureOver(Node $node, SshConnection $connection): string
+    {
+        throw new LogicException('No candidate staging in this fixture.');
+    }
+
     public function installOver(Node $node, SshConnection $connection): bool
     {
         return false;

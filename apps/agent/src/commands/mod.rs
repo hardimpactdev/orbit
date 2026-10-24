@@ -47,6 +47,7 @@ pub mod metrics_certificate;
 mod metrics_exporter;
 mod metrics_publication;
 mod metrics_runtime;
+mod node_bootstrap;
 pub mod os_release;
 mod package_cache;
 pub mod peer_dns;
@@ -233,6 +234,7 @@ pub fn all() -> Vec<Entry> {
         entry::<cli::InspectCli>(),
         entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),
+        entry::<node_bootstrap::Bootstrap>(),
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectSource>(),
         entry::<instances::RemoveSource>(),

@@ -13,6 +13,9 @@ use App\Models\Node;
  */
 interface AdmissionAgentRunner
 {
+    /** Selects the first candidate with the fixed staging probe, before an agent exists. */
+    public function architectureOver(Node $node, SshConnection $connection): string;
+
     /**
      * Installs the pinned agent over the bootstrap connection. Returns whether the binary changed.
      *

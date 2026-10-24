@@ -400,3 +400,38 @@ it('does not record a failed pin before the system bus is ready', function (): v
     });
     expect($node->fresh()->agent_failed_pin)->toBeNull();
 });
+
+it('uses the bootstrap login authority before sudo has been installed', function (string $user): void {
+    $ssh = Mockery::mock(SshExecutor::class);
+    $prefix = $user === 'root' ? [] : ['sudo', '-n'];
+    $expected = [...$prefix, '/var/tmp/orbit-agent-candidate-test', 'command', 'agent.install'];
+    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($user, $expected): bool {
+        expect($connection->user)->toBe($user)->and($connection->hostIdentity)->toBe('SHA256:pinned');
+        expect($command->arguments)->toBe($expected);
+
+        return true;
+    })->andReturn(agentResult(['ok' => true, 'data' => ['replaced' => true]]));
+    $keys = new FleetTestSsh;
+    $connection = new SshConnection('192.0.2.10', $user, 22, '/key', '/known', hostIdentity: 'SHA256:pinned');
+    $transport = new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys, $connection);
+    $transport->run(['sudo', '-n', '/var/tmp/orbit-agent-candidate-test', 'command', 'agent.install'], ProtectedInput::fromString('{}'), 120);
+})->with(['root', 'orbit']);
+
+it('selects a first candidate with a bounded architecture probe over pinned SSH', function (int $exit, string $output, ?string $expected): void {
+    $ssh = Mockery::mock(SshExecutor::class);
+    $result = new CommandResult($exit, $output, '', 1, false);
+    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command): bool {
+        expect($connection->hostIdentity)->toBe('SHA256:pinned');
+        expect($command->arguments)->toBe(['uname', '-m'])->and($command->timeout)->toBe(10.0);
+
+        return true;
+    })->andReturn($result);
+    $keys = new FleetTestSsh;
+    $connection = new SshConnection('192.0.2.10', 'root', 22, '/key', '/known', hostIdentity: 'SHA256:pinned');
+    $transport = new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys, $connection);
+    if ($expected === null) {
+        expect(fn () => $transport->architecture())->toThrow(fn (AgentRunnerFailure $e) => expect($e->result)->toBe($result));
+    } else {
+        expect($transport->architecture())->toBe($expected);
+    }
+})->with([[0, "x86_64\n", 'x86_64'], [0, "aarch64\n", 'aarch64'], [0, "\n", null], [0, 'x86_64; touch injected', null], [1, "x86_64\n", null]]);

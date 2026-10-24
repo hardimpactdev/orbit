@@ -54,4 +54,9 @@ class AgentTransports
     {
         return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts, $connection);
     }
+
+    public function architectureOver(Node $node, SshConnection $connection): string
+    {
+        return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts, $connection)->architecture();
+    }
 }
