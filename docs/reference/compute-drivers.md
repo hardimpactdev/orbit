@@ -130,7 +130,7 @@ The base also holds the nested Incus packages, so a task VM [runs a topology](#p
 
 Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
 
-After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `base-image-clean.sh` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
+After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
 ### PHP build
 
@@ -367,6 +367,10 @@ The host's image, instance-name, and host-wide resource inventories use the type
 `incus.vm-state` returns one VM's running state, guest bridge address, and original image fingerprint. `incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
 
 Before enrollment, guest commands use the same command runner, delivery manifest, and mismatch handling as managed Nodes. Incus carries them through its host's pinned transport with `incus exec`; UpCloud carries them through the guest's pinned SSH connection. The transport stages only the pinned agent candidate. A builder has no Node row: an installation refusal fails its build, and never records a failed pin on the Incus host or creates a Node record.
+
+`incus.instance-images` reads the original image fingerprint of each instance. `incus.image` prepares single-boot metadata, stops and publishes a builder, promotes an alias, or prunes selected image candidates. Rust preserves metadata maps, removes only NoCloud seed templates, validates publication output, and protects images used by existing instances or unrelated aliases. The Gateway selects obsolete aliases and retained fingerprints from build records. Pruning removes the selected image’s seed volumes before its image. All image changes share the Incus volume lock. The guest command `image.prepare-incus` writes the fixed cloud-init ordering drop-in before metadata changes.
+
+`image.boot` applies the fixed first-boot and APT service masks. Incus images also receive the DHCPv4 network file and IPv4 wait-online drop-in. `image.owner` verifies the fixed `orbit` UID and GID. `image.check` verifies that account and its authorized key, plus the provider’s requested lean-boot or active-firewall checks. These commands replace delivered image-check and boot scripts.
 
 Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, and logs, then verifies that the identities are absent. It preserves package lists and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
 
@@ -1331,7 +1335,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi` | Prepares Ubuntu snapshot indexes, then installs the base profile through the shared recipe installer with exact versions and integrity pins |
 | `recipe-marker`, `verify`, `masks` | Writes the recipe identity and profile marker, verifies the recipe software, and masks the first-boot and apt timers |
 | `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
-| `clean` | Runs `base-image-clean.sh` |
+| `clean` | Runs the native `image.clean` command |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
 | `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
 | `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes older verified templates except those pinned by live VMs awaiting server creation |

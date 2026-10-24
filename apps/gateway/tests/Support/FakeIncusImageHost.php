@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -25,40 +26,6 @@ const IMAGE_OLD = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const IMAGE_USED = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 
 const IMAGE_STOCK = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
-
-/** The metadata of a builder VM from the stock image, as `incus config metadata show` prints it. */
-const IMAGE_METADATA = <<<'YAML'
-    architecture: x86_64
-    creation_date: 1791653894
-    properties:
-      os: ubuntu
-      release: resolute
-    templates:
-      /etc/hostname:
-        when:
-        - create
-        - copy
-        create_only: false
-        template: hostname.tpl
-        properties: {}
-      /var/lib/cloud/seed/nocloud-net/meta-data:
-        when:
-        - create
-        - copy
-        create_only: false
-        template: cloud-init-meta-data.tpl
-        properties: {}
-      /var/lib/cloud/seed/nocloud-net/user-data:
-        when:
-        - create
-        - copy
-        create_only: false
-        template: cloud-init-user-data.tpl
-        properties:
-          default: |
-            #cloud-config
-            {}
-    YAML;
 
 /**
  * An Incus host that answers by argv: `$state` holds its images (fingerprint => aliases) and instances
@@ -118,12 +85,16 @@ final class FakeIncusImageHost implements SshExecutor
     /** A test can interleave another operation after the remote result has been captured. */
     public ?Closure $afterExecute = null;
 
+    public ?Closure $afterImage = null;
+
+    public array $imageCalls = [];
+
     public function bindAgentInventory(): void
     {
         $guests = new FakeGuestAgentCommandRunner;
-        $guests->answer = function (): array {
-            $this->events[] = 'image.clean';
-            if ($this->fail === 'clean') {
+        $guests->answer = function (AgentGuest $guest, string $command): array {
+            $this->events[] = $command;
+            if ($command === 'image.clean' && $this->fail === 'clean') {
                 throw new AgentCommandRefused('image.clean', 'task_vm.image_clean_failed', 'An SSH host key remains.');
             }
 
@@ -137,6 +108,44 @@ final class FakeIncusImageHost implements SshExecutor
             }
 
             return ['images' => $this->images];
+        });
+        $agents->answer('incus.instance-images', fn (): array => ['instances' => $this->instances]);
+        $agents->answer('incus.image', function (array $input): array {
+            $op = $input['operation'];
+            $this->imageCalls[] = $op;
+            $this->events[] = 'incus.image.'.$op['kind'];
+            $operation = match ($op['kind']) {
+                'prepare_metadata' => 'metadata edit', 'publish' => 'publish', 'promote' => 'image alias', 'prune' => 'image delete',
+            };
+            if ($this->fail === $operation) {
+                throw new AgentCommandRefused('incus.image', 'task_vm.host_command_failed', 'Image operation failed.', ['operation' => $operation, 'exit_code' => 1, 'stderr' => "Error: {$operation} failed"]);
+            }
+            $fingerprint = null;
+            if ($op['kind'] === 'publish') {
+                $fingerprint = $this->recipeImages ? hash('sha256', $op['alias']) : IMAGE_NEW;
+                $this->images[$fingerprint] = [$op['alias']];
+                $this->imageProperties[$fingerprint] = (array) $op['properties'];
+            } elseif ($op['kind'] === 'promote') {
+                $fingerprint = $op['fingerprint'];
+                $this->retarget($fingerprint);
+            } elseif ($op['kind'] === 'prune') {
+                foreach ($this->images as $pin => $aliases) {
+                    if (in_array($pin, $this->instances, true)) {
+                        continue;
+                    }
+                    if ($aliases === [] || array_diff($aliases, $op['obsolete_aliases']) !== [] || in_array($pin, $op['protected_fingerprints'], true)) {
+                        $this->images[$pin] = array_values(array_diff($aliases, $op['retired_aliases']));
+
+                        continue;
+                    }
+                    unset($this->images[$pin]);
+                    $seed = 'orbit-topology-seed-'.substr($pin, 0, 12);
+                    $this->volumes = array_values(array_diff($this->volumes, [$seed, $seed.'-new']));
+                }
+            }
+            ($this->afterImage)?->__invoke($op);
+
+            return ['ready' => true, 'fingerprint' => $fingerprint];
         });
         $agents->answer('incus.instances', fn (): array => ['names' => array_keys($this->instances)]);
         $agents->answer('incus.volumes', fn (): array => ['names' => $this->volumes]);
@@ -174,9 +183,6 @@ final class FakeIncusImageHost implements SshExecutor
     {
         $this->commands[] = $command;
         $argv = $command->arguments;
-        if ($argv[3] === 'query') {
-            return $this->answer('query', fn () => $this->retarget(json_decode($argv[7], true)['target']));
-        }
         $operation = array_slice($argv, 5);
         $this->events[] = implode(' ', array_slice($operation, 0, 4));
 
@@ -188,31 +194,8 @@ final class FakeIncusImageHost implements SshExecutor
             ))),
             $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
             $operation[0] === 'exec' => $this->exec($this->guest[] = IncusGuestCall::decode($command)),
-            $operation[0] === 'config' && $operation[2] === 'show' => $this->answer('metadata show', static fn (): string => IMAGE_METADATA),
-            $operation[0] === 'config' && $operation[2] === 'edit' => $this->answer('metadata edit', function () use ($operation, $command): void {
-                $this->metadata[end($operation)] = $command->input;
-            }),
-            $operation[0] === 'stop' => $this->answer('stop'),
-            $operation[0] === 'publish' => $this->answer('publish', function () use ($operation): void {
-                $fingerprint = $this->recipeImages ? hash('sha256', $operation[4]) : IMAGE_NEW;
-                $this->images[$fingerprint] = [$operation[4]];
-                foreach (array_slice($operation, 7) as $property) {
-                    [$key, $value] = explode('=', $property, 2);
-                    $this->imageProperties[$fingerprint][$key] = $value;
-                }
-            }),
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
                 unset($this->instances[end($operation)]);
-            }),
-            $operation[0] === 'image' && $operation[1] === 'alias' && $operation[2] === 'delete' => $this->answer('image alias delete', function () use ($operation): void {
-                foreach ($this->images as &$aliases) {
-                    $aliases = array_values(array_diff($aliases, [end($operation)]));
-                }
-                unset($aliases);
-            }),
-            $operation[0] === 'image' && $operation[1] === 'alias' => $this->answer('image alias', fn () => $this->images[$operation[5]][] = $operation[4]),
-            $operation[0] === 'image' && $operation[1] === 'delete' => $this->answer('image delete', function () use ($operation): void {
-                unset($this->images[end($operation)]);
             }),
             $operation[0] === 'python3' && end($operation) === 'task-vms.build-topology-seed' => $this->answer('topology seed', function () use ($command): string {
                 $input = json_decode(explode("\0", (string) $command->input, 2)[1], true, flags: JSON_THROW_ON_ERROR);
@@ -266,10 +249,6 @@ final class FakeIncusImageHost implements SshExecutor
             'test' => $this->answer('authorized key'),
             'sh' => $this->answer('orbit user'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
-            'bash' => $this->answer(match ($call->script) {
-                'image-check.sh' => 'lean boot',
-                default => 'exec',
-            }),
             default => $this->answer('exec'),
         };
     }

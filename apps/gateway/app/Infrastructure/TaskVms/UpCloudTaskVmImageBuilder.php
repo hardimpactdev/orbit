@@ -24,7 +24,7 @@ use Throwable;
 /**
  * Builds the UpCloud template with the same base-profile installer as Incus ({@see RecipeImagePrograms}). A
  * builder server boots stock Ubuntu without package upgrades, installs and verifies the deployed recipe over SSH,
- * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `base-image-clean.sh`
+ * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `image.clean`
  * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
  * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
@@ -99,7 +99,7 @@ final readonly class UpCloudTaskVmImageBuilder
             [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
             $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
-            $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
+            $this->stage($progress, 'orbit-user', fn () => $this->recipe->owner($shell->agentTarget()));
             foreach (RecipeImagePrograms::Phases as $phase) {
                 $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
             }
@@ -108,7 +108,7 @@ final readonly class UpCloudTaskVmImageBuilder
                 json_encode(['identity' => $machineRecipe->identity, 'profile' => 'base'], JSON_THROW_ON_ERROR),
             )));
             $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
-            $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
+            $this->stage($progress, 'masks', fn () => $this->recipe->boot($shell->agentTarget(), lean: false));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
             $this->stage($progress, 'clean', fn () => $this->clean($shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
@@ -264,7 +264,7 @@ final readonly class UpCloudTaskVmImageBuilder
         $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
         $this->awaitCloudInit($name, $shell);
         $this->programs->verify($shell, $machineRecipe, 'base');
-        $this->checked($name, $shell->asUser(TaskVmImageRecipe::imageCheck(['--ufw']), timeout: 60));
+        $this->recipe->check($shell->agentTarget(), firewall: true);
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }
 

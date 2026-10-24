@@ -70,12 +70,7 @@ final readonly class IncusTaskVmBaseImage
     /** Points `orbit-task-base` at the fingerprint, or creates the alias on the first image. */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
-        $result = $this->incus->aliasTarget($host, $node, $host->imageAlias) === null
-            ? $this->incus->run($host, $node, ['image', 'alias', 'create', '--', $host->imageAlias, $fingerprint])
-            : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.rawurlencode($host->imageAlias), json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
-        if (! $result->succeeded()) {
-            throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
-        }
+        $this->incus->image($host, $node, ['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $fingerprint]);
     }
 
     /** Deletes a VM; an absent VM counts as deleted. */
@@ -94,27 +89,7 @@ final readonly class IncusTaskVmBaseImage
      */
     public function instances(TaskVmHost $host, Node $node): array
     {
-        $subject = "the instances of Node [{$node->name}]";
-        $result = $this->incus->run($host, $node, ['list', '--format', 'json']);
-        if (! $result->succeeded()) {
-            throw IncusHost::failed($subject, 'list', $result);
-        }
-        $list = IncusHost::json($subject, $result);
-        if (! array_is_list($list)) {
-            throw IncusHost::invalid($subject, 'the instance list is not a JSON list');
-        }
-        $instances = [];
-        foreach ($list as $instance) {
-            $name = is_array($instance) ? $instance['name'] ?? null : null;
-            $config = is_array($instance) ? $instance['config'] ?? [] : null;
-            if (! is_string($name) || ! is_array($config)) {
-                throw IncusHost::invalid($subject, 'an instance has no name or config');
-            }
-            $image = $config['volatile.base_image'] ?? null;
-            $instances[$name] = is_string($image) ? $image : null;
-        }
-
-        return $instances;
+        return $this->incus->instanceImages($host, $node);
     }
 
     public function checked(string $name, string $operation, CommandResult $result): CommandResult

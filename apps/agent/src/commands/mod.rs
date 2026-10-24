@@ -26,6 +26,7 @@ pub mod firewall;
 pub mod health;
 pub mod hibernation;
 pub mod horizon_queue;
+mod image_boot;
 mod image_identity;
 mod incus;
 pub mod instances;
@@ -103,6 +104,12 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::vm::ReadVm>(),
         entry::<incus::vm::ChangeVm>(),
         entry::<image_identity::CleanImage>(),
+        entry::<image_boot::PrepareBoot>(),
+        entry::<image_boot::CheckImage>(),
+        entry::<image_boot::CheckOwner>(),
+        entry::<image_identity::PrepareIncus>(),
+        entry::<incus::image::ReadInstanceImages>(),
+        entry::<incus::image::ChangeImage>(),
         entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),

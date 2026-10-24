@@ -16,6 +16,8 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
@@ -27,7 +29,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\TaskVmGuest;
-use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
@@ -817,7 +818,7 @@ describe('image build', function (): void {
             ->and($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe('01000000-0000-4000-8000-000030260200')
             ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
-            ->and($commands)->toContain('sudo -n dpkg --print-architecture', 'sudo -n sh -c '.TaskVmImageRecipe::Masks)
+            ->and($commands)->toContain('sudo -n dpkg --print-architecture')
             // ufw is on before the identity goes, with only the public SSH rule that enrollment opens and closes.
             ->and(array_slice($commands, (int) array_search('sudo -n ufw default deny incoming', $commands, true), 4))->toBe([
                 'sudo -n ufw default deny incoming',
@@ -826,28 +827,23 @@ describe('image build', function (): void {
                 'sudo -n ufw status',
             ])
             ->and($cleanupAfterFirewall)->toBeTrue()
-            ->and(array_column($guestAgents->calls, 'command'))->toBe(['image.clean'])
-            ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
-            ->and(end($commands))->toEndWith(' -- orbit 1000:1000 --ufw')
+            ->and(array_column($guestAgents->calls, 'command'))->toBe(['image.owner', 'image.boot', 'image.clean', 'image.check'])
+            ->and(array_last($guestAgents->calls)['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'systemd-run') && str_ends_with($command, ' packages')))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true))->not->toHaveKey('packages');
     });
 
     it('deletes its servers and its unverified template when the smoke boot fails', function (): void {
-        $this->ssh = new class extends FakeUpCloudSsh
-        {
-            #[Override]
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                if (str_contains(implode(' ', $command->arguments), 'authorized_keys')) {
-                    return new CommandResult(1, '', 'wrong owner', 1, false);
-                }
-
-                return parent::execute($connection, $command);
+        $agents = new FakeGuestAgentCommandRunner;
+        $agents->answer = static function (AgentGuest $guest, string $command): array {
+            if ($command === 'image.check') {
+                throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'wrong owner');
             }
+
+            return ['ready' => true];
         };
-        app()->instance(SshExecutor::class, $this->ssh);
+        app()->instance(GuestAgentCommandRunner::class, $agents);
         $kept = $this->upcloud->template('orbit-task-base-20261002000000');
 
         expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [smoke]')

@@ -125,6 +125,38 @@ final readonly class IncusHost
         }
     }
 
+    /** @return array<string, ?string> */
+    public function instanceImages(TaskVmHost $host, Node $node): array
+    {
+        $result = $this->observe($node, 'incus.instance-images', ['project' => $host->project], "the instances of Node [{$node->name}]");
+        $instances = $result['instances'] ?? null;
+        if (! is_array($instances)) {
+            throw self::invalid('the agent instance inventory', 'instance images are missing or invalid');
+        }
+
+        $validated = [];
+        foreach ($instances as $name => $fingerprint) {
+            if (! is_string($name) || ($fingerprint !== null && ! is_string($fingerprint))) {
+                throw self::invalid('the agent instance inventory', 'an instance image is invalid');
+            }
+            $validated[$name] = $fingerprint;
+        }
+
+        return $validated;
+    }
+
+    /** @param array<string, mixed> $operation */
+    public function image(TaskVmHost $host, Node $node, array $operation): ?string
+    {
+        $result = $this->observe($node, 'incus.image', ['project' => $host->project, 'operation' => $operation], "the images of Node [{$node->name}]");
+        if (($result['ready'] ?? null) !== true || ! array_key_exists('fingerprint', $result)
+            || ($result['fingerprint'] !== null && ! is_string($result['fingerprint']))) {
+            throw self::invalid('the agent image result', 'the change was not confirmed');
+        }
+
+        return $result['fingerprint'];
+    }
+
     /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */
     public function query(TaskVmHost $host, Node $node, string $method, string $path, string $data): CommandResult
     {

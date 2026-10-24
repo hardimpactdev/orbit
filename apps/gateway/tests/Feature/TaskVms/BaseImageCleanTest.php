@@ -40,3 +40,30 @@ it('keeps image cleanup behind the native command boundary', function (): void {
     }
     expect(file_exists(resource_path('task-vms/base-image-clean.sh')))->toBeFalse();
 });
+
+it('sends fixed owner, boot, and smoke intent through the guest runner', function (): void {
+    $guest = AgentGuest::incus(new Node(['name' => 'host', 'architecture' => 'x86_64']), 'orbit-tasks', 'builder');
+    $agents = new FakeGuestAgentCommandRunner;
+    app()->instance(GuestAgentCommandRunner::class, $agents);
+    $recipe = app(TaskVmImageRecipe::class);
+
+    $recipe->owner($guest);
+    $recipe->boot($guest, lean: true);
+    $recipe->check($guest, leanBoot: true);
+    $recipe->check($guest, firewall: true);
+
+    expect($agents->installs)->toBe([$guest]);
+    expect(array_column($agents->calls, 'command'))->toBe(['image.owner', 'image.boot', 'image.check', 'image.check']);
+    expect(array_column($agents->calls, 'input'))->toBe([[], ['lean' => true], ['lean_boot' => true, 'firewall' => false], ['lean_boot' => false, 'firewall' => true]]);
+    expect(file_exists(resource_path('task-vms/image-check.sh')))->toBeFalse();
+    expect(file_exists(resource_path('task-vms/lean-boot.sh')))->toBeFalse();
+});
+
+it('fails the build on a native smoke refusal', function (): void {
+    $guest = AgentGuest::incus(new Node(['architecture' => 'x86_64']), 'orbit-tasks', 'smoke');
+    $agents = new FakeGuestAgentCommandRunner;
+    $agents->answer = static fn (): array => throw new AgentCommandRefused('image.check', 'task_vm.image_check_failed', 'Wrong account.');
+    app()->instance(GuestAgentCommandRunner::class, $agents);
+    expect(fn () => app(TaskVmImageRecipe::class)->check($guest))->toThrow(TaskVmException::class, 'Wrong account.');
+    expect($agents->calls)->toHaveCount(1);
+});

@@ -13,7 +13,7 @@ use App\Domain\TaskVms\TaskVmException;
  */
 final class TaskVmScripts
 {
-    /** The path of `$name`, such as `lean-boot.sh`, in `resources/task-vms`. */
+    /** The path of `$name`, such as `apt-update.sh`, in `resources/task-vms`. */
     public static function path(string $name): string
     {
         return resource_path('task-vms/'.$name);

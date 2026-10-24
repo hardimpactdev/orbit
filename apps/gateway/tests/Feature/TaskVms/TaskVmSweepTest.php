@@ -74,7 +74,7 @@ final class TaskVmSweepIncus implements SshExecutor
     /** Deterministic overlap hooks around the remote operation, without mocking database arbitration. */
     public ?Closure $beforeExecute = null;
 
-    public ?Closure $afterExecute = null;
+    public ?Closure $afterInstances = null;
 
     public function bindAgentInventory(): void
     {
@@ -85,6 +85,15 @@ final class TaskVmSweepIncus implements SshExecutor
             }
 
             return ['names' => $this->instances[$node->wireguard_ip] ?? []];
+        });
+        $agents->answer('incus.instance-images', function (array $input, Node $node): array {
+            if ($this->projectMissing || $this->failList) {
+                throw new AgentCommandRefused('incus.instance-images', 'task_vm.host_command_failed', 'Inventory unavailable.', ['operation' => 'list', 'exit_code' => 1]);
+            }
+            $result = ['instances' => array_fill_keys($this->instances[$node->wireguard_ip] ?? [], null)];
+            ($this->afterInstances)?->__invoke();
+
+            return $result;
         });
         $agents->answer('incus.images', fn (array $input, Node $node): array => ['images' => array_fill_keys($this->images[$node->wireguard_ip] ?? [], [])]);
         $agents->answer('incus.inventory', function (array $input, Node $node): array {
@@ -115,9 +124,6 @@ final class TaskVmSweepIncus implements SshExecutor
             ($this->beforeExecute)($command);
         }
         $result = $this->executeCommand($connection, $command);
-        if ($this->afterExecute !== null) {
-            ($this->afterExecute)($command);
-        }
 
         return $result;
     }
@@ -591,11 +597,8 @@ it('skips a stale sweep candidate when resume wins before deletion claims cleanu
     $overlapped = false;
     if ($path === 'base-image') {
         // The sweep captures an inventory containing the failed build, then resume wins before its claim.
-        $this->incus->afterExecute = function (RemoteCommand $command) use ($build, &$overlapped): void {
-            if (($command->arguments[5] ?? null) !== 'list') {
-                return;
-            }
-            $this->incus->afterExecute = null;
+        $this->incus->afterInstances = function () use ($build, &$overlapped): void {
+            $this->incus->afterInstances = null;
             $overlapped = true;
             app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
         };
@@ -629,12 +632,9 @@ it('rejects a stale resume when a sweep wins after the builder existence result 
     $host = app(TaskVmSettings::class)->host($this->beast->id);
     $overlapped = false;
     $this->travel(25)->hours();
-    $this->incus->afterExecute = function (RemoteCommand $command) use ($host, $name, $path, &$overlapped): void {
-        if (($command->arguments[5] ?? null) !== 'list') {
-            return;
-        }
+    $this->incus->afterInstances = function () use ($host, $name, $path, &$overlapped): void {
         // Resume now holds the old existence result. Sweep claims the row before resume's conditional write.
-        $this->incus->afterExecute = null;
+        $this->incus->afterInstances = null;
         $overlapped = true;
         if ($path === 'base-image') {
             app(IncusTaskVmBaseImage::class)->sweep($host, $this->beast);

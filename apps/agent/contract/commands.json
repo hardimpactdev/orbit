@@ -186,6 +186,97 @@
       ]
     },
     {
+      "name": "image.boot",
+      "summary": "Prepare fixed service masks and optional Incus DHCPv4 boot settings.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.check",
+      "summary": "Check image account, authorized key, and provider boot requirements.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.owner",
+      "summary": "Check the image builder's pinned orbit UID and GID.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_check_failed"
+      ]
+    },
+    {
+      "name": "image.prepare-incus",
+      "summary": "Order the image's cloud-init after the Incus agent before publication.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_identity_present",
+        "task_vm.image_clean_failed"
+      ]
+    },
+    {
+      "name": "incus.instance-images",
+      "summary": "Read the original image fingerprint of every instance in a project.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.image",
+      "summary": "Prepare builder metadata, publish, promote, or prune selected images.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.vm_missing",
+        "task_vm.image_mismatch",
+        "task_vm.base_image_missing",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
       "name": "firewall.task-vm-hub",
       "summary": "Converge the reserved task VM range filter on the WireGuard hub.",
       "mutates": true,

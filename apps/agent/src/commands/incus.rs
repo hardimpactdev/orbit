@@ -204,13 +204,22 @@ fn images(host: &mut impl Host, input: &Project) -> Result<Images, Error> {
             .get("aliases")
             .and_then(Value::as_array)
             .ok_or_else(|| invalid_output("image list", "an image has no aliases"))?;
-        images.insert(
-            fingerprint.into(),
-            aliases
-                .iter()
-                .filter_map(|a| a.get("name").and_then(Value::as_str).map(str::to_owned))
-                .collect(),
-        );
+        let aliases = aliases
+            .iter()
+            .map(|a| {
+                a.get("name")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| invalid_output("image list", "an image alias has no name"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if images.insert(fingerprint.into(), aliases).is_some() {
+            return Err(invalid_output(
+                "image list",
+                "an image fingerprint appears more than once",
+            ));
+        }
     }
     Ok(Images { images })
 }
@@ -415,4 +424,5 @@ mod tests;
 pub(super) mod setup;
 pub(super) mod volumes;
 
+pub mod image;
 pub mod vm;

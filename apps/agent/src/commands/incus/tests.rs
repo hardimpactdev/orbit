@@ -3,9 +3,9 @@ use serde_json::json;
 use std::collections::VecDeque;
 
 #[derive(Default)]
-struct Fake {
-    answers: VecDeque<Output>,
-    calls: Vec<Vec<String>>,
+pub(super) struct Fake {
+    pub(super) answers: VecDeque<Output>,
+    pub(super) calls: Vec<Vec<String>>,
 }
 impl Host for Fake {
     fn run(&mut self, args: &[&str], _input: Option<&str>) -> Output {
@@ -13,7 +13,7 @@ impl Host for Fake {
         self.answers.pop_front().expect("unexpected Incus call")
     }
 }
-fn output(text: &str) -> Output {
+pub(super) fn output(text: &str) -> Output {
     Output {
         code: 0,
         stdout: text.into(),
@@ -21,7 +21,7 @@ fn output(text: &str) -> Output {
         truncated: false,
     }
 }
-fn fake(texts: &[&str]) -> Fake {
+pub(super) fn fake(texts: &[&str]) -> Fake {
     Fake {
         answers: texts.iter().map(|s| output(s)).collect(),
         ..Fake::default()
@@ -36,7 +36,8 @@ fn project_input() -> Project {
 #[test]
 fn image_inventory_reads_exact_fingerprints_and_aliases_and_repeats() {
     let pin = "a".repeat(64);
-    let text = json!([{"fingerprint":pin,"aliases":[{"name":"base"},{"name":"dated"},{"description":"unused"}]}]).to_string();
+    let text =
+        json!([{"fingerprint":pin,"aliases":[{"name":"base"},{"name":"dated"}]}]).to_string();
     let mut host = fake(&[&text, &text]);
     let first = images(&mut host, &project_input()).unwrap();
     assert_eq!(
@@ -90,6 +91,7 @@ fn malformed_or_incomplete_images_refuse_instead_of_returning_an_empty_inventory
         "[{\"fingerprint\":\"short\",\"aliases\":[]}]",
         "[{\"fingerprint\":42,\"aliases\":[]}]",
         &json!([{"fingerprint":"a".repeat(64),"aliases":{}}]).to_string(),
+        &json!([{"fingerprint":"a".repeat(64),"aliases":[{"description":"no name"}]}]).to_string(),
     ] {
         assert!(matches!(
             images(&mut fake(&[text]), &project_input()),

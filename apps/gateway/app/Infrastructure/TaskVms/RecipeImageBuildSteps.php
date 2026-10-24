@@ -34,6 +34,7 @@ final readonly class RecipeImageBuildSteps
         private IncusHost $incus,
         private IncusTaskVmBaseImage $image,
         private IncusTaskVmImageBuilder $builder,
+        private TaskVmImageRecipe $imageRecipe,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private RecipeImagePrograms $programs,
@@ -109,7 +110,7 @@ final readonly class RecipeImageBuildSteps
                     break;
                 case 'prepare':
                     $this->builder->singleBoot($host, $node, $shell);
-                    $this->image->checked($name, 'lean boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks]));
+                    $this->imageRecipe->boot($shell->agentTarget(), lean: true);
                     break;
                 case 'clean':
                     $this->image->checked($name, 'recipe marker', $shell->asRoot(['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
@@ -131,7 +132,7 @@ final readonly class RecipeImageBuildSteps
                     $this->ensureSmokeVm($host, $node, $smoke, $build->images[$profile]['fingerprint']);
                     $smokeShell = $this->image->shell($host, $node, $smoke)->forRecipePhase($profile, $phase);
                     $this->image->checkSmoke($smokeShell);
-                    $this->image->checked($smoke, 'image check', $smokeShell->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot'])));
+                    $this->imageRecipe->check($smokeShell->agentTarget(), leanBoot: true);
                     $this->programs->verify($smokeShell, $recipe, $profile);
                     break;
                 case 'topology-seed':

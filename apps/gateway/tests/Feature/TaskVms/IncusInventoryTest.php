@@ -68,14 +68,14 @@ it('rejects malformed typed inventory results', function (string $method, string
 ]);
 
 it('keeps migrated Incus inventory methods behind the typed agent boundary', function (): void {
-    foreach (['Infrastructure/TaskVms/TaskVmVolumes.php', 'Infrastructure/TaskVms/TaskVmHubFilter.php', 'Console/Commands/PrepareTaskVmHubCommand.php'] as $path) {
+    foreach (['Infrastructure/TaskVms/IncusTaskVmImageBuilder.php', 'Infrastructure/TaskVms/RecipeImagePruning.php', 'Infrastructure/TaskVms/TaskVmVolumes.php', 'Infrastructure/TaskVms/TaskVmHubFilter.php', 'Console/Commands/PrepareTaskVmHubCommand.php'] as $path) {
         $source = file_get_contents(app_path($path));
         foreach (['SshExecutor', 'RemoteCommand', 'TaskVmScripts', 'Process::', 'shell_exec', 'bash'] as $forbidden) {
             expect($source)->not->toContain($forbidden);
         }
     }
     $lines = file(app_path('Infrastructure/TaskVms/IncusHost.php'));
-    foreach (['images', 'instanceNames', 'inventory', 'observe', 'volumeNames', 'volume', 'prepare', 'vmState', 'changeVm'] as $name) {
+    foreach (['images', 'instanceNames', 'inventory', 'observe', 'volumeNames', 'volume', 'prepare', 'vmState', 'changeVm', 'instanceImages', 'image'] as $name) {
         $method = new ReflectionMethod(IncusHost::class, $name);
         $source = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
         foreach (['RemoteCommand', '$this->execute(', '$this->run(', 'json_decode', 'parse_url', 'parse_str'] as $forbidden) {

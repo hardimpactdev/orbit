@@ -1162,8 +1162,8 @@ it('collects an owned cold candidate after publish succeeded but its reply was l
     $old = $builds->reconcile()[0];
     runRecipeImageBuild($old);
     $interrupted = $builds->reconcile(rebuild: true)[0];
-    $incus->afterExecute = static function ($command): void {
-        if (($command->arguments[5] ?? null) === 'publish') {
+    $incus->afterImage = static function (array $operation): void {
+        if ($operation['kind'] === 'publish') {
             throw new RuntimeException('The publish reply was lost.');
         }
     };
@@ -1173,7 +1173,7 @@ it('collects an owned cold candidate after publish succeeded but its reply was l
     $orphan = hash('sha256', $alias);
     expect($interrupted->refresh()->images)->toBe([])
         ->and($incus->images)->toHaveKey($orphan);
-    $incus->afterExecute = null;
+    $incus->afterImage = null;
     $replacement = $builds->reconcile(rebuild: true)[0];
     runRecipeImageBuild($replacement);
 
@@ -1189,14 +1189,14 @@ it('keeps the last admissible image when intervening cold rebuilds fail after pr
     $old = $builds->reconcile()[0];
     runRecipeImageBuild($old);
     $middle = $builds->reconcile(rebuild: true)[0];
-    $incus->afterExecute = static function ($command) use ($incus): void {
-        if (($command->arguments[3] ?? null) === 'query') {
-            $incus->fail = 'image list';
+    $incus->afterImage = static function (array $operation) use ($incus): void {
+        if ($operation['kind'] === 'promote') {
+            $incus->fail = 'image delete';
         }
     };
     expect(fn () => runRecipeImageBuild($middle))->toThrow(TaskVmException::class);
     expect($middle->refresh()->promoted_at)->not->toBeNull();
-    $incus->afterExecute = null;
+    $incus->afterImage = null;
     $incus->fail = null;
     $candidate = $builds->reconcile(rebuild: true)[0];
     runRecipeImageBuild($candidate);

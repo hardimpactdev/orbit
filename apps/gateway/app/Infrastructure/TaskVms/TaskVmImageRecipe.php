@@ -15,26 +15,38 @@ final readonly class TaskVmImageRecipe
     /** Names the builder and smoke VMs or servers, followed by the build's time stamp. */
     public const string WorkPrefix = 'tvm-image-';
 
-    private const string OwnerCheck = 'test "$(id -u -- "$2"):$(id -g -- "$2")" = "$1"';
-
-    /** Keep first-boot services and apt timers from interfering with tasks. */
-    public const string Masks = 'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service';
-
     public function __construct(private GuestAgentCommandRunner $agents) {}
 
-    /** @return list<string> */
-    public static function ownerCheck(): array
+    public function owner(AgentGuest $guest): void
     {
-        return ['sh', '-euc', self::OwnerCheck, 'sh', TaskVmCloudInit::Owner, TaskVmCloudInit::User];
+        $this->agents->installGuest($guest);
+        $this->request($guest, 'image.owner');
     }
 
-    /**
-     * @param  list<string>  $checks
-     * @return list<string>
-     */
-    public static function imageCheck(array $checks): array
+    public function boot(AgentGuest $guest, bool $lean): void
     {
-        return TaskVmScripts::bash('image-check.sh', [TaskVmCloudInit::User, TaskVmCloudInit::Owner, ...$checks]);
+        $this->request($guest, 'image.boot', ['lean' => $lean]);
+    }
+
+    public function check(AgentGuest $guest, bool $leanBoot = false, bool $firewall = false): void
+    {
+        $this->request($guest, 'image.check', ['lean_boot' => $leanBoot, 'firewall' => $firewall]);
+    }
+
+    /** @param array<string, mixed> $input */
+    private function request(AgentGuest $guest, string $command, array $input = []): void
+    {
+        try {
+            $result = $this->agents->runGuest($guest, $command, $input);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode !== 'task_vm.image_check_failed') {
+                throw $error;
+            }
+            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] failed on [{$guest->name}]: ".$error->getMessage(), 502);
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] did not confirm on [{$guest->name}].", 502);
+        }
     }
 
     /** Installs the pin explicitly, then removes only an unenrolled builder's identity. */
