@@ -634,7 +634,7 @@ function orb181_removal_projector(
 
     return [
         new NativeInstanceRemovalProjector(
-            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
+            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner),
             new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
             new RemoteAppDevPhpFpmManager(
                 $sites,

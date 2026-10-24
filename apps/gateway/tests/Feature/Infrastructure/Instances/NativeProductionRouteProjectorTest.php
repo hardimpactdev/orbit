@@ -45,6 +45,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -428,7 +429,7 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
         $productionPhp,
         new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
         $firewall,
-        new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
+        new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner),
         new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
         new Orb199ProductionReleaseLayout,
         $executor,

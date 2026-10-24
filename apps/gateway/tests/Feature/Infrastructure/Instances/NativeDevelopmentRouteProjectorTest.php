@@ -1745,7 +1745,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
     $home = sys_get_temp_dir().'/orbit-route-projector-'.Str::uuid();
     config()->set('orbit.home', $home);
     $certificates = new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts);
-    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor);
+    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner);
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
     $sourceAccess = new NativeDevelopmentSourceAccess($agents, $accounts);
     $projector = new NativeDevelopmentRouteProjector(

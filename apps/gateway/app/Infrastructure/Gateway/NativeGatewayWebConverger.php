@@ -44,7 +44,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
     public function converge(Node $node, string $hostname, string $wireguardIp): void
     {
         $this->checkout->validate();
-        $this->caddyInstaller->install();
+        $this->caddyInstaller->install($node);
         $this->checkout->converge();
         $this->webDirectory->converge($node);
         $certificate = $this->certificates->issue($hostname, $wireguardIp);

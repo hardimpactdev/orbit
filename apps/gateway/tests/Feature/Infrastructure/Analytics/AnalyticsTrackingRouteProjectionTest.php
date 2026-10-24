@@ -302,7 +302,7 @@ describe('analytics tracking Route removal', function (): void {
         $projector = new NativeRouteRemovalProjector(
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
             new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
-            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
+            new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner),
             new RemoteAppDevRouteFirewallManager(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true])),
         );
 

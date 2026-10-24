@@ -212,6 +212,9 @@ function caddy_failure_bind(?string $fail = null): void
     $fail === 'source'
         ? $agents->refuse('caddy.install-package', 'caddy.package_failed', ['reason' => 'forced failure'])
         : $agents->answer('caddy.install-package', ['changed' => false]);
+    $fail === 'ordering'
+        ? $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart'])
+        : $agents->answer('caddy.order-after-vpn', ['changed' => false]);
     app()->instance(SshExecutor::class, $ssh);
     app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $agents));
 }

@@ -79,6 +79,7 @@ mod vp_materialize;
 pub mod vp_project;
 mod vp_scope;
 mod vp_store;
+mod vpn_ordering;
 pub mod websocket_runtime;
 pub mod wireguard;
 
@@ -173,6 +174,8 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
         entry::<gateway_web::PrepareDirectory>(),
+        entry::<vpn_ordering::OrderCaddy>(),
+        entry::<vpn_ordering::RemoveDnsOrdering>(),
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),

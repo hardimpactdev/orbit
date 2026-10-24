@@ -32,6 +32,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\PhpBuild;
@@ -905,7 +906,7 @@ it('requests a Node Caddy build for Route sites and publishes DNS through its pr
     $builds->onBuild = function (Node $node) use (&$rendered): void {
         $rendered[] = app(NodeCaddyfileRenderer::class)->render($node)->content;
     };
-    $caddy = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $caddy = new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner);
     $processes = new AppDevFakeProcessRunner;
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
@@ -1186,10 +1187,14 @@ it('waits within the command deadline and continues after the current owner rele
 it('enters projection ownership before app-dev Caddy and DNS host publication', function (): void {
     [$node] = app_dev_runtime_models();
     $owner = new AppDevProjectionOwnerSpy;
-    $ssh = new AppDevFakeSshExecutor;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', static function () use ($owner): array {
+        expect($owner->active)->toBeTrue();
+
+        return ['changed' => false];
+    });
     $caddy = new RemoteAppDevCaddyManager(
         builds: new FakeNodeCaddyBuilds,
-        ssh: app_dev_ssh($ssh),
+        agents: $agents,
         projection: $owner,
     );
     $processes = new class($owner) implements ProcessRunner
@@ -1219,40 +1224,21 @@ it('enters projection ownership before app-dev Caddy and DNS host publication', 
         ->toBe(3)
         ->and($owner->active)
         ->toBeFalse()
-        ->and($ssh->commands)
+        ->and($agents->calls)
         ->toHaveCount(1);
 });
 
-it('orders the app-dev Caddy unit after the managed WireGuard interface before it builds the Node', function (): void {
+it('orders the app-dev Caddy unit through the agent before it builds the Node', function (): void {
     [$node] = app_dev_runtime_models();
-    $ssh = new AppDevFakeSshExecutor;
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]);
     $builds = new FakeNodeCaddyBuilds;
-    $builds->onBuild = fn () => expect($ssh->commands)->toHaveCount(1);
-    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $builds->onBuild = fn () => expect($agents->commands())->toBe(['caddy.order-after-vpn']);
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, agents: $agents);
 
     $manager->converge($node);
 
-    expect($builds->built)->toBe([$node->name])
-        ->and($ssh->commands)
-        ->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'])
-        ->and($ssh->commands[0]->input)
-        ->toContain(
-            'managed=$directory/orbit-vpn.conf',
-            'install -d -o root -g root -m 0755 -- "$directory"',
-            'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
-            'if systemctl is-active --quiet "$service"; then',
-            'install -o root -g root -m 0644 -- "$staged" "$candidate"',
-            'mv -fT -- "$candidate" "$managed"',
-            'systemctl daemon-reload',
-            'systemctl restart "$service"',
-        )
-        ->and(base64_decode(
-            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[0]->input ?? ''),
-            strict: true,
-        ))
-        ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+    expect($builds->built)->toBe([$node->name]);
+    expect($agents->calls)->toBe([['node' => $node->name, 'command' => 'caddy.order-after-vpn', 'input' => []]]);
 });
 
 it('keeps its error code and records the build stage and Caddy message when the build fails', function (): void {
@@ -1260,7 +1246,7 @@ it('keeps its error code and records the build stage and Caddy message when the 
     $ssh = new AppDevFakeSshExecutor;
     $builds = new FakeNodeCaddyBuilds;
     $builds->failNext($node->name, 'validate', 'Error: adapting config using caddyfile: unrecognized directive');
-    $manager = new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh));
+    $manager = new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner);
 
     expect(fn () => $manager->build($node))
         ->toThrow(function (RuntimeConvergenceException $exception) use ($node): void {
@@ -1472,7 +1458,7 @@ it('builds the Node on role removal, so the build keeps every Route site stored 
     $ssh = new AppDevFakeSshExecutor;
     $builds = new FakeNodeCaddyBuilds;
 
-    new RemoteAppDevCaddyManager(builds: $builds, ssh: app_dev_ssh($ssh))->remove($node);
+    new RemoteAppDevCaddyManager(builds: $builds, agents: new FakeAgentCommandRunner)->remove($node);
 
     expect($builds->built)->toBe([$node->name])
         ->and($ssh->commands)->toBe([]);
@@ -1539,3 +1525,21 @@ function app_dev_recipe_with_php_86(): MachineRecipe
     return new MachineRecipe($recipe->identity, $recipe->snapshot, $recipe->architectures, $tools, $recipe->profiles, $recipe->canonicalJson, $recipe->json,
         [...$recipe->php, '8.6' => new PhpBuild('8.6', '8.6.0', $packages, $recipe->php('8.5')->extensions)], $recipe->ciPhp);
 }
+
+it('orders production Caddy before building and stops on an ordering refusal', function (): void {
+    [$node] = app_dev_runtime_models();
+    $agents = new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]);
+    $builds = new FakeNodeCaddyBuilds;
+    $builds->onBuild = fn () => expect($agents->commands())->toBe(['caddy.order-after-vpn']);
+    $manager = new RemoteAppProdCaddyManager($builds, $agents);
+
+    $manager->converge($node);
+
+    expect($builds->built)->toBe([$node->name]);
+    $agents->refuse('caddy.order-after-vpn', 'services.ordering_failed', ['stage' => 'restart']);
+    expect(fn () => $manager->converge($node))->toThrow(function (RuntimeConvergenceException $exception): void {
+        expect($exception->errorCode)->toBe('app-prod.caddy_config_failed')
+            ->and($exception->step)->toBe('app-prod-caddy-service-ordering');
+    });
+    expect($builds->built)->toBe([$node->name]);
+});

@@ -42,11 +42,11 @@ it('activates the gateway WireGuard address through a validated atomic server co
             orbitHome: $orbitHome,
         );
         expect($agents->installs)->toBe(['gateway']);
-        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'firewall.gateway-vpn']);
-        expect($arguments[2])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
-            ->and($processes->calls[2]->input)
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering', 'firewall.gateway-vpn']);
+        expect($arguments[1])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[1]->input)
             ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
-            ->and($arguments)->toHaveCount(3);
+            ->and($arguments)->toHaveCount(2);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -119,20 +119,8 @@ function assert_gateway_publication_commands(
     array $arguments,
     string $orbitHome,
 ): void {
-    expect($arguments[0])
-        ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system']);
+    expect($arguments[0])->toBe(['sudo', 'bash', '-seu']);
     expect($processes->calls[0]->input)
-        ->toContain(
-            'managed=$directory/orbit-vpn.conf',
-            'if [ ! -e "$managed" ]; then',
-            'rm -f -- "$managed"',
-            'rmdir --ignore-fail-on-non-empty -- "$directory"',
-            'systemctl daemon-reload',
-            'systemctl restart "$service"',
-        )
-        ->not->toContain('After=wg-quick@orbit.service');
-    expect($arguments[1])->toBe(['sudo', 'bash', '-seu']);
-    expect($processes->calls[1]->input)
         ->toContain(
             'exec 9>/run/lock/orbit-dnsmasq.lock',
             'flock -w 30 9',
@@ -144,7 +132,7 @@ function assert_gateway_publication_commands(
             'systemctl restart dnsmasq || true',
         );
     expect(base64_decode(
-        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[1]->input ?? ''),
+        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[0]->input ?? ''),
         strict: true,
     ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
@@ -157,9 +145,9 @@ it('sends Gateway VPN and recovery intent after installation, including private 
     });
     try {
         $converger->converge($node, gateway_bootstrap_data(privateInterface: 'eth3'));
-        $input = $agents->calls[1]['input'];
+        $input = $agents->calls[2]['input'];
         expect($agents->installs)->toBe(['gateway']);
-        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'firewall.gateway-vpn']);
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering', 'firewall.gateway-vpn']);
         expect($input['recovery'])->toBe([
             'comment' => 'orbit:public-ssh-recovery', 'action' => 'allow', 'direction' => 'in',
             'source' => 'any', 'destination' => 'any', 'port' => '2222', 'protocol' => 'tcp',
@@ -277,7 +265,7 @@ it('reports the bounded dnsmasq journal tail when the managed restart fails', fu
 
     try {
         $converger->converge($node, gateway_bootstrap_data());
-        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[1]->input ?? '');
+        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[0]->input ?? '');
 
         expect($exitCode)
             ->toBe(1)
@@ -356,7 +344,7 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
                 'rm -f -- "$managed"',
                 'systemctl restart dnsmasq || true',
             )
-            ->and($agents->commands())->toBe(['wireguard.bootstrap-hub'])
+            ->and($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering'])
             ->and($agents->installs)->toBe(['gateway']);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -457,7 +445,7 @@ function gateway_vpn_converger(
         orbitHome: $orbitHome,
     );
 
-    $agents = new FakeAgentCommandRunner()->answer('firewall.gateway-vpn', ['matches' => true]);
+    $agents = new FakeAgentCommandRunner()->answer('firewall.gateway-vpn', ['matches' => true])->answer('wireguard.remove-dns-ordering', ['changed' => false]);
     $agents->answer('wireguard.bootstrap-hub', static function () use ($orbitHome, $processes): array {
         $lock = fopen($orbitHome.'/locks/wireguard-server.lock', 'c+');
         $acquired = flock($lock, LOCK_EX | LOCK_NB);
@@ -555,4 +543,22 @@ it('keeps Gateway firewall execution behind its typed agent command', function (
     $source = file_get_contents(app_path('Infrastructure/WireGuard/NativeGatewayVpnConverger.php'));
     expect($source)->toContain("'firewall.gateway-vpn'")
         ->not->toContain('UfwStatusParser', 'UfwStoredRule', "'ufw'", 'ruleNumbers', 'wg-quick', 'sysctl', 'backupLiveConfig');
+});
+
+it('stops before DNS publication when native ordering removal refuses', function (): void {
+    [$converger, $processes, $orbitHome, $agents] = gateway_vpn_converger();
+    $agents->refuse('wireguard.remove-dns-ordering', 'services.ordering_unsafe', ['path' => '/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf']);
+    $node = new Node(['name' => 'gateway', 'wireguard_ip' => '10.44.0.1']);
+
+    try {
+        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)->toBe('vpn-dns-ordering')
+                    ->and($exception->errorCode)->toBe('vpn.dns_config_failed');
+            });
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'wireguard.remove-dns-ordering']);
+        expect($processes->calls)->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
 });

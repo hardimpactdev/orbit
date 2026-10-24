@@ -1060,6 +1060,36 @@
       ]
     },
     {
+      "name": "caddy.order-after-vpn",
+      "summary": "Order Caddy after the managed WireGuard interface.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "services.ordering_unsafe",
+        "services.ordering_failed",
+        "services.ordering_recovery_failed"
+      ]
+    },
+    {
+      "name": "wireguard.remove-dns-ordering",
+      "summary": "Remove the dnsmasq dependency that creates a WireGuard boot cycle.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "services.ordering_unsafe",
+        "services.ordering_failed",
+        "services.ordering_recovery_failed"
+      ]
+    },
+    {
       "name": "php.inspect-build",
       "summary": "Inspect the pinned PHP build, extra packages, and extension ownership.",
       "mutates": false,

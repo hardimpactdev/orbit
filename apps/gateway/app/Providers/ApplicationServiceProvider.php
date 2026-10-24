@@ -875,7 +875,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 ),
                 fpm: app(NativeGatewayFpmConverger::class),
                 builds: app(NodeCaddyBuilds::class),
-                caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
+                caddyInstaller: new NativeGatewayCaddyInstaller(app(AgentCommandRunner::class)),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 hibernator: app(RuntimeHibernatorConverger::class),

@@ -556,12 +556,12 @@ describe('production wiring', function (): void {
     });
 
     it('installs and runs the Documents hook before the reload in Gateway web convergence', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', ['changed' => false]);
+        $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', ['changed' => false])->answer('caddy.install-package', ['changed' => false])->answer('caddy.order-after-vpn', ['changed' => false]);
         app()->instance(AgentCommandRunner::class, $agents);
         app(GatewayWebConverger::class)->converge($this->gateway, 'gateway.orbit', '10.44.0.2');
 
         expect(start_hook_steps($this->runner->calls))->toBe(['install project-document-cleanup-start', 'run project-document-cleanup-start', 'reload']);
-        expect($agents->commands())->toBe(['gateway.prepare-web-directory']);
+        expect($agents->commands())->toBe(['caddy.install-package', 'caddy.order-after-vpn', 'gateway.prepare-web-directory']);
     });
 
     it('installs and runs the Documents hook before the reload in the release handoff', function (): void {

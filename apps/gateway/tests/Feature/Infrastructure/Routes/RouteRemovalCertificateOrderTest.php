@@ -469,7 +469,7 @@ function certificate_order_bind_projectors(
     });
     app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($liveFirewall, app(AgentContract::class)));
     $sites = new DevelopmentSiteRepository;
-    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
+    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]));
     $certificates = new RemoteAppDevCertificateManager(
         new SshCommandAgents($nodes),
         new class implements LeafCertificateSigner

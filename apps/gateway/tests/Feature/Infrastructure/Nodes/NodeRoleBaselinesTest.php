@@ -296,6 +296,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
     $vpn = new VpnRoleBaseline(
         baseline_prerequisites($events),
@@ -308,7 +309,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
 
     expect($events)->toBe([
         'ssh:caddy-source',
-        'ssh:caddy',
+        'agent:caddy-ordering',
         'firewall:converge:gateway',
         'dns:none',
         'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
@@ -322,7 +323,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
 
     expect($events)->toBe([
         'ssh:caddy-source',
-        'ssh:caddy',
+        'agent:caddy-ordering',
         'firewall:converge:gateway',
         'dns:none',
         'ssh:'.GatewayPrivateDnsResolver::DROP_IN,
@@ -425,7 +426,7 @@ it('verifies VPN PHP before Gateway publication regardless of requested role ord
         expect($provision()->status)->toBe(LifecycleStatus::Active);
         expect($events)->toBe([
             'ssh:vpn', 'php:verify', 'firewall:converge:vpn',
-            'ssh:caddy-source', 'ssh:caddy', 'firewall:converge:gateway', 'dns:none',
+            'ssh:caddy-source', 'agent:caddy-ordering', 'firewall:converge:gateway', 'dns:none',
         ]);
     }
 })->with([false, true]);
@@ -625,6 +626,7 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
         baseline_dns($events),
         baseline_prerequisites($events, static fn (string $step): bool => $step === 'caddy-source'),
         new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
 
     expect(fn () => $gateway->converge($node, $assignment))
@@ -653,6 +655,7 @@ it('routes the private domain on the Gateway machine to the configured VPN DNS a
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
 
     $gateway->converge($node, $assignment);
@@ -679,6 +682,7 @@ it('keeps the gateway role converged, logs the underlying code, and reports a fo
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
         followUps: $followUps,
     );
 
@@ -710,6 +714,7 @@ it('reports no follow-up when the resolver step succeeds', function (): void {
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: false), baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
         followUps: $followUps,
     );
 
@@ -727,6 +732,7 @@ it('fails gateway role removal before any other step when the resolver drop-in c
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
 
     expect(static fn () => $gateway->remove($node, $assignment, purgeData: false))
@@ -751,6 +757,7 @@ it('skips the resolver step while no Node holds an active vpn role', function ()
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
 
     $gateway->converge($node, $assignment);
@@ -773,6 +780,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             baseline_dns($events),
             baseline_prerequisites($events),
             new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+            baseline_ordering_agents($events),
         ),
         new VpnRoleBaseline(
             baseline_prerequisites($events),
@@ -1007,7 +1015,7 @@ it('checks the remote operating system before every role convergence', function 
     expect($events)->toBe([
         'guard:gateway',
         'ssh:caddy-source',
-        'ssh:caddy',
+        'agent:caddy-ordering',
         'firewall:converge:gateway',
         'dns:none',
         'guard:vpn',
@@ -1206,6 +1214,7 @@ function gateway_role_baseline(array &$events): GatewayRoleBaseline
         baseline_dns($events),
         baseline_prerequisites($events),
         new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        baseline_ordering_agents($events),
     );
 }
 
@@ -1666,3 +1675,13 @@ it('withdraws every runtime only on the unreachable websocket role Node', functi
         ->and($runtimes[2]->refresh()->required)->toBeTrue()
         ->and($events)->toBe([]);
 });
+
+/** @param list<string> $events */
+function baseline_ordering_agents(array &$events): FakeAgentCommandRunner
+{
+    return new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', static function () use (&$events): array {
+        $events[] = 'agent:caddy-ordering';
+
+        return ['changed' => false];
+    });
+}

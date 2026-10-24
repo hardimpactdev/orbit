@@ -26,7 +26,7 @@ use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -567,10 +567,10 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-        $installIndex = $commands->search(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()]);
-        $orderingIndex = $commands->search(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
+        $installIndex = $commands->search(['orbit-agent', 'command', 'caddy.install-package']);
+        $orderingIndex = $commands->search(['orbit-agent', 'command', 'caddy.order-after-vpn']);
         $firstCaddyGroupIndex = $commands->search(
-            static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true),
+            static fn (array $arguments): bool => $arguments === ['orbit-agent', 'command', 'gateway.prepare-web-directory'],
         );
         $reloadIndex = $calls->search(
             static fn (ProcessInvocation $invocation): bool => $invocation->arguments === ['sudo', 'bash', '-seu']
@@ -592,27 +592,13 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
             ->and($validationIndex)
             ->toBeGreaterThan($reloadIndex)
             ->and($commands->filter(
-                static fn (array $arguments): bool => $arguments === ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
+                static fn (array $arguments): bool => $arguments === ['orbit-agent', 'command', 'caddy.order-after-vpn'],
             ))
             ->toHaveCount(1)
-            ->and($install->input)
-            ->toBe(CaddyPackageProgram::render())
-            ->toContain('-o Dpkg::Options::=--force-confold')
-            ->and($install->timeout)
-            ->toBe(900.0)
-            ->and($orderingInput)
-            ->toContain(
-                'managed=$directory/orbit-vpn.conf',
-                'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
-                'if systemctl is-active --quiet "$service"; then',
-                'mv -fT -- "$candidate" "$managed"',
-                'systemctl daemon-reload',
-            )
-            ->and(base64_decode(
-                Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $orderingInput),
-                strict: true,
-            ))
-            ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+            ->and(json_decode($install->input, true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(AgentCaddyPackage::input())
+            ->and(json_decode($orderingInput, true, flags: JSON_THROW_ON_ERROR))
+            ->toBe([]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -633,9 +619,9 @@ it('repeats the same idempotent install step on every web convergence', function
             ->and($first[0]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
+            ->toBe(['orbit-agent', 'command', 'caddy.install-package'])
             ->and($first[2]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
+            ->toBe(['orbit-agent', 'command', 'caddy.order-after-vpn']);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -659,8 +645,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
 
         expect($commands->last())
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
-            ->and($commands->contains(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']))
+            ->toBe(['orbit-agent', 'command', 'caddy.install-package'])
+            ->and($commands->contains(['orbit-agent', 'command', 'caddy.order-after-vpn']))
             ->toBeFalse()
             ->and($commands->contains(
                 static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true)
@@ -950,7 +936,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
 
             if (
                 $this->failure === 'caddy-install'
-                && $arguments === ['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()]
+                && $arguments === ['orbit-agent', 'command', 'caddy.install-package']
             ) {
                 return new CommandResult(1, '', 'The caddy candidate does not come from the pinned Orbit source.', 2, false);
             }
@@ -1029,7 +1015,22 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                     return ['result' => 'published'];
                 })),
             ),
-            caddyInstaller: new NativeGatewayCaddyInstaller($processes),
+            caddyInstaller: new NativeGatewayCaddyInstaller(
+                new FakeAgentCommandRunner()
+                    ->answer('caddy.install-package', static function (array $input) use ($processes): array {
+                        $result = $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'caddy.install-package'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+                        if (! $result->succeeded()) {
+                            throw new AgentCommandRefused('caddy.install-package', 'caddy.package_failed', $result->stderr, ['reason' => $result->stderr]);
+                        }
+
+                        return ['changed' => false];
+                    })
+                    ->answer('caddy.order-after-vpn', static function (array $input) use ($processes): array {
+                        $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'caddy.order-after-vpn'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+
+                        return ['changed' => false];
+                    }),
+            ),
             orbitHome: $orbitHome,
             checkoutPath: $checkoutPath,
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,

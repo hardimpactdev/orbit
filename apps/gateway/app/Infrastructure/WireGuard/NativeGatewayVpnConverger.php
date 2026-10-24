@@ -19,7 +19,6 @@ use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\Log;
@@ -33,7 +32,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private ProcessRunner $processes,
         private AgentCommandRunner $agents,
         private string $orbitHome,
-        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
     ) {}
@@ -43,7 +41,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         $this->withServerProjectionLock(function () use ($gateway, $data): void {
             $this->convergeWireGuard($gateway, $data);
         });
-        $this->convergeDns($data);
+        $this->convergeDns($gateway, $data);
         $this->convergeFirewall($gateway, $data);
         $this->convergeResolver($data);
     }
@@ -155,9 +153,9 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         }
     }
 
-    private function convergeDns(BootstrapGatewayData $data): void
+    private function convergeDns(Node $gateway, BootstrapGatewayData $data): void
     {
-        $this->removeDnsOrderingDropIn();
+        $this->removeDnsOrderingDropIn($gateway);
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
             'listen-address='.VpnDnsmasqBackendListen::Address,
@@ -235,14 +233,15 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
      * drop-in closed an ordering cycle that systemd broke by deleting a job.
      * The managed fragment binds `orbit` dynamically instead.
      */
-    private function removeDnsOrderingDropIn(): void
+    private function removeDnsOrderingDropIn(Node $gateway): void
     {
-        $this->run(
-            step: 'vpn-dns-ordering',
-            errorCode: 'vpn.dns_config_failed',
-            arguments: $this->vpnOrdering->removalArguments('dnsmasq'),
-            input: $this->vpnOrdering->removalScript(),
-        );
+        try {
+            $this->agents->run($gateway, 'wireguard.remove-dns-ordering');
+        } catch (AgentCommandRefused $refused) {
+            throw new NodeProvisioningException('vpn-dns-ordering', 'vpn.dns_config_failed', $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException('vpn-dns-ordering', 'vpn.dns_config_failed', 'The dnsmasq ordering command could not run.', previous: $failure, result: $failure->result);
+        }
     }
 
     private function installAgent(Node $gateway): void

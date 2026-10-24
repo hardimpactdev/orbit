@@ -5,58 +5,33 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Models\Node;
 
-/**
- * Installs the pinned Caddy project package on the Gateway machine, the same way role
- * convergence installs it on every other Node, and orders the Caddy unit after the managed
- * WireGuard interface. It runs after the read-only checkout path check and before any Gateway web
- * step that needs the `caddy` group or validates a Caddyfile. ADR 0100 and ADR 0141 record the
- * decision.
- *
- * Both steps are idempotent. The package program upgrades an archive Caddy in place and keeps the
- * Orbit-owned Caddyfile; the ordering drop-in changes nothing when it already matches.
- */
+/** Installs Caddy and its WireGuard ordering before the Gateway prepares web directories and hooks. */
 final readonly class NativeGatewayCaddyInstaller
 {
-    public function __construct(
-        private ProcessRunner $processes,
-        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
-    ) {}
+    public function __construct(private AgentCommandRunner $agents) {}
 
-    public function install(): void
+    public function install(Node $node): void
     {
-        $command = CaddyPackageProgram::command();
-        $this->run(
-            step: 'gateway-caddy-install',
-            errorCode: 'gateway.caddy_install_failed',
-            invocation: new ProcessInvocation(
-                arguments: $command->arguments,
-                timeout: 900.0,
-                input: $command->input,
-            ),
-        );
-        $this->run(
-            step: 'gateway-caddy-ordering',
-            errorCode: 'gateway.caddy_start_failed',
-            invocation: $this->vpnOrdering->invocation('caddy'),
-        );
+        $this->run($node, 'caddy.install-package', AgentCaddyPackage::input(), 'gateway-caddy-install', 'gateway.caddy_install_failed');
+        $this->run($node, 'caddy.order-after-vpn', [], 'gateway-caddy-ordering', 'gateway.caddy_start_failed');
     }
 
-    private function run(string $step, string $errorCode, ProcessInvocation $invocation): void
+    /** @param array<string, mixed> $input */
+    private function run(Node $node, string $command, array $input, string $step, string $errorCode): void
     {
-        $result = $this->processes->run($invocation);
-
-        if (! $result->succeeded()) {
-            throw new NodeProvisioningException(
-                step: $step,
-                errorCode: $errorCode,
-                message: "Gateway Caddy installation step [{$step}] failed.",
-                result: $result,
-            );
+        try {
+            $this->agents->run($node, $command, $input);
+        } catch (AgentCommandRefused $refused) {
+            throw new NodeProvisioningException($step, $errorCode, $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException($step, $errorCode, "Gateway Caddy installation step [{$step}] failed.", previous: $failure, result: $failure->result);
         }
     }
 }
