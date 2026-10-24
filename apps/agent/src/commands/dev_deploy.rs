@@ -376,6 +376,8 @@ pub struct StepInput {
     pub checkout: Checkout,
     /// The step's program, which runs with `bash -eu` in the checkout.
     pub script: String,
+    #[serde(default)]
+    pub vp_environment: Option<super::vp_store::Environment>,
     pub step: String,
     /// The step's own bound. At its end the step's process group stops, and the step fails with its output.
     pub timeout_seconds: u64,
@@ -394,6 +396,11 @@ pub fn step(
     let checkout = &input.checkout;
     checkout.guard()?;
     let _lock = checkout.lock()?;
+    let vp = super::deploy_step::prepare_vp(input.vp_environment.as_ref()).map_err(|_| {
+        DevDeployError::Invalid {
+            check: "the Vite+ environment is installed in its owner's store".into(),
+        }
+    })?;
     let file = checkout.home.join(format!(
         ".git/orbit-deploy-step.{:016x}",
         rand::random::<u64>()
@@ -409,7 +416,7 @@ pub fn step(
         &Program {
             user: None,
             directory: &checkout.home,
-            command: StepCommand::Script(&file),
+            command: StepCommand::script(&file, vp.as_ref()),
             step: &input.step,
             secrets: &input.secrets,
             environment: &BTreeMap::new(),

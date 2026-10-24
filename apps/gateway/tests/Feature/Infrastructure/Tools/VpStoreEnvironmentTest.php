@@ -42,7 +42,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\UnsupportedPackageInventory;
 use Tests\Support\VpStoreAgentRunner;
 
-/** @return array{PrepareVpEnvironmentAction, VpStoreAgentRunner, Instance, RemoteProductionDeployment, VpToolManager} */
+/** @return array{PrepareVpEnvironmentAction, VpStoreAgentRunner, Instance, RemoteProductionDeployment, VpToolManager, FakeAgentCommandRunner} */
 function vp_store_fixture(): array
 {
     Http::preventStrayRequests();
@@ -68,7 +68,7 @@ function vp_store_fixture(): array
         });
     $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), $prepare);
 
-    return [$prepare, $agent, $instance, $deployment, $vp];
+    return [$prepare, $agent, $instance, $deployment, $vp, $agents];
 }
 
 function vp_store_build(RemoteProductionDeployment $deployment, Instance $instance): void
@@ -108,9 +108,9 @@ it('takes a read-only lock-free fast path and adopts existing Node npm or recipe
         }
     };
     $prepare = new PrepareVpEnvironmentAction($vp, $agent, $lock);
-    $first = $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build');
-    $second = $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build');
-    expect($first)->toBe($second)->toContain("'--package-manager' '{$manager}@{$version}'");
+    $first = $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build');
+    $second = $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build');
+    expect($first?->input())->toBe($second?->input())->toMatchArray(['package_manager' => $manager, 'package_manager_version' => $version]);
     expect($agent->operations)->not->toContain('install', 'prune', 'resolve', 'vp-upgrade');
     expect($instance->fresh()->getAttribute('vp_environment'))->toMatchArray(['status' => 'active', 'package_manager' => $manager, 'previous' => null]);
     Http::assertNothingSent();
@@ -119,7 +119,7 @@ it('takes a read-only lock-free fast path and adopts existing Node npm or recipe
 it('fails early for old recipe vp without mutating it', function (): void {
     [$prepare, $agent, $instance] = vp_store_fixture();
     $agent->vpVersion = '0.3.0';
-    expect(fn () => $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toThrow(ResourceOperationException::class);
+    expect(fn () => $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toThrow(ResourceOperationException::class);
     expect($agent->operations)->not->toContain('install', 'build', 'vp-upgrade');
 });
 
@@ -140,7 +140,7 @@ it('rejects missing locks and moving Node requirements without registry resoluti
         $agent->configuration['.node-version'] = 'lts/*';
     }
     try {
-        $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build');
+        $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build');
         test()->fail('Expected invalid requirements');
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)->toBe('deployment.vp_requirements_invalid');
@@ -166,12 +166,12 @@ it('retains other Instance and selected release references until release cleanup
     $other->production_home = '/home/orbit-app-2';
     $other->vp_environment = (new VpEnvironment('/opt/orbit/vite-plus', '0.3.3', '22.18.0', 'npm', '10.9.0'))->record('active');
     $other->save();
-    $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build');
+    $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build');
     $input = array_values(array_filter($agent->inputs, fn (array $input): bool => isset($input['references'])))[0];
     expect(array_column($input['references'], 'node_version'))->toContain('22.18.0', '24.22.0');
     $agent->configuration['package'] = [];
     $path = '/home/orbit-app-1/releases/no-vp';
-    $prepare->command($instance, $path, 'npm-build', 'npm run build');
+    $prepare->prepare($instance, $path, 'npm-build', 'npm run build');
     expect($instance->fresh()->getAttribute('vp_environment'))->toMatchArray(['node_version' => '24.22.0']);
     $instance->update(['checkout_path' => $path]);
     $agent->removedReleases = ['initial'];
@@ -247,7 +247,7 @@ it('releases runtime references only for retired releases and keeps busy or sele
     $agent->managedRuntimes = $oldRuntimes;
     $instance->update(['vp_environment' => (new VpEnvironment('/opt/orbit/vite-plus', '0.3.3', '22.18.0', 'npm', '10.9.0'))->record('active')]);
     $candidate = new DeploymentRelease('candidate', '/home/orbit-app-1/releases/candidate', str_repeat('a', 40));
-    $prepare->command($instance, $candidate->path, 'npm-build', 'vp run build');
+    $prepare->prepare($instance, $candidate->path, 'npm-build', 'vp run build');
     $instance->update(['checkout_path' => $candidate->path]);
     $agent->busyReleases = ['initial'];
 
@@ -302,7 +302,7 @@ it('maps unreadable project data to the requirements error before any store oper
     $agents = new FakeAgentCommandRunner()->refuse('tools.read-vp-project', 'tools.project_invalid');
     $prepare = new PrepareVpEnvironmentAction($vp, $agents, app(ToolManagerScopeLock::class));
 
-    expect(fn () => $prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build'))
+    expect(fn () => $prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))
         ->toThrow(ResourceOperationException::class);
     expect($instance->fresh()->getAttribute('vp_environment'))->toMatchArray(['status' => 'failed', 'error_code' => 'deployment.vp_requirements_invalid']);
     expect($agents->calls)->toHaveCount(1);
@@ -317,7 +317,31 @@ it('reads development requirements as the enrolled account', function (): void {
     $agents = new FakeAgentCommandRunner()->answer('tools.read-vp-project', ['package' => []]);
     $prepare = new PrepareVpEnvironmentAction($vp, $agents, app(ToolManagerScopeLock::class));
 
-    expect($prepare->command($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toBe('vp run build');
+    expect($prepare->prepare($instance, $instance->checkout_path, 'npm-build', 'vp run build'))->toBeNull();
     expect($agents->calls[0]['input'])->toBe(['path' => $instance->checkout_path, 'user' => 'orbit']);
     expect($agent->operations)->toBe([]);
 });
+
+it('sends the unchanged Project command beside typed runtime requirements', function (string $name, string $command, string $expected): void {
+    [, $agent, $instance, $deployment, , $runner] = vp_store_fixture();
+    $agent->installed = true;
+
+    $deployment->executeStep($instance, new DeploymentRelease('candidate', '/home/orbit-app-1/releases/candidate', str_repeat('a', 40)), new DeploymentStep($name, DeploymentPhase::BeforeActivation, $command, 60), new DeploymentRequest);
+
+    expect($runner->calls[0]['input']['script'])->toBe($expected);
+    expect($runner->calls[0]['input']['vp_environment'])->toBe([
+        'store' => '/opt/orbit/vite-plus', 'node_version' => '24.22.0',
+        'package_manager' => 'npm', 'package_manager_version' => '11.12.0',
+        'package_manager_hash' => null,
+    ]);
+})->with([
+    ['npm-build', 'npm run build', 'npm run build'],
+    ['npm-build', '/old/node /old/npm-cli.js run build', '/old/node /old/npm-cli.js run build'],
+    ['npm-build', 'node /old/npm-cli.js run build', 'node /old/npm-cli.js run build'],
+    ['npm-build', '/opt/node-v24/bin/node /opt/node-v24/lib/node_modules/npm/bin/npm-cli.js run build', '/opt/node-v24/bin/node /opt/node-v24/lib/node_modules/npm/bin/npm-cli.js run build'],
+    ['frontend', '/old/node /old/npm-cli.js run build', '/old/node /old/npm-cli.js run build'],
+    ['npm-build', 'node build.js', 'node build.js'],
+    ['npm-build', 'npm run build -- --base=/customer/ && npm run build:ssr', 'npm run build -- --base=/customer/ && npm run build:ssr'],
+    ['npm-build', '/old/node /old/npm-cli.js run build -- --base=/customer/', '/old/node /old/npm-cli.js run build -- --base=/customer/'],
+    ['npm-build', 'node /old/npm-cli.js run build && npm run build:ssr', 'node /old/npm-cli.js run build && npm run build:ssr'],
+]);

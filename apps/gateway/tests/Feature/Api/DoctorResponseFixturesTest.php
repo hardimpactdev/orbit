@@ -8,7 +8,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use App\Models\Tool;
@@ -26,25 +25,10 @@ beforeEach(function (): void {
 describe('doctor discovery fixtures', function (): void {
     it('records an informational-only healthy discovery', function (): void {
         $node = doctor_fixture_node('mini', '10.44.0.3', 'macos', 'mini');
-        $sha = str_repeat('ab', 32);
         $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'macos', 'arm64', true), [
-            doctor_fixture_result("27.0.1\n"),
-            doctor_fixture_result(doctor_fixture_json([
-                doctor_fixture_formula('jq', '1.7.1', $sha),
-                doctor_fixture_formula('ripgrep', '14.1.1', $sha),
-            ])),
-            doctor_fixture_result("jq\nripgrep\n"),
-            doctor_fixture_result(doctor_fixture_json([], [
-                doctor_fixture_cask('font-hack', '2.0.0'),
-                doctor_fixture_cask('docker', '4.39.0', [[
-                    'app' => ['Docker.app'],
-                    'target' => '/Applications/Docker.app',
-                ]]),
-            ])),
-            doctor_fixture_result("docker\nfont-hack\n"),
-        ], new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])->answer('tools.vp-inventory', [
-            'packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true,
-        ]));
+            'formulae' => ['state' => 'complete', 'packages' => [doctor_fixture_package('jq', '1.7.1'), doctor_fixture_package('ripgrep', '14.1.1')]],
+            'casks' => ['state' => 'complete', 'packages' => [doctor_fixture_package('font-hack', '2.0.0'), doctor_fixture_package('docker', '4.39.0', 'authorization_required')]],
+        ], new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true]));
         $toolsBefore = Tool::query()->count();
 
         $response = $this->postJson('/api/v1/doctor', [
@@ -78,18 +62,11 @@ describe('doctor discovery fixtures', function (): void {
             'status' => ToolStatus::Installed,
             'installed_version' => '1.6.0',
         ]);
-        $sha = str_repeat('cd', 32);
         $toolsBefore = Tool::query()->count();
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
-            doctor_fixture_result(''),
-            doctor_fixture_result("x86_64\n"),
-            doctor_fixture_result(doctor_fixture_json([
-                doctor_fixture_formula('ripgrep', '14.1.1', $sha, 'x86_64_linux'),
-            ])),
-            doctor_fixture_result("ripgrep\n"),
-        ], new FakeAgentCommandRunner()
-            ->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew'])
-            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
+            'formulae' => ['state' => 'complete', 'packages' => [doctor_fixture_package('ripgrep', '14.1.1')]],
+            'casks' => ['state' => 'unsupported', 'packages' => []],
+        ], new FakeAgentCommandRunner()->answer('tools.homebrew-formula-inventory', ['packages' => []])->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -141,11 +118,9 @@ describe('doctor discovery fixtures', function (): void {
     it('records a truncated inventory as unverifiable with no tool rows', function (): void {
         $node = doctor_fixture_node('linux-node', '10.44.0.4');
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
-            doctor_fixture_result("x86_64\n"),
-            doctor_fixture_result('{', truncated: true),
-        ], new FakeAgentCommandRunner()
-            ->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew'])
-            ->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
+            'formulae' => ['state' => 'incomplete', 'packages' => []],
+            'casks' => ['state' => 'unsupported', 'packages' => []],
+        ], new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -164,7 +139,7 @@ describe('doctor discovery fixtures', function (): void {
     it('records absent managers as informational and ignores unsupported casks', function (): void {
         $node = doctor_fixture_node('linux-node', '10.44.0.4');
         $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [], new FakeAgentCommandRunner()
-            ->refuse('tools.inspect-homebrew-scope', 'tools.homebrew_scope_absent')
+            ->refuse('tools.homebrew-scan', 'tools.homebrew_scope_absent')
             ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
@@ -205,8 +180,8 @@ function doctor_fixture_node(
     ]);
 }
 
-/** @param list<CommandResult> $results */
-function doctor_fixture_bind(NodeInspectionData $inspection, array $results, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
+/** @param array<string, mixed> $observations */
+function doctor_fixture_bind(NodeInspectionData $inspection, array $observations, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
     app()->instance(NodeStateInspector::class, new class($inspection) implements NodeStateInspector
     {
@@ -217,71 +192,20 @@ function doctor_fixture_bind(NodeInspectionData $inspection, array $results, ?Fa
             return $this->inspection;
         }
     });
-    app()->instance(AgentCommandRunner::class, $agents ?? new FakeAgentCommandRunner);
-    $ssh = new ToolManagerFakeSshExecutor($results);
+    $agents ??= new FakeAgentCommandRunner;
+    if ($observations !== []) {
+        $agents->answer('tools.homebrew-scan', $observations);
+    }
+    app()->instance(AgentCommandRunner::class, $agents);
+    $ssh = new ToolManagerFakeSshExecutor([]);
     app()->instance(SshExecutor::class, $ssh);
 
     return $ssh;
 }
 
-function doctor_fixture_result(string $stdout = '', int $exitCode = 0, bool $truncated = false): CommandResult
+function doctor_fixture_package(string $name, ?string $version, ?string $block = null): array
 {
-    return new CommandResult($exitCode, $stdout, '', 10, $truncated);
-}
-
-/**
- * @param  list<array<string, mixed>>  $formulae
- * @param  list<array<string, mixed>>  $casks
- */
-function doctor_fixture_json(array $formulae = [], array $casks = []): string
-{
-    return json_encode(['formulae' => $formulae, 'casks' => $casks], JSON_THROW_ON_ERROR);
-}
-
-/** @return array<string, mixed> */
-function doctor_fixture_formula(string $name, string $version, string $sha, string $tag = 'arm64_golden_gate'): array
-{
-    return [
-        'name' => $name,
-        'full_name' => $name,
-        'tap' => 'homebrew/core',
-        'versions' => ['stable' => '9.9.9', 'bottle' => true],
-        'bottle' => ['stable' => ['files' => [
-            $tag => [
-                'url' => "https://ghcr.io/v2/homebrew/core/{$name}/blobs/sha256:{$sha}",
-                'sha256' => $sha,
-            ],
-        ]]],
-        'disabled' => false,
-        'installed' => [[
-            'version' => $version,
-            'installed_on_request' => true,
-            'installed_as_dependency' => false,
-        ]],
-    ];
-}
-
-/**
- * @param  list<array<string, mixed>>|null  $artifacts
- * @return array<string, mixed>
- */
-function doctor_fixture_cask(string $token, string $version, ?array $artifacts = null): array
-{
-    return [
-        'token' => $token,
-        'full_token' => $token,
-        'tap' => 'homebrew/cask',
-        'url' => "https://example.com/{$token}.zip",
-        'version' => $version,
-        'installed' => $version,
-        'sha256' => str_repeat('a', 64),
-        'disabled' => false,
-        'variations' => new stdClass,
-        'artifacts' => $artifacts ?? [[
-            'font' => ["{$token}.ttf"],
-            'target' => '/$HOME/Library/Fonts/'.$token.'.ttf',
-        ]],
-    ];
+    return ['name' => $name, 'installed_version' => $version, 'block' => $block, 'dependency' => false];
 }
 
 function doctor_fixture_assert_read_only(ToolManagerFakeSshExecutor $ssh): void

@@ -154,7 +154,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     public function environmentsInstalled(Node $node, array $environments): array
     {
         $store = dirname($this->existingBinary($node), 2);
-        $data = $this->storeCommand($node, 'tools.inspect-vp-store', ['environments' => array_map($this->environmentInput(...), $environments)]);
+        $data = $this->storeCommand($node, 'tools.inspect-vp-store', ['environments' => array_map(fn (VpEnvironment $environment): array => $environment->input(), $environments)]);
         $installed = $data['installed'] ?? null;
         if (! is_array($installed) || ! array_is_list($installed) || count($installed) !== count($environments) || array_filter($installed, is_bool(...)) !== $installed) {
             throw new ToolManagerException('environment-inspect', 'Malformed vp store inventory.');
@@ -165,25 +165,13 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function installEnvironment(Node $node, VpEnvironment $environment, string $npmrc = ''): void
     {
-        $this->storeCommand($node, 'tools.install-vp-environment', ['environment' => $this->environmentInput($environment), 'npmrc' => $npmrc]);
+        $this->storeCommand($node, 'tools.install-vp-environment', ['environment' => $environment->input(), 'npmrc' => $npmrc]);
     }
 
     /** @param list<array<string, mixed>> $references */
     public function pruneEnvironments(Node $node, string $store, array $references): void
     {
-        $this->storeCommand($node, 'tools.prune-vp-store', ['store' => $store, 'references' => array_map(fn (array $reference): array => $this->environmentInput(VpEnvironment::fromArray($reference)), $references)]);
-    }
-
-    /** @return array<string, string|null> */
-    private function environmentInput(VpEnvironment $environment): array
-    {
-        return [
-            'store' => $environment->store,
-            'node_version' => $environment->nodeVersion,
-            'package_manager' => $environment->packageManager,
-            'package_manager_version' => $environment->packageManagerVersion,
-            'package_manager_hash' => $environment->packageManagerHash,
-        ];
+        $this->storeCommand($node, 'tools.prune-vp-store', ['store' => $store, 'references' => array_map(fn (array $reference): array => VpEnvironment::fromArray($reference)->input(), $references)]);
     }
 
     /** @param array<string, mixed> $input

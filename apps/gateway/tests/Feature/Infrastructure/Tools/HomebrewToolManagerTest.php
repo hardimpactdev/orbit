@@ -6,17 +6,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
-use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\HomebrewToolManager;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\FakeAgentCommandRunner;
@@ -78,185 +72,13 @@ describe(HomebrewToolManager::class, function (): void {
         expect($ssh->commands)->toBe([]);
     });
 
-    it('uses fixed Core-only forced-bottle argv for the complete lifecycle', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("Homebrew 7.0.0\n"),
-            homebrew_result("x86_64\n"),
-            homebrew_result(homebrew_formula()),
-            homebrew_result("ripgrep 0.8.2\n"),
-            homebrew_result("x86_64\n"),
-            homebrew_result(homebrew_formula()),
-            homebrew_result(),
-            homebrew_result("x86_64\n"),
-            homebrew_result(homebrew_formula()),
-            homebrew_result(),
-            homebrew_result(),
-        ]);
-        $node = homebrew_tool_node();
-
-        expect($manager->managerVersion($node))->toBe('Homebrew 7.0.0');
-        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('0.9.0');
-        expect($manager->installedVersion($node, 'ripgrep'))->toBe('0.8.2');
-        $manager->install($node, 'ripgrep');
-        $manager->update($node, 'ripgrep');
-        expect($manager->planRemoval($node, 'ripgrep')->packages)->toBe(['ripgrep']);
-        $manager->remove($node, 'ripgrep');
-
-        $prefix = homebrew_arguments();
-        expect($ssh->arguments())->toBe([
-            [...$prefix, '--version'],
-            ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
-            [...$prefix, 'list', '--versions', '--formula'],
-            ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
-            [...$prefix, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            ['/usr/bin/uname', '-m'],
-            [...$prefix, 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
-            [...$prefix, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            [...$prefix, 'uninstall', '--formula', 'homebrew/core/ripgrep'],
-        ]);
-    });
-
-    it('selects the arm64 Linux bottle and normalizes versions', function (): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result("aarch64\n"),
-            homebrew_result(homebrew_formula(architecture: 'arm64_linux')),
-        ]);
-
-        expect($manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Update))
-            ->toBe('0.9.0')
-            ->and($manager->normalizeVersion('v0.9'))
-            ->toBe('0.9.0')
-            ->and($manager->normalizeVersion('head'))
-            ->toBeNull();
-    });
-
-    it('returns null only for exact absent formula and keg results', function (): void {
-        [$candidateManager] = homebrew_tool_manager([
-            homebrew_result("x86_64\n"),
-            homebrew_result(
-                exitCode: 1,
-                stderr: "Error: No available formula with the name \"homebrew/core/missing\".\n",
-            ),
-        ]);
-        [$installedManager] = homebrew_tool_manager([homebrew_result()]);
-
-        expect($candidateManager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))
-            ->toBeNull()
-            ->and($installedManager->installedVersion(homebrew_tool_node(), 'missing'))
-            ->toBeNull();
-    });
-
-    it('fails closed when Core metadata does not prove a compatible bottle', function (array $changes): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result("x86_64\n"),
-            homebrew_result(homebrew_formula($changes)),
-        ]);
-
-        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Install))
-            ->toThrow(ToolManagerException::class, 'compatible verified bottle');
-    })->with([
-        'wrong name' => [['name' => 'other']],
-        'qualified full name' => [['full_name' => 'other/tap/ripgrep']],
-        'wrong tap' => [['tap' => 'other/tap']],
-        'no stable version' => [['stable' => null]],
-        'no bottle declaration' => [['has_bottle' => false]],
-        'no architecture bottle' => [['architecture' => 'arm64_linux']],
-        'missing checksum' => [['sha256' => null]],
-        'mismatched checksum URL' => [['url_sha256' => str_repeat('b', times: 64)]],
-        'disabled formula' => [['disabled' => true]],
-        'cask response' => [['casks' => [['name' => 'ripgrep']]]],
-    ]);
-
-    it('rejects unsupported operations, nodes, packages, and architectures before mutation', function (): void {
-        [$removeManager, $removeSsh] = homebrew_tool_manager([]);
-        [$nodeManager, $nodeSsh] = homebrew_tool_manager([]);
-        [$packageManager, $packageSsh] = homebrew_tool_manager([]);
-        [$architectureManager] = homebrew_tool_manager([homebrew_result("riscv64\n")]);
-
-        expect(fn () => $removeManager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Remove))
-            ->toThrow(ToolManagerException::class)
-            ->and(fn () => $nodeManager->install(homebrew_tool_node('darwin'), 'ripgrep'))
-            ->toThrow(ToolManagerException::class)
-            ->and(fn () => $packageManager->install(homebrew_tool_node(), 'other/tap/ripgrep'))
-            ->toThrow(ToolManagerException::class)
-            ->and(fn () => $architectureManager->candidateVersion(
-                homebrew_tool_node(),
-                'ripgrep',
-                ToolOperation::Install,
-            ))
-            ->toThrow(ToolManagerException::class, 'no supported Homebrew bottle');
-        expect($removeSsh->arguments())->toBeEmpty();
-        expect($nodeSsh->arguments())->toBeEmpty();
-        expect($packageSsh->arguments())->toBeEmpty();
-    });
-
-    it('rejects a Homebrew manager version that is not the pinned release', function (string $version): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result($version."\n"),
-        ]);
-
-        expect(fn () => $manager->managerVersion(homebrew_tool_node()))
-            ->toThrow(ToolManagerException::class, 'unsupported version');
-    })->with([
-        'previous Orbit pin' => ['Homebrew 6.0.6'],
-        'newer patch' => ['Homebrew 7.0.1'],
-        'unrelated tool' => ['Homebrew 5.0.0'],
-    ]);
-
-    it('returns bounded sanitized failures for probes and mutations', function (): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result('secret', exitCode: 7, stderr: 'secret error'),
-        ]);
-
-        expect(fn () => $manager->managerVersion(homebrew_tool_node()))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)->toBe('manager-version');
-                expect($exception->result?->stdout)->toBeEmpty();
-                expect($exception->result?->stderr)->toBeEmpty();
-                expect($exception->getMessage())->not->toContain('secret');
-            });
-    });
-
-    it('returns bounded sanitized failures for bootstrap and formula metadata', function (): void {
-        [$bootstrapManager, , $agent] = homebrew_tool_manager([]);
-        $agent->refuse('tools.materialize-homebrew', 'tools.homebrew_materialize_failed');
-        [$formulaManager, $formulaSsh] = homebrew_tool_manager([
-            homebrew_result("x86_64\n"),
-            homebrew_result('private metadata', exitCode: 8, stderr: 'private metadata error'),
-        ]);
-
-        expect(fn () => $bootstrapManager->materialize(homebrew_tool_node()))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)->toBe('materialize');
-                expect($exception->result)->toBeNull();
-            });
-        expect(fn () => $formulaManager->install(homebrew_tool_node(), 'ripgrep'))
-            ->toThrow(function (ToolManagerException $exception): void {
-                expect($exception->step)->toBe('candidate-version');
-                expect($exception->result?->stdout)->toBeEmpty();
-                expect($exception->result?->stderr)->toBeEmpty();
-            });
-        expect($formulaSsh->arguments())->toHaveCount(2);
-        expect($formulaSsh->arguments())
-            ->not
-            ->toContain(
-                [...homebrew_arguments(), 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            );
-    });
-
-    it('rejects malformed installed state instead of adopting it', function (CommandResult $result): void {
-        [$manager] = homebrew_tool_manager([$result]);
-
+    it('maps native inventory refusals instead of reporting absent packages', function (string $code): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->refuse('tools.homebrew-formula-inventory', $code);
         expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'ripgrep'))
-            ->toThrow(ToolManagerException::class);
-    })->with([
-        'missing version' => [homebrew_result("ripgrep\n")],
-        'multiple versions' => [homebrew_result("ripgrep 0.8.2 0.9.0\n")],
-        'unknown failure' => [homebrew_result(exitCode: 1, stderr: 'unexpected')],
-        'truncated' => [homebrew_result('secret', truncated: true)],
-    ]);
+            ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe('installed-version'));
+        expect($ssh->commands)->toBe([]);
+    })->with(['tools.homebrew_operation_failed', 'tools.homebrew_output_invalid']);
 
     it('verifies the existing macOS prefix through the account command', function (): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
@@ -294,244 +116,108 @@ describe(HomebrewToolManager::class, function (): void {
         ['tools.homebrew_scope_unreadable', 'manager-probe'],
     ]);
 
-    it('selects the macOS bottle for the stored CPU and product version', function (
-        string $architecture,
-        string $productVersion,
-        string $tag,
-    ): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result($productVersion."\n"),
-            homebrew_result(homebrew_formula(architecture: $tag)),
-        ]);
-
-        expect($manager->candidateVersion(
-            homebrew_tool_node('macos', null, $architecture, 'mini'),
-            'ripgrep',
-            ToolOperation::Install,
-        ))->toBe('0.9.0');
-        expect($ssh->arguments())->toBe([
-            ['/usr/bin/sw_vers', '-productVersion'],
-            [...homebrew_mac_arguments(refreshApi: true), 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
-        ]);
-    })->with([
-        'apple silicon macOS 27' => ['arm64', '27.1.2', 'arm64_golden_gate'],
-        'intel macOS 15' => ['x86_64', '15.6.1', 'sequoia'],
-    ]);
-
-    it('uses the all bottle only when the current macOS tag is absent', function (): void {
-        $sha = str_repeat('c', 64);
-        [$manager] = homebrew_tool_manager([
-            homebrew_result("26.0\n"),
-            homebrew_result(homebrew_formula([
-                'omit_tag' => true,
-                'all_sha256' => $sha,
-            ], 'arm64_tahoe')),
-        ]);
-
-        expect($manager->candidateVersion(
-            homebrew_tool_node('macos', null, 'arm64', 'mini'),
-            'ripgrep',
-            ToolOperation::Update,
-        ))->toBe('0.9.0');
-    });
-
-    it('does not accept an older macOS bottle or the all bottle when the current tag is present', function (array $changes): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("27.0\n"),
-            homebrew_result(homebrew_formula($changes, 'arm64_golden_gate')),
-        ]);
-
-        expect(fn () => $manager->candidateVersion(
-            homebrew_tool_node('macos', null, 'arm64', 'mini'),
-            'ripgrep',
-            ToolOperation::Install,
-        ))->toThrow(ToolManagerException::class, 'compatible verified bottle');
-        expect($ssh->arguments())->not->toContain(
-            [...homebrew_mac_arguments(refreshApi: true), 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-        );
-    })->with([
-        'older OS tag' => [['architecture' => 'arm64_sequoia']],
-        'checksummed tag beats all' => [[
-            'sha256' => null,
-            'all_sha256' => str_repeat('d', 64),
-        ]],
-    ]);
-
-    it('refuses a macOS product version with no bottle symbol before formula metadata', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("10.16\n"),
-        ]);
-
-        expect(fn () => $manager->candidateVersion(
-            homebrew_tool_node('macos', null, 'arm64', 'mini'),
-            'ripgrep',
-            ToolOperation::Install,
-        ))->toThrow(ToolManagerException::class, 'no compatible Homebrew bottle');
-        expect($ssh->arguments())->toBe([
-            ['/usr/bin/sw_vers', '-productVersion'],
-        ]);
-    });
-
-    it('rejects an unsupported macOS CPU before any SSH I/O', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([]);
-
-        expect(fn () => $manager->install(homebrew_tool_node('macos', null, 'i386', 'mini'), 'ripgrep'))
-            ->toThrow(ToolManagerException::class, 'no supported Homebrew bottle');
-        expect($ssh->arguments())->toBeEmpty();
-    });
-
-    it('installs, updates, and removes one macOS formula with fixed bottle argv', function (): void {
-        $node = homebrew_tool_node('macos', null, 'arm64', 'mini');
-        $version = homebrew_result("27.0.1\n");
-        $metadata = homebrew_result(homebrew_formula(architecture: 'arm64_golden_gate'));
-        [$manager, $ssh, $agent] = homebrew_tool_manager([
-            homebrew_result("Homebrew 4.6.15\n"),
-            $version,
-            $metadata,
-            homebrew_result("ripgrep 0.8.2\n"),
-            $version,
-            $metadata,
-            homebrew_result(),
-            $version,
-            $metadata,
-            homebrew_result(),
-            homebrew_result(),
-        ]);
-
-        $agent->answer('tools.inspect-homebrew-scope', ['prefix' => '/Users/mini/homebrew', 'home' => '/Users/mini']);
-
-        expect($manager->managerVersion($node))->toBe('Homebrew 4.6.15');
-        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('0.9.0');
-        expect($manager->installedVersion($node, 'ripgrep'))->toBe('0.8.2');
+    it('sends one typed command per formula operation', function (string $platform): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $node = homebrew_tool_node($platform, architecture: 'arm64');
+        $input = ['package' => 'ripgrep'];
+        if ($platform === 'macos') {
+            $input['architecture'] = 'arm64';
+        }
+        $agent->answer('tools.homebrew-formula-candidate', ['version' => '14.1.1'])
+            ->answer('tools.homebrew-formula-install', [])
+            ->answer('tools.homebrew-formula-update', [])
+            ->answer('tools.homebrew-formula-remove', []);
+        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('14.1.1');
         $manager->install($node, 'ripgrep');
         $manager->update($node, 'ripgrep');
         expect($manager->planRemoval($node, 'ripgrep')->packages)->toBe(['ripgrep']);
         $manager->remove($node, 'ripgrep');
+        expect($agent->calls)->toBe([
+            ['node' => $node->name, 'command' => 'tools.homebrew-formula-candidate', 'input' => $input],
+            ['node' => $node->name, 'command' => 'tools.homebrew-formula-install', 'input' => $input],
+            ['node' => $node->name, 'command' => 'tools.homebrew-formula-update', 'input' => $input],
+            ['node' => $node->name, 'command' => 'tools.homebrew-formula-remove', 'input' => ['package' => 'ripgrep']],
+        ])->and($ssh->commands)->toBe([]);
+    })->with(['linux', 'macos']);
 
-        $brew = homebrew_mac_arguments('/Users/mini/homebrew');
-        $refresh = homebrew_mac_arguments('/Users/mini/homebrew', true);
-        $formula = ['info', '--json=v2', '--formula', 'homebrew/core/ripgrep'];
-        expect($ssh->arguments())->toBe([
-            [...$brew, '--version'],
-            ['/usr/bin/sw_vers', '-productVersion'],
-            [...$refresh, ...$formula],
-            [...$brew, 'list', '--versions', '--formula'],
-            ['/usr/bin/sw_vers', '-productVersion'],
-            [...$refresh, ...$formula],
-            [...$refresh, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            ['/usr/bin/sw_vers', '-productVersion'],
-            [...$refresh, ...$formula],
-            [...$refresh, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
-            [...$brew, 'uninstall', '--formula', 'homebrew/core/ripgrep'],
-        ]);
-        expect(json_encode($ssh->arguments()))
-            ->not->toContain('autoremove')
-            ->not->toContain('--zap')
-            ->not->toContain('services')
-            ->not->toContain('x86_64_linux')
-            ->not->toContain('uname');
+    it('keeps absent candidates separate from failed probes', function (): void {
+        [$manager, , $agent] = homebrew_tool_manager([]);
+        $agent->answer('tools.homebrew-formula-candidate', ['version' => null]);
+        expect($manager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))->toBeNull();
+        $agent->refuse('tools.homebrew-formula-candidate', 'tools.homebrew_operation_failed');
+        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'missing', ToolOperation::Install))->toThrow(ToolManagerException::class);
     });
 
-    it('accepts the installed macOS Homebrew version and rejects a malformed probe', function (string $version, bool $valid): void {
-        [$manager] = homebrew_tool_manager([
-            homebrew_result($version."\n"),
-        ]);
-        $read = fn () => $manager->managerVersion(homebrew_tool_node('macos', null, 'arm64', 'mini'));
-
-        if ($valid) {
-            expect($read())->toBe($version);
-
-            return;
-        }
-
-        expect($read)->toThrow(ToolManagerException::class, 'malformed output');
-    })->with([
-        'installed release' => ['Homebrew 4.6.15', true],
-        'pinned Linux release is not required' => ['Homebrew 7.0.0', true],
-        'developer describe line' => ['Homebrew 4.6.15-12-gabcdef', false],
-    ]);
-
-    it('classifies a linux formula from a live read and does not refresh or mutate', function (): void {
-        $sha = str_repeat('a', 64);
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("ripgrep 14.1.1\n"),
-            homebrew_result("x86_64\n"),
-            homebrew_result(adopt_formula_json($sha, true)),
-            homebrew_result("openssl@3 3.0.0\n"),
-            homebrew_result("x86_64\n"),
-            homebrew_result(adopt_formula_json($sha, false, 'openssl@3')),
-        ]);
-        $node = homebrew_tool_node(role: null);
-
-        expect($manager->inspectForAdoption($node, 'ripgrep'))
-            ->toEqual(new ToolAdoptionFact('14.1.1', null))
-            ->and($manager->inspectForAdoption($node, 'openssl@3'))
-            ->toEqual(new ToolAdoptionFact('3.0.0', ToolInventoryPackage::BLOCK_DEPENDENCY));
-
-        expect(json_encode($ssh->arguments()))
-            ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE')
-            ->not->toContain('install')
-            ->not->toContain('upgrade')
-            ->not->toContain('uninstall')
-            ->not->toContain('fetch')
-            ->not->toContain('checkout');
-    });
-
-    it('maps Linux scope refusal before reading packages', function (string $code, string $step): void {
+    it('maps native formula refusals without retaining manager output', function (string $command, string $code, string $step): void {
         [$manager, $ssh, $agent] = homebrew_tool_manager([]);
-        $agent->refuse('tools.inspect-homebrew-scope', $code);
-        expect(fn () => $manager->inspectForAdoption(homebrew_tool_node(role: null), 'ripgrep'))
-            ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe($step));
-        expect($agent->commands())->toBe(['tools.inspect-homebrew-scope']);
+        $agent->refuse('tools.homebrew-'.$command, $code);
+        $node = homebrew_tool_node();
+        $call = match ($command) {
+            'version' => fn () => $manager->managerVersion($node),
+            'formula-candidate' => fn () => $manager->candidateVersion($node, 'ripgrep', ToolOperation::Install),
+            'formula-adoption' => fn () => $manager->inspectForAdoption($node, 'ripgrep'),
+            'formula-install' => fn () => $manager->install($node, 'ripgrep'),
+            'formula-update' => fn () => $manager->update($node, 'ripgrep'),
+            'formula-remove' => fn () => $manager->remove($node, 'ripgrep'),
+        };
+        expect($call)->toThrow(function (ToolManagerException $error) use ($step): void {
+            expect($error->step)->toBe($step)->and($error->result)->toBeNull();
+        });
         expect($ssh->commands)->toBe([]);
     })->with([
-        ['tools.homebrew_scope_absent', 'manager-absent'],
-        ['tools.homebrew_scope_conflict', 'manager-conflict'],
-        ['tools.homebrew_scope_unreadable', 'manager-probe'],
+        ['version', 'tools.homebrew_version_unsupported', 'manager-version'],
+        ['formula-candidate', 'tools.homebrew_candidate_invalid', 'candidate-version'],
+        ['formula-install', 'tools.homebrew_bottle_unavailable', 'candidate-version'],
+        ['formula-install', 'tools.homebrew_scope_conflict', 'manager-conflict'],
+        ['formula-install', 'tools.homebrew_operation_failed', 'install'],
+        ['formula-update', 'tools.homebrew_operation_failed', 'update'],
+        ['formula-remove', 'tools.homebrew_operation_failed', 'remove'],
+        ['formula-adoption', 'tools.homebrew_scope_absent', 'manager-absent'],
+        ['formula-adoption', 'tools.homebrew_scope_unreadable', 'manager-probe'],
+        ['formula-adoption', 'tools.homebrew_output_invalid', 'installed-version'],
     ]);
 
-    it('refreshes only the macOS bottle API while checking an installed formula', function (): void {
-        $sha = str_repeat('b', 64);
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("ripgrep 14.1.1\n"),
-            homebrew_result("27.0.1\n"),
-            homebrew_result(adopt_formula_json($sha, true, 'ripgrep', 'arm64_golden_gate')),
-        ]);
+    it('preserves native adoption facts without executing Homebrew', function (?string $version, ?string $block): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->answer('tools.homebrew-formula-adoption', ['installed_version' => $version, 'block' => $block]);
+        expect($manager->inspectForAdoption(homebrew_tool_node('macos', architecture: 'arm64'), 'ripgrep'))
+            ->toEqual(new ToolAdoptionFact($version, $block));
+        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tools.homebrew-formula-adoption', 'input' => ['package' => 'ripgrep', 'architecture' => 'arm64']]])
+            ->and($ssh->commands)->toBe([]);
+    })->with([
+        ['14.1.1', null], [null, null], ['14.1.1', 'dependency'], ['14.1.1', 'protected'],
+        ['14.1.1', 'unsupported_source'], [null, 'version_unreadable'],
+        ['14.1.1', 'unsupported_artifact'], ['14.1.1', 'bottle_unavailable'],
+    ]);
 
-        expect($manager->inspectForAdoption(homebrew_tool_node('macos', null, 'arm64', 'mini'), 'ripgrep'))
-            ->toEqual(new ToolAdoptionFact('14.1.1', null));
+    it('rejects unsupported input before calling the agent', function (): void {
+        [$manager, , $agent] = homebrew_tool_manager([]);
+        expect(fn () => $manager->candidateVersion(homebrew_tool_node(), 'ripgrep', ToolOperation::Remove))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->install(homebrew_tool_node('darwin'), 'ripgrep'))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->install(homebrew_tool_node(), 'other/tap/ripgrep'))->toThrow(ToolManagerException::class);
+        expect(fn () => $manager->install(homebrew_tool_node('macos', architecture: 'i386'), 'ripgrep'))->toThrow(ToolManagerException::class);
+        expect($agent->calls)->toBe([]);
+    });
 
-        $info = $ssh->arguments()[2];
-        expect($info)->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE=1')
-            ->and($info)->toContain('info')
-            ->and(json_encode($ssh->arguments()))->not->toContain('install')
-            ->not->toContain('upgrade')
-            ->not->toContain('uninstall');
+    it('normalizes versions in the Gateway and keeps the native manager version', function (): void {
+        [$manager, , $agent] = homebrew_tool_manager([]);
+        $agent->answer('tools.homebrew-version', ['version' => 'Homebrew 4.6.15']);
+        expect($manager->managerVersion(homebrew_tool_node('macos')))->toBe('Homebrew 4.6.15')
+            ->and($manager->normalizeVersion('v0.9'))->toBe('0.9.0')
+            ->and($manager->normalizeVersion('head'))->toBeNull();
     });
 });
 
-/**
- * @param  list<CommandResult>  $results
- * @return array{HomebrewToolManager, ToolManagerFakeSshExecutor, FakeAgentCommandRunner}
- */
+/** @return array{HomebrewToolManager, ToolManagerFakeSshExecutor, FakeAgentCommandRunner} */
 function homebrew_tool_manager(array $results): array
 {
-    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', fn (array $input, Node $node): array => ['prefix' => $node->platform === 'macos' ? '/opt/homebrew' : HomebrewToolManager::LINUX_PREFIX_PATH, 'home' => '/Users/mini']);
+    $agent = new FakeAgentCommandRunner()
+        ->answer('tools.inspect-homebrew-scope', ['prefix' => '/opt/homebrew', 'home' => '/Users/mini'])
+        ->answer('tools.homebrew-version', ['version' => 'Homebrew 7.0.0'])
+        ->answer('tools.homebrew-formula-inventory', ['packages' => []]);
     $ssh = new ToolManagerFakeSshExecutor($results);
 
-    return [
-        new HomebrewToolManager(
-            commands: new RemoteToolCommandRunner(
-                ssh: $ssh,
-                keys: homebrew_tool_keys(),
-                knownHosts: homebrew_tool_known_hosts(),
-            ),
-            versions: new SemverVersionNormalizer,
-            agents: $agent,
-        ),
-        $ssh,
-        $agent,
-    ];
+    return [new HomebrewToolManager(new SemverVersionNormalizer, $agent), $ssh, $agent];
 }
 
 function homebrew_tool_node(
@@ -560,194 +246,37 @@ function homebrew_tool_node(
     return $node;
 }
 
-/** @param array<string, mixed> $changes */
-function homebrew_formula(array $changes = [], string $architecture = 'x86_64_linux'): string
-{
-    $architecture = is_string($changes['architecture'] ?? null) ? $changes['architecture'] : $architecture;
-    $sha256 = array_key_exists('sha256', $changes) ? $changes['sha256'] : str_repeat('a', times: 64);
-    $urlSha256 = is_string($changes['url_sha256'] ?? null) ? $changes['url_sha256'] : $sha256;
-    $file = [
-        'url' => "https://ghcr.io/v2/homebrew/core/ripgrep/blobs/sha256:{$urlSha256}",
-        'sha256' => $sha256,
-    ];
-    $files = [$architecture => $file];
-
-    if (($changes['omit_tag'] ?? false) === true) {
-        unset($files[$architecture]);
-    }
-
-    if (is_string($changes['all_sha256'] ?? null)) {
-        $allSha = $changes['all_sha256'];
-        $files['all'] = [
-            'url' => "https://ghcr.io/v2/homebrew/core/ripgrep/blobs/sha256:{$allSha}",
-            'sha256' => $allSha,
-        ];
-    }
-
-    return json_encode([
-        'formulae' => [[
-            'name' => $changes['name'] ?? 'ripgrep',
-            'full_name' => $changes['full_name'] ?? 'ripgrep',
-            'tap' => $changes['tap'] ?? 'homebrew/core',
-            'versions' => [
-                'stable' => array_key_exists('stable', $changes) ? $changes['stable'] : '0.9.0',
-                'bottle' => $changes['has_bottle'] ?? true,
-            ],
-            'bottle' => ['stable' => ['files' => $files === [] ? new stdClass : $files]],
-            'disabled' => $changes['disabled'] ?? false,
-            'service' => ['run' => ['ripgrep', 'server']],
+it('uses a fresh typed formula inventory on each read', function (string $platform): void {
+    [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+    $inventories = [
+        ['packages' => [
+            ['name' => 'jq', 'versions' => ['1.7.1'], 'unverifiable' => false],
+            ['name' => 'ambiguous', 'versions' => ['1.0', '2.0'], 'unverifiable' => false],
+            ['name' => 'unreadable', 'versions' => [], 'unverifiable' => true],
         ]],
-        'casks' => $changes['casks'] ?? [],
-    ], JSON_THROW_ON_ERROR);
-}
-
-/**
- * @return non-empty-list<string>
- */
-function homebrew_mac_arguments(string $prefix = '/opt/homebrew', bool $refreshApi = false): array
-{
-    $arguments = [
-        'env',
-        'HOMEBREW_NO_AUTO_UPDATE=1',
-        'HOMEBREW_NO_ANALYTICS=1',
-        'HOMEBREW_NO_ENV_HINTS=1',
-        'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1',
-        'HOMEBREW_NO_INSTALL_CLEANUP=1',
+        ['packages' => [['name' => 'jq', 'versions' => ['1.8.0'], 'unverifiable' => false]]],
     ];
-
-    if ($refreshApi) {
-        $arguments[] = 'HOMEBREW_FORCE_API_AUTO_UPDATE=1';
-    }
-
-    $arguments[] = 'PATH='.$prefix.'/bin:/usr/bin:/bin';
-    $arguments[] = $prefix.'/bin/brew';
-
-    return $arguments;
-}
-
-/** @return non-empty-list<string> */
-function homebrew_arguments(): array
-{
-    return [
-        'env',
-        'HOMEBREW_NO_AUTO_UPDATE=1',
-        'HOMEBREW_NO_ANALYTICS=1',
-        'HOMEBREW_NO_ENV_HINTS=1',
-        'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1',
-        'HOMEBREW_NO_INSTALL_CLEANUP=1',
-        'PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin',
-        '/home/linuxbrew/.linuxbrew/bin/brew',
-    ];
-}
-
-function homebrew_delete_directory(string $directory): void
-{
-    if ($directory === '' || ! is_dir($directory)) {
-        return;
-    }
-
-    exec('rm -rf -- '.escapeshellarg($directory));
-}
-
-function homebrew_result(
-    string $stdout = '',
-    int $exitCode = 0,
-    string $stderr = '',
-    bool $truncated = false,
-): CommandResult {
-    return new CommandResult($exitCode, $stdout, $stderr, 10, $truncated);
-}
-
-function homebrew_tool_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit/id_ed25519';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAATEST orbit@test';
-        }
-    };
-}
-
-function homebrew_tool_known_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-}
-
-function adopt_formula_json(
-    string $sha,
-    bool $explicit,
-    string $name = 'ripgrep',
-    string $tag = 'x86_64_linux',
-): string {
-    return json_encode([
-        'formulae' => [[
-            'name' => $name,
-            'full_name' => $name,
-            'tap' => 'homebrew/core',
-            'versions' => ['stable' => '14.1.1', 'bottle' => true],
-            'bottle' => ['stable' => ['files' => [
-                $tag => [
-                    'url' => "https://ghcr.io/v2/homebrew/core/{$name}/blobs/sha256:{$sha}",
-                    'sha256' => $sha,
-                ],
-            ]]],
-            'disabled' => false,
-            'installed' => [[
-                'version' => $name === 'openssl@3' ? '3.0.0' : '14.1.1',
-                'installed_on_request' => $explicit,
-            ]],
-        ]],
-        'casks' => [],
-    ], JSON_THROW_ON_ERROR);
-}
-
-it('reads one fresh formula inventory per Node after the normal scope probe', function (string $platform): void {
-    [$manager, $ssh] = homebrew_tool_manager([
-        homebrew_result("jq 1.7.1\ngh 2.88.1\nambiguous 1.0 2.0\n"),
-        homebrew_result("jq 1.8.0\n"),
-    ]);
+    $agent->answer('tools.homebrew-formula-inventory', function () use (&$inventories): array {
+        return array_shift($inventories);
+    });
     $node = homebrew_tool_node($platform, architecture: 'arm64');
     $first = $manager->installedInventory($node);
-    expect($first->versionFor('jq'))->toBe('1.7.1')
-        ->and($first->versionFor('gh'))->toBe('2.88.1')
-        ->and($first->versionFor('absent'))->toBeNull();
+    expect($first->versionFor('jq'))->toBe('1.7.1')->and($first->versionFor('absent'))->toBeNull();
     expect(fn () => $first->versionFor('ambiguous'))->toThrow(ToolManagerException::class);
+    expect(fn () => $first->versionFor('unreadable'))->toThrow(ToolManagerException::class);
     expect($manager->installedInventory($node)->versionFor('jq'))->toBe('1.8.0');
-    expect($ssh->commands)->toHaveCount(2);
-    if ($platform === 'macos') {
-        expect($ssh->commands[0]->arguments)->toBe([...homebrew_mac_arguments('/opt/homebrew'), 'list', '--versions', '--formula']);
-    }
+    expect($agent->commands())->toBe(['tools.homebrew-formula-inventory', 'tools.homebrew-formula-inventory'])
+        ->and($ssh->commands)->toBe([]);
 })->with(['linux', 'macos']);
 
-it('refuses an unverifiable formula inventory instead of reporting absent Tools', function (CommandResult $result): void {
-    [$manager] = homebrew_tool_manager([$result]);
-
-    expect(fn () => $manager->installedVersion(homebrew_tool_node(), 'jq'))->toThrow(ToolManagerException::class);
+it('refuses malformed typed inventory observations', function (array $data): void {
+    [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+    $agent->answer('tools.homebrew-formula-inventory', $data);
+    expect(fn () => $manager->installedInventory(homebrew_tool_node()))->toThrow(ToolManagerException::class);
+    expect($ssh->commands)->toBe([]);
 })->with([
-    'failed command' => [new CommandResult(1, '', '', 10, false)],
-    'truncated list' => [new CommandResult(0, "jq 1.7.1\n", '', 10, true)],
-    'malformed record' => [new CommandResult(0, "jq\n", '', 10, false)],
+    'missing inventory' => [[]],
+    'non-list inventory' => [['packages' => ['jq' => []]]],
+    'missing fields' => [['packages' => [['name' => 'jq']]]],
+    'invalid version' => [['packages' => [['name' => 'jq', 'versions' => [false], 'unverifiable' => false]]]],
 ]);
-
-it('isolates unmanageable formula names and unreadable versions', function (): void {
-    [$manager] = homebrew_tool_manager([homebrew_result("other/tap/formula 1.0\nbad;name 2.0\nunreadable bad\x01version\njq 1.7.1\n")]);
-
-    $inventory = $manager->installedInventory(homebrew_tool_node());
-
-    expect($inventory->versionFor('jq'))->toBe('1.7.1');
-    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
-});

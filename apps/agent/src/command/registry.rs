@@ -146,11 +146,13 @@ mod tests {
     }
 
     #[test]
-    fn every_command_is_bounded_and_runs_on_linux() {
+    fn every_command_is_bounded_and_runs_on_at_least_one_platform() {
         for entry in all() {
             assert!(entry.timeout > Duration::ZERO, "{}", entry.name);
             assert!(
-                (entry.privilege)(Platform::Linux).is_some(),
+                [Platform::Linux, Platform::Macos]
+                    .into_iter()
+                    .any(|platform| (entry.privilege)(platform).is_some()),
                 "{}",
                 entry.name
             );

@@ -106,7 +106,8 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         // The Node publishes each line live on the operation's channel; the result keeps the output for the record.
         $result = $this->run($instance, 'instances.run-development-step', [
             ...$this->checkoutInput($instance),
-            'script' => $this->environments->command($instance, $instance->checkout_path, $step->name, $step->command),
+            'script' => $step->command,
+            'vp_environment' => $this->environments->prepare($instance, $instance->checkout_path, $step->name, $step->command)?->input(),
             'step' => $step->name,
             'timeout_seconds' => $step->timeoutSeconds,
             'operation' => $request->operation,

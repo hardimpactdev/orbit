@@ -26,10 +26,10 @@ final readonly class PrepareVpEnvironmentAction
         private ToolManagerScopeLock $lock,
     ) {}
 
-    public function command(Instance $instance, string $path, string $name, string $command): string
+    public function prepare(Instance $instance, string $path, string $name, string $command): ?VpEnvironment
     {
         if ($name !== 'npm-build' && preg_match('/(?:^|[\s;&|\/])(vp|node|npm|npx|pnpm|yarn|bun|vite|corepack)(?:\s|$)/', $command) !== 1) {
-            return $command;
+            return null;
         }
         $previous = $this->checkoutReferences($instance->getAttribute('vp_environment'), $instance->checkout_path);
         try {
@@ -52,7 +52,7 @@ final readonly class PrepareVpEnvironmentAction
                     $this->referenceTransaction($instance, fn (): bool => $instance->update(['vp_environment' => $previous]));
                 }
 
-                return $command;
+                return null;
             }
             $store = dirname($this->vp->existingBinary($instance->node), 2);
             $environment = VpEnvironment::fromArray([...$environment->record('checking'), 'store' => $store]);
@@ -74,7 +74,7 @@ final readonly class PrepareVpEnvironmentAction
             if ($this->vp->environmentInstalled($instance->node, $environment)) {
                 $instance->update(['vp_environment' => [...$intent, 'status' => 'active']]);
 
-                return $environment->command($name, $command);
+                return $environment;
             }
             $this->blocking($instance, function () use ($instance, $environment, $result, $intent): void {
                 $instance->update(['vp_environment' => [...$intent, 'status' => 'installing']]);
@@ -89,7 +89,7 @@ final readonly class PrepareVpEnvironmentAction
                 $this->prune($instance, $environment->store);
             });
 
-            return $environment->command($name, $command);
+            return $environment;
         } catch (Throwable $exception) {
             $code = $exception instanceof InvalidArgumentException ? 'deployment.vp_requirements_invalid' : 'deployment.vp_store_failed';
             $record = $instance->getAttribute('vp_environment');

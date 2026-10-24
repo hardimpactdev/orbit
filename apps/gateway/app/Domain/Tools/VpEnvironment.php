@@ -48,11 +48,6 @@ final readonly class VpEnvironment
         return new self($value['store'], $value['vp_version'], $value['node_version'], $value['package_manager'], $value['package_manager_version'], $hash);
     }
 
-    public function packageManagerSelector(): string
-    {
-        return $this->packageManager.'@'.$this->packageManagerVersion.($this->packageManagerHash === null ? '' : '+'.$this->packageManagerHash);
-    }
-
     /** @return array<string, string|null> */
     public function record(string $status): array
     {
@@ -67,14 +62,15 @@ final readonly class VpEnvironment
         ];
     }
 
-    public function command(string $name, string $command): string
+    /** @return array<string, string|null> */
+    public function input(): array
     {
-        $prefix = implode(' ', array_map(escapeshellarg(...), [
-            'env', 'VP_HOME='.$this->store, $this->store.'/bin/vp',
-            'env', 'exec', '--node', $this->nodeVersion,
-            '--package-manager', $this->packageManagerSelector(),
-        ]));
-
-        return $prefix.' bash -eu -c '.escapeshellarg($command);
+        return [
+            'store' => $this->store,
+            'node_version' => $this->nodeVersion,
+            'package_manager' => $this->packageManager,
+            'package_manager_version' => $this->packageManagerVersion,
+            'package_manager_hash' => $this->packageManagerHash,
+        ];
     }
 }

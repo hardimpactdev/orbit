@@ -205,6 +205,7 @@ fn refuses_tracked_changes_a_diverged_branch_and_a_running_lifecycle_step() {
 fn runs_a_step_in_the_checkout_with_redacted_output_and_no_inherited_lock() {
     let fixture = Fixture::new();
     let input = StepInput {
+        vp_environment: None,
         checkout: fixture.checkout(),
         script: "pwd\necho token=s3cret >&2\nsleep 5 &\nexit 3\n".into(),
         step: "build".into(),
@@ -263,6 +264,7 @@ fn runs_a_step_in_the_checkout_with_redacted_output_and_no_inherited_lock() {
 fn stops_a_step_and_every_process_it_started_at_its_timeout() {
     let fixture = Fixture::new();
     let input = StepInput {
+        vp_environment: None,
         checkout: fixture.checkout(),
         script: "echo started\nsleep 30 &\necho $! > child-pid\nsleep 30\n".into(),
         step: "hang".into(),

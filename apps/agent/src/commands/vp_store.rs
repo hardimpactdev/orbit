@@ -107,7 +107,112 @@ fn home(path: &Path, account: &Account) -> Result<()> {
     }
     store::check_home(path, account, false).map_err(|_| Error::Invalid {})
 }
+pub(super) struct Deployment {
+    pub store: PathBuf,
+    pub arguments: Vec<std::ffi::OsString>,
+    owner: u32,
+}
+
+impl Deployment {
+    /// Private account homes need passage for the production Instance, not a broader home mode.
+    pub(super) fn allow_instance(&self, user: &str) -> Result<()> {
+        use std::process::{Command as Process, Stdio};
+        let (uid, _, _) = crate::command::identity::account(user).map_err(|_| Error::Invalid {})?;
+        if uid == 0 {
+            return Err(Error::Invalid {});
+        }
+        let can_execute = || -> Result<bool> {
+            let mut command = Process::new("/usr/bin/test");
+            command
+                .arg("-x")
+                .arg(self.store.join("bin/vp"))
+                .current_dir("/")
+                .stdin(Stdio::null());
+            crate::command::identity::drop_to(&mut command, user).map_err(|_| Error::Invalid {})?;
+            Ok(command.status()?.success())
+        };
+        if can_execute()? {
+            return Ok(());
+        }
+        let mut grant = vec![];
+        for path in self.store.ancestors().skip(1) {
+            let meta = fs::symlink_metadata(path).map_err(|_| Error::Invalid {})?;
+            if !meta.is_dir() {
+                return Err(Error::Invalid {});
+            }
+            if meta.mode() & 0o001 == 0 {
+                if meta.uid() != self.owner {
+                    return Err(Error::Invalid {});
+                }
+                let output = Process::new("getfacl")
+                    .args(["-cpn", "--"])
+                    .arg(path)
+                    .stdin(Stdio::null())
+                    .stderr(Stdio::null())
+                    .output()?;
+                if !output.status.success() {
+                    return Err(Error::Failed {});
+                }
+                let acl = String::from_utf8(output.stdout).map_err(|_| Error::Invalid {})?;
+                grant.push((
+                    path,
+                    super::caddy_access::passage_grant(&acl, &uid.to_string()),
+                ));
+            }
+        }
+        for (path, acl) in grant.into_iter().rev() {
+            let status = Process::new("setfacl")
+                .args(["-n", "-m", &acl, "--"])
+                .arg(path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+            if !status.success() {
+                return Err(Error::Failed {});
+            }
+        }
+        if !can_execute()? {
+            return Err(Error::Invalid {});
+        }
+        Ok(())
+    }
+}
+
 impl Environment {
+    /// Builds fixed arguments for a deploy. The shared store belongs to the enrolled account,
+    /// while the caller drops to the Instance account before starting its executable.
+    pub(super) fn deployment(&self) -> Result<Deployment> {
+        let meta = fs::symlink_metadata(&self.store).map_err(|_| Error::Invalid {})?;
+        let owner = crate::command::identity::user_name(meta.uid()).ok_or(Error::Invalid {})?;
+        let account = Account::named(&owner).map_err(|_| Error::Invalid {})?;
+        if !installed(self, &account)? || !executable(&self.store.join("bin/vp")) {
+            return Err(Error::Invalid {});
+        }
+        let selector = format!(
+            "{}@{}{}",
+            self.package_manager,
+            self.package_manager_version,
+            self.package_manager_hash
+                .as_ref()
+                .map(|hash| format!("+{hash}"))
+                .unwrap_or_default()
+        );
+        Ok(Deployment {
+            store: self.store.clone(),
+            owner: account.uid,
+            arguments: vec![
+                self.store.join("bin/vp").into_os_string(),
+                "env".into(),
+                "exec".into(),
+                "--node".into(),
+                self.node_version.clone().into(),
+                "--package-manager".into(),
+                selector.into(),
+            ],
+        })
+    }
+
     fn paths(&self, account: &Account) -> Result<(PathBuf, PathBuf)> {
         home(&self.store, account)?;
         if !store::version(&self.node_version)

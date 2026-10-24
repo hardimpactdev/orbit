@@ -29,6 +29,7 @@ pub mod firewall;
 mod guest;
 pub mod health;
 pub mod hibernation;
+mod homebrew;
 mod homebrew_scope;
 pub mod horizon_queue;
 mod image_boot;
@@ -129,6 +130,21 @@ pub fn all() -> Vec<Entry> {
         entry::<composer_global::Remove>(),
         entry::<homebrew_scope::Inspect>(),
         entry::<homebrew_scope::Materialize>(),
+        entry::<homebrew::Version>(),
+        entry::<homebrew::BottleTag>(),
+        entry::<homebrew::FormulaInventory>(),
+        entry::<homebrew::formula::Candidate>(),
+        entry::<homebrew::formula::Adoption>(),
+        entry::<homebrew::formula::Install>(),
+        entry::<homebrew::formula::Update>(),
+        entry::<homebrew::formula::Remove>(),
+        entry::<homebrew::cask::Inventory>(),
+        entry::<homebrew::cask::Candidate>(),
+        entry::<homebrew::cask::Adoption>(),
+        entry::<homebrew::cask::Install>(),
+        entry::<homebrew::cask::Update>(),
+        entry::<homebrew::cask::Remove>(),
+        entry::<homebrew::scan::Scan>(),
         entry::<composer_scope::Inspect>(),
         entry::<composer_scope::Materialize>(),
         entry::<tools_apt::Version>(),

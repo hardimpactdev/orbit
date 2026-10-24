@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/app/Data/Tools/**
-  - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,tool_output}{.rs,/**}
+  - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
   - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
 ---
@@ -49,6 +49,12 @@ A task VM's base image runs the Linux `vp` and `composer` materialization progra
 Linux Homebrew scope checks and first-use setup use `tools.inspect-homebrew-scope` and `tools.materialize-homebrew`. The agent checks the parent, repository, official origin, clean worktree, and executable link before changes. Setup uses fixed package prerequisites and the pinned Homebrew revision and version tag. It preserves a conflicting prefix and leaves an owned failed setup available for retry.
 
 On macOS, `tools.inspect-homebrew-scope` reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
+
+`tools.homebrew-version`, `tools.homebrew-bottle-tag`, and `tools.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
+
+`tools.homebrew-formula-adoption` reads the installed version and metadata together. It returns the observed version and any adoption block. It changes no package or Tool intent. The Gateway records only the selected package after checking that result.
+
+The `tools.homebrew-cask-*` commands own cask metadata, installed versions, discovery, adoption checks, and package changes on macOS. The agent resolves the Node's variation and checks artifact destinations against the enrolled account's native home and verified Homebrew prefix. Cask mutations share the formula mutation lock. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
 
 Composer package operations use typed `tools.composer-*` commands. The agent runs the fixed shared-scope arguments, validates Composer output, and resolves an explicit dry-run no-op from one installed inventory. The Gateway keeps version constraints and adoption policy.
 
@@ -130,6 +136,10 @@ Package-manager launchers link to the archive's JavaScript entry points or verif
 
 The `tools.read-vp-project` agent command reads manifests and version files as data. Its fixed reader process runs as the Instance account in production and as the enrolled account in development. It reads bounded regular files without following file symlinks or running hooks, confines linked workspace manifests to the Project, and combines the account and Project registry settings.
 
+The Gateway sends each Project deploy script unchanged, with an optional typed Vite+ environment. The agent validates the store and exact runtime requirements before writing the private script file. It selects the store's `vp env exec` with fixed arguments, sets `VP_HOME`, and runs the whole script with `bash -eu` as the Instance owner. Flags, quoting, pipelines, and multiple build commands keep their meaning. The enrolled account owns the shared store; production builds run as the separate Instance account.
+
+When that store sits below a private enrolled-account directory, production preparation grants only the Instance account traversal through those ancestors. It grants no directory listing or write access and leaves private files protected by their own permissions. Publicly traversable ancestors and the store contents stay unchanged.
+
 Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, checkout path, and prerequisite status in `vp_environment`. Preparation retains earlier checkout references, including after installation or a failed build. The selected release and every retained release keep their runtimes, so rollback can select retained code without fetching or rebuilding its prerequisites.
 
 Release cleanup drops a checkout's references only after taking that release out of the retained set; releases kept for running processes keep their references. Mutable checkouts keep earlier runtime references until the Instance is removed because release cleanup cannot prove that their old processes have stopped. Garbage collection counts these references and the current recipe Node reference under the installation lock. It removes only deploy-installed versions with no remaining references; content without a deploy checksum receipt stays.
@@ -184,7 +194,7 @@ The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsuppo
 
 The scan stores a normalized SemVer version, or null. A readable formula revision such as `25.8.1_1`, and a readable cask version such as `3.003`, normalize to null and can still be `supported`. `version_unreadable` means there is no readable version string, such as `latest`. It does not mean readable text failed the SemVer check. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`. Doctor prints `version=unknown`.
 
-Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
+`tools.homebrew-scan` inspects the scope and bottle tag once, then reads formula and cask inventories independently. A failed inventory leaves the other manager's successful result available. Inside the agent, Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
 
 Homebrew can omit an installed formula or cask from `info` and still exit 0, including when the tap is untrusted or Homebrew refuses to load it. The name stays in `list`. The scan keeps that name, with `installed_version` null and `dependency` false, because the name list does not say whether it is a dependency. Adoption is `unsupported`. The block is `unsupported_source`, or `protected` when the formula name is protected.
 
@@ -316,11 +326,11 @@ The optional constraint is a SemVer range, such as `^0.150`. It only stops an un
 
 ## Homebrew formulae
 
-The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. Homebrew installs that bottle with `--force-bottle`. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. `tools.homebrew-formula-candidate` reads the formula's metadata on the Node. The agent requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. `tools.homebrew-formula-install` and `tools.homebrew-formula-update` check that metadata again under the shared Homebrew mutation lock and force bottle use. `tools.homebrew-formula-remove` removes only the named formula. These commands refuse protected packages and accept no executable, environment, tap, or manager options. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
 
 Orbit never runs a Homebrew developer command. That includes `brew ruby` and `brew irb`. A developer command writes `homebrew.devcmdrun` into the user's Homebrew git config and changes how a later `brew update` behaves. Orbit does not set `HOMEBREW_DEVELOPER` or `HOMEBREW_DEV_CMD_RUN`.
 
-The compatible tag is computed in the Gateway. On macOS it reads the product version with the fixed command `sw_vers -productVersion` and uses the CPU stored from `uname -m`. A code-owned table maps that version to Homebrew's active bottle symbol. The Gateway does not store the OS version on the Node.
+The compatible tag is computed by the agent. On macOS it reads the product version with the fixed command `sw_vers -productVersion` and uses the CPU stored from `uname -m`. A code-owned table maps that version to Homebrew's active bottle symbol. The Gateway does not store the OS version on the Node.
 
 | Product version major | Bottle symbol |
 | --- | --- |

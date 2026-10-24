@@ -35,7 +35,7 @@ it('runs a deploy step in the release and records its output in order', function
         ->and($events)->toBe([['migrate', DeploymentOutputStream::Stdout, "building\n"], ['migrate', DeploymentOutputStream::Stderr, "warning\n"]])
         ->and(array_diff_key($input, ['script' => true]))->toBe([
             'user' => 'orbit-app-1', 'home' => '/home/orbit-app-1', 'release' => '20260911-a1',
-            'operation' => 42, 'step' => 'migrate', 'timeout_seconds' => 60, 'secrets' => ['secret-token-value'],
+            'vp_environment' => null, 'operation' => 42, 'step' => 'migrate', 'timeout_seconds' => 60, 'secrets' => ['secret-token-value'],
         ])
         ->and($input['script'])->toContain('php artisan migrate --force');
 });

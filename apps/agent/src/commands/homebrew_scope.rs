@@ -23,7 +23,7 @@ const PREFIX: &str = "/home/linuxbrew/.linuxbrew";
 const ORIGIN: &str = "https://github.com/Homebrew/brew";
 const REVISION: &str = "d79ef822ab8136e393ed5f86e2b56afc68d04874";
 const TAG: &str = "7.0.0";
-const VERSION: &str = "Homebrew 7.0.0";
+pub(super) const VERSION: &str = "Homebrew 7.0.0";
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
@@ -34,8 +34,8 @@ pub struct Input {
 }
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Output {
-    prefix: PathBuf,
-    home: PathBuf,
+    pub(super) prefix: PathBuf,
+    pub(super) home: PathBuf,
 }
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Done {}

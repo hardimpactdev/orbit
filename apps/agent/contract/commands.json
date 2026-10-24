@@ -255,6 +255,411 @@
       ]
     },
     {
+      "name": "tools.homebrew-version",
+      "summary": "Read the verified Homebrew manager version.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-bottle-tag",
+      "summary": "Resolve the Node's Homebrew bottle tag without developer commands.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-inventory",
+      "summary": "Read installed formula versions without loading formula definitions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-candidate",
+      "summary": "Read one official Core formula's verified bottle candidate.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-adoption",
+      "summary": "Inspect one installed formula for explicit adoption without changing packages.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-install",
+      "summary": "Install one verified Core bottle.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-update",
+      "summary": "Upgrade one verified Core bottle without unpinning it.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-formula-remove",
+      "summary": "Remove exactly one unprotected Core formula.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-inventory",
+      "summary": "Read installed official cask versions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-candidate",
+      "summary": "Read the safe official cask candidate.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-adoption",
+      "summary": "Inspect an installed cask for explicit adoption.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-install",
+      "summary": "Install one safe official cask.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-update",
+      "summary": "Upgrade one safe official cask.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-cask-remove",
+      "summary": "Remove one cask after checking uninstall safety.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": null,
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
+      "name": "tools.homebrew-scan",
+      "summary": "Read formula and cask inventories independently without changing Tool intent.",
+      "mutates": false,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.homebrew_input_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_operation_failed",
+        "tools.homebrew_output_invalid",
+        "tools.homebrew_version_unsupported",
+        "tools.homebrew_bottle_unavailable",
+        "tools.homebrew_package_protected",
+        "tools.homebrew_candidate_invalid",
+        "tools.homebrew_cask_source",
+        "tools.homebrew_cask_artifact",
+        "tools.homebrew_cask_authorization",
+        "tools.homebrew_cask_checksum",
+        "tools.homebrew_cask_version"
+      ]
+    },
+    {
       "name": "tools.inspect-composer-scope",
       "summary": "Read Composer root requirements from the owned shared scope.",
       "mutates": false,

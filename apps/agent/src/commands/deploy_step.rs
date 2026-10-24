@@ -49,6 +49,8 @@ pub struct RunDeployStepInput {
     pub release: String,
     /// The step's program, which runs with `bash -eu` in the release.
     pub script: String,
+    #[serde(default)]
+    pub vp_environment: Option<super::vp_store::Environment>,
     /// The deploy operation, whose channel `private-operation.{id}` receives the lines. Without one, no line is live.
     #[serde(default)]
     pub operation: Option<u64>,
@@ -178,6 +180,14 @@ pub fn run(
         check: "the production user exists".into(),
     })?;
 
+    let vp = prepare_vp(input.vp_environment.as_ref())?;
+    if let Some(vp) = &vp {
+        vp.allow_instance(&input.user)
+            .map_err(|_| DeployStepError::Invalid {
+                check: "the Instance can execute its shared Vite+ runtime".into(),
+            })?;
+    }
+
     // The program goes in a private file of the user, never in an argument that other users could read.
     let file = input
         .home
@@ -206,7 +216,7 @@ pub fn run(
         &Program {
             user: Some(&input.user),
             directory: &release,
-            command: StepCommand::Script(&file),
+            command: StepCommand::script(&file, vp.as_ref()),
             step: &input.step,
             secrets: &input.secrets,
             environment: &BTreeMap::new(),
@@ -234,10 +244,37 @@ pub(super) struct Program<'a> {
 #[derive(Clone, Copy)]
 pub(super) enum StepCommand<'a> {
     Script(&'a Path),
+    VpScript {
+        file: &'a Path,
+        execution: &'a super::vp_store::Deployment,
+    },
     Fixed {
         executable: &'a str,
         arguments: &'a [&'a std::ffi::OsStr],
     },
+}
+
+impl<'a> StepCommand<'a> {
+    pub(super) fn script(file: &'a Path, vp: Option<&'a super::vp_store::Deployment>) -> Self {
+        match vp {
+            Some(execution) => Self::VpScript { file, execution },
+            None => Self::Script(file),
+        }
+    }
+}
+
+pub(super) fn prepare_vp(
+    environment: Option<&super::vp_store::Environment>,
+) -> Result<Option<super::vp_store::Deployment>, DeployStepError> {
+    environment
+        .map(|environment| {
+            environment
+                .deployment()
+                .map_err(|_| DeployStepError::Invalid {
+                    check: "the Vite+ environment is installed in its owner's store".into(),
+                })
+        })
+        .transpose()
 }
 
 pub(super) fn run_program(
@@ -254,37 +291,35 @@ pub(super) fn run_program(
         timeout,
     } = *program;
     let mut command = Process::new("setsid");
-    command.envs(environment).arg("--wait");
+    command
+        .envs(environment)
+        .arg("--wait")
+        .current_dir(directory);
     match execution {
         StepCommand::Script(file) => {
+            command.args(["bash", "-eu"]).arg(file);
+        }
+        StepCommand::VpScript { file, execution } => {
             command
-                .args([
-                    "bash",
-                    "-eu",
-                    "-c",
-                    "umask 077; cd -- \"$1\"; exec bash -eu \"$2\"",
-                    "bash",
-                ])
-                .arg(directory)
+                .env("VP_HOME", &execution.store)
+                .args(&execution.arguments)
+                .args(["bash", "-eu"])
                 .arg(file);
         }
         StepCommand::Fixed {
             executable,
             arguments,
         } => {
-            command
-                .arg(executable)
-                .args(arguments)
-                .current_dir(directory);
-            use std::os::unix::process::CommandExt;
-            // SAFETY: umask is async-signal-safe; only this child changes its file creation mask.
-            unsafe {
-                command.pre_exec(|| {
-                    libc::umask(0o077);
-                    Ok(())
-                });
-            }
+            command.arg(executable).args(arguments);
         }
+    }
+    use std::os::unix::process::CommandExt;
+    // SAFETY: umask is async-signal-safe; only this child changes its file creation mask.
+    unsafe {
+        command.pre_exec(|| {
+            libc::umask(0o077);
+            Ok(())
+        });
     }
     command
         .stdin(Stdio::null())
@@ -450,6 +485,7 @@ mod tests {
             home,
             release: "r1".into(),
             script: "echo building\necho \"key=$SECRET_VALUE\" >&2\npwd\n".into(),
+            vp_environment: None,
             operation: Some(7),
             step: "build".into(),
             timeout_seconds: 60,

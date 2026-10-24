@@ -160,18 +160,18 @@ fn caddy_can(mode: &str, path: &Path) -> bool {
     .is_some_and(|output| output.status.success())
 }
 
-/// The ACL change that lets Caddy pass a directory: execute for Caddy's entry and for the mask, nothing else.
-fn passage_grant(acl: &str) -> String {
+/// Adds passage to one account's entry and the mask without changing their read or write bits.
+pub(super) fn passage_grant(acl: &str, user: &str) -> String {
     let field = |prefix: &str| {
         acl.lines()
             .find_map(|line| line.strip_prefix(prefix))
             .map(|rest| rest.chars().take(3).collect::<String>())
     };
-    let caddy = field("user:caddy:").unwrap_or_else(|| "---".into());
+    let permissions = field(&format!("user:{user}:")).unwrap_or_else(|| "---".into());
     let mask = field("mask::")
         .or_else(|| field("group::"))
         .unwrap_or_else(|| "---".into());
-    format!("u:caddy:{}x,m::{}x", &caddy[..2], &mask[..2])
+    format!("u:{user}:{}x,m::{}x", &permissions[..2], &mask[..2])
 }
 
 /// Checks one site and resolves a development default that still serves through `current` in the old release layout.
@@ -458,7 +458,7 @@ impl Walk<'_> {
             &[
                 "-n".as_ref(),
                 "-m".as_ref(),
-                passage_grant(&acl).as_ref(),
+                passage_grant(&acl, "caddy").as_ref(),
                 "--".as_ref(),
                 directory.as_os_str(),
             ],
@@ -502,7 +502,7 @@ impl Walk<'_> {
                         &[
                             "-n".as_ref(),
                             "-m".as_ref(),
-                            passage_grant(&acl).as_ref(),
+                            passage_grant(&acl, "caddy").as_ref(),
                             "--".as_ref(),
                             ancestor.as_os_str(),
                         ],
@@ -726,11 +726,14 @@ mod tests {
     #[test]
     fn a_passage_grant_adds_execute_to_caddy_and_the_mask_only() {
         assert_eq!(
-            passage_grant("user::rwx\nuser:caddy:r--\ngroup::r-x\nmask::r--\nother::---\n"),
+            passage_grant(
+                "user::rwx\nuser:caddy:r--\ngroup::r-x\nmask::r--\nother::---\n",
+                "caddy"
+            ),
             "u:caddy:r-x,m::r-x"
         );
         assert_eq!(
-            passage_grant("user::rwx\ngroup::rw-\nother::---\n"),
+            passage_grant("user::rwx\ngroup::rw-\nother::---\n", "caddy"),
             "u:caddy:--x,m::rwx"
         );
     }
