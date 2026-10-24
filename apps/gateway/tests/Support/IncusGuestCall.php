@@ -9,8 +9,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 
 /**
  * What a host command `sudo -n incus --project <project> exec …` runs in the guest: the VM, the user, the working
- * directory, the argv, and stdin. Tests assert on these instead of on the position of each `incus exec` option. A
- * `bash -ceu <script>` of `resources/task-vms` also has the script's file name.
+ * directory, the argv, and stdin. Tests assert on these instead of on the position of each `incus exec` option.
  */
 final readonly class IncusGuestCall
 {
@@ -21,7 +20,6 @@ final readonly class IncusGuestCall
         public ?string $cwd,
         public array $argv,
         public string|ProtectedInput|null $input,
-        public ?string $script,
     ) {}
 
     public static function decode(RemoteCommand $command): ?self
@@ -45,8 +43,7 @@ final readonly class IncusGuestCall
             $user = $argv[2];
             $argv = array_slice($argv, 4);
         }
-        $script = ($argv[0] ?? null) === 'bash' && ($argv[1] ?? null) === '-ceu' ? TaskVmScriptNames::of($argv[2]) : null;
 
-        return new self($vm, $user, $cwd, array_values($argv), $command->protectedInput ?? $command->input, $script);
+        return new self($vm, $user, $cwd, array_values($argv), $command->protectedInput ?? $command->input);
     }
 }
