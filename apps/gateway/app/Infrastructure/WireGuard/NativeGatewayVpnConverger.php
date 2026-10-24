@@ -8,14 +8,13 @@ use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\VpnDnsmasqBackendListen;
 use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Firewall\UfwManagedRule;
-use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwRuleShape;
-use App\Infrastructure\Firewall\UfwStatusParser;
-use App\Infrastructure\Firewall\UfwStoredRuleParser;
-use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -42,9 +41,8 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private WireGuardServerConfigRenderer $renderer,
         private ProtectedFileWriter $files,
         private ProcessRunner $processes,
-        private UfwStatusParser $firewallParser,
+        private AgentCommandRunner $agents,
         private string $orbitHome,
-        private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
@@ -328,390 +326,53 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 
     private function convergeFirewall(Node $gateway, BootstrapGatewayData $data): void
     {
-        [$status, $inactive] = $this->firewallStatus();
-        $recovery = $this->recoveryFirewallRule($gateway);
-        $rules = $this->firewallRules($data);
-
-        if ($inactive) {
-            $stored = $this->storedFirewallRules();
-            $this->guardStoredFirewallDrift($stored, [$recovery, ...$rules]);
-
-            if (
-                $this->storedFirewallParser->ownership($stored->stdout, $recovery->shape) === UfwRuleOwnership::Missing
-            ) {
-                $this->firewallRule($recovery->arguments);
-                $stored = $this->storedFirewallRules();
-            }
-
-            if ($this->storedFirewallParser->ownership($stored->stdout, $recovery->shape) !== UfwRuleOwnership::Exact) {
-                throw new NodeProvisioningException(
-                    step: 'vpn-firewall-recovery-probe',
-                    errorCode: 'vpn.firewall_recovery_probe_failed',
-                    message: 'The exact stored public SSH recovery rule was not present.',
-                    result: $stored,
-                );
-            }
-
-            $this->run(
-                step: 'vpn-firewall-enable',
-                errorCode: 'vpn.firewall_enable_failed',
-                arguments: ['sudo', 'ufw', '--force', 'enable'],
-            );
-            [$status, $inactive] = $this->firewallStatus();
-
-            if ($inactive) {
-                throw new NodeProvisioningException(
-                    step: 'vpn-firewall-status',
-                    errorCode: 'vpn.firewall_status_invalid',
-                    message: 'Gateway UFW remained inactive after it was enabled.',
-                    result: $status,
-                );
-            }
+        try {
+            $this->agents->install($gateway);
+        } catch (\Throwable $exception) {
+            throw new NodeProvisioningException('agent-install', 'agent.install_failed', 'The Gateway command agent could not be installed.', previous: $exception);
         }
 
-        foreach ($this->missingFirewallRules($status, $rules) as $rule) {
-            $this->firewallRule($rule->arguments);
-        }
-
-        [$verification, $inactive] = $this->firewallStatus();
-
-        if ($inactive) {
-            throw new NodeProvisioningException(
-                step: 'vpn-firewall-probe',
-                errorCode: 'vpn.firewall_probe_failed',
-                message: 'Gateway UFW was inactive after firewall convergence.',
-                result: $verification,
-            );
-        }
-
-        $this->verifyFirewallRules($verification, $rules);
-        $this->removeRecoveryFirewallRule($verification, $recovery);
-    }
-
-    /** @return array{CommandResult, bool} */
-    private function firewallStatus(): array
-    {
-        $status = $this->run(
-            step: 'vpn-firewall-status',
-            errorCode: 'vpn.firewall_status_failed',
-            arguments: ['sudo', 'ufw', 'status', 'numbered'],
-        );
-        $inactive = preg_match('/^Status:\s+inactive$/mi', $status->stdout) === 1;
-
-        if (! $inactive && preg_match('/^Status:\s+active$/mi', $status->stdout) !== 1) {
-            throw new NodeProvisioningException(
-                step: 'vpn-firewall-status',
-                errorCode: 'vpn.firewall_status_invalid',
-                message: 'Could not determine the gateway UFW status.',
-                result: $status,
-            );
-        }
-
-        return [$status, $inactive];
-    }
-
-    private function storedFirewallRules(): CommandResult
-    {
-        return $this->run(
-            step: 'vpn-firewall-recovery-probe',
-            errorCode: 'vpn.firewall_recovery_probe_failed',
-            arguments: UfwStoredRuleProbe::arguments(),
-        );
-    }
-
-    /** @param list<UfwManagedRule> $rules */
-    private function guardStoredFirewallDrift(CommandResult $stored, array $rules): void
-    {
-        foreach ($rules as $rule) {
-            if ($this->storedFirewallParser->ownership($stored->stdout, $rule->shape) !== UfwRuleOwnership::Drift) {
-                continue;
-            }
-
-            $this->throwFirewallDrift($rule, $stored);
+        try {
+            $this->agents->run($gateway, 'firewall.gateway-vpn', [
+                'desired' => array_map(static fn (UfwRuleShape $shape): array => $shape->toAgentInput(), $this->firewallRules($data)),
+                'recovery' => $this->incomingFirewallShape('orbit:public-ssh-recovery', 'tcp', (string) $gateway->public_ssh_port)->toAgentInput(),
+            ]);
+        } catch (AgentCommandRefused $refused) {
+            $step = match ($refused->errorCode) {
+                'vpn.firewall_status_failed', 'vpn.firewall_status_invalid' => 'vpn-firewall-status',
+                'vpn.firewall_recovery_probe_failed' => 'vpn-firewall-recovery-probe',
+                'vpn.firewall_enable_failed' => 'vpn-firewall-enable',
+                'vpn.firewall_rule_failed' => 'vpn-firewall',
+                'vpn.firewall_recovery_remove_failed' => 'vpn-firewall-recovery-remove',
+                default => 'vpn-firewall-probe',
+            };
+            throw new NodeProvisioningException($step, $refused->errorCode, $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException('vpn-firewall-status', 'vpn.firewall_status_failed', 'The Gateway firewall command could not run.', previous: $failure, result: $failure->result);
         }
     }
 
-    /**
-     * @param  list<UfwManagedRule>  $rules
-     * @return list<UfwManagedRule>
-     */
-    private function missingFirewallRules(CommandResult $status, array $rules): array
-    {
-        $missing = [];
-
-        foreach ($rules as $rule) {
-            $ownership = $this->firewallParser->ownership($status->stdout, $rule->shape);
-
-            if ($ownership === UfwRuleOwnership::Drift) {
-                $this->throwFirewallDrift($rule, $status);
-            }
-
-            if ($ownership !== UfwRuleOwnership::Missing) {
-                continue;
-            }
-
-            $missing[] = $rule;
-        }
-
-        return $missing;
-    }
-
-    /** @param list<UfwManagedRule> $rules */
-    private function verifyFirewallRules(CommandResult $status, array $rules): void
-    {
-        foreach ($rules as $rule) {
-            if ($this->firewallParser->ownership($status->stdout, $rule->shape) === UfwRuleOwnership::Exact) {
-                continue;
-            }
-
-            $this->throwFirewallDrift($rule, $status);
-        }
-    }
-
-    private function removeRecoveryFirewallRule(CommandResult $status, UfwManagedRule $recovery): void
-    {
-        $ownership = $this->firewallParser->ownership($status->stdout, $recovery->shape);
-
-        if ($ownership === UfwRuleOwnership::Drift) {
-            $this->throwFirewallDrift($recovery, $status);
-        }
-
-        if ($ownership === UfwRuleOwnership::Missing) {
-            return;
-        }
-
-        $numbers = $this->ruleNumbers($status->stdout, $recovery->shape->comment);
-        rsort($numbers, SORT_NUMERIC);
-
-        foreach ($numbers as $number) {
-            $this->run(
-                step: 'vpn-firewall-recovery-remove',
-                errorCode: 'vpn.firewall_recovery_remove_failed',
-                arguments: ['sudo', 'ufw', '--force', 'delete', (string) $number],
-            );
-        }
-
-        [$verification, $inactive] = $this->firewallStatus();
-
-        if (
-            $inactive
-            || $this->firewallParser->ownership($verification->stdout, $recovery->shape) !== UfwRuleOwnership::Missing
-        ) {
-            $this->throwFirewallDrift($recovery, $verification);
-        }
-    }
-
-    /** @return list<int> */
-    private function ruleNumbers(string $output, string $comment): array
-    {
-        $numbers = [];
-
-        foreach (explode("\n", $output) as $line) {
-            $matches = [];
-
-            if (
-                preg_match(
-                    '/^\[\s*(\d+)\].*#\s*'.preg_quote(str: $comment, delimiter: '/').'\s*$/',
-                    trim($line),
-                    $matches,
-                ) === 1
-            ) {
-                $numbers[] = (int) $matches[1];
-            }
-        }
-
-        return $numbers;
-    }
-
-    private function throwFirewallDrift(UfwManagedRule $rule, CommandResult $status): never
-    {
-        throw new NodeProvisioningException(
-            step: 'vpn-firewall-probe',
-            errorCode: 'vpn.firewall_probe_failed',
-            message: "Gateway firewall rule [{$rule->shape->comment}] did not match its managed shape.",
-            result: $status,
-        );
-    }
-
-    private function recoveryFirewallRule(Node $gateway): UfwManagedRule
-    {
-        $comment = 'orbit:public-ssh-recovery';
-
-        return new UfwManagedRule(
-            shape: new UfwRuleShape(
-                comment: $comment,
-                action: 'allow',
-                direction: 'in',
-                source: 'any',
-                destination: 'any',
-                port: (string) $gateway->public_ssh_port,
-                protocol: 'tcp',
-                inInterface: null,
-                outInterface: null,
-                family: null,
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                (string) $gateway->public_ssh_port,
-                'comment',
-                $comment,
-            ],
-        );
-    }
-
-    /** @return list<UfwManagedRule> */
+    /** @return list<UfwRuleShape> */
     private function firewallRules(BootstrapGatewayData $data): array
     {
-        $rules = [];
-        $wireguardComment = 'orbit:vpn-wireguard';
-        $rules[] = new UfwManagedRule(
-            shape: $this->incomingFirewallShape(
-                comment: $wireguardComment,
-                protocol: 'udp',
-                port: (string) $data->wireguardPort,
+        $rules = [
+            $this->incomingFirewallShape('orbit:vpn-wireguard', 'udp', (string) $data->wireguardPort),
+            new UfwRuleShape(
+                comment: 'orbit:vpn-ssh', action: 'allow', direction: 'in', source: 'any',
+                destination: $data->wireguardIp, port: '22', protocol: 'tcp',
+                inInterface: 'orbit', outInterface: null, family: 'v4',
             ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'udp',
-                'to',
-                'any',
-                'port',
-                (string) $data->wireguardPort,
-                'comment',
-                $wireguardComment,
-            ],
-        );
-        $sshComment = 'orbit:vpn-ssh';
-        $rules[] = new UfwManagedRule(
-            shape: new UfwRuleShape(
-                comment: $sshComment,
-                action: 'allow',
-                direction: 'in',
-                source: 'any',
-                destination: $data->wireguardIp,
-                port: '22',
-                protocol: 'tcp',
-                inInterface: 'orbit',
-                outInterface: null,
-                family: 'v4',
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                'orbit',
-                'proto',
-                'tcp',
-                'to',
-                $data->wireguardIp,
-                'port',
-                '22',
-                'comment',
-                $sshComment,
-            ],
-        );
-
-        foreach ($this->privateInterfaces($data) as $interface) {
+        ];
+        foreach (array_unique($this->privateInterfaces($data)) as $interface) {
             foreach (['udp', 'tcp'] as $protocol) {
-                $comment = "orbit:vpn-dns-{$protocol}-{$interface}";
-                $rules[] = new UfwManagedRule(
-                    shape: $this->incomingFirewallShape(
-                        comment: $comment,
-                        protocol: $protocol,
-                        port: '53',
-                        interface: $interface,
-                    ),
-                    arguments: [
-                        'sudo',
-                        'ufw',
-                        'allow',
-                        'in',
-                        'on',
-                        $interface,
-                        'proto',
-                        $protocol,
-                        'to',
-                        'any',
-                        'port',
-                        '53',
-                        'comment',
-                        $comment,
-                    ],
-                );
+                $rules[] = $this->incomingFirewallShape("orbit:vpn-dns-{$protocol}-{$interface}", $protocol, '53', $interface);
             }
         }
-
-        $gatewayComment = 'orbit:gateway-https';
-        $rules[] = new UfwManagedRule(
-            shape: $this->incomingFirewallShape(
-                comment: $gatewayComment,
-                protocol: 'tcp',
-                port: '443',
-                interface: 'orbit',
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                'orbit',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                '443',
-                'comment',
-                $gatewayComment,
-            ],
-        );
-        $forwardingComment = 'orbit:vpn-peer-forwarding';
-        $rules[] = new UfwManagedRule(
-            shape: new UfwRuleShape(
-                comment: $forwardingComment,
-                action: 'allow',
-                direction: 'fwd',
-                source: $data->wireguardSubnet,
-                destination: $data->wireguardSubnet,
-                port: 'any',
-                protocol: 'any',
-                inInterface: 'orbit',
-                outInterface: 'orbit',
-                family: 'v4',
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'route',
-                'allow',
-                'in',
-                'on',
-                'orbit',
-                'out',
-                'on',
-                'orbit',
-                'from',
-                $data->wireguardSubnet,
-                'to',
-                $data->wireguardSubnet,
-                'comment',
-                $forwardingComment,
-            ],
+        $rules[] = $this->incomingFirewallShape('orbit:gateway-https', 'tcp', '443', 'orbit');
+        $rules[] = new UfwRuleShape(
+            comment: 'orbit:vpn-peer-forwarding', action: 'allow', direction: 'fwd',
+            source: $data->wireguardSubnet, destination: $data->wireguardSubnet,
+            port: 'any', protocol: 'any', inInterface: 'orbit', outInterface: 'orbit', family: 'v4',
         );
 
         return $rules;
@@ -745,16 +406,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         }
 
         return ['orbit', $data->privateInterface];
-    }
-
-    /** @param non-empty-list<string> $arguments */
-    private function firewallRule(array $arguments): void
-    {
-        $this->run(
-            step: 'vpn-firewall',
-            errorCode: 'vpn.firewall_rule_failed',
-            arguments: $arguments,
-        );
     }
 
     private function subnet(string $value): Ipv4Subnet

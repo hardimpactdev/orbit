@@ -151,6 +151,7 @@ pub fn all() -> Vec<Entry> {
         entry::<firewall::native::rules::Rules>(),
         entry::<firewall::native::rules::Router>(),
         entry::<firewall::native::route::RouteLan>(),
+        entry::<firewall::native::gateway::GatewayVpn>(),
         entry::<tls_check::VerifyCertificate>(),
         entry::<caddy::InstallCertificate>(),
         entry::<caddy::Reload>(),

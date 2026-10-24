@@ -1028,6 +1028,26 @@
       ]
     },
     {
+      "name": "firewall.gateway-vpn",
+      "summary": "Converge Gateway VPN rules and retire public SSH only after verified private access.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "vpn.firewall_status_failed",
+        "vpn.firewall_status_invalid",
+        "vpn.firewall_recovery_probe_failed",
+        "vpn.firewall_enable_failed",
+        "vpn.firewall_rule_failed",
+        "vpn.firewall_probe_failed",
+        "vpn.firewall_recovery_remove_failed"
+      ]
+    },
+    {
       "name": "routes.verify-certificate",
       "summary": "Check that a workload serves a trusted certificate for a Route's domain.",
       "mutates": false,

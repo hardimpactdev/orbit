@@ -279,7 +279,6 @@ use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
-use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
 use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
@@ -850,7 +849,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 renderer: app(WireGuardServerConfigRenderer::class),
                 files: app(ProtectedFileWriter::class),
                 processes: app(ProcessRunner::class),
-                firewallParser: app(UfwStatusParser::class),
+                agents: app(AgentCommandRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );

@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Firewall\UfwStatusParser;
-use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -20,9 +18,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('activates the gateway WireGuard address through a validated atomic server config', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
+    [$converger, $processes, $orbitHome, $agents] = gateway_vpn_converger();
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
@@ -41,11 +40,12 @@ it('activates the gateway WireGuard address through a validated atomic server co
             arguments: $arguments,
             orbitHome: $orbitHome,
         );
-        assert_gateway_firewall_commands(arguments: $arguments);
-        expect($arguments[18])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
-            ->and($processes->calls[18]->input)
+        expect($agents->installs)->toBe(['gateway']);
+        expect($agents->commands())->toBe(['firewall.gateway-vpn']);
+        expect($arguments[10])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[10]->input)
             ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
-            ->and($arguments)->toHaveCount(19);
+            ->and($arguments)->toHaveCount(11);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -208,436 +208,73 @@ function assert_gateway_publication_commands(
     ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
 
-/** @param list<list<string>> $arguments */
-function assert_gateway_firewall_commands(array $arguments): void
-{
-    expect(array_slice(array: $arguments, offset: 10, length: 8))->toBe([
-        ['sudo', 'ufw', 'status', 'numbered'],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'proto',
-            'udp',
-            'to',
-            'any',
-            'port',
-            '51820',
-            'comment',
-            'orbit:vpn-wireguard',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'on',
-            'orbit',
-            'proto',
-            'tcp',
-            'to',
-            '10.44.0.1',
-            'port',
-            '22',
-            'comment',
-            'orbit:vpn-ssh',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'on',
-            'orbit',
-            'proto',
-            'udp',
-            'to',
-            'any',
-            'port',
-            '53',
-            'comment',
-            'orbit:vpn-dns-udp-orbit',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'on',
-            'orbit',
-            'proto',
-            'tcp',
-            'to',
-            'any',
-            'port',
-            '53',
-            'comment',
-            'orbit:vpn-dns-tcp-orbit',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'on',
-            'orbit',
-            'proto',
-            'tcp',
-            'to',
-            'any',
-            'port',
-            '443',
-            'comment',
-            'orbit:gateway-https',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'route',
-            'allow',
-            'in',
-            'on',
-            'orbit',
-            'out',
-            'on',
-            'orbit',
-            'from',
-            '10.44.0.0/24',
-            'to',
-            '10.44.0.0/24',
-            'comment',
-            'orbit:vpn-peer-forwarding',
-        ],
-        ['sudo', 'ufw', 'status', 'numbered'],
-    ]);
-}
-
-it('does not reapply exact managed gateway firewall rules', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(ufwRulesPreexisting: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
+it('sends Gateway VPN and recovery intent after installation, including private DNS interfaces', function (): void {
+    [$converger, $processes, $home, $agents] = gateway_vpn_converger();
+    $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'public_ssh_port' => 2222, 'wireguard_ip' => '10.44.0.1']);
+    $agents->onInstall(static function () use ($agents): void {
+        expect($agents->calls)->toBeEmpty();
+    });
     try {
-        $converger->converge($node, gateway_bootstrap_data());
-        $ufwMutations = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments)
-            ->filter(
-                static fn (array $arguments): bool => (
-                    array_slice(array: $arguments, offset: 0, length: 2) === ['sudo', 'ufw']
-                    && array_slice(array: $arguments, offset: 0, length: 3) !== ['sudo', 'ufw', 'status']
-                ),
-            );
-
-        $reappliedRules = $ufwMutations->filter(
-            static fn (array $arguments): bool => (
-                in_array(needle: 'comment', haystack: $arguments, strict: true)
-                && ! in_array(needle: 'orbit:vpn-ssh', haystack: $arguments, strict: true)
-            ),
-        );
-
-        expect($reappliedRules)->toBeEmpty();
+        $converger->converge($node, gateway_bootstrap_data(privateInterface: 'eth3'));
+        $input = $agents->calls[0]['input'];
+        expect($agents->installs)->toBe(['gateway']);
+        expect($agents->commands())->toBe(['firewall.gateway-vpn']);
+        expect($input['recovery'])->toBe([
+            'comment' => 'orbit:public-ssh-recovery', 'action' => 'allow', 'direction' => 'in',
+            'source' => 'any', 'destination' => 'any', 'port' => '2222', 'protocol' => 'tcp',
+            'in_interface' => null, 'out_interface' => null, 'family' => null,
+        ]);
+        $desired = collect($input['desired'])->keyBy('comment');
+        expect($desired->keys()->all())->toBe([
+            'orbit:vpn-wireguard', 'orbit:vpn-ssh', 'orbit:vpn-dns-udp-orbit', 'orbit:vpn-dns-tcp-orbit',
+            'orbit:vpn-dns-udp-eth3', 'orbit:vpn-dns-tcp-eth3', 'orbit:gateway-https', 'orbit:vpn-peer-forwarding',
+        ]);
+        expect($desired['orbit:vpn-wireguard'])->toMatchArray(['port' => '51820', 'protocol' => 'udp', 'source' => 'any', 'family' => null]);
+        expect($desired['orbit:vpn-ssh'])->toMatchArray(['destination' => '10.44.0.1', 'port' => '22', 'protocol' => 'tcp', 'in_interface' => 'orbit', 'family' => 'v4']);
+        foreach (['orbit', 'eth3'] as $interface) {
+            foreach (['udp', 'tcp'] as $protocol) {
+                expect($desired["orbit:vpn-dns-{$protocol}-{$interface}"])->toMatchArray(['port' => '53', 'protocol' => $protocol, 'in_interface' => $interface, 'family' => null]);
+            }
+        }
+        expect($desired['orbit:gateway-https'])->toMatchArray(['port' => '443', 'protocol' => 'tcp', 'in_interface' => 'orbit']);
+        expect($desired['orbit:vpn-peer-forwarding'])->toMatchArray(['source' => '10.44.0.0/24', 'destination' => '10.44.0.0/24', 'direction' => 'fwd', 'in_interface' => 'orbit', 'out_interface' => 'orbit']);
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        new Filesystem()->deleteDirectory($home);
     }
 });
 
-it('keeps SSH on WireGuard and removes public recovery after gateway VPN convergence', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(ufwRulesPreexisting: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
+it('maps native Gateway firewall refusals to their provisioning boundary', function (string $code, string $step): void {
+    [$converger, , $home, $agents] = gateway_vpn_converger();
+    $agents->refuse('firewall.gateway-vpn', $code);
     try {
-        $converger->converge($node, gateway_bootstrap_data());
-        $arguments = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-
-        expect($arguments)
-            ->toContain(
-                [
-                    'sudo',
-                    'ufw',
-                    'allow',
-                    'in',
-                    'on',
-                    'orbit',
-                    'proto',
-                    'tcp',
-                    'to',
-                    '10.44.0.1',
-                    'port',
-                    '22',
-                    'comment',
-                    'orbit:vpn-ssh',
-                ],
-                ['sudo', 'ufw', '--force', 'delete', '2'],
-                ['sudo', 'ufw', '--force', 'delete', '1'],
-            );
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('verifies public SSH recovery before enabling and converging an inactive UFW host', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(ufwActive: false);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        $converger->converge($node, gateway_bootstrap_data());
-        $arguments = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-        $storedProbes = $arguments->filter(
-            static fn (array $command): bool => $command === UfwStoredRuleProbe::arguments(),
-        );
-
-        expect($arguments->contains(['sudo', 'ufw', 'status', 'numbered']))
-            ->toBeTrue()
-            ->and($arguments->contains([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                '22',
-                'comment',
-                'orbit:public-ssh-recovery',
-            ]))
-            ->toBeTrue()
-            ->and($storedProbes)
-            ->toHaveCount(2)
-            ->and($arguments->contains(['sudo', 'ufw', '--force', 'enable']))
-            ->toBeTrue()
-            ->and($arguments->filter(
-                static fn (array $command): bool => $command === ['sudo', 'ufw', 'status', 'numbered'],
-            ))
-            ->toHaveCount(4)
-            ->and($arguments->contains(
-                static fn (array $command): bool => (
-                    array_slice(array: $command, offset: 0, length: 2) === ['sudo', 'ufw']
-                    && in_array(needle: 'reset', haystack: $command, strict: true)
-                ),
-            ))
-            ->toBeFalse();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('refuses to enable inactive UFW when the protected stored recovery rule is missing', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(
-        ufwActive: false,
-        missingStoredRecoveryRule: true,
-    );
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('vpn-firewall-recovery-probe')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.firewall_recovery_probe_failed');
-            });
-        $arguments = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-
-        expect($arguments->contains(
-            static fn (array $command): bool => (
-                array_slice(array: $command, offset: 0, length: 2) === ['sudo', 'awk']
-                && in_array(needle: '/etc/ufw/user.rules', haystack: $command, strict: true)
-            ),
-        ))
-            ->toBeTrue()
-            ->and($arguments->contains(['sudo', 'ufw', '--force', 'enable']))
-            ->toBeFalse();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('fails closed before mutating inactive UFW when the stored VPN comment has a broader shape', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(
-        ufwActive: false,
-        storedRuleDrift: true,
-    );
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('vpn-firewall-probe')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.firewall_probe_failed');
-            });
-        $mutations = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments)
-            ->filter(
-                static fn (array $arguments): bool => (
-                    array_slice(array: $arguments, offset: 0, length: 2) === ['sudo', 'ufw']
-                    && array_slice(array: $arguments, offset: 0, length: 3) !== ['sudo', 'ufw', 'status']
-                ),
-            );
-
-        expect($mutations)->toBeEmpty();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('limits private DNS to the WireGuard and explicit private interfaces', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        $converger->converge($node, gateway_bootstrap_data('eth3'));
-        $arguments = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-
-        expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
-            ->toContain(
-                'listen-address=127.0.0.55',
-                'bind-interfaces',
-                'local=/orbit/',
-                'host-record=gateway.orbit,10.44.0.1',
-            )
-            ->not
-            ->toContain('interface=orbit', 'interface=eth3', 'interface=lo', 'listen-address=0.0.0.0', 'bind-dynamic')
-            ->and($arguments->contains([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                'eth3',
-                'proto',
-                'udp',
-                'to',
-                'any',
-                'port',
-                '53',
-                'comment',
-                'orbit:vpn-dns-udp-eth3',
-            ]))
-            ->toBeTrue()
-            ->and($arguments->contains([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                'eth3',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                '53',
-                'comment',
-                'orbit:vpn-dns-tcp-eth3',
-            ]))
-            ->toBeTrue();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('fails when the active firewall does not expose every managed rule after convergence', function (): void {
-    [$converger, , $orbitHome] = gateway_vpn_converger(incompleteUfwProbe: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('vpn-firewall-probe')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.firewall_probe_failed');
+        expect(fn () => $converger->converge(Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']), gateway_bootstrap_data()))
+            ->toThrow(function (NodeProvisioningException $exception) use ($code, $step): void {
+                expect($exception->errorCode)->toBe($code)->and($exception->step)->toBe($step);
             });
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        new Filesystem()->deleteDirectory($home);
     }
-});
+})->with([
+    ['vpn.firewall_status_failed', 'vpn-firewall-status'],
+    ['vpn.firewall_status_invalid', 'vpn-firewall-status'],
+    ['vpn.firewall_recovery_probe_failed', 'vpn-firewall-recovery-probe'],
+    ['vpn.firewall_enable_failed', 'vpn-firewall-enable'],
+    ['vpn.firewall_rule_failed', 'vpn-firewall'],
+    ['vpn.firewall_probe_failed', 'vpn-firewall-probe'],
+    ['vpn.firewall_recovery_remove_failed', 'vpn-firewall-recovery-remove'],
+]);
 
-it('does not accept prefixed or suffixed firewall comments as managed rules', function (): void {
-    [$converger, , $orbitHome] = gateway_vpn_converger(ambiguousUfwProbe: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
+it('starts no firewall command when the Gateway agent installation fails', function (): void {
+    [$converger, , $home, $agents] = gateway_vpn_converger();
+    $agents->failInstall(new RuntimeException('install failed'));
     try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
+        expect(fn () => $converger->converge(Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']), gateway_bootstrap_data()))
             ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('vpn-firewall-probe')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.firewall_probe_failed');
+                expect($exception->errorCode)->toBe('agent.install_failed')->and($exception->step)->toBe('agent-install');
             });
+        expect($agents->calls)->toBeEmpty();
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('fails closed before mutating UFW when the VPN comment identifies a broader rule', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(sameCommentWrongShape: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('vpn-firewall-probe')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.firewall_probe_failed');
-            });
-        $ufwMutations = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments)
-            ->filter(
-                static fn (array $arguments): bool => (
-                    array_slice(array: $arguments, offset: 0, length: 2) === ['sudo', 'ufw']
-                    && array_slice(array: $arguments, offset: 0, length: 3) !== ['sudo', 'ufw', 'status']
-                ),
-            );
-
-        expect($ufwMutations)->toBeEmpty();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        new Filesystem()->deleteDirectory($home);
     }
 });
 
@@ -740,7 +377,7 @@ it('finishes bootstrap VPN convergence and logs a warning when the resolver step
 });
 
 it('does not touch UFW when dnsmasq convergence fails and includes rollback', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(failDns: true);
+    [$converger, $processes, $orbitHome, $agents] = gateway_vpn_converger(failDns: true);
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
@@ -778,8 +415,8 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
                 'rm -f -- "$managed"',
                 'systemctl restart dnsmasq || true',
             )
-            ->and($arguments->contains(['sudo', 'ufw', 'status', 'numbered']))
-            ->toBeFalse();
+            ->and($agents->calls)->toBeEmpty()
+            ->and($agents->installs)->toBeEmpty();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -913,9 +550,6 @@ it('restores and restarts the previous gateway WireGuard config when activation 
 });
 
 /**
- * @return array{NativeGatewayVpnConverger, GatewayVpnFakeProcessRunner, string}
- */
-/**
  * Run the rendered dnsmasq restart helper with a failing `systemctl` shim and
  * a `journalctl` shim that prints the conflict the unit reports.
  *
@@ -969,18 +603,15 @@ function gateway_write_host_file(string $orbitHome, string $relative, string $co
     file_put_contents($path, $contents);
 }
 
+/** @return array{NativeGatewayVpnConverger, GatewayVpnFakeProcessRunner, string, FakeAgentCommandRunner} */
 function gateway_vpn_converger(
     bool $failValidation = false,
     bool $failForwarding = false,
-    bool $ufwActive = true,
+
     bool $failDns = false,
-    bool $incompleteUfwProbe = false,
-    bool $ambiguousUfwProbe = false,
+
     bool $failServerRestart = false,
-    bool $missingStoredRecoveryRule = false,
-    bool $sameCommentWrongShape = false,
-    bool $ufwRulesPreexisting = false,
-    bool $storedRuleDrift = false,
+
 ): array {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
@@ -990,29 +621,28 @@ function gateway_vpn_converger(
     $processes = new GatewayVpnFakeProcessRunner(
         failValidation: $failValidation,
         failForwarding: $failForwarding,
-        ufwActive: $ufwActive,
+
         failDns: $failDns,
-        incompleteUfwProbe: $incompleteUfwProbe,
-        ambiguousUfwProbe: $ambiguousUfwProbe,
+
         failServerRestart: $failServerRestart,
-        missingStoredRecoveryRule: $missingStoredRecoveryRule,
-        sameCommentWrongShape: $sameCommentWrongShape,
-        ufwRulesPreexisting: $ufwRulesPreexisting,
-        storedRuleDrift: $storedRuleDrift,
+
         orbitHome: $orbitHome,
     );
+
+    $agents = new FakeAgentCommandRunner()->answer('firewall.gateway-vpn', ['matches' => true]);
 
     return [
         new NativeGatewayVpnConverger(
             renderer: new WireGuardServerConfigRenderer,
             files: new ProtectedFileWriter,
             processes: $processes,
-            firewallParser: new UfwStatusParser,
+            agents: $agents,
             orbitHome: $orbitHome,
             uplinkResolvers: new UplinkDnsResolvers($orbitHome.'/host'),
         ),
         $processes,
         $orbitHome,
+        $agents,
     ];
 }
 
@@ -1037,14 +667,7 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
     /** @var list<ProcessInvocation> */
     public array $calls = [];
 
-    private int $ufwStatusCalls = 0;
-
     private int $serverRestartCalls = 0;
-
-    private bool $ufwEnabled = false;
-
-    /** @var array<string, true> */
-    private array $ufwComments = [];
 
     public bool $observedProjectionLock = false;
 
@@ -1053,32 +676,13 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
     public function __construct(
         private readonly bool $failValidation,
         private readonly bool $failForwarding,
-        private readonly bool $ufwActive,
-        private readonly bool $failDns,
-        private readonly bool $incompleteUfwProbe,
-        private readonly bool $ambiguousUfwProbe,
-        private readonly bool $failServerRestart,
-        private readonly bool $missingStoredRecoveryRule,
-        private readonly bool $sameCommentWrongShape,
-        private readonly bool $ufwRulesPreexisting,
-        private readonly bool $storedRuleDrift,
-        private readonly string $orbitHome,
-    ) {
-        if (! $this->ufwRulesPreexisting) {
-            return;
-        }
 
-        $this->ufwComments = array_fill_keys([
-            'orbit:public-ssh-recovery',
-            'orbit:vpn-wireguard',
-            'orbit:vpn-dns-udp-orbit',
-            'orbit:vpn-dns-tcp-orbit',
-            'orbit:vpn-dns-udp-eth3',
-            'orbit:vpn-dns-tcp-eth3',
-            'orbit:gateway-https',
-            'orbit:vpn-peer-forwarding',
-        ], value: true);
-    }
+        private readonly bool $failDns,
+
+        private readonly bool $failServerRestart,
+
+        private readonly string $orbitHome,
+    ) {}
 
     public function run(ProcessInvocation $invocation): CommandResult
     {
@@ -1091,7 +695,7 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
             return $failure;
         }
 
-        return $this->firewallResult($invocation);
+        return new CommandResult(0, '', '', 2, false);
     }
 
     private function observeProjectionLock(): void
@@ -1171,122 +775,10 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
         return null;
     }
-
-    private function firewallResult(ProcessInvocation $invocation): CommandResult
-    {
-        if ($invocation->arguments === ['sudo', 'ufw', '--force', 'enable']) {
-            $this->ufwEnabled = true;
-
-            return new CommandResult(0, 'Firewall is active and enabled on system startup', '', 2, false);
-        }
-
-        $this->recordFirewallComment($invocation);
-
-        if (
-            array_slice(array: $invocation->arguments, offset: 0, length: 2) === ['sudo', 'awk']
-            && in_array(needle: '/etc/ufw/user.rules', haystack: $invocation->arguments, strict: true)
-        ) {
-            return new CommandResult(0, $this->storedRules(), '', 2, false);
-        }
-
-        if ($invocation->arguments !== ['sudo', 'ufw', 'status', 'numbered']) {
-            return new CommandResult(0, '', '', 2, false);
-        }
-
-        $this->ufwStatusCalls++;
-        $active = $this->ufwActive || $this->ufwEnabled;
-        $status = $active ? 'active' : 'inactive';
-        $comments = $active ? $this->activeFirewallRules() : '';
-
-        return new CommandResult(0, "Status: {$status}\n{$comments}", '', 2, false);
-    }
-
-    private function recordFirewallComment(ProcessInvocation $invocation): void
-    {
-        if (
-            array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'ufw', '--force', 'delete']
-        ) {
-            unset($this->ufwComments['orbit:public-ssh-recovery']);
-
-            return;
-        }
-
-        if (array_slice(array: $invocation->arguments, offset: 0, length: 2) === ['sudo', 'ufw']) {
-            $commentIndex = array_search(needle: 'comment', haystack: $invocation->arguments, strict: true);
-            $comment = is_int($commentIndex) ? $invocation->arguments[$commentIndex + 1] ?? null : null;
-
-            if (is_string($comment)) {
-                $this->ufwComments[$comment] = true;
-            }
-        }
-    }
-
-    private function storedRules(): string
-    {
-        $rules = [];
-
-        if (array_key_exists('orbit:public-ssh-recovery', $this->ufwComments) && ! $this->missingStoredRecoveryRule) {
-            $recovery = bin2hex('orbit:public-ssh-recovery');
-            $rules[] = "__orbit_ufw_tuple:v4:### tuple ### allow tcp 22 0.0.0.0/0 any 0.0.0.0/0 in comment={$recovery}";
-            $rules[] = "__orbit_ufw_tuple:v6:### tuple ### allow tcp 22 ::/0 any ::/0 in comment={$recovery}";
-        }
-
-        if ($this->storedRuleDrift) {
-            $comment = bin2hex('orbit:vpn-wireguard');
-            $rules[] = "__orbit_ufw_tuple:v4:### tuple ### allow udp 1:65535 0.0.0.0/0 any 0.0.0.0/0 in comment={$comment}";
-            $rules[] = "__orbit_ufw_tuple:v6:### tuple ### allow udp 1:65535 ::/0 any ::/0 in comment={$comment}";
-        }
-
-        return implode("\n", $rules);
-    }
-
-    private function activeFirewallRules(): string
-    {
-        $comments = $this->ufwComments;
-        $lines = [];
-
-        if (array_key_exists('orbit:public-ssh-recovery', $comments)) {
-            $lines[] = '[ 1] 22/tcp                     ALLOW IN    Anywhere                   # orbit:public-ssh-recovery';
-            $lines[] = '[ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery';
-        }
-
-        if ($this->sameCommentWrongShape) {
-            $lines[] = '[ 3] 1:65535/udp                ALLOW IN    Anywhere                   # orbit:vpn-wireguard';
-            $lines[] = '[ 4] 1:65535/udp (v6)           ALLOW IN    Anywhere (v6)              # orbit:vpn-wireguard';
-        }
-
-        if (! $this->sameCommentWrongShape && array_key_exists('orbit:vpn-wireguard', $comments)) {
-            $suffix = $this->ambiguousUfwProbe ? '-extra' : '';
-            $lines[] = "[ 3] 51820/udp                  ALLOW IN    Anywhere                   # orbit:vpn-wireguard{$suffix}";
-            $lines[] = "[ 4] 51820/udp (v6)             ALLOW IN    Anywhere (v6)              # orbit:vpn-wireguard{$suffix}";
-        }
-
-        if (array_key_exists('orbit:vpn-ssh', $comments)) {
-            $lines[] = '[ 5] 10.44.0.1 22/tcp on orbit ALLOW IN Anywhere # orbit:vpn-ssh';
-        }
-
-        foreach ([
-            'orbit:vpn-dns-udp-orbit' => ['53/udp on orbit', '53/udp (v6) on orbit'],
-            'orbit:vpn-dns-tcp-orbit' => ['53/tcp on orbit', '53/tcp (v6) on orbit'],
-            'orbit:vpn-dns-udp-eth3' => ['53/udp on eth3', '53/udp (v6) on eth3'],
-            'orbit:vpn-dns-tcp-eth3' => ['53/tcp on eth3', '53/tcp (v6) on eth3'],
-            'orbit:gateway-https' => ['443/tcp on orbit', '443/tcp (v6) on orbit'],
-        ] as $comment => [$ipv4, $ipv6]) {
-            if (! array_key_exists($comment, $comments)) {
-                continue;
-            }
-
-            $lines[] = sprintf('[10] %-28s ALLOW IN    Anywhere                   # %s', $ipv4, $comment);
-            $lines[] = sprintf('[11] %-28s ALLOW IN    Anywhere (v6)              # %s', $ipv6, $comment);
-        }
-
-        if (array_key_exists('orbit:vpn-peer-forwarding', $comments) && ! $this->incompleteUfwProbe) {
-            $comment = $this->ambiguousUfwProbe
-                ? 'orbit:vpn-peer-forwarding-extra'
-                : 'orbit:vpn-peer-forwarding';
-            $lines[] = "[20] 10.44.0.0/24 on orbit     ALLOW FWD   10.44.0.0/24 on orbit     # {$comment}";
-        }
-
-        return $lines === [] ? '' : implode("\n", $lines)."\n";
-    }
 }
+
+it('keeps Gateway firewall execution behind its typed agent command', function (): void {
+    $source = file_get_contents(app_path('Infrastructure/WireGuard/NativeGatewayVpnConverger.php'));
+    expect($source)->toContain("'firewall.gateway-vpn'")
+        ->not->toContain('UfwStatusParser', 'UfwStoredRule', "'ufw'", 'ruleNumbers');
+});

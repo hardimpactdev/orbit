@@ -23,7 +23,7 @@ pub struct Reconciled {
 fn owned_comment(comment: &str) -> bool {
     comment.starts_with("orbit:") || comment == "orbit-ci-runners"
 }
-fn validate_shapes<'a>(shapes: impl Iterator<Item = &'a Shape>) -> Result<(), Error> {
+pub(super) fn validate_shapes<'a>(shapes: impl Iterator<Item = &'a Shape>) -> Result<(), Error> {
     let mut comments = BTreeSet::new();
     for shape in shapes {
         if !shape.valid()
@@ -143,6 +143,19 @@ fn replaceable_port(rows: &[Row], rule: &Managed) -> bool {
     inventory::ownership(rows, &expected) == Ownership::Exact
 }
 
+pub(super) fn is_recovery(s: &Shape) -> bool {
+    s.comment == "orbit:public-ssh-recovery"
+        && s.action == "allow"
+        && s.direction == "in"
+        && s.source == "any"
+        && s.destination == "any"
+        && s.protocol == "tcp"
+        && s.port.parse::<u16>().is_ok_and(|p| p > 0)
+        && s.in_interface.is_none()
+        && s.out_interface.is_none()
+        && s.family.is_none()
+}
+
 fn rules(input: &RulesInput, host: &mut impl Host) -> Result<Reconciled, Error> {
     validate_shapes(
         input
@@ -152,19 +165,9 @@ fn rules(input: &RulesInput, host: &mut impl Host) -> Result<Reconciled, Error> 
             .chain(input.remove.iter()),
     )?;
     if input.enable
-        && (input.desired.len() != 1 || !input.remove.is_empty() || {
-            let s = &input.desired[0].shape;
-            s.comment != "orbit:public-ssh-recovery"
-                || s.action != "allow"
-                || s.direction != "in"
-                || s.source != "any"
-                || s.destination != "any"
-                || s.protocol != "tcp"
-                || s.port.parse::<u16>().ok().filter(|p| *p > 0).is_none()
-                || s.in_interface.is_some()
-                || s.out_interface.is_some()
-                || s.family.is_some()
-        })
+        && (input.desired.len() != 1
+            || !input.remove.is_empty()
+            || !is_recovery(&input.desired[0].shape))
     {
         return Err(Error::Invalid {});
     }
