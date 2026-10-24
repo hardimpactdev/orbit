@@ -26,7 +26,9 @@ final readonly class IncusAgentTransport implements AgentTransport
     public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
     {
         $root = array_slice($arguments, 0, 2) === ['sudo', '-n'];
-        $identity = $root ? ['--user', '0', '--group', '0'] : [
+        // Incus supplies root directly. Name the fixed guest account for account-level supervision,
+        // as sudo does on the SSH adapter; root installers can still run before cloud-init creates it.
+        $identity = $root ? ['--user', '0', '--group', '0', '--env', 'SUDO_USER=orbit'] : [
             '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--env', 'LOGNAME=orbit',
         ];
 

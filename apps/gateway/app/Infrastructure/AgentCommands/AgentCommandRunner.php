@@ -16,7 +16,7 @@ use App\Models\Node;
 interface AgentCommandRunner
 {
     /**
-     * @param  array<string, mixed>  $input  A `GitReadEnvironment` value travels as its variables, on input marked as
+     * @param  array<string, mixed>  $input  `GitReadEnvironment` and `AgentGitHubToken` values mark the envelope as
      *                                       carrying a Git credential, so it never reaches a task VM.
      * @param  float|null  $deadlineSeconds  The time left for this call; the command's own bound applies too.
      * @return array<string, mixed>

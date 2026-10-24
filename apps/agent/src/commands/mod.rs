@@ -37,6 +37,7 @@ mod metrics_exporter;
 mod metrics_publication;
 mod metrics_runtime;
 pub mod os_release;
+mod package_cache;
 pub mod peer_dns;
 pub mod php_runtime;
 pub mod processes;
@@ -114,6 +115,9 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::image::ReadInstanceImages>(),
         entry::<incus::image::ChangeImage>(),
         entry::<incus::seed::BuildSeed>(),
+        entry::<incus::cache::MountCache>(),
+        entry::<package_cache::HostCache>(),
+        entry::<package_cache::SeedCache>(),
         entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),

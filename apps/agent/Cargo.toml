@@ -35,6 +35,9 @@ toml = "0.8"
 zbus = { version = "5", features = ["tokio"] }
 base64 = "0.22"
 rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
+sha1 = "0.10"
+tar = "0.4"
+flate2 = "1"
 
 # Redaction's shared cases should measure the rules, not unoptimized regex matching.
 [profile.dev.package.regex]

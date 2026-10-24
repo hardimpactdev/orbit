@@ -7,6 +7,7 @@ use super::{run::SUPERVISED_ENV, Outcome};
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
+    os::unix::fs::FileTypeExt,
     path::Path,
     process::{Command, Stdio},
     time::Duration,
@@ -68,6 +69,9 @@ pub fn launch(
     user: Option<&str>,
     locks: &Path,
 ) -> Outcome {
+    if let Err(outcome) = system_bus_ready(Path::new("/run/dbus/system_bus_socket")) {
+        return outcome;
+    }
     let unit = unit_name(command);
     let child = Command::new("/usr/bin/systemd-run")
         .args(arguments(executable, command, budget, &unit, user, locks))
@@ -113,6 +117,24 @@ pub fn launch(
     )
 }
 
+// Incus can execute in a booting guest before its system bus is available. This is a precondition,
+// not a failed installation: no transient unit or installer has started yet.
+fn system_bus_ready(path: &Path) -> Result<(), Outcome> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.file_type().is_socket() => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(Outcome::refused(
+            "agent.supervisor_not_ready",
+            "The guest's system bus is not available yet.",
+            json!({"path": path.display().to_string()}),
+        )),
+        _ => Err(Outcome::refused(
+            "agent.supervisor_failed",
+            "The system bus path is not an accessible socket.",
+            json!({"path": path.display().to_string()}),
+        )),
+    }
+}
+
 /// The last line of the supervised output, read as a result.
 pub fn parse_result(output: &str) -> Option<Outcome> {
     let line = output.lines().rev().find(|line| !line.trim().is_empty())?;
@@ -134,6 +156,23 @@ pub fn parse_result(output: &str) -> Option<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_boot_bus_is_pending_but_an_invalid_bus_is_not() {
+        let path = std::env::temp_dir().join(format!("orbit-bus-{:016x}", rand::random::<u64>()));
+        assert!(
+            matches!(system_bus_ready(&path), Err(Outcome::Refused { code, .. }) if code == "agent.supervisor_not_ready")
+        );
+        std::fs::write(&path, "invalid").unwrap();
+        assert!(
+            matches!(system_bus_ready(&path), Err(Outcome::Refused { code, .. }) if code == "agent.supervisor_failed")
+        );
+        std::fs::remove_file(&path).unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        assert_eq!(system_bus_ready(&path), Ok(()));
+        assert_eq!(system_bus_ready(&path), Ok(()));
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn the_service_is_bounded_kills_its_whole_group_and_marks_the_supervised_half() {

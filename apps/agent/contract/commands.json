@@ -8,6 +8,7 @@
     "agent.platform_unsupported",
     "agent.deadline_exceeded",
     "agent.supervisor_failed",
+    "agent.supervisor_not_ready",
     "agent.target_busy",
     "agent.lock_unavailable"
   ],
@@ -318,6 +319,49 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.topology_seed_failed"
+      ]
+    },
+    {
+      "name": "incus.package-cache",
+      "summary": "Attach the fixed read-only host package cache to one task VM.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.package_cache_mount_invalid",
+        "task_vm.package_cache_failed"
+      ]
+    },
+    {
+      "name": "package-cache.host",
+      "summary": "Initialize or fill the owned host cache with verified public archives.",
+      "mutates": true,
+      "timeout_seconds": 1600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.package_cache_invalid_limit",
+        "task_vm.package_cache_failed"
+      ]
+    },
+    {
+      "name": "package-cache.seed",
+      "summary": "Seed private Composer, npm and Bun caches from the read-only host mount.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.package_cache_invalid_limit",
+        "task_vm.package_cache_failed"
       ]
     },
     {

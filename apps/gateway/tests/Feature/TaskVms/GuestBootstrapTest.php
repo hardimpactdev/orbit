@@ -124,3 +124,20 @@ it('stops polling at the boot deadline', function (): void {
     expect(now()->getTimestamp() - $start)->toBe(4);
     expect($agents->calls)->toHaveCount(2)->and($agents->installs)->toHaveCount(1);
 });
+
+it('waits for the guest system bus before installing on first boot', function (): void {
+    $this->freezeTime();
+    $agents = new FakeGuestAgentCommandRunner;
+    $agents->installAnswer = static function () use ($agents): bool {
+        if (count($agents->installs) === 1) {
+            throw new AgentCommandRefused('agent.install', 'agent.supervisor_not_ready', 'The system bus is not available.');
+        }
+
+        return true;
+    };
+
+    new GuestBootstrap($agents)->awaitReady(bootstrapGuest(), 'builder', 30);
+
+    expect($agents->installs)->toHaveCount(2)->and($agents->calls)->toHaveCount(1);
+    Sleep::assertSleptTimes(1);
+});

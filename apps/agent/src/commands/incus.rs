@@ -427,3 +427,5 @@ pub(super) mod volumes;
 pub mod image;
 pub mod seed;
 pub mod vm;
+
+pub mod cache;

@@ -124,9 +124,9 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         if (! $outcome['ok']) {
-            // Another installation holds the lock: nothing failed, so the next call tries again.
-            if ($outcome['error']['code'] === 'agent.update_busy') {
-                throw new AgentCommandRefused(self::Install, 'agent.update_busy', $outcome['error']['message'], $outcome['error']['details']);
+            // An unavailable precondition changed nothing and does not mark this pin as failed.
+            if (in_array($outcome['error']['code'], ['agent.update_busy', 'agent.supervisor_not_ready'], true)) {
+                throw new AgentCommandRefused(self::Install, $outcome['error']['code'], $outcome['error']['message'], $outcome['error']['details']);
             }
             if ($node instanceof Node) {
                 $this->recordFailedPin($node, $pin);
@@ -166,6 +166,10 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         ];
         $credential = false;
         foreach ($input as $key => $value) {
+            if ($value instanceof AgentGitHubToken) {
+                $credential = true;
+                $input[$key] = $value->value;
+            }
             if ($value instanceof GitReadEnvironment) {
                 $credential = $credential || ! $value->isEmpty();
                 $input[$key] = (object) $value->variables;

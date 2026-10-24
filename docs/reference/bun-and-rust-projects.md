@@ -101,6 +101,8 @@ cargo build --release --locked
 
 [Node agent](/reference/node-agent#checks) explains the dev-profile optimization for redaction tests. [Live logs](/reference/live-logs#stream-tests) describes paused-clock coverage and real-process fixture waits.
 
+Linux package-cache tests run Composer, npm, and Bun against temporary homes. Put the installed runtime binaries on `PATH`; a launcher that resolves its runtime from `HOME` cannot use the isolated home. These tests verify archive hits, normal registry misses, and private writes. External downloads are blocked; registry misses use a local test server. CI installs these test prerequisites before running Cargo.
+
 `cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
 
 To watch what an installed agent reports, join its Node's presence channel with the viewer script:

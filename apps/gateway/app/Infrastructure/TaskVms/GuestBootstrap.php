@@ -63,6 +63,10 @@ final readonly class GuestBootstrap
                 if (! self::pending($error)) {
                     throw $error;
                 }
+            } catch (AgentCommandRefused $error) {
+                if ($error->command !== 'agent.install' || $error->errorCode !== 'agent.supervisor_not_ready') {
+                    throw $error;
+                }
             }
             $remaining = $deadline - now()->getTimestamp();
             if ($remaining > 0) {

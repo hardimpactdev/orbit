@@ -38,6 +38,7 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.platform_unsupported",
     "agent.deadline_exceeded",
     "agent.supervisor_failed",
+    "agent.supervisor_not_ready",
     "agent.target_busy",
     "agent.lock_unavailable",
 ];

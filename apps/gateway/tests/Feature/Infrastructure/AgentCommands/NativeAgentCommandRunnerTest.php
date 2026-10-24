@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
@@ -140,6 +141,18 @@ it('sends Git read access as its variables on input marked as carrying a credent
         ->and($transport->calls[0]['credential'])->toBeTrue()
         ->and($transport->calls[1]['envelope']['input']['git_read'])->toBe([])
         ->and($transport->calls[1]['credential'])->toBeFalse();
+});
+
+it('marks cache credentials as protected input and keeps them out of argv and debug output', function (): void {
+    $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => ['hashes' => [], 'failures' => []]])]);
+    $token = new AgentGitHubToken('ghs_cache_sentinel');
+
+    agentRunner($transport)->run(agentRunnerNode(), 'package-cache.host', ['operation' => 'fill', 'artifacts' => [], 'max_bytes' => 1000, 'github_token' => $token]);
+
+    expect($transport->calls[0]['credential'])->toBeTrue()
+        ->and($transport->calls[0]['envelope']['input']['github_token'])->toBe('ghs_cache_sentinel')
+        ->and(implode(' ', $transport->calls[0]['arguments']))->not->toContain('ghs_cache_sentinel')
+        ->and(print_r($token, true))->not->toContain('ghs_cache_sentinel');
 });
 
 it('raises a declared refusal with its code and details', function (): void {
@@ -376,4 +389,14 @@ it('classifies failed SSH candidate staging with its transport result', function
     } finally {
         unlink($file);
     }
+});
+
+it('does not record a failed pin before the system bus is ready', function (): void {
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.supervisor_not_ready', ['path' => '/run/dbus/system_bus_socket'])]);
+    $node = agentRunnerNode();
+
+    expect(fn () => agentRunner($transport)->install($node))->toThrow(function (AgentCommandRefused $error): void {
+        expect($error->errorCode)->toBe('agent.supervisor_not_ready');
+    });
+    expect($node->fresh()->agent_failed_pin)->toBeNull();
 });

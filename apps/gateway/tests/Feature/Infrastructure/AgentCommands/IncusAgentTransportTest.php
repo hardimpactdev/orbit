@@ -54,7 +54,7 @@ it('carries root and account commands with the same protected envelope and deadl
     expect($result->succeeded())->toBeTrue();
     expect($host->calls)->toBe([[['sudo', '-n', '/usr/bin/incus', '--project', 'orbit-tasks', 'exec', '--mode=non-interactive', ...$identity, '--', 'tvm-image-check', ...($root ? [] : ['/usr/sbin/runuser', '--user', 'orbit', '--']), '/usr/local/bin/orbit-agent', 'command', 'agent.status'], $envelope, 19.0]]);
 })->with([
-    [true, ['--user', '0', '--group', '0']],
+    [true, ['--user', '0', '--group', '0', '--env', 'SUDO_USER=orbit']],
     [false, ['--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--env', 'LOGNAME=orbit']],
 ]);
 

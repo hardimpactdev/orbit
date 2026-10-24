@@ -54,6 +54,9 @@ enum TaskVmError: string
 
     // Base images.
     case ImageMismatch = 'task_vm.image_mismatch';
+    case ImageCheckFailed = 'task_vm.image_check_failed';
+    case ImageCleanFailed = 'task_vm.image_clean_failed';
+    case ImageIdentityPresent = 'task_vm.image_identity_present';
     case TopologySeedMissing = 'task_vm.topology_seed_missing';
     case TopologySeedFailed = 'task_vm.topology_seed_failed';
     case BaseImageMissing = 'task_vm.base_image_missing';

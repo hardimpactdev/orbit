@@ -374,6 +374,8 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
+Before an image builder can install command mode, its system bus must be available. Incus can reach a guest earlier in boot. The native supervisor returns `agent.supervisor_not_ready` for an absent bus socket; image boot polling waits within its deadline. This refusal records no failed agent pin. Other installation refusals still fail the build.
+
 Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, and logs, then verifies that the identities are absent. It preserves package lists and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
 
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
@@ -517,11 +519,13 @@ A subtask whose topology needs a larger VM than its group got waits before its f
 
 Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
 
+The Gateway sends cache intent through the agent runner. `package-cache.host` initializes or fills the owned host cache; `incus.package-cache` attaches its fixed read-only directory; `package-cache.seed` runs as the guest account and copies verified archives into private manager caches. The Incus transport names its fixed `orbit` guest account for the native supervisor, which drops privilege before account mutations. Rust owns archive validation, download credentials, redirects, integrity checks, size limits, and extraction. No cache program source crosses the transport.
+
 Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. The existing assessment owns version policy; Rust and Cargo must also report their pinned versions.
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 
-Cache failures name the operation, path, exit code, and a bounded, sanitized stderr tail; checking the mount marker preserves access errors instead of treating them as a missing mount.
+Cache failures carry a typed code, operation, path, and bounded, sanitized reason; checking the mount marker preserves access errors instead of treating them as a missing mount.
 
 Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 
