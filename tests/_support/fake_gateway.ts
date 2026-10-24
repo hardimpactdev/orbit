@@ -1,6 +1,8 @@
 // An in-memory fake of the Orbit Gateway task routes for routing tests.
 // Each group follows a scenario. Operations are terminal at once; a start
 // answers 202 with poll_after_seconds 1, so the client reads it on a later tick.
+import { analysisFixture, HEAD, TREE } from "./analysis_fixture.ts";
+import { sha256 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
 
 export interface Scenario {
   subtasks?: number;
@@ -32,6 +34,7 @@ interface Group {
   }[];
   scenario: Scenario;
   counts: Record<string, number>;
+  head: string;
 }
 
 export function startFakeGateway(scenarios: Record<number, Scenario>) {
@@ -39,7 +42,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
   for (const [id, scenario] of Object.entries(scenarios)) {
     const gid = Number(id);
     groups.set(gid, {
-      id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {},
+      id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD,
       orchestration: "external", assistance_requested: false, assistance_kind: null, assistance_reason: null, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
         id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null,
@@ -54,7 +57,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
 
   const bump = (g: Group, k: string) => (g.counts[k] = (g.counts[k] ?? 0) + 1);
 
-  function run(g: Group, kind: string, body: Record<string, unknown>): { status: string; result?: unknown; error_code?: string } {
+  async function run(g: Group, kind: string, body: Record<string, unknown>, operation: number): Promise<{ status: string; result?: unknown; error_code?: string }> {
     const s = g.scenario;
     switch (kind) {
       case "provision":
@@ -65,25 +68,35 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           return { status: "failed", error_code: "task_vm.invalid_config" };
         }
         g.status = "running";
-        return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: "base" } };
+        return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD } };
+      case "analyze": {
+        const f = await analysisFixture(g);
+        const e = JSON.parse(f.result.artifact.content);
+        e.head = body.head; e.tree = body.tree;
+        const content = JSON.stringify(e);
+        const result = { ...f.result, artifact: { content, bytes: new TextEncoder().encode(content).length, sha256: await sha256(content) },
+          provenance: { ...f.result.provenance, operation_id: operation, subtask: body.subtask, before: { head: body.head, tree: body.tree }, after: { head: body.head, tree: body.tree } } };
+        return { status: "succeeded", result };
+      }
       case "check": {
         const n = bump(g, `check.${body.phase}`);
         if (body.phase === "baseline") {
           if (s.baselineFailOnce && n === 1) return { status: "failed", error_code: "tasks.check_unreachable" };
-          return { status: "succeeded", result: { outcome: "passed", check_id: nextOp, commit: null, deliverables: [], output: "ok" } };
+          return { status: "succeeded", result: { outcome: "passed", check_id: nextOp, commit: null, head: g.head, tree: TREE, deliverables: [], output: "ok" } };
         }
         if (s.handoffCancelOnce && n === 1) return { status: "cancelled" };
         const outcome = s.handoffAlwaysFails ? "failed" : "passed";
-        return { status: "succeeded", result: { outcome, check_id: nextOp, commit: outcome === "passed" ? `c${nextOp}` : null, deliverables: [], output: outcome } };
+        if (outcome === "passed") g.head = operation.toString(16).padStart(40, "0");
+        return { status: "succeeded", result: { outcome, check_id: nextOp, commit: outcome === "passed" ? g.head : null, head: g.head, tree: TREE, deliverables: [], output: outcome } };
       }
       case "turn": {
         const thread = body.thread === "new" ? nextOp : Number(body.thread);
         if (body.role === "reviewer") {
           const n = bump(g, `review.${body.subtask}`);
           const outcome = s.reviewAlways ?? (n === 1 && s.firstReview ? s.firstReview : "approved");
-          return { status: "succeeded", result: { receipt: { outcome, summary: `review ${n}` }, thread, state: "done" } };
+          return { status: "succeeded", result: { receipt: { outcome, summary: `review ${n}` }, thread, state: "done", after_reset: { head: g.head, tree: TREE } } };
         }
-        return { status: "succeeded", result: { receipt: { outcome: "ready_for_review", summary: "done" }, thread, state: "done" } };
+        return { status: "succeeded", result: { receipt: { outcome: "ready_for_review", summary: "done" }, thread, state: "done", after: { head: g.head, tree: TREE } } };
       }
       case "publish": {
         const n = bump(g, "publish");
@@ -176,14 +189,14 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         g.status = "completed";
         return json(200, view());
       }
-      const op = /^\/(provision|check|turn|publish)$/.exec(rest);
+      const op = /^\/(provision|check|analyze|turn|publish)$/.exec(rest);
       if (req.method === "POST" && op) {
         const key = req.headers.get("idempotency-key") ?? "";
         starts.set(key, (starts.get(key) ?? 0) + 1);
         if (byKey.has(key)) return json(202, { ...ops.get(byKey.get(key)!), status: "queued", poll_after_seconds: 1 });
         const id = nextOp++;
-        const out = run(g, op[1], body);
-        const rec = { id, kind: `tasks.${op[1]}`, input: body, ...out };
+        const out = await run(g, op[1], body, id);
+        const rec = { id, kind: `tasks.${op[1]}`, target_type: "task_group", target_id: g.id, input: body, ...out };
         ops.set(id, rec);
         byKey.set(key, id);
         return json(202, { ...rec, status: "queued", poll_after_seconds: 1 });

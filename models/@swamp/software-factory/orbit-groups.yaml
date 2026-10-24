@@ -5,7 +5,7 @@ name: orbit-groups
 version: 1
 tags: {}
 # One externally orchestrated Orbit task group (ADR 0229) = one work item tg-<group id>.
-#   provision → baseline → implement → handoff → review
+#   provision → baseline → plan → analyze → implement → handoff → analyze → review
 #   review → implement on changes, or for the next subtask; → publish when the last is approved
 #   publish → published; published waits for the merge, then completes the group
 # Every stage's work is orbit-gateway.stage: one keyed Gateway operation, never a wait.
@@ -82,12 +82,12 @@ globalArguments:
             required: [subtask, outcome, checkId]
       transitions:
         - name: passed
-          to: implement
+          to: plan
           gates:
             - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.baseline.outcome == "passed"', message: "the baseline did not pass" } }
         - name: override
-          to: implement
+          to: plan
           gates:
             - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.baseline.outcome != "passed"', message: "the baseline passed" } }
@@ -97,6 +97,71 @@ globalArguments:
           gates:
             - { type: evidence-recorded, config: { name: baseline-run, requireField: { status: failed } } }
             - { type: human-approval, config: { id: baseline-retry } }
+
+    - id: plan
+      description: record the complete cumulative typed plan, then obtain explicit plan authorization
+      maxCycles: 300
+      artifacts:
+        - name: plan
+          schema:
+            type: object
+            additionalProperties: false
+            required: [manifest, plan_sha256, base, repository, branch, docsSubtask]
+            properties:
+              manifest: { type: object, additionalProperties: true }
+              plan_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+              base: { type: string, pattern: '^([a-f0-9]{40}|[a-f0-9]{64})$' }
+              repository: { type: string, minLength: 1 }
+              branch: { type: string, minLength: 1 }
+              docsSubtask: { type: integer, minimum: 1 }
+      transitions:
+        - name: authorized
+          to: analyze
+          gates:
+            - { type: artifact-exists, config: { artifact: plan } }
+            - { type: human-approval, config: { id: plan-authorized } }
+
+    - id: analyze
+      description: fixed read-only repository analysis; no agent turn (tasks.analyze)
+      maxCycles: 600
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: stage
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: analyze
+            plan: '${{ data.latest(self.name, "artifact-plan") }}'
+            analysis: '${{ data.latest(self.name, "artifact-analysis") }}'
+            workspace: '${{ data.latest(self.name, "artifact-workspace") }}'
+            baseline: '${{ data.latest(self.name, "artifact-baseline") }}'
+            change: '${{ data.latest(self.name, "artifact-change") }}'
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+            review: '${{ data.latest(self.name, "artifact-review") }}'
+        resultEvidence: analyze-run
+      artifacts:
+        - name: analysis
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, purpose, operationId, plan_sha256, plan, candidate, result, omitted]
+      transitions:
+        - name: author
+          to: implement
+          gates:
+            - { type: evidence-recorded, config: { name: analyze-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.analysis.purpose == "implement" && artifacts.analysis.outcome in ["ready", "action_required"]', message: "analysis is unusable for authoring; inspect the complete evidence" } }
+        - name: reviewer
+          to: review
+          gates:
+            - { type: evidence-recorded, config: { name: analyze-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.analysis.purpose == "review" && artifacts.analysis.outcome in ["ready", "action_required"]', message: "analysis is unusable for review; inspect the complete evidence" } }
+        - name: revise
+          to: plan
+          gates:
+            - { type: evidence-recorded, config: { name: analyze-run } }
+            - { type: human-approval, config: { id: analysis-retry } }
 
     - id: implement
       description: one implementer turn on the current subtask (tasks.turn implementer)
@@ -109,6 +174,9 @@ globalArguments:
           inputs:
             workItem: '${{ self.workItem }}'
             stage: implement
+            plan: '${{ data.latest(self.name, "artifact-plan") }}'
+            analysis: '${{ data.latest(self.name, "artifact-analysis") }}'
+            workspace: '${{ data.latest(self.name, "artifact-workspace") }}'
             change: '${{ data.latest(self.name, "artifact-change") }}'
             handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
             review: '${{ data.latest(self.name, "artifact-review") }}'
@@ -126,7 +194,7 @@ globalArguments:
             - { type: evidence-recorded, config: { name: implement-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review"', message: "the implementer did not hand off" } }
         - name: retry
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: implement-run } }
             - { type: human-approval, config: { id: implement-retry } }
@@ -153,17 +221,17 @@ globalArguments:
             required: [subtask, outcome, checkId, consecutiveFailures, implementAttempts]
       transitions:
         - name: pass
-          to: review
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.handoff.outcome == "passed"', message: "the handoff check did not pass" } }
         - name: fail
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.handoff.outcome != "passed" && artifacts.handoff.consecutiveFailures <= 3 && artifacts.handoff.implementAttempts < 6', message: "the check passed, failed too often in a row, or the subtask used its implement attempts" } }
         - name: assist
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.handoff.outcome != "passed" && (artifacts.handoff.consecutiveFailures > 3 || artifacts.handoff.implementAttempts >= 6)', message: "the failure is within the limits" } }
@@ -185,6 +253,9 @@ globalArguments:
           inputs:
             workItem: '${{ self.workItem }}'
             stage: review
+            plan: '${{ data.latest(self.name, "artifact-plan") }}'
+            analysis: '${{ data.latest(self.name, "artifact-analysis") }}'
+            workspace: '${{ data.latest(self.name, "artifact-workspace") }}'
             handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
             review: '${{ data.latest(self.name, "artifact-review") }}'
             change: '${{ data.latest(self.name, "artifact-change") }}'
@@ -197,18 +268,18 @@ globalArguments:
             required: [subtask, outcome, attempt, implementAttempts]
       transitions:
         - name: rework
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.review.outcome == "changes_requested" && artifacts.review.attempt < 3 && artifacts.review.implementAttempts < 6', message: "no change request within the limits" } }
         - name: rework-cap
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.review.outcome == "changes_requested" && (artifacts.review.attempt >= 3 || artifacts.review.implementAttempts >= 6)', message: "the change request is within the limits" } }
             - { type: human-approval, config: { id: review-cap } }
         - name: next
-          to: implement
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.review.outcome == "approved" && has(artifacts.review.hasNext) && artifacts.review.hasNext', message: "no approved subtask with another one open" } }
@@ -218,7 +289,7 @@ globalArguments:
             - { type: evidence-recorded, config: { name: review-run, requireField: { status: succeeded } } }
             - { type: cel, config: { expr: 'artifacts.review.outcome == "approved" && !(has(artifacts.review.hasNext) && artifacts.review.hasNext)', message: "not the approval of the last subtask" } }
         - name: retry
-          to: review
+          to: analyze
           gates:
             - { type: evidence-recorded, config: { name: review-run } }
             - { type: human-approval, config: { id: review-retry } }

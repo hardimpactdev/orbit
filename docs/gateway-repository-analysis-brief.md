@@ -1,9 +1,12 @@
 # First native slice: fixed repository analysis and evidence
 
-Implement the [repository-analysis contract](repository-analysis-contract.md)
-in `hardimpactdev/orbit` after the parent accepts this design. Baseline source:
-`2187129c471c20a34b6c91d5e1cb6c34878b8742`. Re-read the actual implementation
-base and report material drift. This Swamp PR authorizes no runtime edits.
+Historical implementation brief for the independently reviewed
+[repository-analysis contract](repository-analysis-contract.md). ORB2068/PR1504
+delivered the native boundary at `8b6fb914c6fbab3abd70459afe832f7307e4d5c6`.
+The baseline below was `2187129c471c20a34b6c91d5e1cb6c34878b8742`.
+Do not repeat this implementation. The [Swamp adoption](repository-analysis-adoption.md)
+records the now-supported runtime consumer, proof boundaries and demonstrated
+remaining failure/base metadata gaps. Native follow-up remains parent-owned.
 
 ## Smallest useful boundary
 

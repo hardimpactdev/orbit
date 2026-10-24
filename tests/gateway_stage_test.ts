@@ -1,7 +1,7 @@
 // The Gateway stage logic against an in-memory fake Gateway: ~/.swamp/deno/deno test tests/
 // Fixtures follow the Gateway's real shapes: a turn result names its thread by id
 // (TaskTurnOperation), and an accepted start carries poll_after_seconds.
-import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import {
   assistanceBody,
   counters,
@@ -15,6 +15,10 @@ import {
   type StageArgs,
   syncAssistance,
 } from "../extensions/behaviors/_lib/gateway_stage.ts";
+
+import { analysisFixture } from "./_support/analysis_fixture.ts";
+const task = (id: number, position: number) => ({ id, position, title: `Subtask ${id}`, brief: "Update dependencies.", deliverables: [{ id: "lock", type: "file", description: "composer.lock modified" }] });
+const fixture = await analysisFixture({ title: "Deps", brief: "Group brief.", tasks: [task(11, 1)] });
 
 interface Call {
   method: string;
@@ -92,7 +96,7 @@ async function settle(a: StageArgs, http: Http, h = harness()) {
 }
 
 const args = (stage: StageArgs["stage"], extra: Partial<StageArgs> = {}): StageArgs => ({
-  workItem: "tg-7", stage, key: `tg-7.${stage}.c1`, ...extra,
+  workItem: "tg-7", stage, key: `tg-7.${stage}.c1`, ...fixture.inputs, analysis: fixture.analysis(stage === "review" ? "review" : "implement"), ...extra,
 });
 const env = (payload: Record<string, unknown>, recordedAt: string) => ({ attributes: { payload, recordedAt } });
 const turnResult = (receipt: Record<string, unknown> | null, thread: number) => ({
@@ -175,13 +179,15 @@ Deno.test("a stored request is replayed byte for byte, without planning again", 
   assertEquals(gw.calls.filter((c) => c.method !== "POST").length, 0);
 });
 
-Deno.test("the same key with other input is refused as a conflict", async () => {
+Deno.test("an in-flight bound turn recovers its original request when newer feedback arrives", async () => {
   const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
   const h = harness();
   const a = env({ subtask: 11, outcome: "passed", checkId: 31, commit: "aaa" }, "2026-10-23T07:00:00Z");
   const b = env({ subtask: 11, outcome: "passed", checkId: 32, commit: "bbb" }, "2026-10-23T07:30:00Z");
   await runStage(args("review", { handoff: a }), h.deps(gw.http));
-  await assertRejects(() => runStage(args("review", { handoff: b }), h.deps(gw.http)), Error, "input conflict");
+  await runStage(args("review", { handoff: b }), h.deps(gw.http));
+  assert(h.get()!.invalidated);
+  assertEquals(h.get()!.request!.body.check, 31);
   h.tick();
   const same = await runStage(args("review", { handoff: a }), h.deps(gw.http));
   assertEquals(same.operationId, 900);
@@ -212,9 +218,9 @@ Deno.test("a busy target keeps the stage running, a refusal fails it", async () 
 Deno.test("a failed operation records failed evidence with its error", async () => {
   const gw = fakeGateway({ operation: { id: 900, status: "failed", error_code: "task_vm.invalid_config", failed_step: "claim" } });
   const job = await settle(args("provision"), gw.http);
-  assertEquals(job.evidence, {
-    status: "failed", runId: "900", operationId: 900, error: "failed task_vm.invalid_config at claim", groupStatus: "todo", groupEnded: false,
-  });
+  assertEquals(job.evidence?.error, "failed task_vm.invalid_config at claim");
+  assertEquals(job.evidence?.groupEnded, false);
+  assertEquals(job.evidence?.operation, { id: 900, status: "failed", error_code: "task_vm.invalid_config", failed_step: "claim" });
 });
 
 Deno.test("baseline moves the current subtask to running and checks it", async () => {
@@ -273,7 +279,8 @@ Deno.test("an approval completes the subtask and reports whether another remains
     tasks: [{ id: 11, position: 1, status: "reviewing" }, { id: 12, position: 2, status: "todo" }],
     operation: { id: 900, status: "succeeded", result: turnResult({ outcome: "approved", summary: "Fine." }, 45) },
   });
-  const job = await settle(args("review", { handoff: env({ subtask: 11, outcome: "passed", checkId: 31 }, "t") }), gw.http);
+  const multi = await analysisFixture({ title: "Deps", brief: "Group brief.", tasks: [task(11, 1), task(12, 2)] });
+  const job = await settle(args("review", { ...multi.inputs, analysis: multi.analysis("review"), handoff: env({ subtask: 11, outcome: "passed", checkId: 31 }, "t") }), gw.http);
   assertEquals(gw.tasks[0].status, "completed");
   assertEquals(job.artifacts.review.outcome, "approved");
   assertEquals(job.artifacts.review.threadId, 45);
@@ -311,16 +318,16 @@ Deno.test("deadlines start when a slow response arrives, not when the call began
   const reads: number[] = [];
   let job: Job | null = null;
   // Every Gateway request takes 2.2 s on the fake clock; reads fail once, then succeed.
-  const slow: Http = async (method, path) => {
+  const slow: Http = (method, path) => {
     t += 2200;
     if (method === "GET" && path === "/api/v1/task-groups/7") {
-      return { status: 200, body: { data: { id: 7, title: "", brief: "", status: "running", tasks: [] } } };
+      return Promise.resolve({ status: 200, body: { data: { id: 7, title: "", brief: "", status: "running", tasks: [] } } });
     }
-    if (method === "POST") return { status: 202, body: { data: { id: 900, status: "queued", poll_after_seconds: 2 } } };
+    if (method === "POST") return Promise.resolve({ status: 202, body: { data: { id: 900, status: "queued", poll_after_seconds: 2 } } });
     reads.push(t);
-    return reads.length === 1
+    return Promise.resolve(reads.length === 1
       ? { status: 503, body: { error: { code: "http.503" } } }
-      : { status: 200, body: { data: { id: 900, status: "waiting", poll_after_seconds: 2 } } };
+      : { status: 200, body: { data: { id: 900, status: "waiting", poll_after_seconds: 2 } } });
   };
   const deps = { http: slow, now: () => t, readJob: () => Promise.resolve(job), writeJob: (j: Job) => { job = j; return Promise.resolve(); } };
   const started = await runStage(args("provision"), deps);
@@ -369,14 +376,14 @@ Deno.test("a failed provision records whether it ended the Orbit group", async (
 Deno.test("a parked run raises assistance once with a plain reason, and clears it when it moves on", async () => {
   const gw = fakeGateway({ groupStatus: "running", tasks: [{ id: 11, position: 1, status: "running" }] });
   const posts: Record<string, unknown>[] = [];
-  const http: Http = async (method, path, body, key) => {
+  const http: Http = (method, path, body, key) => {
     if (method === "POST" && path.endsWith("/comments")) {
       posts.push(body!);
       const active = body!.type === "assistance_requested";
       const request = { assistance_requested: active, assistance_kind: active ? "direction" : null, assistance_question: active ? String(body!.body) : null, assistance_reason: active ? String(body!.body) : null };
       Object.assign(gw.tasks[0], request);
       Object.assign(gw.assistance, request);
-      return { status: 201, body: { data: {} } };
+      return Promise.resolve({ status: 201, body: { data: {} } });
     }
     return gw.http(method, path, body, key);
   };

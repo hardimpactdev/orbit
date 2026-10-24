@@ -1,8 +1,11 @@
 # Pre-implementation repository analysis
 
-Status: proposed execution/evidence contract. No runtime surface below is shipped
-unless the existing/proposed table says so. Implement only after independent
-review of this design, using the [first native slice brief](gateway-repository-analysis-brief.md).
+Status: independently reviewed PR8 design, followed by native ORB2068/PR1504
+at `8b6fb914c6fbab3abd70459afe832f7307e4d5c6`. The historical baseline table and
+citations below describe the gaps before that implementation. `tasks.analyze`
+and the optional turn reference now exist. The [Swamp adoption](repository-analysis-adoption.md)
+documents the implementation, exact current source, isolated proof and remaining
+native metadata gaps. This document grants no live rollout or exceptional admission.
 
 Run deterministic repository analysis on the complete typed plan in the group's
 actual task VM before a feature author edits runtime code. Keep its full bounded
@@ -30,7 +33,7 @@ and shared reviewer/publisher eligibility [candidate] are now implemented. The e
 it is not the next implementation task. Review-and-merge and topology admission
 remain closed [adr]. This proposal changes neither guard.
 
-| Existing at the pinned source | Consequence / proposed addition |
+| Existing at the historical pinned source | Consequence / proposed addition at design review |
 | --- | --- |
 | Contributor guide requires all planned paths, including new files; repository owns mappings and waivers [policy] [repo-policy] | Retain policy in the repo; add a typed inventory, not path extraction from prose |
 | `DocsImpact::report` unions planned, tracked-diff and untracked paths, normalizes/deduplicates/sorts, and compares current/base surfaces [scanner] | Reuse it without copying its mappings into Gateway or Swamp |

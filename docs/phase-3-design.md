@@ -3,13 +3,15 @@
 Status: design proposal for independent parent review, updated 2026-10-24. This document
 supersedes the earlier B1/B2 options. It authorizes no implementation or rollout.
 
-Current serial priority: the [repository-analysis execution/evidence contract](repository-analysis-contract.md)
-and [smallest native implementation brief](gateway-repository-analysis-brief.md)
-precede Swamp docs-workflow adoption/proof, then dependency updates. Orbit
-ORB2064/PR1503 delivered hosted handoff CI at `2187129c471c20a34b6c91d5e1cb6c34878b8742`;
-the earlier handoff-CI brief below is historical. Later review/merge, topology,
-interruption proof and retirement remain separate. The new contract records
-current source drift and the limits of the parent's delivery evidence.
+Current serial priority: [Swamp repository-analysis adoption and isolated proof](repository-analysis-adoption.md),
+then dependency updates after independent acceptance. The
+[analysis contract](repository-analysis-contract.md) and
+[native brief](gateway-repository-analysis-brief.md) were reviewed in PR8;
+ORB2068/PR1504 delivered the native prerequisite at
+`8b6fb914c6fbab3abd70459afe832f7307e4d5c6`. The consumer implementation is authorized;
+no live rollout or proof group is authorized here. Later review/merge, topology,
+interruption proof and retirement remain separate. Historical source snapshots
+below remain prior evidence; the adoption document pins current native source.
 
 ## Current contract
 
@@ -36,7 +38,7 @@ Sources inspected:
   keep the official factory, its declared stages/gates, short driver ticks, and
   behavior methods for Gateway effects. No new orchestration framework is needed.
 
-The four built operation kinds are `tasks.provision`, `tasks.check`, `tasks.turn`,
+At the historical snapshot, the four built operation kinds were `tasks.provision`, `tasks.check`, `tasks.turn`,
 and `tasks.publish`. Starts accept `Idempotency-Key`; a replay returns the original
 operation, changed input conflicts, and keyed operations are never pruned. The
 operation owns the group and workspace lease while waiting; delayed reads release
@@ -44,7 +46,7 @@ the worker, not the target. Durable owns retries and restart recovery *within* a
 Pi turn. Swamp owns decisions between turns. Model credentials stay in the task VM
 per group; GitHub App credentials stay on the Gateway.
 
-`orbit-groups` maps one work item to `tg-<group>`. Its current path is
+`orbit-groups` maps one work item to `tg-<group>`. Its historical path was
 `provision → baseline → implement → handoff → review → publish → published → completed`,
 with rework and next-subtask loops. Driver keys are `<workItem>.<stage>.c<cycle>`;
 Gateway keys add `.s<subtask>` for child stages. A resumed entry reuses the stored

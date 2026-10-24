@@ -4,6 +4,7 @@
 // WireGuard address, so the transport only needs the Orbit root CA.
 import { z } from "npm:zod@4";
 import { type AssistanceRecord, type Http, type Job, runStage, STAGES, syncAssistance } from "./_lib/gateway_stage.ts";
+import { type StageArgs } from "./_lib/gateway_stage.ts";
 
 const GlobalArgsSchema = z.object({
   gatewayUrl: z.string().default("https://gateway.orbit"),
@@ -29,6 +30,8 @@ const JobSchema = z.object({
   nextReadAt: z.string().nullable(),
   artifacts: z.record(z.string(), z.record(z.string(), z.unknown())),
   evidence: z.record(z.string(), z.unknown()).nullable(),
+  analysisContext: z.unknown().optional(),
+  invalidated: z.boolean().optional(),
 });
 
 /** HTTP through curl, which trusts the Orbit root CA without Deno's unstable client flags. */
@@ -64,7 +67,7 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.23.2",
+  version: "2026.10.24.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     job: {
@@ -137,9 +140,13 @@ export const behavior = {
         change: z.unknown().optional(),
         handoff: z.unknown().optional(),
         review: z.unknown().optional(),
+        plan: z.unknown().optional(),
+        analysis: z.unknown().optional(),
+        workspace: z.unknown().optional(),
+        baseline: z.unknown().optional(),
       }),
       execute: async (
-        args: { workItem: string; stage: (typeof STAGES)[number]; key: string; change?: unknown; handoff?: unknown; review?: unknown },
+        args: StageArgs,
         context: {
           globalArgs: GlobalArgs;
           definition: { name: string };

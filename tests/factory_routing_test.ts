@@ -4,6 +4,7 @@
 // Needs the swamp CLI; it takes a minute or two. Run: ~/.swamp/deno/deno test --allow-all tests/
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
+import { analysisFixture } from "./_support/analysis_fixture.ts";
 
 const REPO = new URL("..", import.meta.url).pathname;
 
@@ -55,7 +56,11 @@ async function copyRepo(gatewayUrl: string): Promise<string> {
     } catch { /* deleted in the working tree */ }
   }
   await Deno.mkdir(`${dir}/.swamp`, { recursive: true });
-  await new Deno.Command("cp", { args: ["-r", `${REPO}/.swamp/pulled-extensions`, `${dir}/.swamp/`] }).output();
+  // Copy an already-installed official extension into this disposable test only.
+  // This performs no install or write in the source/live checkout.
+  const installed = Deno.env.get("SWAMP_TEST_EXTENSIONS") ?? `${REPO}/.swamp/pulled-extensions`;
+  const copy = await new Deno.Command("cp", { args: ["-r", installed, `${dir}/.swamp/`] }).output();
+  assert(copy.success, "provide existing official extensions via SWAMP_TEST_EXTENSIONS; tests never install packages");
   const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
   await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/gatewayUrl: .*/, `gatewayUrl: ${gatewayUrl}`));
   return dir;
@@ -71,6 +76,7 @@ Deno.test({
   fn: async () => {
     const fake = startFakeGateway(SCENARIOS);
     const dir = await copyRepo(fake.url);
+    let passed = false;
     try {
       const items = Object.keys(SCENARIOS).map((g) => `tg-${g}`);
       for (const wi of items) await swamp(dir, "model", "method", "run", "orbit-groups", "start", "--input", `workItem=${wi}`);
@@ -88,6 +94,7 @@ Deno.test({
 
       const seen = new Map<number, Seen>();
       const approved = new Set<string>();
+      const plans = new Set<string>();
       let resetDone = false;
       let deferredTicks = 0;
       const done = () => Object.entries(SCENARIOS).every(([g, sc]) => seen.has(Number(g)) && sc.end(seen.get(Number(g))!));
@@ -100,6 +107,15 @@ Deno.test({
           const g = Number(it.workItem.slice(3));
           const s = { stage: it.stage, cycle: it.cycle, waiting: it.waiting ?? "" };
           seen.set(g, s);
+          if (s.stage === "plan") {
+            const identity = `${g}:${s.cycle}:${resetDone}`;
+            if (!plans.has(identity)) {
+              const fixture = await analysisFixture(fake.groups.get(g)!);
+              await swamp(dir, "model", "method", "run", "orbit-groups", "record_artifact", "--input", `workItem=${it.workItem}`, "--input", "name=plan", "--input", `payload=${JSON.stringify(fixture.plan)}`);
+              await swamp(dir, "model", "method", "run", "orbit-groups", "approve", "--input", `workItem=${it.workItem}`, "--input", "gateId=plan-authorized", "--input", "actor=simulated-plan-owner");
+              plans.add(identity);
+            }
+          }
           if (g === 113 && !resetDone && s.stage === "implement") {
             resetDone = true;
             await swamp(dir, "model", "method", "run", "orbit-groups", "reset", "--input", `workItem=${it.workItem}`, "--input", "confirm=reset");
@@ -114,6 +130,7 @@ Deno.test({
         }
       }
 
+      const retryComments = (g: number) => fake.commentsOf(g).filter((c) => !c.body.includes(" at plan, "));
       const status = Object.fromEntries([...seen].map(([g, s]) => [g, `${s.stage} c${s.cycle} ${s.waiting}`]));
       for (const [g, sc] of Object.entries(SCENARIOS)) assert(sc.end(seen.get(Number(g))!), `group ${g} ended at ${status[g]}`);
 
@@ -141,7 +158,7 @@ Deno.test({
       assertEquals([fake.startsOf(107, "implement"), fake.startsOf(107, "review")], [3, 3]);
       // A stored pre-approval resumed 111 without any approval during the run, and raised nothing on the board.
       assertEquals(fake.startsOf(111, "baseline"), 2);
-      assertEquals(fake.commentsOf(111), []);
+      assertEquals(retryComments(111), []);
       // 112's pre-approvals name another cycle, another stage, and (on tg-111) another group: none applied.
       assertEquals(fake.startsOf(112, "provision"), 1);
       // The reset ran and the run still completed.
@@ -150,7 +167,9 @@ Deno.test({
       assert(deferredTicks > 0, "a tick deferred work items to stay within swamp's call cap");
 
       // Board assistance: a parked run raises it once with a plain reason; a resumed run clears it.
-      const types = (g: number) => fake.commentsOf(g).map((c) => c.type);
+      // Initial plan authorization is a new explicit gate. Keep the old retry
+      // assertions scoped to their own assistance entries.
+      const types = (g: number) => retryComments(g).map((c) => c.type);
       assertEquals(types(105), ["assistance_requested"]);
       assertStringIncludes(fake.commentsOf(105)[0].body, "at handoff, cycle 4: the handoff check");
       assertStringIncludes(fake.commentsOf(105)[0].body, "handoff-assistance");
@@ -169,13 +188,15 @@ Deno.test({
       // Post-child gates use group comments, never an ended child's route.
       for (const [g, gate] of [[104, "publish-retry"], [108, "republish"]] as const) {
         assertEquals(types(g), ["assistance_requested", "resolution"]);
-        assert(fake.commentsOf(g).every((c) => c.subtask === null));
-        assertStringIncludes(fake.commentsOf(g)[0].body, `Gate: ${gate}; work item: tg-${g};`);
+        assert(retryComments(g).every((c) => c.subtask === null));
+        assertStringIncludes(retryComments(g)[0].body, `Gate: ${gate}; work item: tg-${g};`);
         assertEquals(flags(g), [false, [false]]);
       }
+      passed = true;
     } finally {
       await fake.close();
-      await Deno.remove(dir, { recursive: true }).catch(() => {});
+      if (passed) await Deno.remove(dir, { recursive: true });
+      else console.log(`Failed fixture and method/workflow reports retained: ${dir}`);
     }
   },
 });

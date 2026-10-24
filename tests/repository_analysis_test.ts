@@ -1,0 +1,273 @@
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+import {
+  type AnalysisResult,
+  briefSource,
+  canonical,
+  type ReportEnvelope,
+  sha256,
+  strictJson,
+  validateAnalysis,
+  validatePlan,
+} from "../extensions/behaviors/_lib/repository_analysis.ts";
+import { type Http, type Job, runStage, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
+import { analysisFixture, bound, HEAD, TREE } from "./_support/analysis_fixture.ts";
+
+const group = {
+  id: 7,
+  title: "Feature",
+  brief: "Documentation first.",
+  status: "running",
+  tasks: [{ id: 11, position: 1, title: "Documentation", brief: "Write the contract.", status: "running", deliverables: [] }],
+};
+const f = await analysisFixture(group);
+const expected = { operation: 899, group: 7, subtask: 11, plan: f.plan, candidate: { head: HEAD, tree: TREE }, instanceId: 1, nodeId: 2 };
+async function reportResult(edit: (v: ReportEnvelope) => void) {
+  const r = structuredClone(f.result);
+  const e: ReportEnvelope = JSON.parse(r.artifact.content);
+  edit(e);
+  r.artifact.content = JSON.stringify(e);
+  r.artifact.bytes = new TextEncoder().encode(r.artifact.content).length;
+  r.artifact.sha256 = await sha256(r.artifact.content);
+  r.outcome = e.status;
+  return r;
+}
+
+Deno.test("complete typed plan: native digest, rename endpoints, cumulative revisions and exact brief", async () => {
+  const entries = [{ change: "delete" as const, path: "deleted.txt" }, { change: "rename" as const, from: "old.txt", path: "renamed.txt" }, {
+    change: "add" as const,
+    path: "新.txt",
+  }];
+  const v = await analysisFixture(group, entries);
+  assertEquals(await validatePlan(v.plan, briefSource(group), "tg-7"), v.plan);
+  for (
+    const entry of [{ change: "add", path: "../escape" }, { change: "rename", from: "old.txt", path: "old.txt" }, { change: "add", path: " new.txt" }, {
+      change: "add",
+      path: "dir/",
+    }]
+  ) {
+    const bad = { ...v.plan, manifest: { ...v.plan.manifest, paths: [entry] } };
+    bad.plan_sha256 = await sha256(canonical(bad.manifest));
+    await assertRejects(() => validatePlan(bad, briefSource(group), "tg-7"));
+  }
+  await assertRejects(() => validatePlan(v.plan, "changed brief", "tg-7"));
+  const changed = structuredClone(v.plan);
+  changed.manifest.revision++;
+  changed.manifest.paths.pop();
+  changed.plan_sha256 = await sha256(canonical(changed.manifest));
+  await assertRejects(() => validatePlan(changed, briefSource(group), "tg-7", v.plan));
+  const reordered = structuredClone(v.plan);
+  reordered.manifest.paths.reverse();
+  reordered.plan_sha256 = await sha256(canonical(reordered.manifest));
+  await assertRejects(() => validatePlan(reordered, briefSource(group), "tg-7"));
+});
+
+Deno.test("full report rejects duplicate/missing/malformed/truncated/oversize/wrong-candidate evidence", async () => {
+  assertEquals((await validateAnalysis(f.result, expected)).outcome, "ready");
+  for (const raw of ['{"x":1,"x":2}', '{"x":1', '{"x":1} trailing', '{"x":1e999}', '{"x":"\\ud800"}']) assertThrows(() => strictJson(raw, 65536));
+  for (
+    const edit of [
+      (r: AnalysisResult) => {
+        r.artifact.content = r.artifact.content.slice(0, -1);
+      },
+      (r: AnalysisResult) => {
+        Reflect.deleteProperty(r, "artifact");
+      },
+      (r: AnalysisResult) => {
+        r.provenance.group = 8;
+      },
+      (r: AnalysisResult) => {
+        r.provenance.before.tree = "c".repeat(40);
+      },
+      (r: AnalysisResult) => {
+        r.provenance.plan_revision++;
+      },
+      (r: AnalysisResult) => {
+        r.provenance.instance_id++;
+      },
+      (r: AnalysisResult) => {
+        r.artifact.bytes = 65537;
+      },
+    ]
+  ) {
+    const r = structuredClone(f.result);
+    edit(r);
+    await assertRejects(() => validateAnalysis(r, expected));
+  }
+  const missing = await reportResult((e) => {
+    e.report.data.paths = [];
+  });
+  await assertRejects(() => validateAnalysis(missing, expected));
+  const changed = structuredClone(f.result);
+  changed.provenance.after.tree = "c".repeat(40);
+  changed.outcome = "changed";
+  assertEquals((await validateAnalysis(changed, expected)).outcome, "changed");
+});
+
+Deno.test("exit zero is insufficient; errors, unresolved ownership and generators block; omission requires revised plan", async () => {
+  for (
+    const edit of [
+      (e: ReportEnvelope) => {
+        e.report.data.errors = ["unresolved surface"];
+      },
+      (e: ReportEnvelope) => {
+        e.report.data.surfaces = [{ path: "new.txt", kind: "api", owner: "unowned", reason: "unresolved", generator_status: null }];
+      },
+      ...(["failed", "missing", "stale"] as const).map((status) => (e: ReportEnvelope) => {
+        e.report.data.surfaces_handled_by_generator = [{ generator: "bin/docs-openapi", paths: ["new.txt"], status, current: false }];
+      }),
+    ]
+  ) {
+    const r = await reportResult((e) => {
+      edit(e);
+      e.status = "blocked";
+    });
+    assertEquals((await validateAnalysis(r, expected)).outcome, "blocked");
+    r.outcome = "ready";
+    await assertRejects(() => validateAnalysis(r, expected));
+  }
+  const omitted = await reportResult((e) => {
+    e.report.data.paths = ["extra-untracked.txt", "new.txt"];
+  });
+  assertEquals((await validateAnalysis(omitted, expected)).omitted, ["extra-untracked.txt"]);
+  assertEquals((await validateAnalysis(omitted, expected)).outcome, "plan_required");
+});
+
+function stageHarness(
+  responses: { start?: "lost" | "busy"; status?: string; result?: unknown; code?: string; group?: typeof group; docsReview?: Record<string, unknown> } = {},
+) {
+  let job: Job | null = null;
+  const calls: { method: string; path: string; body?: Record<string, unknown>; key?: string }[] = [];
+  let starts = 0, time = 0;
+  const http: Http = (method, path, body, key) => {
+    calls.push({ method, path, body: structuredClone(body), key });
+    const ok = (data: unknown, status = 200) => Promise.resolve({ status, body: { data } });
+    if (method === "GET" && path.endsWith("/task-groups/7")) return ok(responses.group ?? group);
+    if (method === "GET" && path.endsWith("/operations/898")) return ok(responses.docsReview ?? {});
+    if (method === "POST") {
+      starts++;
+      if (starts === 1 && responses.start === "lost") return Promise.resolve({ status: 0, body: null });
+      if (starts === 1 && responses.start === "busy") return Promise.resolve({ status: 409, body: { error: { code: "operation.target_busy" } } });
+      return ok({ id: 899, status: "queued", poll_after_seconds: 1 }, 202);
+    }
+    return ok({ id: 899, status: responses.status ?? "succeeded", result: responses.result ?? f.result, error_code: responses.code });
+  };
+  const deps = {
+    http,
+    readJob: () => Promise.resolve(job),
+    writeJob: (j: Job) => {
+      job = structuredClone(j);
+      return Promise.resolve();
+    },
+    now: () => time += 10000,
+  };
+  const args: StageArgs = { workItem: "tg-7", stage: "analyze", key: "tg-7.analyze.c1", ...f.inputs };
+  return { args, deps, calls, get: () => job };
+}
+
+Deno.test("lost response/restart recovers exact persisted analysis key and request; changed plan drains original", async () => {
+  const h = stageHarness({ start: "lost" });
+  await runStage(h.args, h.deps);
+  const original = structuredClone(h.get()!.request);
+  await runStage(h.args, h.deps); // new invocation, only persisted job survives
+  assertEquals(h.get()!.request, original);
+  assertEquals(h.calls.filter((c) => c.method === "POST").map((c) => c.key), [original!.idempotencyKey, original!.idempotencyKey]);
+  const newer = structuredClone(f.plan);
+  newer.manifest.revision++;
+  newer.plan_sha256 = await sha256(canonical(newer.manifest));
+  const done = await runStage({ ...h.args, plan: bound(newer) }, h.deps);
+  assertEquals(done.artifacts.analysis.outcome, "stale");
+  assertEquals(done.artifacts.analysis.result, f.result);
+  assertEquals(h.calls.filter((c) => c.method === "POST").length, 2);
+});
+
+Deno.test("unknown termination holds the client stage; cancellation/unavailable/oversize retain typed failure without green fallback", async () => {
+  const pending = stageHarness({ status: "waiting" });
+  await runStage(pending.args, pending.deps);
+  assertEquals((await runStage(pending.args, pending.deps)).state, "running");
+  assertEquals(pending.calls.filter((c) => c.method === "POST").length, 1);
+  const busy = stageHarness({ start: "busy" });
+  assertEquals((await runStage(busy.args, busy.deps)).state, "running");
+  await runStage(busy.args, busy.deps);
+  assertEquals(busy.calls.filter((c) => c.method === "POST").map((c) => c.key), ["tg-7.analyze.s11.c1", "tg-7.analyze.s11.c1"]);
+  for (const code of ["tasks.analysis_unavailable", "tasks.analysis_report_too_large", "tasks.analysis_stale"]) {
+    const h = stageHarness({ status: "failed", code });
+    await runStage(h.args, h.deps);
+    const r = await runStage(h.args, h.deps);
+    assertEquals(r.state, "failed");
+    assertEquals(r.evidence!.code, code);
+    assertEquals(r.evidence!.requiredBytes, null);
+    assertEquals(r.artifacts, {});
+  }
+  const cancelled = stageHarness({ status: "cancelled" });
+  await runStage(cancelled.args, cancelled.deps);
+  assertEquals((await runStage(cancelled.args, cancelled.deps)).state, "failed");
+});
+
+Deno.test("analysis-bound turn lost-response replay retains original prompt/send identity; full-prompt rejection stays failed", async () => {
+  const h = stageHarness({ start: "lost" });
+  const a = { ...h.args, stage: "implement" as const, key: "tg-7.implement.c1", analysis: f.analysis() };
+  await runStage(a, h.deps);
+  const before = structuredClone(h.get()!.request);
+  await runStage({ ...a, review: bound({ summary: "New feedback must not replace a possibly accepted send." }) }, h.deps);
+  assertEquals(h.get()!.request, before);
+  assert(h.get()!.invalidated);
+  const sends = h.calls.filter((c) => c.method === "POST");
+  assertEquals(sends[0], sends[1]);
+  const oversized = stageHarness({ status: "failed", code: "tasks.analysis_prompt_too_large" });
+  await runStage(a, oversized.deps);
+  const done = await runStage(a, oversized.deps);
+  assertEquals(done.state, "failed");
+  assertEquals(done.evidence!.code, "tasks.analysis_prompt_too_large");
+});
+
+Deno.test("a feature child refuses absent/stale/foreign semantic docs review and verifies the existing approved native receipt", async () => {
+  const view = structuredClone(group);
+  view.tasks[0].status = "completed";
+  view.tasks.push({ id: 12, position: 2, title: "Feature", brief: "Implement after docs review", status: "running", deliverables: [] });
+  const fixture = await analysisFixture(view);
+  const result = structuredClone(fixture.result);
+  result.provenance.subtask = 12;
+  const analysis = bound({
+    subtask: 12,
+    outcome: "ready",
+    purpose: "implement",
+    operationId: 899,
+    plan_sha256: fixture.plan.plan_sha256,
+    plan: fixture.plan,
+    candidate: { head: HEAD, tree: TREE },
+    result,
+  });
+  const args: StageArgs = { workItem: "tg-7", stage: "implement", key: "tg-7.implement.c1", ...fixture.inputs, analysis };
+  const pointer = { subtask: 11, plan_sha256: fixture.plan.plan_sha256, operationId: 898 };
+  const approved = {
+    id: 898,
+    kind: "tasks.turn",
+    target_type: "task_group",
+    target_id: 7,
+    status: "succeeded",
+    input: { subtask: 11, role: "reviewer", analysis: { operation: 897, plan_sha256: fixture.plan.plan_sha256 } },
+    result: { receipt: { outcome: "approved" } },
+  };
+  for (const review of [undefined, bound({ docsReview: { ...pointer, plan_sha256: "c".repeat(64) } }), bound({ docsReview: pointer })]) {
+    const h = stageHarness({ group: view, docsReview: { ...approved, target_id: 8 } });
+    assertEquals((await runStage({ ...args, review }, h.deps)).state, "failed");
+    assert(!h.calls.some((c) => c.method === "POST"));
+  }
+  const h = stageHarness({ group: view, docsReview: approved });
+  assertEquals((await runStage({ ...args, review: bound({ docsReview: pointer }) }, h.deps)).state, "running");
+  assertEquals(h.calls.filter((c) => c.method === "POST").length, 1);
+});
+
+Deno.test("authors require full evidence and current semantic docs review; no-docs never removes review policy", async () => {
+  const h = stageHarness();
+  const a = { ...h.args, stage: "implement" as const, key: "tg-7.implement.c1", analysis: f.analysis() };
+  await runStage(a, h.deps);
+  const turn = h.calls.find((c) => c.method === "POST")!;
+  assertEquals(turn.body!.analysis, { operation: 899, plan_sha256: f.plan.plan_sha256 });
+  assert(String(turn.body!.prompt).includes("waiver policy"));
+  assert(!String(turn.body!.prompt).includes(f.result.artifact.content)); // Gateway appends retained full bytes, client sends reference.
+  const missing = stageHarness();
+  const refused = await runStage({ ...a, analysis: null }, missing.deps);
+  assertEquals(refused.state, "failed");
+  assert(!missing.calls.some((c) => c.method === "POST"));
+});
