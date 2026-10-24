@@ -94,7 +94,33 @@ Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a 
 
 The operation reserves the group and uses the same VM allocation and workspace provisioning as a scheduler claim. When capacity is full or the VM is still provisioning, the operation stays `waiting` and the group stays `reserved`. Delayed reads continue the claim when the VM is ready. Task VMs that are disabled or misconfigured, or a VM that fails, fail the operation with the task VM error, such as `task_vm.invalid_config`. Any provisioning failure ends the group `failed`, clears its reservation, and leaves VM removal to existing cleanup. A retry needs a new group.
 
-Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit }`, naming the workspace Instance, its Node, and its start commit.
+Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, its Node, its start commit, and its immutable analysis pin. `starting_commit` is not necessarily the analysis base.
+
+##### Public provision identity
+
+`analysis_base` is null when the pin is unavailable, otherwise exactly `{base, instance_id, repository, branch}`. `base` is a full lowercase 40- or 64-hex Git commit object ID. `instance_id` is a positive integer equal to result `instance_id`; `repository` is the recorded Project repository identity and `branch` is the recorded workspace branch, both nonempty strings.
+
+Validate the repository with the existing Git-origin rules (no HTTPS credentials, SSH password, query, or fragment) and the branch with the existing Git-branch rules. An unsafe identity recorded by provision makes the entire public pin unavailable; never publish credentials or redact a secret into a different supposedly exact identity. These are the identities used by [analysis admission](#fixed-execution-and-complete-report), not new caller inputs. Existing result `node_id` identifies the provisioned Node; it is not a moving location lookup.
+
+Provision records the pin once under its workspace lease, before release. The public object copies that validated record, not the current Project settings, workspace HEAD, `starting_commit`, or remote refs. Pin capture uses the initial merge base described [below](#complete-typed-plan). A divergent starting commit can therefore differ from `analysis_base.base`. Persist the result's identity with the existing provision checkpoints so recovery after release and before terminal result persistence retains that same pin. Reads, recovery, and replay under the same key never recalculate it, fetch, or adopt a supplied base. Later default-branch movement, another child, VM parking, or VM destruction cannot change the terminal result.
+
+A recorded null base, absent pin, invalid object ID, incomplete or invalid identity, or pin for another provisioned Instance yields `analysis_base: null`. Do not return a partial object, fail an otherwise successful provision solely for unavailable analysis, or repair the pin from today's `origin/main`. A terminal result recorded without an `analysis_base` member also means unavailable; reads do not backfill or mutate old results. Analysis still fails closed with `tasks.analysis_unavailable` when no valid matching pin exists; a different supplied base remains `tasks.analysis_stale`. Publication of the pin does not authorize a base update or bypass fresh workspace checks.
+
+For example, this successful result names a starting commit on a divergent workspace and an earlier fixed merge base:
+
+```json
+{
+  "instance_id": 634,
+  "node_id": 91,
+  "starting_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "analysis_base": {
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "instance_id": 634,
+    "repository": "https://github.com/example/project.git",
+    "branch": "task-2074"
+  }
+}
+```
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
 
@@ -188,7 +214,7 @@ Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. Th
 
 Provision calls `analysis-base` in the existing task-check program. It finds the merge base of the Instance's starting commit and local `refs/remotes/origin/main`. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
 
-Analysis performs no fetch, merge, or base adoption. An authorized base update keeps old evidence and requires a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
+Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
 Gateway verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots under the lease before dispatch and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, lease, execution identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
 
@@ -220,7 +246,7 @@ Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malfo
 
 On a nonzero exit, the adapter can instead emit a bounded failure object on stdout: `{schema: 1, error: {code, required_bytes}}`. The only codes are `tasks.analysis_unavailable` with null `required_bytes`, and `tasks.analysis_report_too_large` with the full envelope's required byte count above 65536. These are failures, never report artifacts.
 
-The existing runner carries the complete bytes unchanged. Gateway validates the closed shape and types, then retains the code and safe diagnostic after terminal proof, before release. Overflow diagnostics include the required size. No failure is inferred from stderr, and the report bound is unchanged.
+The existing runner carries the complete bytes unchanged. Gateway validates the closed shape and types, then retains the typed code and size after terminal proof, before release. The [public failure result](#public-analysis-failure-metadata) carries this safe diagnostic without exception text or stderr. The report bound is unchanged.
 
 | Valid repository report | Analysis status |
 | --- | --- |
@@ -260,6 +286,60 @@ A local dispatch journal alone does not prove acceptance. If an unconfirmed requ
 
 The initial report is input to its author turn. Author edits intentionally invalidate its candidate identity. After the normal handoff commit and check, analyze the current checked candidate again before an evidence-bound reviewer turn. Preserve initial and current operation IDs in caller evidence. Rework or entry to the next child needs fresh evidence when the plan or candidate changes; never rerun baseline for this purpose.
 
+##### Public analysis failure metadata
+
+A terminal `tasks.analyze` failure can carry a non-null operation `result` without becoming successful. Its entire failure result is exactly `{schema: 1, error: {code, required_bytes}}`; no `outcome`, `artifact`, report fragment, or success provenance is included. Operation `status` remains `failed`, and `error.code` must equal the operation's original `error_code`. The existing failed-step identity is preserved. The successful `{outcome, artifact, provenance}` result is unchanged.
+
+| Failure result field | Contract |
+| --- | --- |
+| `schema` | Integer `1` |
+| `error` | Object containing exactly `code` and `required_bytes` |
+| `error.code` | Only `tasks.analysis_report_too_large` or `tasks.analysis_unavailable` |
+| `error.required_bytes` | For overflow, an exact validated JSON integer from 65537 through 9007199254740991 inclusive, or null if the exact size is unknown; for unavailable tooling, always null |
+
+The integer ceiling is the largest integer exactly representable by all supported JSON consumers. Reject strings, booleans, fractions, non-finite numbers, negative or in-bound overflow sizes, and larger integers; never round or clamp. The adapter's overflow failure object requires a known integer in that range, not null. Null in the public overflow result is reserved for overflow detected by the Gateway when the exact length of the complete envelope is unavailable. The bounded two-code object is the diagnostic; there is no free-text `message` field to redact or parse.
+
+For example, an operation read for a validated adapter overflow includes these fields (other ordinary operation fields and steps are omitted here):
+
+```json
+{
+  "kind": "tasks.analyze",
+  "status": "failed",
+  "error_code": "tasks.analysis_report_too_large",
+  "result": {
+    "schema": 1,
+    "error": {
+      "code": "tasks.analysis_report_too_large",
+      "required_bytes": 216325
+    }
+  }
+}
+```
+
+Unavailable tooling uses `error_code: tasks.analysis_unavailable` and `result: {"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}`. This does not add metadata to synchronous admission-error responses. Failures before an owned analysis run is reserved, other analysis codes, and non-analysis operations retain their existing result behavior; they cannot acquire this payload merely because an exception or output contains one of these code strings.
+
+Accept an adapter failure only from complete bounded strict UTF-8 stdout of the exact reserved owned run, after a nonzero exit and authoritative local terminal proof. Validate the same closed schema, duplicate-key/depth/number rules, completion identity, and run/workspace/lease binding used by the analysis transport.
+
+The adapter object has no caller-supplied provenance: association comes from the Gateway reservation and supervised run record. Wrong-run, foreign-owner, zero-exit, malformed, unknown-code, extra-field, or forged completion data cannot supply a size or tooling diagnosis. Reject malformed failure objects as `tasks.analysis_report_invalid` with null result, rather than salvaging an embedded number. No arbitrary runner hint, exception message, output tail, stderr, or private operation-state dump is a metadata source.
+
+For Gateway-detected overflow, publish an exact size only when the complete byte count is validated against the owned supervised completion; a tail, prefix, buffer limit, or unverified `report_bytes` value is not the full envelope's size. Otherwise return null for the size while retaining `tasks.analysis_report_too_large`. Never measure the small failure object's length as the required report size. The 65536-byte/depth-24 report bound remains absolute: the 216325-byte full report, its 162390-byte compact form, and a 69452-byte report are all unusable. Do not emit any partial report or raise the bound.
+
+Persist only validated typed failure fields in the existing terminal checkpoint after terminal proof and before releasing the workspace lease. Recovery validates that checkpoint and its original operation, run, workspace, and lease association, releases only that owner, and produces the same failed outcome through the existing operation-result facility. Persist terminal status, original error code, failed step, and result together. A crash before release, after release, or before terminal result persistence cannot discard the exact known size, dispatch again, or turn failure into success. Do not derive metadata from a checkpoint's exception text when typed fields are absent.
+
+Queued, running, or waiting operations expose no terminal result. Unknown termination, unknown descendants, transport loss, and foreign ownership retain fencing and do not publish terminal failure metadata. Cancellation retains the existing stop rules and never fabricates a failed analysis result; a cancelled operation does not expose this payload. A cancel request after terminal failure leaves its recorded result unchanged. Repeated HTTP reads, sequence-filtered reads, same-key replay, and VM cleanup preserve the terminal payload under existing access checks and keyed retention.
+
+##### Metadata compatibility and generated surfaces
+
+These additions use only existing operation reads and `result`; no endpoint, request option, top-level operation field, table, or ledger is added. API get/list reads and same-key start replies, CLI `--json`, PHP SDK `OperationResponse::result`, and MCP operation reads carry the same nested fields. Clients branch on `kind`, `status`, and the documented result shape, not on whether `result` is non-null. The CLI still exits unsuccessfully and displays the original failure code; human display and step output are not machine metadata contracts.
+
+Older records and older Gateways can lack provision `analysis_base` or return null for failed-analysis `result`. Treat those as explicit unavailable base or unknown required size; retain the original typed code and full supported operation. Do not parse error strings, guess values, or reinterpret a missing field as success. This is absence handling in additive public data, not a second execution or compatibility path. No read-time backfill or new request variant is supported.
+
+Implementation must check native OpenAPI, recorded SDK fixtures, generated MCP tools, and web operation types against the same contract, and add API/CLI/SDK/MCP parity coverage. Regenerate emitted artifacts only when their generator inputs change; a generic object-valued `result` can leave generated schemas unchanged, but not excuse missing value-preservation tests. Roll out the producer before caller adoption. On rollback, stop adoption first, reconcile active owners through existing cancellation/recovery, and preserve terminal results and pins without recomputation or extraction from old logs.
+
+Implementation regressions must fail before the change through actual public operation HTTP reads, not only private state assertions. Exercise the real adapter's oversized-report and unavailable-tooling outcomes, repeated reads and same-key replies, crashes around terminal checkpoint/release/result persistence, malformed and forged payloads, unsafe sizes, non-analysis failures, unknown termination, cancellation, and foreign ownership.
+
+A divergent starting-commit fixture must prove the public base equals the immutable pin accepted by analyze, not the start commit; move `origin/main` and replay without changing that pin. Missing or invalid pins remain unavailable. Keep existing report, lease, provision, check, and turn regressions, test limits, and script ratchet intact; reuse valid unchanged proof rather than blindly rerunning full suites.
+
 ##### Analysis failures and delivery limits
 
 | Condition | Response or terminal evidence |
@@ -268,7 +348,7 @@ The initial report is input to its author turn. Author edits intentionally inval
 | Missing or nonancestor base, mismatched HEAD or tree | HTTP 409 `tasks.analysis_stale`; no dispatch |
 | Missing entrypoint or tooling | HTTP 422 `tasks.analysis_unavailable` before dispatch, or failed operation with that code when discovered later |
 | Invalid, missing, truncated, or wrong-identity report | `tasks.analysis_report_invalid`; unusable |
-| Envelope overflow | `tasks.analysis_report_too_large`; size/failure diagnostics, no partial artifact |
+| Envelope overflow | Failed `tasks.analysis_report_too_large`; [typed size or null](#public-analysis-failure-metadata), no partial artifact |
 | Exit 0 with report errors, unresolved surface, or missing/failed/stale generator | Valid `outcome: blocked`, with all diagnostics |
 | Nonzero exit or checkout mutation | `tasks.analysis_failed`, or valid `outcome: changed` saved for inspection; no green fallback |
 | Lost transport or unknown termination | Waiting with the same owner and run; retain fencing |
@@ -1992,6 +2072,12 @@ The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized c
 ### An external turn records evidence without choosing the next step
 
 The orchestrator owns the prompt, gates, budgets, and assistance. The turn operation only sends, waits, and records evidence. Applying a blocked receipt inside Orbit would create a second lifecycle owner. Durable owns restart resume and provider retries, so the Gateway never starts a replacement turn for them. Reviewers reset to the passed handoff commit to preserve what was checked. Consults keep the tree because it contains the implementer's work.
+
+### Public analysis metadata reuses operation results
+
+A typed code without a typed size forces callers to parse exception text, which is neither stable nor safe. A closed failure result preserves the original failure status and carries only an allowlisted code and validated safe integer. Reusing `OperationOutcome`'s failed-result facility keeps the generic runner free of Tasks exception parsing. Saving typed fields before release lets recovery finish the same failure without keeping raw rejected reports or diagnostics. A new error endpoint, table, generic exception-details bag, or private-state projection would expose more than this consumer needs.
+
+The provisioned starting commit can be ahead of or divergent from the initial merge base. Publishing the already recorded pin gives callers the same identity analysis admits, without trusting caller input or a moving remote. Null is safer than recomputing a pin that provision did not record. Returning the pin does not make a stale workspace usable or create a base-update policy.
 
 ### Provision keeps effects separate from lifecycle decisions
 

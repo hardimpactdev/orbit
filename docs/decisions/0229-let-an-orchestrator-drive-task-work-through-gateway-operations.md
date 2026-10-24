@@ -125,7 +125,7 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 - A failed provision ends the group `failed`, and the existing cleanup removes its VM. To try again, the orchestrator creates a new group, as [Task lifecycle](/reference/tasks#task-lifecycle) already requires.
 - The step ends with the group `running`. A routed workspace ends `active` with its Route; an unrouted one ends `source_resolved`. No subtask starts, and no check runs.
 - The workspace starts at the default branch, as it does today.
-- The result holds the workspace Instance, its Node, and the start commit.
+- The result holds the workspace Instance, its Node, the start commit, and nullable `analysis_base` under the [public provision identity contract](/reference/tasks#public-provision-identity). It copies the immutable recorded pin, not a fresh ref lookup; a start commit cannot substitute for a merge base. Missing or invalid pins remain unavailable on reads and replay.
 
 To stop a waiting provision, the orchestrator cancels the group with `tasks:cancel`.
 
@@ -149,6 +149,8 @@ Only a completed successful `tasks.check` with `outcome: passed`, a handoff `Tas
 #### Fixed repository analysis
 
 This additive amendment authorizes one fixed read-only profile, not a generic command operation. It serves [Deterministic first](/mission#principles): mechanical repository analysis makes zero LLM calls. The [Tasks analysis contract](/reference/tasks#analyze-an-external-groups-repository) owns the complete typed plan, bounded report, provenance, error codes, and turn binding. The fixed profile and optional turn reference implement this boundary. Their delivery does not establish live docs-workflow or interruption proof.
+
+The [public metadata amendment](/reference/tasks#public-analysis-failure-metadata) uses the existing operation `result` for a closed allowlisted failure object while retaining `failed` and the original typed code. It carries only a validated exact size or null, never text extracted from exceptions or diagnostic tails. Tasks validates and checkpoints these fields after terminal proof and before lease release, then uses the existing failed-outcome result facility. The generic runner does not learn Tasks failure codes or expose private operation state. Provision publishes its already recorded pin through the same public result boundary. No endpoint, table, ledger, worker, or execution framework is added. An independent reviewer using the native model must approve the exact commit before runtime implementation. This docs-only amendment supplies no new runtime or live failure/recovery proof.
 
 `tasks.analyze` requires a key and exact `{subtask, plan, plan_sha256, base, head, tree}` input. It runs tracked no-argument `bin/task-analyze` with validated stdin as the workspace owner. The manifest is cumulative across the feature and includes proposed files and both rename endpoints. Its RFC 8785 hash binds source revision and planning provenance. Fresh identities bind the execution to its base, HEAD, repository, workspace, and entrypoint, plus the whole worktree with untracked files. The 256-entry/32 KiB plan, 48 KiB request, and complete 64 KiB/depth-24 report bounds refuse overflow, never truncate.
 

@@ -33,7 +33,7 @@ Every operation has the same fields, whatever its kind.
 | `sequence` | A number that grows with every change of the operation or one of its steps |
 | `current_step` | The name of the running or waiting step, or null |
 | `failed_step`, `error_code` | For a failed operation, the step that ended it and its error code. `failed_step` is null when the operation failed outside a step |
-| `result` | What the operation produced, or null until it ends |
+| `result` | What the operation produced, or null until it ends. A terminal failure can have a typed result; non-null does not mean success |
 | `cancel_requested` | Whether someone asked the operation to stop |
 | `attempts` | How many times a worker started the operation |
 | `triggered_by` | The name of the Node that started it |
@@ -76,7 +76,7 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 
-Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
+Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit, analysis_base }` on success. The nullable [public provision identity](/reference/tasks#public-provision-identity) exposes the immutable recorded analysis pin; do not infer it from `starting_commit` or today's remote branch. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
 A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, ci }` under the [hosted handoff CI contract](/reference/tasks#check-an-external-group). This prerequisite does not open external review-and-merge admission. The input remains `{ subtask, phase }` with the existing optional key.
 
@@ -86,9 +86,17 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 [Tasks analysis](/reference/tasks#analyze-an-external-groups-repository) runs keyed `tasks.analyze` with `workspace_ready`, `analysis`, and `report` steps, using existing task ownership and detached supervision. Its key is required, unlike the optional keys on ordinary operation starts. Same-key replay runs before mutable eligibility checks, never dispatches a second scanner, and keeps the original bounded artifact even after VM destruction. This addition does not change baseline/check inputs, ordinary turns, or closed external review-and-merge/topology admission.
 
-The terminal result is `{outcome, artifact, provenance}`. `artifact: {sha256, bytes, content}` preserves exact complete UTF-8 stdout, at most 64 KiB/depth 24, not the step's 8 KiB diagnostic tail. The digest and length apply to decoded content bytes, not reserialized JSON. Size the typed transport for JSON escaping of the entire bounded result; never truncate it. Gateway-owned provenance binds the complete plan and candidate to repository, branch, owned workspace, run, lease, entrypoint digest, before/after snapshots, duration, exit code, and zero mechanical LLM calls. Tasks owns the detailed field list; repository code owns report semantics and docs mappings.
+The successful terminal result is `{outcome, artifact, provenance}`. `artifact: {sha256, bytes, content}` preserves exact complete UTF-8 stdout, at most 64 KiB/depth 24, not the step's 8 KiB diagnostic tail. The digest and length apply to decoded content bytes, not reserialized JSON. Size the typed transport for JSON escaping of the entire bounded result; never truncate it.
 
-Operation `succeeded` does not mean docs approval: usable outcomes are `ready` or `action_required`; valid `blocked` and `changed` evidence saved for inspection cannot authorize a turn. Invalid or missing reports fail only after terminal local proof. Reserve the run before dispatch; missing-start recovery tombstones its identity. Dispatched work with no retained report is not rerun under its key. Cancellation or unknown descendants retain the group and workspace fence until termination is proven, while releasing the worker during waits. Existing operation reads and cancellation apply; add no arbitrary VM file reader or artifact table.
+Gateway-owned provenance binds the complete plan and candidate to repository, branch, owned workspace, run, lease, entrypoint digest, before/after snapshots, duration, exit code, and zero mechanical LLM calls. Tasks owns the detailed field list; repository code owns report semantics and docs mappings.
+
+Operation `succeeded` does not mean docs approval: usable outcomes are `ready` or `action_required`; valid `blocked` and `changed` evidence saved for inspection cannot authorize a turn.
+
+Invalid or missing reports fail only after terminal local proof. Reserve the run before dispatch; missing-start recovery tombstones its identity. Dispatched work with no retained report is not rerun under its key. Cancellation or unknown descendants retain the group and workspace fence until termination is proven, while releasing the worker during waits. Existing operation reads and cancellation apply; add no arbitrary VM file reader or artifact table.
+
+A qualifying terminal analysis failure instead returns the [closed failure result](/reference/tasks#public-analysis-failure-metadata) `{schema: 1, error: {code, required_bytes}}`. Status stays `failed` and the original `error_code` and failed step stay intact. An overflow includes its validated exact byte count when known, otherwise null; unavailable tooling carries null. There is no artifact, free-text exception message, stderr, or private-state projection.
+
+Terminal proof and the existing owned checkpoint precede lease release; recovery and repeated reads preserve the same typed fields through the existing failed-outcome result path. Other kinds do not acquire Tasks metadata. Missing fields on older records remain unavailable rather than being inferred from logs. [Tasks](/reference/tasks#metadata-compatibility-and-generated-surfaces) owns absence handling, examples, validation, and API/CLI/SDK/MCP acceptance requirements.
 
 An optional analysis reference on `tasks.turn` consumes the full plan/report/provenance only after fresh identity comparison under the turn lease before its first send. Persist the complete combined prompt within 100,000 characters before dispatch. Same-key recovery after dispatch uses that original prompt and send key, not a fresh send after revalidating an intentionally edited checkout. See [Analysis-bound turn evidence](/reference/tasks#analysis-bound-turn-evidence). Analysis supplies neither a `TaskCheck` candidate nor semantic approval, and never replaces handoff CI or the actual-file docs gate.
 
@@ -161,7 +169,7 @@ A client that has no Reverb connection, such as an MCP agent, polls:
 1. Start the operation and keep its `id` and `sequence`.
 2. Wait `poll_after_seconds`.
 3. Read it with `after_sequence` set to the last `sequence` you have. Apply the steps it returns.
-4. Repeat until `status` is terminal. Then read `result`, or `failed_step` and `error_code`.
+4. Repeat until `status` is terminal. Then read `result` according to `kind` and `status`; for failure also read `failed_step` and `error_code`. A failed operation's typed result is evidence, not success.
 
 `poll_after_seconds` is 2 while the operation is queued and in the first 10 seconds of its run. It then grows by one second for each 10 seconds of run time, to at most 15.
 
