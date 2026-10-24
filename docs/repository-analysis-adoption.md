@@ -210,7 +210,7 @@ source file hashes, durations and zero mechanical LLM calls. Planning, writing
 and review remain explicit judgment steps, outside this fixture. There is no
 comparable before-workflow measurement and no savings claim.
 
-Recorded local validation: 63 focused producer/client/driver/assistance tests
+Recorded local validation: 64 focused producer/client/driver/assistance tests
 passed; the separate official-factory test passed its 13 simulated scenarios in
 3m38s with the original 70-tick/call bounds. Lint passed for all nine changed
 TypeScript files, type checks passed for the Gateway behavior and driver, and

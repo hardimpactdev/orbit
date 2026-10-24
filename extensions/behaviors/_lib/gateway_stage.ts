@@ -220,12 +220,18 @@ export function reviewerPrompt(group: GroupRow, t: TaskRow, handoff: Envelope): 
 
 /** Latest supported whole-workspace snapshot; never obtain VM files from the host. */
 export function analysisCandidate(args: StageArgs): { candidate: Candidate; purpose: "implement" | "review" } {
-  const records = [args.baseline, args.change, args.handoff, args.review].map(envelope).filter((e): e is Envelope => e !== null);
+  const records = (["baseline", "change", "handoff", "review"] as const).flatMap((kind) => {
+    const record = envelope(args[kind]);
+    return record ? [{ kind, ...record }] : [];
+  });
   records.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
   const latest = records.at(-1);
   const c = latest?.payload.candidate as Candidate | undefined;
   if (!c || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(c.head) || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(c.tree)) throw new Error("analysis requires a complete native candidate snapshot");
-  return { candidate: c, purpose: latest?.payload.checkId && latest.payload.outcome === "passed" && latest.payload.commit ? "review" : "implement" };
+  const h = envelope(args.handoff);
+  const retryReview = latest?.kind === "review" && !["approved", "changes_requested"].includes(String(latest.payload.outcome)) &&
+    h?.payload.subtask === latest.payload.subtask && h?.payload.outcome === "passed";
+  return { candidate: c, purpose: retryReview || (latest?.kind === "handoff" && latest.payload.outcome === "passed" && latest.payload.commit) ? "review" : "implement" };
 }
 
 async function authorized(args: StageArgs, g: GroupRow): Promise<AuthorizedPlan> {

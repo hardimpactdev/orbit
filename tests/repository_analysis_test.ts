@@ -9,7 +9,7 @@ import {
   validateAnalysis,
   validatePlan,
 } from "../extensions/behaviors/_lib/repository_analysis.ts";
-import { type Http, type Job, runStage, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
+import { analysisCandidate, type Http, type Job, runStage, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import { analysisFixture, bound, HEAD, TREE } from "./_support/analysis_fixture.ts";
 
 const group = {
@@ -21,6 +21,21 @@ const group = {
 };
 const f = await analysisFixture(group);
 const expected = { operation: 899, group: 7, subtask: 11, plan: f.plan, candidate: { head: HEAD, tree: TREE }, instanceId: 1, nodeId: 2 };
+
+Deno.test("fresh analysis keeps reviewer retries distinct from author rework and next-child work", () => {
+  const candidate = { head: HEAD, tree: TREE };
+  const base: StageArgs = {
+    workItem: "tg-7",
+    key: "tg-7.analyze.c1",
+    stage: "analyze",
+    handoff: bound({ subtask: 11, checkId: 1, commit: HEAD, candidate, outcome: "passed" }, "2026-10-24T10:00:00Z"),
+  };
+  assertEquals(analysisCandidate(base).purpose, "review");
+  for (const outcome of ["blocked", "none", "changes_requested", "approved"]) {
+    const args = { ...base, review: bound({ subtask: 11, candidate, outcome }, "2026-10-24T10:01:00Z") };
+    assertEquals(analysisCandidate(args).purpose, ["blocked", "none"].includes(outcome) ? "review" : "implement");
+  }
+});
 async function reportResult(edit: (v: ReportEnvelope) => void) {
   const r = structuredClone(f.result);
   const e: ReportEnvelope = JSON.parse(r.artifact.content);
