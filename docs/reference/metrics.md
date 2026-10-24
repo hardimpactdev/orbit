@@ -29,6 +29,8 @@ The role runs two containers on the Metrics Node and two units on each selected 
 
 Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
 
+The Gateway sends the rendered configuration and role assignment to `metrics.runtime`. Under one Node-local lock, Rust verifies ownership of the configuration, both containers, recovery containers, and volumes before it changes them. Rust owns image pins, container arguments, separate service hashes, publication, health checks, and rollback. A failed replacement restores the prior containers and configuration. Once both replacements are healthy, a recovery-container cleanup failure keeps the new configuration and reports `metrics.container_cleanup_failed`. Dashboard changes do not replace Grafana; its file provider reloads them. `metrics.runtime-health` observes container health, and `metrics.credentials` verifies or changes the Grafana password through its authenticated API. Passwords travel only in protected command input.
+
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
 ## Enable and recover

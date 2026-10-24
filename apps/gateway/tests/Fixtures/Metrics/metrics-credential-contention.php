@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\MetricsService;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -280,7 +280,7 @@ function orb170Inspect(Node $node, SettingRepository $settings, MetricsCredentia
             && $pendingRow->is_secret
             && is_string($pendingRow->value)
             && $pendingRow->value !== $pending,
-        'grafana_healthy' => app(MetricsRuntimeHost::class)->health($node, MetricsService::Grafana),
+        'grafana_healthy' => app(MetricsRuntimeLifecycle::class)->health($node, MetricsService::Grafana->value),
         'active_authenticates' => is_string($active) && $active !== '' && $runtime->verify($node, $active),
     ];
 }

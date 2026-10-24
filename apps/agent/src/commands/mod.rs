@@ -27,6 +27,7 @@ pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
 mod metrics_exporter;
+mod metrics_runtime;
 pub mod os_release;
 pub mod peer_dns;
 pub mod php_runtime;
@@ -160,6 +161,9 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_certificate::MetricsCertificate>(),
         entry::<metrics_exporter::NodeExporter>(),
         entry::<metrics_exporter::Cadvisor>(),
+        entry::<metrics_runtime::MetricsRuntime>(),
+        entry::<metrics_runtime::MetricsHealth>(),
+        entry::<metrics_runtime::MetricsCredentials>(),
         entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),

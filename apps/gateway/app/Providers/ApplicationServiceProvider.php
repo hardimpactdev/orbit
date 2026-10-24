@@ -338,8 +338,7 @@ use App\Infrastructure\Metrics\AgentMetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
-use App\Infrastructure\Metrics\MetricsRuntimeHost;
-use App\Infrastructure\Metrics\MetricsSshExecutor;
+use App\Infrastructure\Metrics\MetricsRuntimeCommands;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsCadvisorLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
@@ -500,7 +499,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
-        MetricsCredentialRuntime::class => MetricsSshExecutor::class,
+        MetricsCredentialRuntime::class => MetricsRuntimeCommands::class,
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
@@ -513,7 +512,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
-        MetricsRuntimeHost::class => MetricsSshExecutor::class,
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,
         MetricsStatusReader::class => NativeMetricsStatusReader::class,
         NodeConverger::class => NativeNodeConverger::class,

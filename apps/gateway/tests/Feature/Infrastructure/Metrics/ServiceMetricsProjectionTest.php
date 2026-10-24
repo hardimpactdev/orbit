@@ -9,10 +9,8 @@ use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
-use App\Infrastructure\Metrics\MetricsConfigurationBundle;
-use App\Infrastructure\Metrics\MetricsConfigurationSnapshot;
-use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
@@ -23,6 +21,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\FakeAgentCommandRunner;
 
 it('combines metrics preferences with applicable roles', function (): void {
     $metrics = service_metrics_node('metrics');
@@ -116,22 +115,13 @@ it('wires selected service monitoring into container-resolved publication and in
     ]);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['publication' => 'public', 'status' => 'active']);
-    $host = Mockery::mock(MetricsRuntimeHost::class);
-    $host->shouldReceive('snapshotConfiguration')->once()->andReturn(new MetricsConfigurationSnapshot(true, []));
-    $host->shouldReceive('publishConfiguration')->once()->withArgs(function (Node $target, MetricsConfigurationBundle $configuration) use ($node): bool {
-        $file = collect($configuration->files)->firstWhere('path', '/etc/orbit/metrics/prometheus.yml');
-        $input = $file->contents->input();
-        try {
-            $jobs = Yaml::parse(stream_get_contents($input->stream()))['scrape_configs'];
-        } finally {
-            $input->close();
-        }
+    $agents = new FakeAgentCommandRunner()->answer('metrics.runtime', function (array $input) use ($node): array {
+        $jobs = Yaml::parse($input['action']['configuration']['/etc/orbit/metrics/prometheus.yml'])['scrape_configs'];
         expect(array_column($jobs, 'job_name'))->toContain('orbit-caddy-'.$node->id, 'orbit-fpm-'.$node->id);
 
-        return true;
+        return ['changed' => true];
     });
-    $host->shouldReceive('convergeContainers')->once();
-    app()->instance(MetricsRuntimeHost::class, $host);
+    app()->instance(AgentCommandRunner::class, $agents);
     $credentials = Mockery::mock(MetricsCredentialManager::class);
     $credentials->shouldReceive('passwordForConvergence')->once()->andReturn('test-password');
     $credentials->shouldReceive('verifyActive')->once();

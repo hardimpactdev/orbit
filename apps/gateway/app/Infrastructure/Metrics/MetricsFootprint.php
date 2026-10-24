@@ -9,42 +9,6 @@ namespace App\Infrastructure\Metrics;
  */
 final readonly class MetricsFootprint
 {
-    /** The label every Orbit Metrics container and volume carries. */
-    public const string ManagedLabel = 'com.orbit.managed';
-
-    public const string ManagedValue = 'metrics';
-
-    public const string ConfigurationDirectory = '/etc/orbit/metrics';
-
-    public const string OwnershipMarker = '/etc/orbit/metrics/.orbit-owner';
-
-    public const string OwnershipMarkerContents = "metrics\n";
-
-    /** The suffix every generated file is staged under before it is moved into place. */
-    public const string CandidateSuffix = '.orbit-candidate';
-
-    /** @var non-empty-list<string> Parents first, so removal walks them in reverse. */
-    public const array ConfigurationDirectories = [
-        '/etc/orbit/metrics',
-        '/etc/orbit/metrics/grafana',
-        '/etc/orbit/metrics/grafana/provisioning',
-        '/etc/orbit/metrics/grafana/provisioning/datasources',
-        '/etc/orbit/metrics/grafana/provisioning/dashboards',
-        '/etc/orbit/metrics/grafana/dashboards',
-    ];
-
-    /** @var non-empty-list<string> */
-    public const array ConfigurationPaths = [
-        '/etc/orbit/metrics/prometheus.yml',
-        '/etc/orbit/metrics/grafana/grafana.ini',
-        '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml',
-        '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml',
-        '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json',
-        '/etc/orbit/metrics/grafana/dashboards/orbit-caddy.json',
-        '/etc/orbit/metrics/grafana/dashboards/orbit-fpm.json',
-        '/etc/orbit/metrics/grafana/admin-password',
-    ];
-
     public const string ExporterPackage = 'prometheus-node-exporter';
 
     public const string ExporterService = 'prometheus-node-exporter';
