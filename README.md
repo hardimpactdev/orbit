@@ -126,9 +126,13 @@ swamp model method run orbit-subtasks summary --input workItem=bump-packages-php
 ## Phase 3: external Orbit task groups (ADR 0229)
 
 The [current design and next slice](docs/phase-3-design.md) separates completed
-live proof from pending amendments and interruption proof. The proposed first
-slice is [group assistance](docs/group-assistance-contract.md); the
-[tick inventory](docs/tick-engine-inventory.md) marks retained effects and safety.
+live proof from pending amendments and interruption proof. PR6 delivered
+[group assistance](docs/group-assistance-contract.md); live adoption remains
+unproven. The next docs-only proposal is the
+[review-and-merge API contract](docs/review-and-merge-contract.md), with
+[hosted handoff CI](docs/gateway-handoff-ci-brief.md) as the first native Gateway
+task. The [tick inventory](docs/tick-engine-inventory.md) marks retained effects
+and safety.
 
 Swamp drives an Orbit task group with `orchestration: external` only through
 Gateway operations. Orbit runs every effect in the group's task VM; Swamp

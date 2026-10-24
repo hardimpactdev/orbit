@@ -1,6 +1,6 @@
 # Phase 3: current design and next slice
 
-Status: design proposal for independent parent review, 2026-10-23. This document
+Status: design proposal for independent parent review, updated 2026-10-24. This document
 supersedes the earlier B1/B2 options. It authorizes no implementation or rollout.
 
 ## Current contract
@@ -66,11 +66,11 @@ push, or PR. Record terminal ownership evidence and completion, not only HTTP
 health or passing unit tests. A Pi restart test alone does not cover either kill.
 This design slice runs none of these experiments and starts no group.
 
-## First slice: group assistance after the children end
+## Delivered slice: group assistance after the children end
 
-Adopt the [delivered group-comment contract](group-assistance-contract.md) first.
+The client adopts the [delivered group-comment contract](group-assistance-contract.md).
 Orbit PR #1500 merged at `d6bce77673b00e4b5e60cf9260d5441a746c829a`;
-the Swamp client change follows separately from Gateway delivery.
+PR6 delivered the separate Swamp client change.
 It closes an observed gap without changing execution, merge policy, or topology.
 The client adopts this route for `publish-retry` and `republish` after every
 child ends. It reads full history/current request and clears only its matching
@@ -78,10 +78,14 @@ Direction request after an explicit exact factory approval in the current era.
 Open-child assistance keeps its child-comment path. A board resolution grants no
 factory approval and starts no retry. Never reopen an ended child to carry it.
 
-The Gateway delivery is complete. This client slice still needs independent
-parent review, merge, controlled deployment and separately authorized live
-acceptance. Fixture evidence is local; it adds no live adoption or ADR 0229
-worker/orchestrator interruption proof.
+Gateway and client delivery are complete. The parent reports PR6 independently
+PASS at `be4c26ee172c905fb34abee0947cdec9ede3f238`, merged as
+`de462f6ca388a71e871bbcabcff42a99640d4976` at 20:00:44Z, then deployed with an
+idle restart at 20:01:20Z. No tests or deployment checks were repeated here.
+The parent's factory scan found only terminal `tg-2044`, `tg-2046`, `tg-2049`;
+there was no eligible live post-child gate. Live assistance adoption remains
+unproven and requires its separately authorized opportunity. ADR0229 interruption
+proof is a different open item; neither requires a manufactured group.
 
 Acceptance and rollback are in the contract. This slice removes no tick class,
 changes no orchestration mode, starts no new group, and requires no new operation
@@ -89,96 +93,27 @@ kind, queue, daemon, or schema for assistance ownership.
 
 ## Amendment A: review-and-merge Projects
 
-Current create refuses these external groups with `422 tasks.orchestration_unsupported`.
-Removing that guard alone would bypass Project 46's policy. The amendment must
-preserve the existing Tasks contract, including the incoming-PR path, before the
-tick engine can retire. The first implementation can cover Orbit-created branches
-and retain the incoming path on the tick until its own slice is ready.
+The [source-backed API contract](review-and-merge-contract.md) now owns this
+amendment's request, response, error, replay, ownership and acceptance details.
+It pins current Orbit main at `d6bce77673b00e4b5e60cf9260d5441a746c829a` and
+corrects the earlier inventory: group reads already expose child type and the
+reviewed-commit ledger. Typed source-derived append, final-review group-check
+binding, keyed review recording and exact-head merge remain proposed APIs.
 
-Proposed lifecycle for Orbit-created work:
+The [smallest first native Gateway task](gateway-handoff-ci-brief.md) extends
+`tasks.check` with hosted handoff CI and keeps review-and-merge admission closed.
+It adds no operation kind. Later steps bind the checked candidate to a real
+final-review child, record its existing receipt and ledger entry, gate publication
+on that approval, and make one bounded exact-head merge attempt. Swamp keeps
+lifecycle decisions and caps; Gateway keeps all effects on the group's one VM
+and the sole holder/sender. No tick callback becomes a second external sender.
 
-1. Run ordinary subtasks with the existing handoff and review loop. A passing
-   handoff commits the checked tree. When the Project uses handoff CI, extend
-   `tasks.check` to reuse `TaskHandoffCi`'s effect/read path: push only
-   `task-<id>-handoff`, poll its check, and return evidence. Its reminders and
-   retry decisions move to Swamp. This branch never becomes the PR head.
-2. Append a real `type: final_review` subtask, with no implementer, after approved
-   work. Review the whole branch from its merge base with the fetched default
-   branch. A fixup re-review covers the delta and unresolved findings. No extra
-   Project check or merge of main is introduced solely for final review.
-3. Extend the reviewer-turn contract for a final-review child to name the passed
-   group handoff check of the candidate commit. Today `TaskTurnOperation::reviewCheck`
-   accepts only a check belonging to the acting child; a synthetic final review
-   has none. Validate the group, candidate HEAD/tree, and provenance explicitly;
-   keep ordinary reviewers bound to their own child's check and preserve reset.
-4. Add a narrow keyed `tasks:review:record` effect (proposed kind
-   `tasks.review.record`) to validate the final-review turn receipt against its
-   checked candidate and write the existing `task_reviewed_commits` ledger.
-   An approval must be unaltered by reviewer edits, satisfy `final-review`, and
-   match the recorded HEAD/tree. The caller cannot assert an arbitrary reviewed
-   SHA. For the first PR retain the required PR fields and brief coverage.
-   Completing the child and choosing the next stage remain Swamp decisions.
-5. Extend `tasks.publish` to require that final-review record as well as the passed
-   check for a review-and-merge Project. Push only that exact reviewed head,
-   never force; reuse the existing publisher, mirror, and PR lookup. Ordinary
-   subtask approval must publish nothing. Reviewer reset/difference evidence
-   cannot be treated as an approval of a modified tree.
-6. Swamp requests a narrow keyed `tasks:merge` effect (proposed kind `tasks.merge`)
-   with the expected PR head. Gateway revalidates current Project policy, the
-   reviewed ledger, no open work or assistance, default base, mergeability, the
-   exact head's `pull_request` merge-check runs from `github-actions`, and a
-   complete trusted-review read with no effective changes request on any head.
-   Reuse `TaskPublication::mergeWhenReady`'s safety predicates and the App merger;
-   extract the effect from its scheduler callbacks. Return `waiting`, `refused`,
-   or `merged` evidence. Replays reconcile the PR; they never merge a newer head.
-   GitHub receives the expected SHA and uses a merge commit. Swamp decides a
-   subsequent read/attempt or assistance; the Gateway never chooses a fixup.
-7. Complete only after the merge is observed. Completion/cleanup stays Orbit's
-   effect. Making synchronous completion an operation is a separate small
-   follow-up, not a reason to redesign these stages.
-
-On findings, Swamp creates `Address final review` as a new child, runs the normal
-implement/check/review loop, then requests a fresh final review. Preserve two
-final-review fixups per window; the third finding set parks for assistance.
-Only completion of an appended operator subtask opens a new window. This is
-separate from implement/review caps and the settling fixup limits.
-
-Required API deltas beyond the two proposed effects: permit an orchestrator to
-append a typed final-review/fixup child; make that append replay-safe using its
-source receipt/candidate identity under the group lock; expose the child's type,
-reviewed-commit ledger, current PR head/base, check state, and complete/incomplete
-review observations. Existing append accepts no `type` and always appends `todo`.
-It must not accidentally start an implementer for final review. The amendment must
-specify these fields before implementation; they are not supported today.
-
-Incoming PRs require the remaining existing semantics: eligible listed author,
-same repository, non-draft, default base, non-task branch, and one review group per
-PR; baseline/setup before adopting its current head; read-only final review;
-App `APPROVE`/`REQUEST_CHANGES` on the exact incoming head; no self-review on
-App-created PRs. A moved author head needs a fresh review or a normal merge fixup,
-never a force push. Incoming detection can retain its bounded GitHub read, but
-creating/scheduling review work must have one owner. External groups cannot simply
-be fed to `WatchIncomingPullRequestsAction` unchanged.
-
-Conflict, CI, and trusted-feedback fixup *decisions and caps* move from
-`TaskSettling` to factory stages. Keep its source/review identities and reviewed
-commit checks. Preserve current no-implicit-main-merge policy. Do not retire
-settling until those ordinary paths and incoming PRs are covered.
-
-The proposed stages are `final-review → record-review → publish → merge → completed`,
-with `final-review → fixup → handoff → review → final-review` on findings. Each
-new effect uses the existing stored-request/stage/cycle key rule and returns
-structured evidence; a pending merge never holds a driver call open. A finished merge attempt with outcome `waiting` or `refused` is not authority to
-retry another head. Reads and writes retain the existing one-minute GitHub bounds.
-
-Acceptance: unreviewed ordinary approval cannot reach the PR; final-review findings
-produce at most two automatic fixups; a moved head invalidates approval; a missing,
-failed, push-only, foreign-App, or wrong-head check never authorizes merge; incomplete
-reviews never authorize merge; replay records/publishes/merges the same candidate.
-Initially enable only a newly created, explicitly authorized external group after
-the amendment lands. Existing groups keep their immutable mode. Roll back by
-stopping admission of these new external groups; finish or cancel them through
-their current owner. Never hand an active external group back to the tick.
+The first admitted scope may cover Orbit-created branches and park on merge
+refusals. Incoming PRs and automatic settling parity remain explicit later
+slices with their guards. Topology is separate. Before any own-branch guard is
+removed, Gateway must amend ADR0229 and deliver the native contracts and safety
+checks named in the contract. No guard change, runtime implementation or rollout
+is authorized by these orbit-swamp documents.
 
 ## Amendment B: topology subtasks
 
@@ -241,8 +176,9 @@ amendments. In particular:
   remain outside this slice; ordinary gates keep the child path.
 - Accept own-branch review-and-merge before incoming PRs? Incoming work remains
   on the tick until covered; full retirement waits for both.
-- Approve the review-record and merge effects, and settle typed-child append
-  identity and incoming-work ownership in the Orbit amendment before coding.
+- Review the proposed native API contract and first handoff-CI task brief.
+  Gateway documentation must amend ADR0229 before its behavior changes; incoming
+  ownership remains guarded until its own slice.
 - Choose the authorized interruption-proof group/window and eventual production
   Swamp host/storage/licence operation. Neither proof run is repeated here.
 
