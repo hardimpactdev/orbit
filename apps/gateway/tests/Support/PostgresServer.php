@@ -7,6 +7,18 @@ use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
+/** @param Closure(string): string $psql */
+function postgres_wait_for_backend_exit(int $backend, Closure $psql): void
+{
+    $deadline = hrtime(true) + 1_000_000_000;
+    while ($psql("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = {$backend});") !== 'f') {
+        if (hrtime(true) >= $deadline) {
+            throw new RuntimeException('The disposable PostgreSQL backend did not exit.');
+        }
+        usleep(1000);
+    }
+}
+
 /** @param Closure(Closure(string): string, string): void $test */
 function postgres_statements_server(Closure $test): void
 {

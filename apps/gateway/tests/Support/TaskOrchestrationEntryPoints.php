@@ -64,7 +64,9 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\PrunePendingTaskThreads;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAnalysisBase;
 use App\Domain\Tasks\TaskAnalysisEvidence;
+use App\Domain\Tasks\TaskAnalysisFailure;
 use App\Domain\Tasks\TaskAnalysisOperation;
 use App\Domain\Tasks\TaskAnalysisPlan;
 use App\Domain\Tasks\TaskAnalysisReport;
@@ -284,6 +286,12 @@ final class TaskOrchestrationEntryPoints
             'read' => 'Reserves or recovers the same fixed analysis execution under the existing workspace lease.',
             'stop' => 'Stops the exact reserved execution before releasing its lease.',
             'abandon' => 'Removes queued ownership without repeating a dispatch.',
+        ],
+        TaskAnalysisBase::class => [
+            'fromRecord' => 'Validates the immutable provision pin for publication and analysis admission without effects.',
+        ],
+        TaskAnalysisFailure::class => [
+            'fromResult' => 'Revalidates closed retained analysis failure metadata without dispatch or lease effects.',
         ],
         TaskAnalysisEvidence::class => [
             'resolve' => 'Validates same-child usable complete evidence without dispatch.',
