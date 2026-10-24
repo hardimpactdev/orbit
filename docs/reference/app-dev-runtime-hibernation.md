@@ -40,6 +40,8 @@ orbit process:create queue --instance=12 --runtime=systemd \
 
 A wake still starts every desired-running Process, including a keep-alive Process that is down. `process:stop` records `desired_state=stopped`, and a wake leaves that Process stopped. Keep-alive has no effect outside hibernation.
 
+The [Node agent](/reference/node-agent#commands) reads activity times, manages awake and cold markers, inspects checkout dependencies, and prunes eligible directories. The Gateway owns the idle thresholds and wake decisions.
+
 ## Idle window and sweep
 
 `orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.

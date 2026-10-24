@@ -212,6 +212,10 @@ fn clean(root: &Path, host: &mut impl Host) -> Result<Cleaned, Error> {
                 }
             }
         }
+        let pi_cache = at(root, super::pi_artifact::CACHE);
+        if exists(&pi_cache) {
+            remove_tree(&pi_cache)?;
+        }
         Ok(())
     })();
     filesystem.map_err(|e| failed("identity files", e))?;
@@ -265,6 +269,7 @@ impl Command for CleanImage {
         "Remove a never-enrolled image builder's identities before publication.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);
+    const RESOURCES: &'static [&'static str] = &["pi-runtime"];
     type Input = Input;
     type Output = Cleaned;
     type Error = Error;

@@ -29,7 +29,7 @@ The Gateway changes Nodes over SSH. About 210 scripts live in PHP nowdocs in 97 
 
 A better pattern already exists. `resources/tasks/check` and `resources/instances/lifecycle.py` are files with a documented interface that read JSON and print a structured result.
 
-The Docker provider migration follows this decision as `docker.migrate` under `resources/remote/docker/`. It declares a timeout and the `planned`, `prepared`, `reported` and `failed` outcomes. `SshProgramRunner` sends its input on stdin. Preparation runs in a transient unit so an SSH disconnect cannot interrupt dpkg. Recipe convergence and migration share the apt and source-retirement code in `resources/remote/lib/recipe.py`; the migration does not assemble its own scripts in PHP.
+The Docker provider migration now uses the native commands in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands). Its [reference](/reference/docker-provider-migration) owns the command boundary, private recovery journal, and shared Rust package operations.
 
 At the time of this decision the [Node agent](/reference/node-agent#typed-commands-over-ssh) only observed. ADR 0225 moves Node changes to its command mode, over SSH.
 

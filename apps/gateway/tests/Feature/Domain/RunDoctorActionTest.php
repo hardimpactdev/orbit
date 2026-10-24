@@ -23,6 +23,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -41,6 +42,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\UnsupportedPackageInventory;
 
 describe('RunDoctorAction', function (): void {
@@ -405,6 +407,7 @@ describe('RunDoctorAction', function (): void {
             }
         };
         app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew']));
         app()->instance(InstalledPackageInventory::class, app(SharedInstalledPackageInventory::class));
         $toolsBefore = Tool::query()->count();
         $managersBefore = ToolManagerRecord::query()->count();

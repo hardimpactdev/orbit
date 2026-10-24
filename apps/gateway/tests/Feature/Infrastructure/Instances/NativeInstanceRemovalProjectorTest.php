@@ -22,6 +22,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -51,9 +52,9 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\PhpBuildAnswers;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -61,6 +62,13 @@ afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
         new Filesystem()->deleteDirectory($this->orb181ProjectorHome);
     }
+});
+
+beforeEach(function (): void {
+    $this->phpAgents = new FakeAgentCommandRunner;
+    (new PhpBuildAnswers)->register($this->phpAgents);
+    $this->phpAgents->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
+    app()->instance(AgentCommandRunner::class, $this->phpAgents);
 });
 
 it('serves the exact transient development 503 without an upstream then deletes the final Route', function (): void {
@@ -863,10 +871,6 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
         if ($this->failCall === count($this->commands)) {
             return new CommandResult(1, '', 'injected failure', 1, false);
-        }
-
-        if (($command->arguments[4] ?? null) === 'php.install-build') {
-            return new CommandResult(0, AppDevFakeSshExecutor::InstallerApplied, '', 1, false);
         }
 
         if (

@@ -113,6 +113,8 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Orbit never drops a database that it only registered.
 
+Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instances.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, transfers it through the Gateway, and verifies its size and digest before installation.
+
 ## Test databases
 
 An owned database created or copied for development has a test database of the same kind, named in `test_database`. A production clone's SQLite snapshot connection has no test database.

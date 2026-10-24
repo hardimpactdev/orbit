@@ -22,6 +22,7 @@ final readonly class TopologyGuestPreparer
     public function __construct(
         private IncusHost $host,
         private int $settleIntervalMicroseconds = 1_000_000,
+        private string $agentBinary = __DIR__.'/../../../agent/target/release/orbit-agent',
     ) {}
 
     /**
@@ -80,23 +81,56 @@ final readonly class TopologyGuestPreparer
         if (! is_array($pin)) {
             throw new RuntimeException('The recipe pnpm pin is missing.');
         }
-        $script = '';
-        foreach (['apps/gateway/resources/remote/lib/artifacts.py', 'apps/gateway/resources/remote/lib/recipe.py',
-            'apps/e2e/resources/guest/prepare-pnpm.py'] as $path) {
-            $source = file_get_contents($root.'/'.$path);
-            if ($source === false) {
-                throw new RuntimeException('The recipe pnpm program is missing.');
-            }
-            $script .= $source."\n";
+        $ubuntu = $recipe['ubuntu'] ?? null;
+        $snapshot = is_array($ubuntu) ? ($ubuntu['snapshot'] ?? null) : null;
+        if (! is_string($snapshot)) {
+            throw new RuntimeException('The recipe snapshot is missing.');
         }
+        $digest = is_file($this->agentBinary) ? hash_file('sha256', $this->agentBinary) : false;
+        if ($digest === false) {
+            throw new RuntimeException('Build apps/agent with cargo build --release --locked before preparing topology guests.');
+        }
+        $directory = '/run/orbit-e2e-pnpm-'.bin2hex(random_bytes(12));
+        $candidate = $directory.'/orbit-agent';
         $commands = [];
         foreach ($guests as $guest) {
-            $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['python3', '-', json_encode($pin, JSON_THROW_ON_ERROR)], 120, $script)];
+            $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['dpkg', '--print-architecture'], 30)];
         }
+        $architectures = [];
         foreach ($this->host->execAll($commands) as $guest => $result) {
-            if (! $result->successful()) {
-                throw new RuntimeException(new GuestFailureDetail()->append("Recipe pnpm preparation failed on {$guest}.", $result->stderr));
+            $architecture = trim($result->stdout);
+            if (! $result->successful() || ! in_array($architecture, ['amd64', 'arm64'], true)) {
+                throw new RuntimeException("Cannot determine the pnpm architecture on {$guest}.");
             }
+            $architectures[$guest] = $architecture;
+        }
+        $directories = $uploads = $installs = $commands = $cleanup = [];
+        foreach ($guests as $guest) {
+            $directories[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['mkdir', '-m', '0700', '--', $directory], 30)];
+            $uploads[$guest] = ['instance' => $guest, 'source' => $this->agentBinary, 'destination' => $directory.'/candidate'];
+            $installs[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['install', '-m', '0755', '-o', 'root', '-g', 'root', '--', $directory.'/candidate', $candidate], 30)];
+            $payload = ['agent_sha256' => $digest, 'deadline_ms' => 900000, 'input' => [
+                'user' => 'orbit', 'snapshot' => $snapshot, 'architecture' => $architectures[$guest],
+                'artifact_mirror' => $recipe['artifact_mirror'] ?? '', 'tools' => ['pnpm' => $pin],
+            ]];
+            $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand([$candidate, 'command', 'recipe.install-javascript'], 900, json_encode($payload, JSON_THROW_ON_ERROR))];
+            $cleanup[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['rm', '-rf', '--', $directory], 30)];
+        }
+        try {
+            $this->assertGuestBatch($this->host->execAll($directories), 'Agent staging directory preparation failed on');
+            $this->host->pushFiles($uploads);
+            $this->assertGuestBatch($this->host->execAll($installs), 'Agent candidate staging failed on');
+            foreach ($this->host->execAll($commands) as $guest => $result) {
+                $report = json_decode($result->stdout, true);
+                if (! $result->successful() || ! is_array($report) || ($report['ok'] ?? null) !== true || ! is_array($report['data'] ?? null)
+                    || ! is_bool($report['data']['changed'] ?? null)
+                    || ! is_array($report['data']['retired'] ?? null)
+                    || ! array_is_list($report['data']['retired'])) {
+                    throw new RuntimeException("Recipe pnpm preparation failed on {$guest}.");
+                }
+            }
+        } finally {
+            $this->assertGuestBatch($this->host->execAll($cleanup), 'Agent staging cleanup failed on');
         }
     }
 

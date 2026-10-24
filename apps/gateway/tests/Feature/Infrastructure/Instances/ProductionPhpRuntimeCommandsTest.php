@@ -6,15 +6,12 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\Fleet\FleetTestSsh;
 
 // The Gateway's part of the production PHP runtime: what it renders and sends, and how it reads each answer. The
 // agent's Rust tests in apps/agent/src/commands/php_runtime_tests.rs prove what each command does to a runtime.
@@ -25,8 +22,8 @@ it('sends the rendered runtime of the recorded identity to converge it', functio
 
     $manager->converge($instance);
 
-    $input = $agents->calls[0]['input'];
-    expect($agents->commands())->toBe(['php.converge-production-runtime'])
+    $input = $agents->calls[1]['input'];
+    expect($agents->commands())->toBe(['php.install-build', 'php.converge-production-runtime'])
         ->and($input)->toMatchArray([
             'mode' => 'converge', 'user' => $identity->user, 'home' => $identity->home, 'version' => '8.5',
             'marker' => $identity->marker(),
@@ -134,11 +131,10 @@ function php_runtime_commands(?Closure $configure = null): array
     ]);
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
     $instance->update($identity->attributes());
-    $agents = new FakeAgentCommandRunner;
+    $agents = (new FakeAgentCommandRunner)->answer('php.install-build', ['outcome' => 'current', 'data' => []]);
     if ($configure !== null) {
         $configure($agents);
     }
-    $ssh = new ProductionSshExecutor(new AppDevFakeSshExecutor, new FleetTestSsh, new FleetTestSsh);
 
-    return [new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents, $ssh), $agents, $instance->refresh(), $identity];
+    return [new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents), $agents, $instance->refresh(), $identity];
 }

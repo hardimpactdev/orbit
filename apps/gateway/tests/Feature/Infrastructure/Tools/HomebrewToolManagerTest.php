@@ -19,6 +19,7 @@ use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 describe(HomebrewToolManager::class, function (): void {
@@ -69,149 +70,12 @@ describe(HomebrewToolManager::class, function (): void {
         'oversized' => [str_repeat('a', times: 256), false],
     ]);
 
-    it('materializes or recognizes the exact protected Homebrew scope', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([homebrew_result()]);
-
+    it('materializes the protected Linux scope through the agent', function (): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->answer('tools.materialize-homebrew', []);
         $manager->materialize(homebrew_tool_node(role: null));
-
-        expect($ssh->arguments())
-            ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
-            ->and($ssh->commands[0]->input)
-            ->toContain(
-                'apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates',
-            )
-            ->toContain('https://github.com/Homebrew/brew')
-            ->toContain('d79ef822ab8136e393ed5f86e2b56afc68d04874')
-            ->toContain("expected_version='Homebrew 7.0.0'")
-            ->toContain('status --porcelain=v1 --untracked-files=all')
-            ->toContain('HOMEBREW_NO_AUTO_UPDATE=1')
-            ->toContain('"$prefix/bin/brew" config >/dev/null')
-            ->not->toContain('install.sh');
-    });
-
-    it('upgrades an Orbit-owned Homebrew prefix to the pinned revision before verification', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([homebrew_result()]);
-
-        $manager->materialize(homebrew_tool_node(role: null));
-
-        $program = $ssh->commands[0]->input;
-        $upgradeGate = strpos($program, 'current_revision=$(git -C "$repository" rev-parse HEAD)');
-        $originCheck = strpos($program, 'config --get remote.origin.url');
-        $cleanTree = strpos($program, 'status --porcelain=v1 --untracked-files=all');
-        $fetch = strpos($program, 'fetch --filter=blob:none origin "$expected_revision"');
-        $checkout = is_int($fetch)
-            ? strpos($program, '-c advice.detachedHead=false checkout --detach "$expected_revision"', $fetch)
-            : false;
-        $pinnedHead = strpos($program, 'test "$(git -C "$repository" rev-parse HEAD)" = "$expected_revision"');
-        $tagPresent = strpos($program, 'show-ref --verify --quiet "refs/tags/$expected_tag"');
-        $tagFetch = strpos($program, 'fetch --filter=blob:none origin tag "$expected_tag"');
-        $describeCache = strpos($program, 'rm -rf -- "$repository/.git/describe-cache"');
-        $tagPointsAtPin = strpos($program, 'rev-parse --verify "$expected_tag^{commit}"');
-        $verifyVersion = strpos($program, '"$prefix/bin/brew" --version');
-
-        expect($program)
-            ->toContain('[ "$current_revision" != "$expected_revision" ]')
-            ->toContain('expected_tag=${expected_version#Homebrew }')
-            ->toContain("expected_version='Homebrew 7.0.0'");
-        expect($upgradeGate)->toBeInt();
-        expect($originCheck)->toBeInt()->toBeGreaterThan($upgradeGate);
-        expect($cleanTree)->toBeInt()->toBeGreaterThan($upgradeGate);
-        expect($fetch)->toBeInt()->toBeGreaterThan($originCheck)->toBeGreaterThan($cleanTree);
-        expect($checkout)->toBeInt()->toBeGreaterThan($fetch);
-        expect($pinnedHead)->toBeInt()->toBeGreaterThan($checkout);
-        expect($tagPresent)->toBeInt()->toBeGreaterThan($pinnedHead);
-        expect($tagFetch)->toBeInt()->toBeGreaterThan($tagPresent);
-        expect($describeCache)->toBeInt()->toBeGreaterThan($tagFetch);
-        expect($tagPointsAtPin)->toBeInt()->toBeGreaterThan($describeCache);
-        expect($verifyVersion)->toBeInt()->toBeGreaterThan($tagPointsAtPin);
-
-        $script = tempnam(sys_get_temp_dir(), 'orbit-homebrew-');
-        file_put_contents($script, $program);
-
-        try {
-            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
-            expect($syntaxStatus)->toBe(0);
-        } finally {
-            unlink($script);
-        }
-    });
-
-    it('fetches the pinned version tag after a SHA-only upgrade so git describe reports Homebrew 7.0.0', function (): void {
-        [$manager, $ssh] = homebrew_tool_manager([homebrew_result()]);
-
-        $manager->materialize(homebrew_tool_node(role: null));
-
-        $program = $ssh->commands[0]->input;
-        $root = sys_get_temp_dir().'/orbit-homebrew-tag-'.bin2hex(random_bytes(8));
-        $origin = $root.'/origin.git';
-        $local = $root.'/Homebrew';
-
-        try {
-            expect(mkdir($root, 0700, true))->toBeTrue();
-            homebrew_git_run($root, ['git', 'init', '--bare', '--initial-branch=main', $origin]);
-
-            $seed = $root.'/seed';
-            expect(mkdir($seed, 0700, true))->toBeTrue();
-            homebrew_git_run($seed, ['git', 'init', '--initial-branch=main']);
-            homebrew_git_run($seed, ['git', 'config', 'user.name', 'Orbit Tests']);
-            homebrew_git_run($seed, ['git', 'config', 'user.email', 'orbit@example.test']);
-            homebrew_git_run($seed, ['git', 'remote', 'add', 'origin', $origin]);
-            file_put_contents($seed.'/previous', "previous pin\n");
-            homebrew_git_run($seed, ['git', 'add', 'previous']);
-            homebrew_git_run($seed, ['git', 'commit', '-m', 'previous pin']);
-            homebrew_git_run($seed, ['git', 'tag', '6.0.22']);
-            homebrew_git_run($seed, ['git', 'push', 'origin', 'HEAD:main', '6.0.22']);
-
-            homebrew_git_run($root, ['git', 'clone', $origin, $local]);
-
-            file_put_contents($seed.'/current', "current pin\n");
-            homebrew_git_run($seed, ['git', 'add', 'current']);
-            homebrew_git_run($seed, ['git', 'commit', '-m', 'current pin']);
-            homebrew_git_run($seed, ['git', 'tag', '7.0.0']);
-            $expectedRevision = homebrew_git_run($seed, ['git', 'rev-parse', 'HEAD']);
-            homebrew_git_run($seed, ['git', 'push', 'origin', 'HEAD:main', '7.0.0']);
-
-            homebrew_git_run($local, ['git', 'fetch', '--filter=blob:none', 'origin', $expectedRevision]);
-            homebrew_git_run($local, ['git', '-c', 'advice.detachedHead=false', 'checkout', '--detach', $expectedRevision]);
-            expect(mkdir($local.'/.git/describe-cache', 0700, true))->toBeTrue();
-            file_put_contents($local.'/.git/describe-cache/'.$expectedRevision, "6.0.22-1-gd79ef82\n");
-
-            expect(homebrew_git_run($local, ['git', 'describe', '--tags', '--dirty', '--abbrev=7']))
-                ->not
-                ->toBe('7.0.0');
-            expect(homebrew_git_run($local, ['git', 'show-ref', '--verify', '--quiet', 'refs/tags/7.0.0'], allowFailure: true))
-                ->toBe(1);
-
-            $recipe = $root.'/ensure-tag.sh';
-            file_put_contents($recipe, <<<BASH
-                set -eu
-                repository={$local}
-                expected_revision={$expectedRevision}
-                expected_version='Homebrew 7.0.0'
-                expected_tag=\${expected_version#Homebrew }
-                if ! git -C "\$repository" show-ref --verify --quiet "refs/tags/\$expected_tag"; then
-                    git -C "\$repository" fetch --filter=blob:none origin tag "\$expected_tag"
-                    rm -rf -- "\$repository/.git/describe-cache"
-                fi
-                test "\$(git -C "\$repository" rev-parse --verify "\$expected_tag^{commit}")" = "\$expected_revision"
-                BASH);
-
-            expect($program)
-                ->toContain('show-ref --verify --quiet "refs/tags/$expected_tag"')
-                ->toContain('fetch --filter=blob:none origin tag "$expected_tag"')
-                ->toContain('rm -rf -- "$repository/.git/describe-cache"')
-                ->toContain('rev-parse --verify "$expected_tag^{commit}"');
-
-            exec('bash '.escapeshellarg($recipe).' 2>&1', $recipeOutput, $recipeStatus);
-            expect($recipeStatus)->toBe(0);
-
-            $described = homebrew_git_run($local, ['git', 'describe', '--tags', '--dirty', '--abbrev=7']);
-            expect($described)->toBe('7.0.0');
-            expect('Homebrew '.$described)->toBe('Homebrew 7.0.0');
-            expect(is_dir($local.'/.git/describe-cache'))->toBeFalse();
-        } finally {
-            homebrew_delete_directory($root);
-        }
+        expect($agent->calls)->toBe([['node' => 'homebrew-tool-node', 'command' => 'tools.materialize-homebrew', 'input' => ['user' => 'orbit']]]);
+        expect($ssh->commands)->toBe([]);
     });
 
     it('uses fixed Core-only forced-bottle argv for the complete lifecycle', function (): void {
@@ -356,9 +220,8 @@ describe(HomebrewToolManager::class, function (): void {
     });
 
     it('returns bounded sanitized failures for bootstrap and formula metadata', function (): void {
-        [$bootstrapManager] = homebrew_tool_manager([
-            homebrew_result('private bootstrap output', exitCode: 6, stderr: 'private bootstrap error'),
-        ]);
+        [$bootstrapManager, , $agent] = homebrew_tool_manager([]);
+        $agent->refuse('tools.materialize-homebrew', 'tools.homebrew_materialize_failed');
         [$formulaManager, $formulaSsh] = homebrew_tool_manager([
             homebrew_result("x86_64\n"),
             homebrew_result('private metadata', exitCode: 8, stderr: 'private metadata error'),
@@ -367,8 +230,7 @@ describe(HomebrewToolManager::class, function (): void {
         expect(fn () => $bootstrapManager->materialize(homebrew_tool_node()))
             ->toThrow(function (ToolManagerException $exception): void {
                 expect($exception->step)->toBe('materialize');
-                expect($exception->result?->stdout)->toBeEmpty();
-                expect($exception->result?->stderr)->toBeEmpty();
+                expect($exception->result)->toBeNull();
             });
         expect(fn () => $formulaManager->install(homebrew_tool_node(), 'ripgrep'))
             ->toThrow(function (ToolManagerException $exception): void {
@@ -657,11 +519,9 @@ describe(HomebrewToolManager::class, function (): void {
     it('classifies a linux formula from a live read and does not refresh or mutate', function (): void {
         $sha = str_repeat('a', 64);
         [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_result("ripgrep 14.1.1\n"),
             homebrew_result("x86_64\n"),
             homebrew_result(adopt_formula_json($sha, true)),
-            homebrew_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_result("openssl@3 3.0.0\n"),
             homebrew_result("x86_64\n"),
             homebrew_result(adopt_formula_json($sha, false, 'openssl@3')),
@@ -682,20 +542,17 @@ describe(HomebrewToolManager::class, function (): void {
             ->not->toContain('checkout');
     });
 
-    it('refuses an absent or conflicting linux Homebrew scope before a package command', function (int $exitCode, string $step): void {
-        [$manager, $ssh] = homebrew_tool_manager([
-            homebrew_result(exitCode: $exitCode, stderr: 'secret prefix'),
-        ]);
-
+    it('maps Linux scope refusal before reading packages', function (string $code, string $step): void {
+        [$manager, $ssh, $agent] = homebrew_tool_manager([]);
+        $agent->refuse('tools.inspect-homebrew-scope', $code);
         expect(fn () => $manager->inspectForAdoption(homebrew_tool_node(role: null), 'ripgrep'))
-            ->toThrow(fn (ToolManagerException $exception) => expect($exception->step)->toBe($step)
-                ->and($exception->getMessage())->not->toContain('secret'));
-        expect($ssh->commands)->toHaveCount(1)
-            ->and($ssh->commands[0]->input)->not->toContain('git clone')
-            ->and($ssh->commands[0]->input)->not->toContain('checkout');
+            ->toThrow(fn (ToolManagerException $error) => expect($error->step)->toBe($step));
+        expect($agent->commands())->toBe(['tools.inspect-homebrew-scope']);
+        expect($ssh->commands)->toBe([]);
     })->with([
-        'absent' => [42, 'manager-absent'],
-        'conflicting' => [43, 'manager-conflict'],
+        ['tools.homebrew_scope_absent', 'manager-absent'],
+        ['tools.homebrew_scope_conflict', 'manager-conflict'],
+        ['tools.homebrew_scope_unreadable', 'manager-probe'],
     ]);
 
     it('refreshes only the macOS bottle API while checking an installed formula', function (): void {
@@ -723,10 +580,11 @@ describe(HomebrewToolManager::class, function (): void {
 
 /**
  * @param  list<CommandResult>  $results
- * @return array{HomebrewToolManager, ToolManagerFakeSshExecutor}
+ * @return array{HomebrewToolManager, ToolManagerFakeSshExecutor, FakeAgentCommandRunner}
  */
 function homebrew_tool_manager(array $results): array
 {
+    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => HomebrewToolManager::LINUX_PREFIX_PATH]);
     $ssh = new ToolManagerFakeSshExecutor($results);
 
     return [
@@ -737,8 +595,10 @@ function homebrew_tool_manager(array $results): array
                 knownHosts: homebrew_tool_known_hosts(),
             ),
             versions: new SemverVersionNormalizer,
+            agents: $agent,
         ),
         $ssh,
+        $agent,
     ];
 }
 
@@ -846,23 +706,6 @@ function homebrew_arguments(): array
         'PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin',
         '/home/linuxbrew/.linuxbrew/bin/brew',
     ];
-}
-
-/**
- * @param  list<string>  $arguments
- */
-function homebrew_git_run(string $directory, array $arguments, bool $allowFailure = false): string|int
-{
-    $command = implode(' ', array_map(escapeshellarg(...), $arguments));
-    exec('cd '.escapeshellarg($directory).' && '.$command.' 2>&1', $output, $status);
-
-    if ($allowFailure) {
-        return $status;
-    }
-
-    expect($status)->toBe(0);
-
-    return trim(implode("\n", $output));
 }
 
 function homebrew_delete_directory(string $directory): void

@@ -102,10 +102,10 @@ final readonly class UpCloudTaskVmImageBuilder
             $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
             $this->stage($progress, 'orbit-user', fn () => $this->recipe->owner($shell->agentTarget()));
             foreach (RecipeImagePrograms::Phases as $phase) {
-                $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
+                $this->stage($progress, $phase, fn () => $this->programs->apply($shell->agentTarget(), $machineRecipe, 'base', $phase));
             }
             $this->stage($progress, 'recipe-marker', fn () => $this->recipe->mark($shell->agentTarget(), $machineRecipe->identity, 'base'));
-            $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
+            $this->stage($progress, 'verify', fn () => $this->programs->verify($shell->agentTarget(), $machineRecipe, 'base'));
             $this->stage($progress, 'masks', fn () => $this->recipe->boot($shell->agentTarget(), lean: false));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
             $this->stage($progress, 'clean', fn () => $this->clean($shell));
@@ -261,7 +261,7 @@ final readonly class UpCloudTaskVmImageBuilder
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
         $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
         $this->awaitCloudInit($name, $shell);
-        $this->programs->verify($shell, $machineRecipe, 'base');
+        $this->programs->verify($shell->agentTarget(), $machineRecipe, 'base');
         $this->recipe->check($shell->agentTarget(), firewall: true);
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }

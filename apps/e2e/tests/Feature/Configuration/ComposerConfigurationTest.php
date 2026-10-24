@@ -721,10 +721,13 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
         'ci.yml:project', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
-        'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+        'ci.yml:api-reference', 'ci.yml:agent', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"')
+        ->and($steps['Build the native PHP installer from this source']['run'])->toBe('cargo build --release --locked')
+        ->and($steps['Build the native PHP installer from this source']['if'])->toBe("runner.environment == 'github-hosted'")
+        ->and(array_search('Build the native PHP installer from this source', array_keys($steps), true))->toBeLessThan(array_search('Install the recipe PHP build', array_keys($steps), true))
         ->and($steps['Restore the PHP packages']['with']['path'])->toBe('/var/cache/orbit/php-packages')
         ->and($steps['Restore the PHP packages']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Restore the PHP packages']['with']['key'])->toBe('orbit-php-build-${{ steps.key.outputs.key }}')
@@ -738,3 +741,17 @@ it('runs the bin/php-build unit tests', function (): void {
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
 });
+
+it('runs the CI JavaScript native adapter and launcher smoke tests', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/ci-javascript-tests.py')]);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+});
+
+it('runs the local builder and documented maintenance regression tests', function (string $fixture): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/'.$fixture)]);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+})->with(['git-build-watch-tests.py', 'incus-upgrade-runbook-tests.py']);

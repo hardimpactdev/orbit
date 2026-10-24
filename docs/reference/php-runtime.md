@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
-  - apps/agent/src/commands/{php_runtime,php_doctor}.rs
+  - apps/agent/src/commands/{php_runtime,php_doctor,php_profile}.rs
 ---
 
 # PHP runtimes
@@ -94,7 +94,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, so one such poo
 
 Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#runtime-cleanup).
 
-Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the Gateway compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
+Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
 
 A development pool checks every file on every request, so a saved file is served at once:
 

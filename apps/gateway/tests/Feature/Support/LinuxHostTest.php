@@ -50,7 +50,8 @@ it('preserves the selected case privilege when building a real Pest delegation',
         $arguments[] = '--group=privileged';
     }
 
-    $process = linux_host_run([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path());
+    $process = new Process([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path(), ['PAO_DISABLE' => '1']);
+    $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput())
         ->and($process->getOutput())->toMatch('/Tests:\s+1 passed/');

@@ -31,6 +31,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -68,11 +69,18 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\PhpBuildAnswers;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
+
+beforeEach(function (): void {
+    $this->phpAgents = new FakeAgentCommandRunner;
+    (new PhpBuildAnswers)->register($this->phpAgents);
+    $this->phpAgents->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
+    app()->instance(AgentCommandRunner::class, $this->phpAgents);
+});
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
     [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
@@ -1867,10 +1875,7 @@ final class Orb127RouteSshExecutor implements SshExecutor
             return new CommandResult(1, '', 'injected failure', 1, false);
         }
 
-        // The PHP build installer prints one result line (ADR 0216).
-        $installer = ($command->arguments[4] ?? null) === 'php.install-build';
-
-        return new CommandResult(0, $installer ? AppDevFakeSshExecutor::InstallerApplied : '', '', 1, false);
+        return new CommandResult(0, '', '', 1, false);
     }
 }
 

@@ -48,7 +48,14 @@ fn main() {
         // Command mode needs no runtime, observer, secret, or Gateway connection (ADR 0225).
         Some("command") => std::process::exit(orbit_agent::command::main(&arguments[1..])),
         Some("service") => {
-            std::process::exit(orbit_agent::commands::schedules::service(&arguments[1..]))
+            let code = if arguments.get(1).is_some_and(|name| name == "image-phase") {
+                orbit_agent::commands::image_recipe::worker::service(&arguments[2..])
+            } else if arguments.get(1).is_some_and(|name| name == "vp-project") {
+                orbit_agent::commands::vp_project::service(&arguments[2..])
+            } else {
+                orbit_agent::commands::schedules::service(&arguments[1..])
+            };
+            std::process::exit(code)
         }
         Some("contract") if arguments.len() == 1 => {
             let contract = orbit_agent::command::registry::contract();

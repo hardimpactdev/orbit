@@ -75,7 +75,7 @@ final readonly class RecipeImageBuildSteps
                 }
                 $state = $build->steps[$index]['phase_state'] ?? [];
 
-                return $this->programs->poll($this->image->shell($host, $node, $name), $recipe, $profile, $phase, (string) $build->id, $state,
+                return $this->programs->poll($this->image->shell($host, $node, $name)->agentTarget(), $recipe, $profile, $phase, (string) $build->id, $state,
                     function (array $state) use ($build, $index): void {
                         $steps = $build->steps;
                         $entry = $steps[$index] ?? throw new \LogicException('The running image phase has no persisted build step.');
@@ -126,7 +126,7 @@ final readonly class RecipeImageBuildSteps
                     $this->ensureSmokeVm($host, $node, $smoke, $build->images[$profile]['fingerprint']);
                     $smokeShell = $this->image->shell($host, $node, $smoke)->forRecipePhase($profile, $phase);
                     $this->image->checkSmoke($smokeShell);
-                    $this->programs->verify($smokeShell, $recipe, $profile);
+                    $this->programs->verify($smokeShell->agentTarget(), $recipe, $profile);
                     break;
                 case 'topology-seed':
                     $this->topologySeed($host, $node, $name.'-smoke', $build->images[$profile]['fingerprint']);

@@ -21,20 +21,16 @@ use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\ImmediateToolOperationLock;
-use Tests\Support\ToolManagerFakeSshExecutor;
 
 describe(AdoptToolAction::class, function (): void {
     it('registers the live package under the tool and scope locks without host mutation', function (): void {
@@ -226,9 +222,9 @@ describe(AdoptToolAction::class, function (): void {
     it('rejects an unsupported platform before the lock or any probe', function (): void {
         $node = adopt_action_node();
         $node->update(['platform' => 'macos']);
-        $ssh = new ToolManagerFakeSshExecutor([]);
+        $agent = new FakeAgentCommandRunner;
         $manager = new AptToolManager(
-            commands: new RemoteToolCommandRunner($ssh, adopt_tool_keys(), adopt_tool_known_hosts()),
+            agents: $agent,
             versions: new DebianVersionNormalizer(new SemverVersionNormalizer),
         );
         $lock = new ImmediateToolOperationLock;
@@ -244,7 +240,7 @@ describe(AdoptToolAction::class, function (): void {
         expect($exception->errorCode)->toBe('tool.manager_unsupported')
             ->and($exception->status)->toBe(422)
             ->and($lock->runs)->toBe(0)
-            ->and($ssh->commands)->toBe([])
+            ->and($agent->calls)->toBe([])
             ->and(Tool::query()->count())->toBe(0);
     });
 
@@ -454,33 +450,4 @@ function adopt_install_exception(Closure $callback): ToolOperationException
     }
 
     throw new RuntimeException('Expected a ToolOperationException.');
-}
-
-function adopt_tool_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAATEST orbit@test';
-        }
-    };
-}
-
-function adopt_tool_known_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
 }

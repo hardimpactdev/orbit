@@ -11,7 +11,6 @@ use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
-use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use InvalidArgumentException;
@@ -45,7 +44,6 @@ final readonly class NodeEnrollmentPrograms
         private RolePrerequisites $roles,
         private AgentInvocation $agent,
         private VpToolManager $vp,
-        private ComposerToolManager $composer,
         private RemotePhpPackageManager $php,
         private InstancePhpVersionCatalog $phpVersions,
     ) {}
@@ -85,11 +83,11 @@ final readonly class NodeEnrollmentPrograms
                 $programs[EnrollmentProgram::prerequisites($role)] = $this->agent->command($node, 'roles.install-prerequisites', $this->roles->input($node, $role, $account));
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
-                $programs[EnrollmentProgram::VpManager] ??= $this->vp->materializeCommand($node);
-                $programs[EnrollmentProgram::ComposerManager] ??= $this->composer->materializeCommand($node);
+                $programs[EnrollmentProgram::VpManager] ??= $this->agent->command($node, 'tools.materialize-vp', $this->vp->materializeInput($node));
+                $programs[EnrollmentProgram::ComposerManager] ??= $this->agent->command($node, 'tools.materialize-composer', ['user' => $node->user]);
             }
             if ($role === RoleName::AppDev) {
-                foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
+                foreach ($this->php->appDevPrograms($node, $this->phpVersions->versions()) as $name => $program) {
                     $programs[EnrollmentProgram::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
                 }
             }

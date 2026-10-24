@@ -62,6 +62,12 @@ describe('orbit:node-programs', function (): void {
             ->and(node_program_names($programs)[5])->toBe('app-dev-php-install')
             ->and(array_keys($programs[0]))->toBe(['name', 'arguments', 'input', 'fingerprint'])
             ->and(array_column($programs, 'fingerprint'))->each->toMatch('/\A[a-f0-9]{64}\z/');
+        expect($programs[4]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tools.materialize-composer']);
+        expect(json_decode($programs[4]['input'], true, flags: JSON_THROW_ON_ERROR)['input'])->toBe(['user' => 'orbit']);
+        expect($programs[3]['arguments'])->toBe(['sudo', '-n', '/usr/local/bin/orbit-agent', 'command', 'tools.materialize-vp']);
+        $input = json_decode($programs[3]['input'], true, flags: JSON_THROW_ON_ERROR)['input'];
+        expect($input)->toMatchArray(['user' => 'orbit', 'architecture' => 'amd64']);
+        expect(hash('sha256', $input['vp_lock']))->toBe($input['tools']['vp']['lock_sha256']);
     });
 
     it('renders the app-prod programs', function (): void {

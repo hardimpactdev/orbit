@@ -38,8 +38,8 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -49,8 +49,9 @@ use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeProjectUpdateProjectionMutator;
+use Tests\Support\PhpBuildAnswers;
 
 it('provisions from the Project setting for an orbit slug and another slug', function (string $slug, bool $routed): void {
     $project = routing_mode_project($slug, $routed);
@@ -482,8 +483,10 @@ function routing_mode_bind_boundaries(): void
     {
         public function converge(Instance $instance, Route $route): void {}
     });
-    // A task VM workspace installs the PHP packages of its version before the Route; the fake host succeeds.
-    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+    // A task VM workspace prepares its PHP build before the Route.
+    $agents = new FakeAgentCommandRunner()->answer('php.configure-runtime', ['changed' => false, 'reloaded' => false]);
+    (new PhpBuildAnswers)->register($agents);
+    app()->instance(AgentCommandRunner::class, $agents);
     app()->forgetInstance(DevelopmentInstanceProvisioner::class);
     app()->forgetInstance(NativeDevelopmentInstanceProvisioner::class);
 }

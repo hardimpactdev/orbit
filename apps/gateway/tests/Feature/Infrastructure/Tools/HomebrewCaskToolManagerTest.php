@@ -32,6 +32,7 @@ use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\Tool;
 use Illuminate\Support\Facades\Cache;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ImmediateToolOperationLock;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
@@ -837,7 +838,7 @@ function cask_formula_manager(array $results): array
 {
     $ssh = new ToolManagerFakeSshExecutor($results);
 
-    return [new HomebrewToolManager(cask_runner($ssh), new SemverVersionNormalizer), $ssh];
+    return [new HomebrewToolManager(cask_runner($ssh), new SemverVersionNormalizer, new FakeAgentCommandRunner), $ssh];
 }
 
 function cask_runner(ToolManagerFakeSshExecutor $ssh): RemoteToolCommandRunner

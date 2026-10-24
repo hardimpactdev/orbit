@@ -173,6 +173,8 @@ Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and 
 
 An ended group cannot return to `todo` or reopen through a resolution, provider retry, baseline retry, or pull request fixup. Those recovery paths require an active group. To retry a failed group, create a new group; its claim provisions a fresh VM. Failure does not reserve the old workspace for recovery. Before removal, the same push rule as cancellation preserves the latest reviewed, unpublished head on origin; a failed push keeps the VM and requests removal assistance. A stopped VM also stays while that push is unconfirmed.
 
+An agent transport failure, timeout, or missing result during workspace removal leaves removal unconfirmed. The Gateway retains the workspace state for recovery.
+
 The Gateway keeps task checks and their stored output, consumed turn receipts as comments, other comments, approval records, and Activity after workspace removal. [Readable agent transcripts](#archive-finished-threads) are copied before a ready VM is deleted. Unconsumed receipt files, raw VM logs, approved commits that no final review approved in review-and-merge groups, other unpublished Git objects, uncommitted edits, and unreadable transcripts are not durable Gateway evidence and go with the VM.
 
 ## Tasks and subtasks
@@ -831,7 +833,7 @@ Every task group runs in its own [task VM](/reference/compute-drivers#task-vms).
 
 The claim [creates a fresh VM from the current recipe](/reference/compute-drivers#claims-require-the-current-recipe), then waits until it is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
-The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. The check log shows at most the first 4096 characters of each setup command.
+The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. Task checks keep the CI cache selection helper under `resources/tasks/ci-caches.sh`; ordinary Instance lifecycle setup uses the Node agent. The task workspace scripts remain outside the agent-command migration. The check log shows at most the first 4096 characters of each setup command.
 
 A failed setup step with an HTTP 429 or a GitHub rate-limit message retries on the same workspace after 1, 2, 4, then 8 minutes. The scheduler starts each retry on the first tick after its delay, without sleeping or starting an agent. At most four automatic retries run for one baseline resolution. Failed attempts remain visible in the task checks. Classification uses only the failed step’s output, excluding earlier steps. A missing completion timestamp uses the check’s last update time. Exhausted retries, ordinary forbidden responses, and failures in the Project check ask for assistance. A resolution starts a new retry budget.
 

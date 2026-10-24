@@ -64,7 +64,7 @@ it('accepts a skipped job only when successful detection explicitly marks it unt
     $process->run();
 
     expect($process->getExitCode())->toBe($exit, $process->getErrorOutput());
-})->with(['project', 'gateway-shards', 'privileged', 'remote-programs', 'api-reference', 'web', 'pi-server', 'agent', 'desktop'])
+})->with(['project', 'gateway-shards', 'privileged', 'remote-programs', 'api-reference', 'web', 'pi-server', 'agent', 'agent-macos', 'desktop'])
     ->with([
         'untouched skip' => [false, 'skipped', 0],
         'selected pass' => [true, 'success', 0],

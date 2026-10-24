@@ -58,7 +58,7 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             }
 
             return new FirewallInspectionBatchData($backend, array_map(
-                static fn (string $value): FirewallRuleInspectionStatus => FirewallRuleInspectionStatus::from($value),
+                FirewallRuleInspectionStatus::from(...),
                 $result['ownerships'],
             ));
         } catch (\Throwable) {

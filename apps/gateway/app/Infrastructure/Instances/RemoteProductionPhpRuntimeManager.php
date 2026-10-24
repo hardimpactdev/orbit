@@ -10,7 +10,6 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Routes\RouteWebRoot;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Instance;
@@ -34,8 +33,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     public function __construct(
         private ProductionPhpRuntimeConfigRenderer $renderer,
         private AgentCommandRunner $agents,
-        private ProductionSshExecutor $ssh,
-        private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
+        private ?RemotePhpPackageManager $packages = null,
         private int $cacheDeadlineSeconds = 30,
         private ?ServiceMetricsProjection $serviceMetrics = null,
     ) {}
@@ -58,7 +56,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         $configuration = $this->renderer->render($identity, $metrics, applications: $applications);
         $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true, applications: $applications);
         if ($mode !== 'monitor') {
-            $this->packages->installPackagesOnlyForAppProd($instance->node->loadMissing('roles'), collect([$identity->version]), $this->ssh);
+            ($this->packages ?? new RemotePhpPackageManager(agents: $this->agents))->installPackagesOnlyForAppProd($instance->node->loadMissing('roles'), collect([$identity->version]));
         }
 
         AgentStep::run($this->agents, $instance->node, 'php.converge-production-runtime', [

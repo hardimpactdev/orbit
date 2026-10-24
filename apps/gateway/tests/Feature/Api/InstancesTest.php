@@ -2510,7 +2510,7 @@ it('rejects repository execution and unsupported transport keys', function (): v
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
     app()->instance(SshExecutor::class, $ssh = new AppDevFakeSshExecutor);
-    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, app(AgentCommandRunner::class)));
+    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, new FakeAgentCommandRunner()->answer('firewall.route-lan', [])));
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
     app()->instance(ProcessRunner::class, $processes);

@@ -14,8 +14,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\IncusGuestCall;
-use Tests\Support\RecipeImageUnitGuest;
-use Tests\Support\RecipeProgramPayload;
+use Tests\Support\RecipeImageAnswers;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
@@ -63,9 +62,6 @@ final class FakeIncusImageHost implements SshExecutor
 
     public ?CommandResult $recipeFailure = null;
 
-    /** @var array<string, RecipeImageUnitGuest> */
-    public array $unitGuests = [];
-
     /** @var array<string, string> */
     private array $recipeLogs = [];
 
@@ -111,7 +107,17 @@ final class FakeIncusImageHost implements SshExecutor
                 throw new AgentCommandRefused('image.clean', 'task_vm.image_clean_failed', 'An SSH host key remains.');
             }
 
-            return ['ready' => true];
+            $phase = $command === 'image.verify' ? 'verify' : ($input['key']['phase'] ?? null);
+            if (in_array($command, ['image.start-phase', 'image.restart-phase', 'image.verify'], true) && $this->fail === 'recipe base:'.$phase) {
+                $failure = $this->recipeFailure ?? new CommandResult(1, '', 'Error: recipe base:'.$phase.' failed', 1, false);
+                if ($command === 'image.verify') {
+                    throw new AgentCommandRefused($command, 'task_vm.image_build_failed', 'Verification failed.', ['reason' => $failure->stderr]);
+                }
+
+                return RecipeImageAnswers::observation('failed', reason: 'failed with exit '.$failure->exitCode, exit: $failure->exitCode, log: $failure->stdout.$failure->stderr);
+            }
+
+            return RecipeImageAnswers::success($command, $input);
         };
         app()->instance(GuestAgentCommandRunner::class, $guests);
         $agents = new FakeAgentCommandRunner;
@@ -233,19 +239,11 @@ final class FakeIncusImageHost implements SshExecutor
         // `timeout <seconds> <command>`, as the cloud-init status read runs.
         $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
 
-        $units = $this->unitGuests[$call->vm] ??= new RecipeImageUnitGuest(function (string $profile, string $phase) use ($call): CommandResult {
-            return $this->recipeResult($this->unitGuests[$call->vm], $profile, $phase);
-        });
-        if (($result = $units->run($command, $call->input)) !== null) {
-            return $result;
-        }
-
         return match ($command[0]) {
             'tail' => isset($this->recipeLogs[$command[4]])
                 ? new CommandResult(0, implode("\n", array_slice(explode("\n", rtrim($this->recipeLogs[$command[4]])), -40)), '', 1, false)
                 : new CommandResult(1, '', 'Log unavailable', 1, false),
             'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
-            'python3' => $this->recipeResult($units, RecipeProgramPayload::read($call->input)['profile'], $command[2]),
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),
@@ -253,18 +251,6 @@ final class FakeIncusImageHost implements SshExecutor
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
             default => $this->answer('exec'),
         };
-    }
-
-    private function recipeResult(RecipeImageUnitGuest $guest, string $profile, string $phase): CommandResult
-    {
-        $result = $this->answer('recipe '.$profile.':'.$phase, static fn (): string => '{"ok":true}');
-        if ($phase === 'pi') {
-            return $result;
-        }
-        $path = '/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log';
-        $guest->files[$path] = ($guest->files[$path] ?? '').$result->stdout.$result->stderr;
-
-        return new CommandResult($result->exitCode, $result->succeeded() ? $result->stdout : '', '', $result->durationMs, $result->truncated);
     }
 
     private function fingerprintOf(string $alias): ?string

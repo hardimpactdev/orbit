@@ -102,13 +102,11 @@ Tests are scheduled individually so a long file cannot leave the other workers i
 
 The PHP install-build and source-removal tests build reusable fixtures in `setUpClass`. Each case gets a private writable copy. The recipe tests set `TZ=UTC` and refresh the process timezone cache for their snapshot fixtures. Cleanup restores both, so their UTC expectations do not depend on the runner's timezone.
 
-Assembly includes the recipe image builder and the shared recipe library used by `docker.migrate`.
+The remaining assembly includes the former recipe image builder and shared recipe library while their test migration is completed. Docker migration runs through [native agent commands](/reference/docker-provider-migration), with shared Rust APT and source-retirement code.
 
 Task monitors and the recipe library share `tasks/unit-state.py` through `TaskUnitProgram`, which inserts it at `# ORBIT_TASK_UNIT_STATE` before transport. The remote program catalogue expands the same marker inside named libraries. `# Uses:` only prepends same-language libraries; it cannot insert Python into the existing Bash topology script.
 
 The check lints these programs exactly as sent, including the Python heredoc inside `task-vms/topology.sh`, and maps findings to the original template or library line. This preserves the existing scripts while they await the agent migration in [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands); it adds no script or contract.
-
-The Docker migration has an opt-in test against a real engine: `sudo env ORBIT_DOCKER_NETWORK_TEST=1 python3 apps/gateway/tests/Programs/test_docker_migration_network.py -v`. Run it only in a disposable task environment with Docker API 1.52, iproute2, ping and util-linux. It creates private network, mount and PID namespaces, sockets and data roots. It checks packet reachability through a surviving custom bridge after fallback and resume. It never uses the host's Docker socket or networks. The normal unprivileged suite skips this test.
 
 A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job pins Ruff in its install command, installs shellcheck and the pytest requirements, and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
 
@@ -133,7 +131,6 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | Program | Purpose |
 | --- | --- |
 | `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
-| `docker.migrate` | Plans, prepares and reports the guarded [Docker provider migration](/reference/docker-provider-migration). Preparation uses a transient unit and a root-only recovery journal. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 

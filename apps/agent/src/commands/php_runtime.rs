@@ -1507,7 +1507,7 @@ const FCGI_STDOUT: u8 = 6;
 const FCGI_STDERR: u8 = 7;
 const FCGI_RESPONDER: u16 = 1;
 
-fn record(kind: u8, content: &[u8]) -> Vec<u8> {
+pub(super) fn record(kind: u8, content: &[u8]) -> Vec<u8> {
     let padding = (8 - content.len() % 8) % 8;
     let length = u16::try_from(content.len()).unwrap_or(u16::MAX);
     let mut bytes = vec![1, kind, 0, 1];
@@ -1528,7 +1528,7 @@ fn encoded_length(length: usize) -> Vec<u8> {
     }
 }
 
-fn parameters(values: &[(&str, &str)]) -> Vec<u8> {
+pub(super) fn parameters(values: &[(&str, &str)]) -> Vec<u8> {
     let mut encoded = Vec::new();
     for (name, value) in values {
         encoded.extend(encoded_length(name.len()));

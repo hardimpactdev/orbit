@@ -10,12 +10,15 @@ mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 pub mod clone_candidate;
+mod composer_global;
+mod composer_scope;
 pub mod database_server;
 pub mod dependencies;
 pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
+mod docker_migration;
 mod doctor_node;
 mod doctor_project;
 mod doctor_public_route;
@@ -26,10 +29,12 @@ pub mod firewall;
 mod guest;
 pub mod health;
 pub mod hibernation;
+mod homebrew_scope;
 pub mod horizon_queue;
 mod image_boot;
 mod image_build;
 mod image_identity;
+pub mod image_recipe;
 mod incus;
 pub mod instances;
 pub mod laravel;
@@ -40,11 +45,15 @@ mod metrics_runtime;
 pub mod os_release;
 mod package_cache;
 pub mod peer_dns;
+pub mod php_build;
+mod php_profile;
 pub mod php_runtime;
+pub mod pi_artifact;
 pub mod processes;
 pub mod production;
 pub mod production_home;
 pub mod project_source;
+pub mod recipe;
 pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
@@ -56,9 +65,16 @@ pub mod storage_root;
 mod task_vm_hub;
 pub mod tls_check;
 pub mod tmpfiles;
+mod tool_output;
+mod tools_apt;
 pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
+mod vp_global;
+mod vp_materialize;
+pub mod vp_project;
+mod vp_scope;
+mod vp_store;
 pub mod websocket_runtime;
 pub mod wireguard;
 
@@ -98,6 +114,54 @@ macro_rules! command_errors {
 pub fn all() -> Vec<Entry> {
     vec![
         entry::<agent::Status>(),
+        entry::<vp_store::Inspect>(),
+        entry::<vp_store::Install>(),
+        entry::<vp_store::Prune>(),
+        entry::<vp_project::ReadProject>(),
+        entry::<vp_scope::Inspect>(),
+        entry::<vp_materialize::Materialize>(),
+        entry::<composer_global::Version>(),
+        entry::<composer_global::Candidate>(),
+        entry::<composer_global::Inventory>(),
+        entry::<composer_global::Plan>(),
+        entry::<composer_global::Install>(),
+        entry::<composer_global::Update>(),
+        entry::<composer_global::Remove>(),
+        entry::<homebrew_scope::Inspect>(),
+        entry::<homebrew_scope::Materialize>(),
+        entry::<composer_scope::Inspect>(),
+        entry::<composer_scope::Materialize>(),
+        entry::<tools_apt::Version>(),
+        entry::<tools_apt::Candidate>(),
+        entry::<tools_apt::Inventory>(),
+        entry::<tools_apt::Plan>(),
+        entry::<tools_apt::Install>(),
+        entry::<tools_apt::Update>(),
+        entry::<tools_apt::Remove>(),
+        entry::<vp_global::Version>(),
+        entry::<vp_global::Candidate>(),
+        entry::<vp_global::Inventory>(),
+        entry::<vp_global::Plan>(),
+        entry::<vp_global::Install>(),
+        entry::<vp_global::Update>(),
+        entry::<vp_global::Remove>(),
+        entry::<image_recipe::lifecycle::Inspect>(),
+        entry::<image_recipe::lifecycle::Begin>(),
+        entry::<image_recipe::lifecycle::Retry>(),
+        entry::<image_recipe::verify::Verify>(),
+        entry::<pi_artifact::Receive>(),
+        entry::<pi_artifact::Install>(),
+        entry::<php_build::operations::Inspect>(),
+        entry::<php_build::operations::Install>(),
+        entry::<php_profile::Configure>(),
+        entry::<docker_migration::Plan>(),
+        entry::<docker_migration::Prepare>(),
+        entry::<docker_migration::Restore>(),
+        entry::<docker_migration::Report>(),
+        entry::<recipe::operations::Inspect>(),
+        entry::<recipe::operations::IncusPreflight>(),
+        entry::<recipe::operations::Apply>(),
+        entry::<recipe::javascript::Install>(),
         entry::<image_build::WriteMarker>(),
         entry::<image_build::AppendLog>(),
         entry::<incus::ReadImages>(),

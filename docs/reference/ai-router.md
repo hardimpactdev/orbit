@@ -21,6 +21,8 @@ The extension has one switch and one fleet setup. They are separate.
 - `orbit ai-router:teardown` stops the collector and withdraws the hostname.
 - `orbit extension:disable ai-router` hides and refuses the extension. It does not tear down the collector.
 
+Certificate publication uses the shared [Node agent](/reference/node-agent#commands) Caddy commands. The extension keeps ownership of the collector hostname, publication intent, and error mapping.
+
 ## Valkey placement
 
 No Node role holds a cache. Shared Valkey runs as a [Valkey Database server](/reference/database-servers#a-valkey-server) on a Node with the [`database` role](/reference/database-role). The collector and the Gateway log in through a [Redis Database connection](/reference/database-connections) with its own ACL user.

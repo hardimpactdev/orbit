@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
@@ -60,8 +61,7 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
-use Tests\Support\RecipeImageUnitGuest;
-use Tests\Support\RecipeProgramPayload;
+use Tests\Support\RecipeImageAnswers;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -251,36 +251,21 @@ final class FakeUpCloud
 /** Answers the SSH commands that reach an UpCloud server before it is a Node. */
 class FakeUpCloudSsh implements SshExecutor
 {
-    /** @var array<string, RecipeImageUnitGuest> */
-    public array $unitGuests = [];
-
     /** @var list<array{string, list<string>, ?string}> */
     public array $calls = [];
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments, $command->input];
-        $units = $this->unitGuests[$connection->host] ??= new RecipeImageUnitGuest(fn (string $profile, string $phase, string $source): CommandResult => $this->phaseResult($phase, $source));
-        if (array_slice($command->arguments, 0, 2) === ['sudo', '-n']
-            && ($result = $units->run(array_slice($command->arguments, 2), $command->protectedInput ?? $command->input)) !== null) {
-            return $result;
-        }
         $line = implode(' ', $command->arguments);
 
         return match (true) {
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'dpkg', '--print-architecture'] => new CommandResult(0, "amd64\n", '', 1, false),
-            str_starts_with($line, 'sha256sum ') || str_starts_with($line, 'sudo -n sha256sum ') => new CommandResult(0, app(RecipeImageBuilds::class)->currentRecipe()->tools['pi']->artifacts['amd64']->digest.'  pi', '', 1, false),
-            str_contains($line, 'python3 - verify') => new CommandResult(0, '{"ok":true}', '', 1, false),
             str_contains($line, 'bash -s') => new CommandResult(0, "{\"ok\":true}\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'ufw', 'status'] => new CommandResult(0, "Status: active\n", '', 1, false),
             default => new CommandResult(0, '', '', 1, false),
         };
-    }
-
-    protected function phaseResult(string $phase, string $source): CommandResult
-    {
-        return new CommandResult(0, '{"ok":true}', '', 1, false);
     }
 }
 
@@ -317,8 +302,26 @@ function tvm_up_vm(TaskVmState $state = TaskVmState::Provisioning, ?string $host
     return $vm;
 }
 
+function tvm_up_image_artifact(): void
+{
+    $directory = sys_get_temp_dir().'/upcloud-image-artifact-'.Str::uuid();
+    $resources = $directory.'/releases/current/apps/gateway/resources/machine-software';
+    mkdir($resources, 0700, true);
+    symlink('releases/current', $directory.'/orbit');
+    mkdir($directory.'/sandbox-artifacts', 0700);
+    file_put_contents($directory.'/sandbox-artifacts/pi-test', 'pinned pi bytes');
+    $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    $document['tools']['pi']['artifacts']['amd64']['filename'] = 'pi-test';
+    $document['tools']['pi']['artifacts']['amd64']['sha256'] = hash('sha256', 'pinned pi bytes');
+    file_put_contents($resources.'/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
+    config(['orbit.home' => $directory, 'orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+    test()->imageArtifactDirectory = $directory;
+}
+
 beforeEach(function (): void {
-    app()->instance(GuestAgentCommandRunner::class, new FakeGuestAgentCommandRunner);
+    $agents = new FakeGuestAgentCommandRunner;
+    $agents->answer = static fn (AgentGuest $guest, string $command, array $input): array => RecipeImageAnswers::success($command, $input);
+    app()->instance(GuestAgentCommandRunner::class, $agents);
     $this->project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
     $this->host = Node::query()->create([
         'name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -340,6 +343,9 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     @unlink($this->tokenFile);
+    if (isset($this->imageArtifactDirectory)) {
+        File::deleteDirectory($this->imageArtifactDirectory);
+    }
 });
 
 describe('settings', function (): void {
@@ -751,14 +757,16 @@ describe('sweep', function (): void {
 });
 
 describe('image build', function (): void {
+    beforeEach(fn () => tvm_up_image_artifact());
+
     it('builds the template with the shared recipe, smoke-boots it, promotes it, and keeps two', function (): void {
         $cleanupAfterFirewall = false;
         $guestAgents = new FakeGuestAgentCommandRunner;
-        $guestAgents->answer = function () use (&$cleanupAfterFirewall): array {
+        $guestAgents->answer = function (AgentGuest $guest, string $command, array $input) use (&$cleanupAfterFirewall): array {
             $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
             $cleanupAfterFirewall = in_array('sudo -n ufw status', $commands, true);
 
-            return ['ready' => true];
+            return RecipeImageAnswers::success($command, $input);
         };
         app()->instance(GuestAgentCommandRunner::class, $guestAgents);
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
@@ -773,12 +781,11 @@ describe('image build', function (): void {
         $recipe = app(RecipeImageBuilds::class)->currentRecipe();
         $marker = array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.recipe-marker');
         expect($marker['input'])->toBe(['identity' => $recipe->identity, 'profile' => 'base']);
-        $packages = array_values(array_filter($this->ssh->calls, static fn (array $call): bool => array_slice($call[1], 0, 3) === ['sudo', '-n', 'install'] && is_string($call[2]) && str_contains($call[2], 'sys.exit(image_main())')))[0];
-        $payload = RecipeProgramPayload::read($packages[2]);
-        expect($payload)->toMatchArray(['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'profile' => 'base', 'architecture' => 'amd64'])
-            ->and(array_keys($payload['tools']))->toBe($recipe->profile('base', 'amd64'))
-            ->and($packages[2])->toContain('def image_main():')
-            ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
+        $packages = array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages');
+        $payload = $packages['input']['recipe'];
+        expect($payload['identity'])->toBe($recipe->identity);
+        expect($payload['recipe'])->toMatchArray(['snapshot' => $recipe->snapshot, 'architecture' => 'amd64']);
+        expect($packages['input']['key']['profile'])->toBe('base')->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'orbit-user', 'apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi', 'recipe-marker', 'verify', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and($this->upcloud->storages[$template]['labels'])->toBe([['key' => 'orbit.recipe', 'value' => app(RecipeImageBuilds::class)->currentRecipe()->identity]])
             ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
             ->and($this->upcloud->storages)->not->toHaveKey($old)
@@ -787,7 +794,6 @@ describe('image build', function (): void {
             ->and($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe('01000000-0000-4000-8000-000030260200')
             ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
-            ->and($commands)->toContain('sudo -n dpkg --print-architecture')
             // ufw is on before the identity goes, with only the public SSH rule that enrollment opens and closes.
             ->and(array_slice($commands, (int) array_search('sudo -n ufw default deny incoming', $commands, true), 4))->toBe([
                 'sudo -n ufw default deny incoming',
@@ -796,21 +802,25 @@ describe('image build', function (): void {
                 'sudo -n ufw status',
             ])
             ->and($cleanupAfterFirewall)->toBeTrue()
-            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner', 'image.recipe-marker', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.check'])
-            ->and(array_last($guestAgents->calls)['input'])->toBe(['lean_boot' => false, 'firewall' => true])
+            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner',
+                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
+                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'image.start-phase',
+                'image.inspect-phase', 'image.start-phase', 'image.inspect-phase', 'pi.receive-artifact', 'image.start-phase',
+                'image.recipe-marker', 'image.verify', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.verify', 'image.check'])
+            ->and(array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.check')['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
-            ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'systemd-run') && str_ends_with($command, ' packages')))->toHaveCount(1)
+            ->and(array_filter($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.start-phase' && $call['input']['key']['phase'] === 'packages'))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true))->not->toHaveKey('packages');
     });
 
     it('deletes its servers and its unverified template when the smoke boot fails', function (): void {
         $agents = new FakeGuestAgentCommandRunner;
-        $agents->answer = static function (AgentGuest $guest, string $command): array {
+        $agents->answer = static function (AgentGuest $guest, string $command, array $input): array {
             if ($command === 'image.check') {
                 throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'wrong owner');
             }
 
-            return ['ready' => true];
+            return RecipeImageAnswers::success($command, $input);
         };
         app()->instance(GuestAgentCommandRunner::class, $agents);
         $kept = $this->upcloud->template('orbit-task-base-20261002000000');
@@ -868,27 +878,19 @@ describe('image build', function (): void {
     });
 
     it('does not publish when recipe installation or verification fails', function (string $phase, bool $truncated): void {
-        $this->ssh = new class($phase, $truncated) extends FakeUpCloudSsh
-        {
-            public function __construct(private string $phase, private bool $truncated) {}
-
-            #[Override]
-            protected function phaseResult(string $phase, string $source): CommandResult
-            {
-                return $phase === $this->phase ? new CommandResult(1, '', '', 1, false) : parent::phaseResult($phase, $source);
-            }
-
-            #[Override]
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', $this->phase]) {
-                    return new CommandResult($this->truncated ? 0 : 1, '{"ok":true}', '', 1, $this->truncated);
+        app(GuestAgentCommandRunner::class)->answer = static function (AgentGuest $guest, string $command, array $input) use ($phase, $truncated): array {
+            if ($command === 'image.verify' && $phase === 'verify') {
+                if ($truncated) {
+                    throw new AgentRunnerFailure($command, AgentRunnerFailure::MalformedResult, 'Truncated verification response');
                 }
-
-                return parent::execute($connection, $command);
+                throw new AgentCommandRefused($command, 'task_vm.image_build_failed', 'Verification failed');
             }
+            if ($command === 'image.start-phase' && $input['key']['phase'] === $phase) {
+                return RecipeImageAnswers::observation('failed', reason: 'installer failed', exit: 1);
+            }
+
+            return RecipeImageAnswers::success($command, $input);
         };
-        app()->instance(SshExecutor::class, $this->ssh);
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
         expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, "stage [{$phase}]")
             ->and($this->upcloud->servers)->toBe([])
@@ -900,37 +902,36 @@ describe('image build', function (): void {
         'verification is truncated' => ['verify', true],
     ]);
 
-    it('keeps redacted remote package output after deleting a failed UpCloud builder', function (): void {
-        $this->ssh = new class extends FakeUpCloudSsh
-        {
-            #[Override]
-            protected function phaseResult(string $phase, string $source): CommandResult
-            {
-                if ($phase === 'packages') {
-                    return new CommandResult(100, 'recipe-image-stage:packages', 'apt dependency conflict API_TOKEN=private-token', 1, false);
-                }
-
-                return parent::phaseResult($phase, $source);
+    it('keeps native diagnostics after deleting a failed UpCloud builder', function (string $phase): void {
+        app(GuestAgentCommandRunner::class)->answer = static function (AgentGuest $guest, string $command, array $input) use ($phase): array {
+            if ($command === 'image.verify' && $phase === 'verify') {
+                throw new AgentCommandRefused($command, 'task_vm.image_build_failed', 'Verification failed.', [
+                    'stage' => 'verify', 'reason' => 'Verification failed', 'exit_code' => 100, 'stderr' => 'apt dependency conflict API_TOKEN=[REDACTED]',
+                ]);
             }
+            if ($phase === 'packages' && $command === 'image.start-phase' && $input['key']['phase'] === 'packages') {
+                return RecipeImageAnswers::observation('failed', reason: 'failed with exit 100', exit: 100, log: 'apt dependency conflict API_TOKEN=[REDACTED]');
+            }
+
+            return RecipeImageAnswers::success($command, $input);
         };
-        app()->instance(SshExecutor::class, $this->ssh);
 
         try {
             app(UpCloudTaskVmImageBuilder::class)->build();
             test()->fail('The package error must fail the build.');
         } catch (TaskVmException $error) {
-            expect($error->getMessage())->toContain('stage [packages]', 'exit 100');
+            expect($error->getMessage())->toContain("stage [{$phase}]", 'exit 100');
             expect($error->getMessage())->not->toContain('private-token');
         }
         expect($this->upcloud->servers)->toBe([]);
         $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
         $failure = UpCloudTaskVmImageBuild::query()->latest('id')->firstOrFail()->failure;
-        expect($failure)->toMatchArray(['phase' => 'base:packages', 'exit_code' => 100]);
+        expect($failure)->toMatchArray(['phase' => 'base:'.$phase, 'exit_code' => 100]);
         expect($failure['stderr'])->toContain('apt dependency conflict API_TOKEN=[REDACTED]')->not->toContain('private-token');
         Artisan::call('task-vms:image-builds');
-        expect(Artisan::output())->toContain('base:packages', 'exit_code', 'apt dependency conflict')->not->toContain('private-token');
+        expect(Artisan::output())->toContain('base:'.$phase, 'exit_code', 'apt dependency conflict')->not->toContain('private-token');
 
-    });
+    })->with(['packages', 'verify']);
 
     it('fails the build when ufw does not turn on', function (): void {
         $this->ssh = new class extends FakeUpCloudSsh
@@ -960,6 +961,8 @@ function tvm_up_refresh_job(): RefreshUpCloudTaskVmBaseImage
 }
 
 describe('recipe-driven UpCloud base image refresh', function (): void {
+    beforeEach(fn () => tvm_up_image_artifact());
+
     it('builds a new template on the image queue and keeps the two newest', function (): void {
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
@@ -1021,7 +1024,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         app()->call([$job, 'handle']);
         expect($this->upcloud->created)->toHaveCount($created);
 
-        app(GuestAgentCommandRunner::class)->answer = null;
+        app(GuestAgentCommandRunner::class)->answer = static fn (AgentGuest $guest, string $command, array $input): array => RecipeImageAnswers::success($command, $input);
         $this->artisan('task-vms:build-recipe', ['--retry' => true])->expectsOutputToContain('UpCloud refresh requested')->assertSuccessful();
         Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
         app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
@@ -1228,9 +1231,13 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
 });
 
 it('cold rebuilds an unchanged verified UpCloud template and preserves it until promotion', function (bool $fails): void {
+    tvm_up_image_artifact();
     Queue::fake();
     $builds = app(RecipeImageBuilds::class);
     $identity = $builds->currentRecipe()->identity;
+    TaskVmImageBuild::query()->where('host_node_id', $this->host->id)->update([
+        'recipe_identity' => $identity, 'recipe_json' => $builds->currentRecipe()->json,
+    ]);
     $previous = $this->upcloud->template('orbit-task-base-20261011000000', $identity);
     $builds->reconcile();
     $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('UpCloud cold rebuild requested')->assertSuccessful();

@@ -304,7 +304,7 @@ fn batch_urls_refuse_invalid_directories_and_preserve_empty_checks() {
 fn custom_proxy_reads_the_live_file_without_importing_fragments_and_checks_the_actual_listener() {
     let fixture = Fixture::new();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let input = ProxyInput {
+    let mut input = ProxyInput {
         domain: "app.test".into(),
         certificates: fixture.input.certificates.clone(),
         upstream: listener.local_addr().unwrap(),
@@ -328,7 +328,11 @@ fn custom_proxy_reads_the_live_file_without_importing_fragments_and_checks_the_a
     }
     fs::rename(fixture.root.join("build"), fixture.root.join("fragment")).unwrap();
     fs::write(fixture.root.join("build"), "import fragment\n").unwrap();
-    drop(listener);
+    // Reserve an unlistened port. Closing a listener allows another parallel test to reuse it,
+    // and a concurrently spawned child can briefly retain the listening descriptor.
+    let refused = tokio::net::TcpSocket::new_v4().unwrap();
+    refused.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    input.upstream = refused.local_addr().unwrap();
     let result = inspect_proxy(&input, &fixture.live, &mut Fake::default()).unwrap();
     assert_eq!(
         result,

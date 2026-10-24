@@ -264,10 +264,10 @@ describe('TopologyAcquirer', function () {
     });
 
     it('reports recipe pnpm repair failure before enrollment and cleans its guests', function (): void {
-        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => $argv[0] === 'python3' && str_contains($stdin ?? '', 'orbit-topology-pnpm-') ? ['', 'pinned artifact digest mismatch', 1] : null));
+        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => in_array('recipe.install-javascript', $argv, true) ? [json_encode(['ok' => false, 'error' => ['code' => 'recipe.operation_failed', 'message' => 'pinned artifact digest mismatch', 'details' => []]], JSON_THROW_ON_ERROR), '', 0] : null));
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'pinned artifact digest mismatch');
+            ->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed');
         expect($incus->guests())->toBe([]);
     });
 

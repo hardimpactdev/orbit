@@ -6,9 +6,9 @@ covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/{app/Data/Tools/**,resources/remote/tools/**,resources/remote/lib/vp-store.py}
-  - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
-  - apps/gateway/app/Http/Requests/Tools/**
+  - apps/gateway/app/Data/Tools/**
+  - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,tool_output}{.rs,/**}
+  - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
   - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
 ---
 
@@ -46,9 +46,21 @@ On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Lin
 
 A task VM's base image runs the Linux `vp` and `composer` materialization programs at build time. Its enrollment trusts the image and does not run those programs. Explicit Tool installs and updates do not use this enrollment skip and still run their manager commands. It still reads the manager version as usual. Every other Node runs the programs at enrollment. See [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
 
+Linux Homebrew scope checks and first-use setup use `tools.inspect-homebrew-scope` and `tools.materialize-homebrew`. The agent checks the parent, repository, official origin, clean worktree, and executable link before changes. Setup uses fixed package prerequisites and the pinned Homebrew revision and version tag. It preserves a conflicting prefix and leaves an owned failed setup available for retry.
+
+Composer package operations use typed `tools.composer-*` commands. The agent runs the fixed shared-scope arguments, validates Composer output, and resolves an explicit dry-run no-op from one installed inventory. The Gateway keeps version constraints and adoption policy.
+
+The `tools.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. `tools.materialize-composer` installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
+
+The `tools.materialize-vp` agent command installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. Enrollment sends the same typed command and pins.
+
 Orbit's `/usr/local/bin` Vite+ launchers export `VP_HOME` for every resolved store, not just `/opt/orbit/vite-plus`. Instance setup, teardown, and task checks also export it so project-local `vp` uses the same store. Tool materialization and application-role convergence publish the same launcher format. Both accept an exact, root-owned legacy launcher for that store and upgrade it with rollback on failed runtime verification; changed or foreign launchers remain conflicts.
 
 On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope probe also skips account-owned directories without `bin/vp`. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
+
+The read-only `tools.inspect-vp-scope` agent command resolves the enrolled account's Vite+ binary with native account and filesystem APIs. It returns the selected path or a typed absent, conflicting, or unreadable result. Scope discovery runs no shell, installs nothing, and changes no launchers.
+
+Vite+ global package operations use the `tools.vp-version`, `tools.vp-candidate`, `tools.vp-inventory`, `tools.vp-removal-plan`, `tools.vp-install`, `tools.vp-update`, and `tools.vp-remove` agent commands. Each command resolves the account's scope and runs fixed Vite+ arguments from that account's home directory in one call. Rust validates manager output, limits each output stream to 1 MiB, and stops child processes at the command deadline. Doctor passes its shorter probe budget to the same commands. The Gateway keeps package constraints, adoption policy, and registered Tool records. Mutations run as the enrolled account and never return raw manager output.
 
 A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores with `bin/vp`, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its present `bin/vp` is not executable or is owned by someone else. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
@@ -70,6 +82,8 @@ Before each Linux install, the Gateway converges the manager: it installs the ma
 Update and removal use the same `tool.manager_unavailable` code when the macOS scope is absent or conflicting. The Tool stays `failed` for that operation, with its installed version kept, and the same command retries it. A probe that is not an absent or conflicting scope still returns `tool.version_probe_failed`, `tool.update_failed`, or `tool.remove_failed`. A manager stays installed after its last Tool is removed. No command removes a manager.
 
 ### The dpkg lock
+
+APT manager execution uses typed `tools.apt-*` agent commands. Rust reads candidate and installed versions, parses removal plans, and runs fixed package-manager arguments. The Gateway keeps package constraints, protected-package policy, and Tool records.
 
 On Linux, every apt command in the table passes `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` and `apt-get remove` take them, so they wait up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Install and remove wait for that upgrade to release the lock instead of failing at once.
 
@@ -102,15 +116,17 @@ An npm or pnpm lockfile selects the package-manager family. An exact `packageMan
 
 The machine recipe owns vp itself. Deploys never upgrade it. A recipe version older than the locked vite-plus version fails the prerequisite and needs a normal recipe update. When all exact runtimes exist, the prerequisite takes a read-only path without a lock. Installation waits for the store-owner lock with a timeout and rechecks content after acquiring it.
 
-The enrolled account is the only store writer and owns every runtime in it. Recipe and deploy installation use one Node layout: a real, immutable directory at `js_runtime/node/<version>`, with no symlink components. The recipe calls the store publisher as that account with its verified Node archive. The store library owns path validation, locking, adoption and publication. Existing real content that matches the archive stays in place, including content installed by a deploy. A differing directory stops recipe installation without deleting it.
+The enrolled account is the only store writer and owns every runtime in it. Recipe and deploy installation use one Node layout: a real, immutable directory at `js_runtime/node/<version>`, with no symlink components. The Rust agent shares path validation, locking, adoption and publication between recipe convergence and the `tools.inspect-vp-store`, `tools.install-vp-environment`, and `tools.prune-vp-store` commands. Deploy commands run as the enrolled account and receive exact runtime requirements through `AgentCommandRunner`. Existing real content that matches the archive stays in place, including content installed by a deploy. A differing directory stops recipe installation without deleting it.
 
 Convergence migrates every account-owned link into the exact former content-addressed recipe layout, preserving its old target for running processes. Migrated older versions receive no checksum receipt or recipe reference, so collection retains them as adopted content. Other links are refused. The publisher removes group and other write bits from account-owned real store directories before validation; foreign ownership and symlinks remain refusals. This rule also applies to development stores in the enrolled account's home.
 
 The recipe records its current Node version in `.orbit-recipe-node.json` under the installation lock. Collection retains that version even when no Instance references it, including when a deploy originally installed it. The existing checksum ledger stays unchanged on adoption. A real runtime without this recipe reference needs one verified adoption on convergence. The recipe, deploy installer and collector use an account-owned, regular mode-0644 lock; they normalize older account-owned lock permissions without replacing its inode and refuse symlinks.
 
-Orbit adopts existing exact runtimes without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place. Project scripts and hooks never run as the store owner.
+Orbit adopts existing exact runtimes without downloading them again. Missing Node archives are verified against official `SHASUMS256.txt`; npm and pnpm archives are checked against registry integrity before extraction. Registry credentials stay within their configured host and path, including redirects. New versions are staged beside existing versions and published atomically; installed content is never rewritten in place.
 
-The `tools.read-vp-project` [remote program](/reference/remote-programs) reads manifests and version files as data, with production reads running as the Instance account.
+Package-manager launchers link to the archive's JavaScript entry points or verified native executable. For native pnpm, Orbit also verifies the exact platform package named by its manifest and records both archive checksums. It never runs the package's install hook or leaves a launcher that downloads its executable during a build. Project scripts and hooks never run as the store owner.
+
+The `tools.read-vp-project` agent command reads manifests and version files as data. Its fixed reader process runs as the Instance account in production and as the enrolled account in development. It reads bounded regular files without following file symlinks or running hooks, confines linked workspace manifests to the Project, and combines the account and Project registry settings.
 
 Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, checkout path, and prerequisite status in `vp_environment`. Preparation retains earlier checkout references, including after installation or a failed build. The selected release and every retained release keep their runtimes, so rollback can select retained code without fetching or rebuilding its prerequisites.
 

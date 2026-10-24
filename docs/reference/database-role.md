@@ -19,7 +19,7 @@ orbit node:role:add <node> database
 
 `node` is a numeric ID or a Node name. Retry a failed or active assignment with `--converge`. `node:add --role=database` assigns the role during provisioning.
 
-Convergence installs the Ubuntu `docker.io` package, unless Docker CE is already installed and its `docker` service runs. The Gateway creates no Tool for Docker. The role accepts no options: a request with any other member, such as `settings`, fails with `validation.failed`.
+Convergence installs the Ubuntu `docker.io` package, unless Docker CE is already installed and its `docker` service runs. The Gateway calls the [Node agent’s](/reference/node-agent#commands) `roles.install-prerequisites` command for this work and creates no Tool for Docker. The role accepts no options: a request with any other member, such as `settings`, fails with `validation.failed`.
 
 Add, converge, and remove only ensure Docker. They do not change Router configuration, existing Docker services, or Process ownership.
 

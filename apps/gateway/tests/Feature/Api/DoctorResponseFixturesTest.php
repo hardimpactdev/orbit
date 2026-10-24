@@ -7,11 +7,13 @@ use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 beforeEach(function (): void {
@@ -41,9 +43,9 @@ describe('doctor discovery fixtures', function (): void {
                 ]]),
             ])),
             doctor_fixture_result("docker\nfont-hack\n"),
-            doctor_fixture_result("/Users/mini/.vite-plus/bin/vp\n"),
-            doctor_fixture_result('[{"name":"left-pad","version":"1.0.0"}]'),
-        ]);
+        ], new FakeAgentCommandRunner()->answer('tools.vp-inventory', [
+            'packages' => [['name' => 'left-pad', 'version' => '1.0.0']], 'scan_complete' => true,
+        ]));
         $toolsBefore = Tool::query()->count();
 
         $response = $this->postJson('/api/v1/doctor', [
@@ -81,14 +83,14 @@ describe('doctor discovery fixtures', function (): void {
         $toolsBefore = Tool::query()->count();
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
             doctor_fixture_result(''),
-            doctor_fixture_result("/home/linuxbrew/.linuxbrew\n"),
             doctor_fixture_result("x86_64\n"),
             doctor_fixture_result(doctor_fixture_json([
                 doctor_fixture_formula('ripgrep', '14.1.1', $sha, 'x86_64_linux'),
             ])),
             doctor_fixture_result("ripgrep\n"),
-            doctor_fixture_result('', 42),
-        ]);
+        ], new FakeAgentCommandRunner()
+            ->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew'])
+            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -140,11 +142,11 @@ describe('doctor discovery fixtures', function (): void {
     it('records a truncated inventory as unverifiable with no tool rows', function (): void {
         $node = doctor_fixture_node('linux-node', '10.44.0.4');
         doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
-            doctor_fixture_result("/home/linuxbrew/.linuxbrew\n"),
             doctor_fixture_result("x86_64\n"),
             doctor_fixture_result('{', truncated: true),
-            doctor_fixture_result('[{"name":"left-pad","version":'),
-        ]);
+        ], new FakeAgentCommandRunner()
+            ->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew'])
+            ->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -162,10 +164,9 @@ describe('doctor discovery fixtures', function (): void {
 
     it('records absent managers as informational and ignores unsupported casks', function (): void {
         $node = doctor_fixture_node('linux-node', '10.44.0.4');
-        $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [
-            doctor_fixture_result('', 42),
-            doctor_fixture_result('', 42),
-        ]);
+        $ssh = doctor_fixture_bind(new NodeInspectionData(true, 'linux', 'amd64', true), [], new FakeAgentCommandRunner()
+            ->refuse('tools.inspect-homebrew-scope', 'tools.homebrew_scope_absent')
+            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
 
         $response = $this->postJson('/api/v1/doctor', [
             'node_id' => $node->id,
@@ -206,7 +207,7 @@ function doctor_fixture_node(
 }
 
 /** @param list<CommandResult> $results */
-function doctor_fixture_bind(NodeInspectionData $inspection, array $results): ToolManagerFakeSshExecutor
+function doctor_fixture_bind(NodeInspectionData $inspection, array $results, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
     app()->instance(NodeStateInspector::class, new class($inspection) implements NodeStateInspector
     {
@@ -217,6 +218,7 @@ function doctor_fixture_bind(NodeInspectionData $inspection, array $results): To
             return $this->inspection;
         }
     });
+    app()->instance(AgentCommandRunner::class, $agents ?? new FakeAgentCommandRunner);
     $ssh = new ToolManagerFakeSshExecutor($results);
     app()->instance(SshExecutor::class, $ssh);
 

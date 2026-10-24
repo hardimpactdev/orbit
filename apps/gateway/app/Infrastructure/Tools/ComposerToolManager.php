@@ -14,93 +14,21 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 
 final readonly class ComposerToolManager implements SupportsToolAdoption, ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 255;
 
-    private const int MAX_RESULT_LENGTH = 32_768;
-
-    private const int MAX_VERSION_LENGTH = 255;
-
     private const string PACKAGE_PATTERN = '/\A[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?\z/D';
 
-    /** @var non-empty-list<string> */
-    private const array PREFIX = ['env', 'COMPOSER_HOME=/opt/orbit/composer', '/usr/bin/composer', 'global'];
-
-    /** @var non-empty-list<string> */
-    private const array OPERATION_FLAGS = [
-        '--no-interaction',
-        '--no-ansi',
-        '--no-progress',
-        '--no-audit',
-        '--with-all-dependencies',
-    ];
-
-    /**
-     * Classifies Orbit's shared Composer scope. It does not install packages or create directories.
-     */
-    private const string ADOPTION_SCOPE = <<<'BASH'
-        managed_user=$1
-        passwd_entry=$(getent passwd -- "$managed_user")
-        test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
-        managed_group=$(id -gn -- "$managed_user")
-        home=/opt/orbit/composer
-        manifest=$home/composer.json
-
-        if [ ! -x /usr/bin/composer ]; then
-            printf 'Orbit Composer is absent\n' >&2
-            exit 42
-        fi
-        if [ ! -e /opt/orbit ] && [ ! -L /opt/orbit ]; then
-            printf 'Orbit Composer is absent\n' >&2
-            exit 42
-        fi
-        if [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != root:root ]; then
-            printf 'Orbit Composer directory conflict\n' >&2
-            exit 43
-        fi
-        if [ ! -e "$home" ] && [ ! -L "$home" ]; then
-            printf 'Orbit Composer is absent\n' >&2
-            exit 42
-        fi
-        if [ -L "$home" ] || [ ! -d "$home" ] || [ "$(stat -c '%U:%G' "$home")" != "$managed_user:$managed_group" ]; then
-            printf 'Orbit Composer directory conflict\n' >&2
-            exit 43
-        fi
-        if [ ! -e "$manifest" ] && [ ! -L "$manifest" ]; then
-            printf 'Orbit Composer is absent\n' >&2
-            exit 42
-        fi
-        if [ -L "$manifest" ] || [ ! -f "$manifest" ] || [ "$(stat -c '%U:%G' "$manifest")" != "$managed_user:$managed_group" ]; then
-            printf 'Orbit Composer manifest conflict\n' >&2
-            exit 43
-        fi
-
-        php -r '
-            $decoded = json_decode((string) file_get_contents("/opt/orbit/composer/composer.json"), true);
-            if (!is_array($decoded) || !array_key_exists("require", $decoded) || !is_array($decoded["require"])) {
-                fwrite(STDERR, "Orbit Composer manifest is unreadable\n");
-                exit(1);
-            }
-            foreach (array_keys($decoded["require"]) as $name) {
-                if (!is_string($name)) {
-                    fwrite(STDERR, "Orbit Composer manifest is unreadable\n");
-                    exit(1);
-                }
-                fwrite(STDOUT, $name . "\n");
-            }
-        '
-        BASH;
-
     public function __construct(
-        private RemoteToolCommandRunner $commands,
-        private ComposerDryRunVersionParser $parser,
-        private ComposerInstalledInventoryParser $inventory,
         private SemverVersionNormalizer $versions,
+        private AgentCommandRunner $agents,
+        private ?ToolCommandBudget $budget = null,
     ) {}
 
     public function name(): ToolManagerName
@@ -125,100 +53,14 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardSupportedNode($node);
 
-        $command = $this->materializeCommand($node);
-        $result = $this->commands->execute($node, $command->arguments, $command->input);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'materialize',
-            message: 'The Composer manager could not be materialized.',
-        );
-    }
-
-    /** The Linux program that materializes the Composer manager for the Node's managed user. The task VM base image runs it too. */
-    public function materializeCommand(Node $node): RemoteCommand
-    {
-        $program = <<<'BASH'
-            managed_user=$1
-            passwd_entry=$(getent passwd -- "$managed_user")
-            test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
-            managed_home=$(printf '%s\n' "$passwd_entry" | cut -d: -f6)
-            managed_group=$(id -gn -- "$managed_user")
-
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get -o DPkg::Lock::Timeout=300 update
-            apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- composer git unzip
-
-            if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \
-                && { [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != 'root:root' ]; }; then
-                printf 'Orbit Composer directory conflict: %s\n' /opt/orbit >&2
-                exit 1
-            fi
-
-            install -d -m 0755 /opt/orbit
-            install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer
-            if [ -L /opt/orbit/composer/composer.json ]; then
-                printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
-                exit 1
-            elif [ -e /opt/orbit/composer/composer.json ]; then
-                if ! test -f /opt/orbit/composer/composer.json \
-                    || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
-                    printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
-                    exit 1
-                fi
-            else
-                composer_manifest=$(mktemp /opt/orbit/.composer.json.XXXXXX)
-                cleanup_composer_manifest() {
-                    [ -z "${composer_manifest:-}" ] || rm -f -- "$composer_manifest"
-                }
-                trap cleanup_composer_manifest EXIT
-                printf '%s\n' '{"require":{}}' > "$composer_manifest"
-                chmod 0644 "$composer_manifest"
-                chown "$managed_user:$managed_group" "$composer_manifest"
-                if ! ln "$composer_manifest" /opt/orbit/composer/composer.json; then
-                    if [ -L /opt/orbit/composer/composer.json ] \
-                        || ! test -f /opt/orbit/composer/composer.json \
-                        || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
-                        rm -f -- "$composer_manifest"
-                        printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
-                        exit 1
-                    fi
-                fi
-                rm -f -- "$composer_manifest"
-            fi
-            test ! -L /opt/orbit/composer/composer.json
-            test -f /opt/orbit/composer/composer.json
-            test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"
-            composer_manifest=
-            trap - EXIT
-            install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer/vendor /opt/orbit/composer/vendor/bin
-            sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
-            BASH;
-
-        return new RemoteCommand(['sudo', 'bash', '-seu', '--', $node->user], $program);
+        $this->command($node, 'tools.materialize-composer', ['user' => $node->user], 'materialize');
     }
 
     public function managerVersion(Node $node): string
     {
-        $this->guardSupportedNode($node);
-
-        $result = $this->commands->execute($node, ['/usr/bin/composer', '--version', '--no-ansi']);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'manager-version',
-            message: 'The Composer manager version probe failed.',
-        );
-
-        $lines = preg_split('/\R/', $result->stdout, limit: 2);
-        $version = is_array($lines) ? $lines[0] ?? '' : '';
-
-        if (! $this->isSafeText($version)) {
-            throw new ToolManagerException(
-                step: 'manager-version',
-                message: 'The Composer manager version probe returned malformed output.',
-                result: $result,
-            );
+        $version = $this->version($node, 'tools.composer-version', [], 'manager-version');
+        if ($version === null) {
+            throw new ToolManagerException('manager-version', 'The agent returned an invalid Composer manager version.');
         }
 
         return $version;
@@ -228,55 +70,36 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
     {
         $this->guardPackage($package);
         $this->guardSupportedNode($node);
-
-        $arguments = match ($operation) {
-            ToolOperation::Install => $this->requireArguments($package, dryRun: true),
-            ToolOperation::Update => $this->updateArguments($package, dryRun: true),
-            ToolOperation::Remove => throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'Composer does not provide a removal candidate version.',
-            ),
-            ToolOperation::Adopt => throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'Composer adoption does not select a candidate version.',
-            ),
-        };
-        $result = $this->commands->execute($node, $arguments);
-
-        if (! $result->succeeded()) {
-            if ($this->isKnownPackageNotFound($result, $package)) {
-                return null;
-            }
-
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The Composer candidate version probe failed.',
-                result: $result,
-            );
+        if ($operation === ToolOperation::Remove || $operation === ToolOperation::Adopt) {
+            throw new ToolManagerException('candidate-version', 'This Composer operation does not select a candidate version.');
         }
 
-        $output = $this->combinedOutput($result);
-
-        return $this->parser->parse(
-            output: $output,
-            package: $package,
-            installedFallback: fn (): ?string => $this->installedVersion($node, $package),
-        );
+        return $this->version($node, 'tools.composer-candidate', ['package' => $package, 'operation' => $operation->value], 'candidate-version');
     }
 
     public function installedInventory(Node $node): InstalledToolInventory
     {
-        $this->guardSupportedNode($node);
+        $data = $this->command($node, 'tools.composer-inventory', [], 'installed-version');
+        if (! is_array($data['packages'] ?? null) || ! array_is_list($data['packages'])) {
+            throw new ToolManagerException('installed-version', 'The agent returned an invalid Composer inventory.');
+        }
+        $versions = [];
+        $unverifiable = [];
+        foreach ($data['packages'] as $entry) {
+            if (! is_array($entry) || ! is_string($entry['name'] ?? null) || ! array_key_exists('version', $entry) || ($entry['version'] !== null && ! is_string($entry['version']))) {
+                throw new ToolManagerException('installed-version', 'The agent returned an invalid Composer package observation.');
+            }
+            if (! $this->validatePackage($entry['name'])) {
+                continue;
+            }
+            if ($entry['version'] === null) {
+                $unverifiable[] = $entry['name'];
+            } else {
+                $versions[$entry['name']][] = $entry['version'];
+            }
+        }
 
-        $result = $this->commands->execute($node, $this->showArguments());
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'installed-version',
-            message: 'The Composer installed version probe failed.',
-        );
-
-        return $this->inventory->parse($result, $this->validatePackage(...));
+        return new InstalledToolInventory($versions, unverifiablePackages: $unverifiable);
     }
 
     public function installedVersion(Node $node, string $package): ?string
@@ -311,48 +134,28 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
 
     public function install(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'install',
-            arguments: $this->requireArguments($package),
-        );
+        $this->mutate($node, $package, 'install');
     }
 
     public function update(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'update',
-            arguments: $this->updateArguments($package),
-        );
+        $this->mutate($node, $package, 'update');
     }
 
     public function planRemoval(Node $node, string $package): ToolRemovalPlan
     {
         $this->guardPackage($package);
-        $this->guardSupportedNode($node);
+        $data = $this->command($node, 'tools.composer-removal-plan', ['package' => $package], 'removal-plan');
+        if (($data['packages'] ?? null) !== [$package]) {
+            throw new ToolManagerException('removal-plan', 'The agent returned an invalid Composer removal plan.');
+        }
 
-        $result = $this->commands->execute($node, $this->removeArguments($package, dryRun: true));
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'removal-plan',
-            message: 'The Composer removal plan failed.',
-        );
-
-        return new ToolRemovalPlan([$package]);
+        return new ToolRemovalPlan($data['packages']);
     }
 
     public function remove(Node $node, string $package): void
     {
-        $this->mutate(
-            node: $node,
-            package: $package,
-            step: 'remove',
-            arguments: $this->removeArguments($package),
-        );
+        $this->mutate($node, $package, 'remove');
     }
 
     private function guardPackage(string $package): void
@@ -379,63 +182,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         );
     }
 
-    private function guardSuccessfulResult(CommandResult $result, string $step, string $message): void
-    {
-        if ($result->succeeded()) {
-            return;
-        }
-
-        throw new ToolManagerException(
-            step: $step,
-            message: $message,
-            result: $result,
-        );
-    }
-
-    private function isSafeText(string $value): bool
-    {
-        return
-            $value !== ''
-            && strlen($value) <= self::MAX_VERSION_LENGTH
-            && preg_match('/[\x00-\x1F\x7F]/', $value) !== 1;
-    }
-
-    private function combinedOutput(CommandResult $result): string
-    {
-        return implode(
-            "\n",
-            array_values(array_filter(
-                [$result->stdout, $result->stderr],
-                static fn (string $output): bool => $output !== '',
-            )),
-        );
-    }
-
-    private function isKnownPackageNotFound(CommandResult $result, string $package): bool
-    {
-        $output = $this->combinedOutput($result);
-
-        if ($output === '' || strlen($output) > self::MAX_RESULT_LENGTH) {
-            return false;
-        }
-
-        $normalized = preg_replace(pattern: '/\s+/', replacement: ' ', subject: trim($output));
-
-        if (! is_string($normalized)) {
-            return false;
-        }
-
-        $packagePattern = preg_quote(str: $package, delimiter: '~');
-
-        return
-            preg_match(
-                '~Could not find a matching version of package '
-                .$packagePattern
-                .'\. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability~',
-                $normalized,
-            ) === 1;
-    }
-
     /**
      * Reads the shared Composer scope without installing packages or creating directories.
      *
@@ -443,117 +189,46 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
      */
     private function adoptionRoots(Node $node): array
     {
-        $result = $this->commands->execute(
-            $node,
-            ['/bin/bash', '-seu', '--', $node->user],
-            self::ADOPTION_SCOPE,
-        );
-
-        if ($result->exitCode === 42) {
-            throw new ToolManagerException(
-                step: 'manager-absent',
-                message: 'The Composer global scope is absent.',
-                result: $result,
-            );
+        $data = $this->command($node, 'tools.inspect-composer-scope', [], 'manager-probe');
+        if (! is_array($data['roots'] ?? null) || ! array_is_list($data['roots']) || array_filter($data['roots'], is_string(...)) !== $data['roots']) {
+            throw new ToolManagerException('manager-probe', 'The agent returned an invalid Composer scope.');
         }
 
-        if ($result->exitCode === 43) {
-            throw new ToolManagerException(
-                step: 'manager-conflict',
-                message: 'The Composer global scope conflicts with Orbit ownership.',
-                result: $result,
-            );
-        }
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'manager-probe',
-            message: 'The Composer global scope probe failed.',
-        );
-
-        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
-
-        if ($lines === false) {
-            throw new ToolManagerException(
-                step: 'manager-probe',
-                message: 'The Composer global scope probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        if ($lines === ['']) {
-            return [];
-        }
-
-        $roots = [];
-
-        foreach ($lines as $line) {
-            if ($line === '' || ! $this->isSafeText($line)) {
-                throw new ToolManagerException(
-                    step: 'manager-probe',
-                    message: 'The Composer global scope probe returned malformed output.',
-                    result: $result,
-                );
-            }
-
-            if ($this->validatePackage($line)) {
-                $roots[] = $line;
-            }
-        }
-
-        return $roots;
+        return array_values(array_filter($data['roots'], $this->validatePackage(...)));
     }
 
-    /** @return non-empty-list<string> */
-    private function showArguments(): array
-    {
-        return [...self::PREFIX, 'show', '--format=json', '--no-ansi'];
-    }
-
-    /** @return non-empty-list<string> */
-    private function requireArguments(string $package, bool $dryRun = false): array
-    {
-        return $this->operationArguments('require', "{$package}:*", $dryRun);
-    }
-
-    /** @return non-empty-list<string> */
-    private function updateArguments(string $package, bool $dryRun = false): array
-    {
-        return $this->operationArguments('update', $package, $dryRun);
-    }
-
-    /** @return non-empty-list<string> */
-    private function removeArguments(string $package, bool $dryRun = false): array
-    {
-        return $this->operationArguments('remove', $package, $dryRun);
-    }
-
-    /**
-     * @return non-empty-list<string>
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
      */
-    private function operationArguments(string $operation, string $package, bool $dryRun): array
+    private function command(Node $node, string $command, array $input, string $step): array
     {
-        $arguments = [...self::PREFIX, $operation, $package];
-
-        if ($dryRun) {
-            $arguments[] = '--dry-run';
+        $this->guardSupportedNode($node);
+        try {
+            return $this->agents->run($node, $command, $input, $this->budget?->seconds());
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            $step = match ($step === 'manager-probe' && $exception instanceof AgentCommandRefused ? $exception->errorCode : null) {
+                'tools.composer_scope_absent' => 'manager-absent',
+                'tools.composer_scope_conflict' => 'manager-conflict',
+                default => $step,
+            };
+            throw new ToolManagerException($step, 'The Composer operation failed.', previous: $exception);
         }
-
-        return [...$arguments, ...self::OPERATION_FLAGS];
     }
 
-    /** @param non-empty-list<string> $arguments */
-    private function mutate(Node $node, string $package, string $step, array $arguments): void
+    /** @param array<string, mixed> $input */
+    private function version(Node $node, string $command, array $input, string $step): ?string
+    {
+        $data = $this->command($node, $command, $input, $step);
+        if (! array_key_exists('version', $data) || ($data['version'] !== null && ! is_string($data['version']))) {
+            throw new ToolManagerException($step, 'The agent returned an invalid Composer version.');
+        }
+
+        return $data['version'];
+    }
+
+    private function mutate(Node $node, string $package, string $step): void
     {
         $this->guardPackage($package);
-        $this->guardSupportedNode($node);
-
-        $result = $this->commands->execute($node, $arguments);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: $step,
-            message: "The Composer {$step} operation failed.",
-        );
+        $this->command($node, 'tools.composer-'.$step, ['package' => $package], $step);
     }
 }

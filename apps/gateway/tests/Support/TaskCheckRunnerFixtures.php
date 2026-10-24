@@ -6,25 +6,21 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
-use App\Domain\Tools\SemverVersionNormalizer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 use Tests\Support\StandardLibraryPython;
 
 function check_runner_directory(): string
@@ -90,27 +86,12 @@ function check_runner_shell(LocalShellSshExecutor $transport): LocalShellSshExec
     return $transport;
 }
 
-function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
+function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?AgentCommandRunner $probe = null): RemoteTaskCheckRunner
 {
     if ($transport instanceof LocalShellSshExecutor) {
         check_runner_shell($transport);
     }
-    $vp = new VpToolManager(
-        new RemoteToolCommandRunner(
-            $probe ?? new readonly class($vpHome) implements SshExecutor
-            {
-                public function __construct(private string $home) {}
-
-                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-                {
-                    return new CommandResult(0, $this->home."/bin/vp\n", '', 1, false);
-                }
-            },
-            app(SshKeyProvider::class),
-            app(KnownHostsStore::class),
-        ),
-        new SemverVersionNormalizer,
-    );
+    $vp = ResolvedVp::manager($vpHome, $probe);
 
     return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,

@@ -33,6 +33,7 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
@@ -138,9 +139,9 @@ function check_runner_status(bool $alive, string $meanwhile = ''): array
     return json_decode($status->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 }
 
-it('normalizes VP_HOME probe failures without launching a check', function (int $exit, bool $truncated, string $stdout): void {
+it('normalizes VP_HOME probe refusals without launching a check', function (string $code): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new AppDevFakeSshExecutor([new CommandResult($exit, $stdout, '', 1, $truncated)]);
+    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', $code);
     $transport = new AppDevFakeSshExecutor;
     $runner = check_runner($transport, probe: $probe);
 
@@ -149,13 +150,11 @@ it('normalizes VP_HOME probe failures without launching a check', function (int 
         expect($exception->getMessage())->toBe('The task workspace could not be reached for the check.');
     });
     expect($transport->commands)->toBeEmpty();
-    expect($probe->commands)->toHaveCount(1);
+    expect($probe->calls)->toHaveCount(1);
 })->with([
-    'absent' => [42, false, ''],
-    'conflict' => [43, false, ''],
-    'failed' => [1, false, ''],
-    'truncated' => [0, true, "/opt/orbit/vite-plus/bin/vp\n"],
-    'malformed' => [0, false, '/tmp/untrusted/vp'],
+    'absent' => ['tools.vp_scope_absent'],
+    'conflict' => ['tools.vp_scope_conflict'],
+    'unreadable' => ['tools.vp_scope_unreadable'],
 ]);
 
 it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
@@ -169,22 +168,15 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
         'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running, 'subtask_start_commit' => 'abc',
     ]);
     $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
-    $probe = new class($timeout) implements SshExecutor
-    {
-        public int $calls = 0;
-
-        public function __construct(private readonly ProcessTimedOutException $timeout) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            expect(TaskCheck::query()->sole()->pid)->toBe(0);
-            if (++$this->calls === 1) {
-                throw $this->timeout;
-            }
-
-            return new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false);
+    $probeCalls = 0;
+    $probe = new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static function () use ($timeout, &$probeCalls): array {
+        expect(TaskCheck::query()->sole()->pid)->toBe(0);
+        if (++$probeCalls === 1) {
+            throw $timeout;
         }
-    };
+
+        return ['binary' => '/opt/orbit/vite-plus/bin/vp'];
+    });
     $transport = new class implements SshExecutor
     {
         public int $starts = 0;
@@ -212,7 +204,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     test_pass_baseline();
 
     expect(TaskCheck::query()->sole()->pid)->toBe(4100);
-    expect($probe->calls)->toBe(2);
+    expect($probe->calls)->toHaveCount(2);
     expect($transport->starts)->toBe(1);
     expect($task->fresh()->communication_failures)->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
@@ -234,7 +226,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
     };
     $transport = new AppDevFakeSshExecutor;
 
-    expect(fn () => check_runner($transport, probe: $failing)->start($instance, 'true'))
+    expect(fn () => check_runner($transport, probe: new FakeAgentCommandRunner()->answer('tools.inspect-vp-scope', static fn (): array => throw $exception))->start($instance, 'true'))
         ->toThrow(function (TaskCheckException $normalized) use ($exception): void {
             expect($normalized->getPrevious())->toBe($exception);
         });
@@ -254,7 +246,7 @@ it('normalizes thrown failures only during the known unstarted VP_HOME probe', f
 
 it('polls and cancels independently of VP_HOME probe availability', function (): void {
     $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $probe = new AppDevFakeSshExecutor([new CommandResult(42, '', '', 1, false)]);
+    $probe = new FakeAgentCommandRunner()->refuse('tools.inspect-vp-scope', 'tools.vp_scope_absent');
     $transport = new AppDevFakeSshExecutor([
         new CommandResult(0, '{"state":"running"}', '', 1, false),
         new CommandResult(0, '{}', '', 1, false),
@@ -266,7 +258,7 @@ it('polls and cancels independently of VP_HOME probe availability', function ():
     expect($runner->read($instance, $process)->state)->toBe('running');
     $runner->cancel($instance, $process);
     expect($runner->snapshot($instance)->head)->toBe('abc');
-    expect($probe->commands)->toBeEmpty();
+    expect($probe->calls)->toBeEmpty();
     expect($transport->commands)->toHaveCount(3);
 });
 

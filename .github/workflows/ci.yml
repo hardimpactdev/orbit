@@ -690,6 +690,8 @@ jobs:
         run: command -v cross >/dev/null || cargo install cross --locked
       - name: Set up PHP for native Composer cache tests
         uses: ./.github/actions/php
+        with:
+          coverage: none
       - name: Set up Node for native npm cache tests
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -718,7 +720,7 @@ jobs:
 
   agent-macos:
     needs: changes
-    if: fromJSON(needs.changes.outputs.jobs).agent
+    if: fromJSON(needs.changes.outputs.jobs).agent-macos
     name: Rust agent on macOS
     runs-on: macos-15
     defaults:

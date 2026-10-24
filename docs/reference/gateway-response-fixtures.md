@@ -36,7 +36,7 @@ Instance create, list, and show fixtures include `routes`, every Route of the In
 
 Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available, a fallback, and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
 
-An Agent pin change updates the Gateway and Fleet fixtures with the released version, asset URLs, and verified checksums. Update the SDK checksum expectations, CLI download stand-ins, and matching CLI output together. The Agent release checksums remain separate from the local stand-in checksums used by `self-update` tests.
+An Agent pin change updates the Gateway and Fleet fixtures with the version, source commit, asset URLs, and verified checksums from its delivery manifest. Update the SDK checksum expectations, CLI download stand-ins, and matching CLI output together. The Agent release checksums remain separate from the local stand-in checksums used by `self-update` tests.
 
 Gateway release fixtures under `gateway-releases` record one release record at each point the CLI can see it: queued, running, live, switched back, paused, and rolled back. `gateway:release:deploy` and `gateway:release:rollback` replay the queued response and then a sequence of record reads, so their expected output shows how the progress tree follows a release. The automatic release fixtures record the state disabled, enabled, paused, and resumed.
 

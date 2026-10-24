@@ -2,14 +2,14 @@
 title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
+  - apps/agent/src/commands/{image_recipe.rs,image_recipe/**,pi_artifact.rs,pi_artifact/**}
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**,resources/remote/lib/artifacts.py,resources/remote/task-vms/**}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php}
-  - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/{resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
 ---
 
 # Compute drivers
@@ -169,7 +169,11 @@ On a Node with both app-dev and app-prod, dedicated production FPM masters also 
 
 #### Install the PHP build
 
-`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
+`php.install-build`, a native [agent command](/reference/node-agent#commands), is the one installer of the PHP build. `php.inspect-build` checks the same typed pins without changing the machine. Recipe convergence and the PHP step of an Instance call these commands through the agent runner. The image build runs it in the guest, and `bin/php-build install --profile=PROFILE` runs it on a bootstrap or CI machine.
+
+Build the checkout's agent first with `cargo build --release --locked` in `apps/agent`. The local adapter sends typed input with that binary's digest and refuses a missing binary or a failed command. Install and `bin/php-build verify --profile=PROFILE` require a recipe profile. Both derive the packages and loaded CLI extensions from that profile, including PCOV and OpenTelemetry policy. A profile that does not declare the selected PHP version is refused.
+
+After installation, an Instance PHP step calls `php.configure-runtime` to publish the Orbit FPM module. The Gateway supplies the selected version, supported release, and OPcache settings. The agent publishes and verifies the module, reloads a running shared master only when its configuration passes, and enables the service without starting it. A failed publication restores the previous file and module link.
 
 The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-upload-progress.ini` for every PHP version it installs. It writes `session.upload_progress.enabled = 0` to mitigate CVE-2026-109618 and CVE-2026-109619, which allow unauthenticated remote code execution through session upload progress in multipart requests. It replaces the operator's emergency file at the same path and repairs missing or changed files on later convergence.
 
@@ -376,7 +380,7 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 
 Before an image builder can install command mode, its system bus must be available. Incus can reach a guest earlier in boot. The native supervisor returns `agent.supervisor_not_ready` for an absent bus socket; image boot polling waits within its deadline. This refusal records no failed agent pin. Other installation refusals still fail the build.
 
-Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, and logs, then verifies that the identities are absent. It preserves package lists and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
+Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, Pi transfer artifacts, and logs, then verifies that the identities are absent. It preserves the installed Pi binary, package lists, and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
 
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
@@ -1028,27 +1032,35 @@ Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
+The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
+
+Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
+
 The Gateway records the image recipe identity with `image.recipe-marker`. It appends sanitized observations through `image.recipe-log`, which owns the fixed root-only log directory and validates the profile and phase before writing. Both commands use native file operations; no guest path or executable is supplied by the caller.
 
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
 
-Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway stages the existing installer with private input, starts the service, and polls its recorded result.
+Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
 
 Incus releases its queue job between polls. Incus reconnects to the same service after a lost SSH reply or queue-worker restart without starting another installer. UpCloud uses the same service protocol to reconnect after SSH loss while its existing template job survives; it does not resume the builder after that worker dies. No new Node program or inline script implements this supervision.
 
 Before issuing a start, the Gateway records the builder boot ID in the phase state. A missing unit on that boot can start; a changed boot ID fails with a builder-reboot diagnostic naming `task-vms:build-recipe --retry`. Completed services remain loaded. Unreadable status replies have an unknown outcome and share the SSH-loss observation bound.
 
-Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget and disk-backed temporary files; digest verification and atomic rename publish only complete input. Failed transfers remove their temporary files.
+The native `image.inspect-phase`, `image.start-phase`, and `image.restart-phase` commands own the boot check, systemd state parsing, immutable phase input, and private log tail. The Gateway sends the recipe identity, profile, phase, and execution ID; Rust derives the unit and file names. A restart names the failed invocation already recorded by the build attempt. If another invocation has started, repeating that request only observes it. The service runs compiled agent code with typed recipe data and reports failures with a nonzero process exit.
+
+Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
+
+Each control delivery shares a 1,440-second budget, including staging and transfers. The Incus recipe job allows that budget plus a 60-second margin. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
 
 The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
 
-The Python installer writes its private phase log once and does not echo it to stderr. Service stderr appends to the phase log, including Pi shell and Python startup errors. Direct verification reads the private log on failure.
+The native service writes bounded diagnostics to its private phase log. Observations return a redacted tail when a phase fails. Direct verification returns typed failure details.
 
-Every image package command, including assessment and the separate PHP installer during verification, inherits the same snapshot configuration through `APT_CONFIG`. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies.
+Every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
 
 Image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. The nightly snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
 
-The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes.
+The configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
 
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 

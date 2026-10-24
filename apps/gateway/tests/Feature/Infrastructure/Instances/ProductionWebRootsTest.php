@@ -86,8 +86,8 @@ describe('production web roots', function (): void {
 
     it('adds a pool for each served directory to the runtime it converges', function (): void {
         [$instance] = prodweb_instance();
-        $agents = new FakeAgentCommandRunner()->answer('php.converge-production-runtime', ['published' => true]);
-        $manager = new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents, prodweb_executor(new AppDevFakeSshExecutor));
+        $agents = new FakeAgentCommandRunner()->answer('php.install-build', ['outcome' => 'current', 'data' => []])->answer('php.converge-production-runtime', ['published' => true]);
+        $manager = new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents);
         $manager->converge($instance);
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
         $manager->converge($instance);

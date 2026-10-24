@@ -9,6 +9,7 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
@@ -16,6 +17,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 beforeEach(function (): void {
@@ -156,8 +158,6 @@ describe('tool inventory scans', function (): void {
             '',
             scan_inventory_json(),
             '',
-            "/Users/mini/.vite-plus/bin/vp\n",
-            '[]',
         ));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
@@ -191,34 +191,17 @@ describe('tool inventory scans', function (): void {
             ]]),
             scan_cask('font-hack', '2.0.0'),
         ];
-        $vp = json_encode([
-            [
-                'name' => '@openai/codex',
-                'version' => '0.150.0',
-                'bins' => ['codex'],
-                'installedAt' => '2026-03-18T09:41:12Z',
-                'platform' => ['node' => '22.21.0', 'npm' => '10.9.2'],
-            ],
-            [
-                'name' => 'pnpm',
-                'version' => '10.15.1',
-                'bins' => ['pnpm'],
-                'manager' => 'npm',
-            ],
-            [
-                'name' => 'typescript',
-                'version' => 'latest',
-                'bins' => ['tsc'],
-            ],
-        ], JSON_THROW_ON_ERROR);
+        $vp = [
+            ['name' => '@openai/codex', 'version' => '0.150.0'],
+            ['name' => 'pnpm', 'version' => '10.15.1'],
+            ['name' => 'typescript', 'version' => null],
+        ];
         $ssh = scan_bind(scan_mac_results(
             scan_inventory_json($formulae),
             "openssl@3\nripgrep\nwireguard-tools\n",
             scan_inventory_json([], $casks),
             "docker\nfont-hack\n",
-            "/Users/mini/.vite-plus/bin/vp\n",
-            $vp,
-        ));
+        ), new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
         $before = Tool::query()->count();
 
         DB::flushQueryLog();
@@ -253,14 +236,9 @@ describe('tool inventory scans', function (): void {
             ->and(Tool::query()->count())->toBe($before)
             ->and($codex->refresh()->installed_version)->toBe('0.150.0');
         scan_assert_read_only($ssh);
-        expect($ssh->arguments()[7])->toBe([
-            'env',
-            'VP_HOME=/Users/mini/.vite-plus',
-            '/Users/mini/.vite-plus/bin/vp',
-            'list',
-            '-g',
-            '--json',
-        ])->and(json_encode($ssh->arguments()))->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE');
+        expect(app(AgentCommandRunner::class)->calls)->toBe([
+            ['node' => $node->name, 'command' => 'tools.vp-inventory', 'input' => []],
+        ]);
         $writes = collect(DB::getQueryLog())
             ->filter(static fn (array $query): bool => preg_match('/\b(insert|update|delete|replace)\b/i', $query['query']) === 1)
             ->pluck('query')
@@ -279,8 +257,7 @@ describe('tool inventory scans', function (): void {
             scan_result(scan_inventory_json($formulae)),
             scan_result("ripgrep\n"),
             scan_result('secret cask output', exitCode: 1, stderr: 'secret cask'),
-            scan_result('secret scope', exitCode: 43, stderr: 'secret owner'),
-        ]);
+        ], new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_scope_conflict'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -301,12 +278,12 @@ describe('tool inventory scans', function (): void {
         $node = scan_node('scan-linux', '10.44.0.4', 'linux', 'orbit', 'x86_64');
         $formulae = [scan_formula('ripgrep', '14.1.1', tag: 'x86_64_linux')];
         $ssh = scan_bind([
-            scan_result("/home/linuxbrew/.linuxbrew\n"),
             scan_result("x86_64\n"),
             scan_result(scan_inventory_json($formulae)),
             scan_result("ripgrep\n"),
-            scan_result('secret path', exitCode: 42, stderr: 'secret absent'),
-        ]);
+        ], new FakeAgentCommandRunner()
+            ->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew'])
+            ->refuse('tools.vp-inventory', 'tools.vp_scope_absent'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -318,14 +295,12 @@ describe('tool inventory scans', function (): void {
             ->and($response->getContent())->not->toContain('secret')
             ->and(Tool::query()->count())->toBe(0);
         scan_assert_read_only($ssh);
-        expect($ssh->commands)->toHaveCount(5)
-            ->and($ssh->arguments()[0])->toBe(['/bin/bash', '-seu', '--', 'orbit'])
-            ->and($ssh->commands[4]->input)->toContain('/usr/bin/getent')
-            ->and($ssh->commands[4]->input)->not->toContain('curl');
+        expect($ssh->commands)->toHaveCount(3);
+        expect(app(AgentCommandRunner::class)->commands())->toBe(['tools.inspect-homebrew-scope', 'tools.vp-inventory']);
         record_fixture($response, 'tools/tool-scan/linux', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
-    it('marks a malformed or oversized Vite+ list incomplete and keeps the other managers', function (string $vpList): void {
+    it('marks a refused Vite+ inventory incomplete and keeps the other managers', function (): void {
         $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
         $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
         $formulae = [scan_formula('ripgrep', '14.1.1')];
@@ -335,9 +310,7 @@ describe('tool inventory scans', function (): void {
             "ripgrep\n",
             scan_inventory_json([], $casks),
             "font-hack\n",
-            "/Users/mini/.vite-plus/bin/vp\n",
-            $vpList,
-        ));
+        ), new FakeAgentCommandRunner()->refuse('tools.vp-inventory', 'tools.vp_output_invalid'));
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
@@ -347,10 +320,7 @@ describe('tool inventory scans', function (): void {
             ->and($response->json('data.managers.2.packages'))->toBe([])
             ->and($tool->refresh()->installed_version)->toBe('0.150.0')
             ->and($response->getContent())->not->toContain('secret');
-    })->with([
-        'malformed' => ['[{"name":"@openai/codex","version":0.150}]'],
-        'oversized' => [str_repeat('[', 1_048_576).']'],
-    ]);
+    });
 });
 
 function scan_node(
@@ -390,8 +360,9 @@ function scan_tool(Node $node, ToolManagerName $manager, string $package): Tool
 /**
  * @param  list<CommandResult>  $results
  */
-function scan_bind(array $results): ToolManagerFakeSshExecutor
+function scan_bind(array $results, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
+    app()->instance(AgentCommandRunner::class, $agents ?? new FakeAgentCommandRunner()->answer('tools.vp-inventory', ['packages' => [], 'scan_complete' => true]));
     $ssh = new ToolManagerFakeSshExecutor($results);
     app()->instance(SshExecutor::class, $ssh);
 
@@ -406,8 +377,6 @@ function scan_mac_results(
     string $formulaNames,
     string $caskJson,
     string $caskNames,
-    string $binary,
-    string $vpList,
 ): array {
     return [
         scan_result("/opt/homebrew\n"),
@@ -416,8 +385,6 @@ function scan_mac_results(
         scan_result($formulaNames),
         scan_result($caskJson),
         scan_result($caskNames),
-        scan_result($binary),
-        scan_result($vpList),
     ];
 }
 

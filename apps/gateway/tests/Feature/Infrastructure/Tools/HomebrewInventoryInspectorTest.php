@@ -22,6 +22,7 @@ use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 describe(HomebrewInventoryInspector::class, function (): void {
@@ -504,7 +505,6 @@ describe(HomebrewInventoryInspector::class, function (): void {
     it('reads a clean official Linux prefix without repinning and leaves casks unsupported', function (): void {
         $sha = str_repeat('e', 64);
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_inventory_result("x86_64\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep', tag: 'x86_64_linux', version: '14.1.1', sha: $sha),
@@ -526,29 +526,16 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Unsupported)
             ->and($scans[1]->packages)->toBe([])
             ->and($ssh->arguments())->toBe([
-                ['/bin/bash', '-seu', '--', 'orbit'],
                 ['/usr/bin/uname', '-m'],
                 [...homebrew_inventory_linux_arguments(), 'info', '--json=v2', '--formula', '--installed'],
                 [...homebrew_inventory_linux_arguments(), 'list', '--formula', '-1'],
             ]);
-        expect($ssh->commands[0]->input)
-            ->toContain('root:root')
-            ->toContain('https://github.com/Homebrew/brew')
-            ->toContain('status --porcelain=v1 --untracked-files=all')
-            ->toContain('exit 42')
-            ->toContain('exit 43')
-            ->not->toContain('apt-get')
-            ->not->toContain('clone')
-            ->not->toContain('checkout')
-            ->not->toContain('fetch')
-            ->not->toContain('d79ef822ab8136e393ed5f86e2b56afc68d04874');
         homebrew_inventory_assert_read_only($ssh);
         expect(json_encode($scans))->not->toContain($sha)->not->toContain('/home/linuxbrew');
     });
 
     it('maps a Linux bottle tag from aarch64 without bootstrapping Homebrew', function (): void {
         [$inspector, $ssh] = homebrew_inventory_inspector([
-            homebrew_inventory_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_inventory_result("aarch64\n"),
             homebrew_inventory_result(homebrew_inventory_json([
                 homebrew_inventory_formula('ripgrep', tag: 'arm64_linux'),
@@ -564,23 +551,19 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->not->toContain('sw_vers');
     });
 
-    it('reports Linux prefix states without reading formulae', function (
-        CommandResult $prefix,
-        ToolInventoryScanState $state,
-    ): void {
-        [$inspector, $ssh] = homebrew_inventory_inspector([$prefix]);
-
+    it('reports Linux prefix states without reading formulae', function (string $code, ToolInventoryScanState $state): void {
+        [$inspector, $ssh, $agent] = homebrew_inventory_inspector([]);
+        $agent->refuse('tools.inspect-homebrew-scope', $code);
         $scans = $inspector->inspect(homebrew_inventory_node(saved: false, platform: 'linux', user: 'orbit'));
-
-        expect($scans[0]->scanState)->toBe($state)
-            ->and($scans[0]->packages)->toBe([])
-            ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Unsupported)
-            ->and($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit']]);
+        expect($scans[0]->scanState)->toBe($state);
+        expect($scans[0]->packages)->toBe([]);
+        expect($scans[1]->scanState)->toBe(ToolInventoryScanState::Unsupported);
+        expect($ssh->commands)->toBe([]);
+        expect($agent->commands())->toBe(['tools.inspect-homebrew-scope']);
     })->with([
-        'absent' => [homebrew_inventory_result('', 42), ToolInventoryScanState::Absent],
-        'conflicting' => [homebrew_inventory_result('', 43), ToolInventoryScanState::Conflicting],
-        'unreadable' => [homebrew_inventory_result('', 1), ToolInventoryScanState::Incomplete],
-        'wrong prefix' => [homebrew_inventory_result("/tmp/brew\n"), ToolInventoryScanState::Incomplete],
+        ['tools.homebrew_scope_absent', ToolInventoryScanState::Absent],
+        ['tools.homebrew_scope_conflict', ToolInventoryScanState::Conflicting],
+        ['tools.homebrew_scope_unreadable', ToolInventoryScanState::Incomplete],
     ]);
 
     it('marks a Linux formula read incomplete when the architecture or inventory command fails', function (
@@ -596,15 +579,12 @@ describe(HomebrewInventoryInspector::class, function (): void {
         homebrew_inventory_assert_read_only($ssh);
     })->with([
         'uname failed' => [[
-            homebrew_inventory_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_inventory_result('', 1),
         ]],
         'unknown architecture' => [[
-            homebrew_inventory_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_inventory_result("riscv64\n"),
         ]],
         'failed inventory' => [[
-            homebrew_inventory_result("/home/linuxbrew/.linuxbrew\n"),
             homebrew_inventory_result("x86_64\n"),
             homebrew_inventory_result(homebrew_inventory_json(), exitCode: 1),
         ]],
@@ -764,10 +744,11 @@ describe(HomebrewInventoryInspector::class, function (): void {
 
 /**
  * @param  list<CommandResult>  $results
- * @return array{HomebrewInventoryInspector, ToolManagerFakeSshExecutor}
+ * @return array{HomebrewInventoryInspector, ToolManagerFakeSshExecutor, FakeAgentCommandRunner}
  */
 function homebrew_inventory_inspector(array $results): array
 {
+    $agent = new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => HomebrewToolManager::LINUX_PREFIX_PATH]);
     $ssh = new ToolManagerFakeSshExecutor($results);
     $commands = new RemoteToolCommandRunner(
         ssh: $ssh,
@@ -780,10 +761,11 @@ function homebrew_inventory_inspector(array $results): array
         new HomebrewInventoryInspector(
             commands: $commands,
             versions: $versions,
-            formulae: new HomebrewToolManager($commands, $versions),
+            formulae: new HomebrewToolManager($commands, $versions, $agent),
             casks: new HomebrewCaskToolManager($commands, $versions),
         ),
         $ssh,
+        $agent,
     ];
 }
 

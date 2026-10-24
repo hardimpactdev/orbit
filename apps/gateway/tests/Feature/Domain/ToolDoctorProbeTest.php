@@ -28,20 +28,15 @@ use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\VersionConstraint;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
-use App\Infrastructure\Tools\ComposerDryRunVersionParser;
-use App\Infrastructure\Tools\ComposerInstalledInventoryParser;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Jobs\Problems\CollectDoctorResource;
@@ -52,6 +47,7 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\InspectsToolsIndividually;
 use Tests\Support\ToolManagerFakeSshExecutor;
 use Tests\Support\UnsupportedPackageInventory;
@@ -236,44 +232,8 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
         'installed_version' => $rawVersion,
         'status' => 'installed',
     ]);
-    $ssh = new ToolManagerFakeSshExecutor([
-        new CommandResult(
-            exitCode: 0,
-            stdout: "{$package}\tinstall ok installed\t{$rawVersion}\n",
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-    ]);
-    $inspector = new NativeToolInspector(new ToolManagerRegistry([
-        new AptToolManager(
-            commands: new RemoteToolCommandRunner(
-                ssh: $ssh,
-                keys: new class implements SshKeyProvider
-                {
-                    public function privateKeyPath(): string
-                    {
-                        return '/tmp/orbit/id_ed25519';
-                    }
-
-                    public function publicKey(): string
-                    {
-                        return 'ssh-ed25519 AAAATEST orbit@test';
-                    }
-                },
-                knownHosts: new class implements KnownHostsStore
-                {
-                    public function path(): string
-                    {
-                        return '/tmp/orbit/known_hosts';
-                    }
-
-                    public function put(string $host, int $port, HostKey $key): void {}
-                },
-            ),
-            versions: new DebianVersionNormalizer(new SemverVersionNormalizer),
-        ),
-    ]));
+    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => [['name' => $package, 'version' => $rawVersion]]]);
+    $inspector = new NativeToolInspector(new ToolManagerRegistry([tool_probe_apt_manager($agent)]));
 
     $report = tool_doctor_probe($inspector)
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -282,9 +242,7 @@ it('keeps installed APT meta-packages healthy when live versions are not SemVer'
         ->toBe(1)
         ->and($report->issues)
         ->toBeEmpty();
-    expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
-    ]);
+    expect($agent->commands())->toBe(['tools.apt-inventory']);
 })->with([
     'postgresql-client' => ['postgresql-client', '16+257build1.1'],
     'golang-go' => ['golang-go', '2:1.24~2build1'],
@@ -488,7 +446,7 @@ it('inspects multiple Composer tools with one installed-package command and keep
         'package' => 'missing/pkg',
         'status' => 'installed',
     ]);
-    [$inspector, $ssh] = tool_probe_composer_inspector([
+    [$inspector, $composerAgent] = tool_probe_composer_inspector([
         tool_probe_composer_show([
             ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
             ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
@@ -504,7 +462,7 @@ it('inspects multiple Composer tools with one installed-package command and keep
     expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
         ->toBe(['tool.not_installed']);
     expect($report->issues[0]->resourceId)->toBe($missing->id);
-    expect($ssh->arguments())->toBe([tool_probe_composer_show_arguments()]);
+    expect($composerAgent->commands())->toBe(['tools.composer-inventory']);
     expect($first->id)->toBeLessThan($missing->id);
     expect($second->id)->toBeLessThan($first->id);
 });
@@ -539,25 +497,11 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
         'package' => 'jq',
         'status' => 'installed',
     ]);
-    $ssh = new ToolManagerFakeSshExecutor([
-        new CommandResult(
-            exitCode: 3,
-            stdout: 'secret-stdout',
-            stderr: 'secret-stderr',
-            durationMs: 10,
-            truncated: false,
-        ),
-        new CommandResult(
-            exitCode: 0,
-            stdout: "jq\tinstall ok installed\t1:2.4.3-1ubuntu2\n",
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-    ]);
+    $composerAgent = new FakeAgentCommandRunner()->refuse('tools.composer-inventory', 'tools.composer_operation_failed');
+    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => [['name' => 'jq', 'version' => '1:2.4.3-1ubuntu2']]]);
     $inspector = new NativeToolInspector(new ToolManagerRegistry([
-        tool_probe_composer_manager($ssh),
-        tool_probe_apt_manager($ssh),
+        tool_probe_composer_manager($composerAgent),
+        tool_probe_apt_manager($agent),
     ]));
 
     $report = tool_doctor_probe($inspector)
@@ -570,10 +514,8 @@ it('marks a failed Composer snapshot unverifiable and continues other managers w
         ->toBe([$first->id, $second->id]);
     expect($report->issues[0]->observed)->toBe('unverifiable');
     expect(json_encode($report))->not->toContain('secret');
-    expect($ssh->arguments())->toBe([
-        tool_probe_composer_show_arguments(),
-        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
-    ]);
+    expect($composerAgent->commands())->toBe(['tools.composer-inventory']);
+    expect($agent->commands())->toBe(['tools.apt-inventory']);
     expect($jq->package)->toBe('jq');
 });
 
@@ -591,7 +533,7 @@ it('reads a fresh Composer inventory on repeated doctor inspections', function (
         'version_constraint' => '^5.16',
         'status' => 'installed',
     ]);
-    [$inspector, $ssh] = tool_probe_composer_inspector([
+    [$inspector, $composerAgent] = tool_probe_composer_inspector([
         tool_probe_composer_show([
             ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
         ]),
@@ -607,9 +549,9 @@ it('reads a fresh Composer inventory on repeated doctor inspections', function (
 
     expect($before->issues)->toBeEmpty();
     expect($after->issues[0]->code)->toBe('tool.version_mismatch');
-    expect($ssh->arguments())->toBe([
-        tool_probe_composer_show_arguments(),
-        tool_probe_composer_show_arguments(),
+    expect($composerAgent->commands())->toBe([
+        'tools.composer-inventory',
+        'tools.composer-inventory',
     ]);
 });
 
@@ -632,7 +574,7 @@ it('fails a requested Composer package that appears twice and keeps unrelated in
         'package' => 'phpunit/phpunit',
         'status' => 'installed',
     ]);
-    [$inspector, $ssh] = tool_probe_composer_inspector([
+    [$inspector, $composerAgent] = tool_probe_composer_inspector([
         tool_probe_composer_show([
             ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
             ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
@@ -650,7 +592,7 @@ it('fails a requested Composer package that appears twice and keeps unrelated in
         ->toBe(['tool.inspection_failed']);
     expect($report->issues[0]->resourceId)->toBe($installer->id);
     expect($phpunit->package)->toBe('phpunit/phpunit');
-    expect($ssh->arguments())->toHaveCount(1);
+    expect($composerAgent->commands())->toHaveCount(1);
 });
 
 function tool_probe_linux_node(): Node
@@ -666,92 +608,35 @@ function tool_probe_linux_node(): Node
 }
 
 /**
- * @param  list<CommandResult>  $results
- * @return array{NativeToolInspector, ToolManagerFakeSshExecutor}
+ * @param  list<array<string, mixed>>  $results
+ * @return array{NativeToolInspector, FakeAgentCommandRunner}
  */
 function tool_probe_composer_inspector(array $results): array
 {
-    $ssh = new ToolManagerFakeSshExecutor($results);
+    $agent = new FakeAgentCommandRunner;
+    $agent->answer('tools.composer-inventory', static function () use (&$results): array {
+        return array_shift($results);
+    });
 
-    return [
-        new NativeToolInspector(new ToolManagerRegistry([
-            tool_probe_composer_manager($ssh),
-        ])),
-        $ssh,
-    ];
+    return [new NativeToolInspector(new ToolManagerRegistry([tool_probe_composer_manager($agent)])), $agent];
 }
 
-function tool_probe_composer_manager(ToolManagerFakeSshExecutor $ssh): ComposerToolManager
+function tool_probe_composer_manager(FakeAgentCommandRunner $agent): ComposerToolManager
 {
-    return new ComposerToolManager(
-        commands: new RemoteToolCommandRunner(
-            ssh: $ssh,
-            keys: tool_probe_keys(),
-            knownHosts: tool_probe_known_hosts(),
-        ),
-        parser: new ComposerDryRunVersionParser,
-        inventory: new ComposerInstalledInventoryParser,
-        versions: new SemverVersionNormalizer,
-    );
+    return new ComposerToolManager(new SemverVersionNormalizer, $agent);
 }
 
-function tool_probe_apt_manager(ToolManagerFakeSshExecutor $ssh): AptToolManager
+function tool_probe_apt_manager(FakeAgentCommandRunner $agent): AptToolManager
 {
-    return new AptToolManager(
-        commands: new RemoteToolCommandRunner(
-            ssh: $ssh,
-            keys: tool_probe_keys(),
-            knownHosts: tool_probe_known_hosts(),
-        ),
-        versions: new DebianVersionNormalizer(new SemverVersionNormalizer),
-    );
+    return new AptToolManager($agent, new DebianVersionNormalizer(new SemverVersionNormalizer));
 }
 
-function tool_probe_keys(): SshKeyProvider
+/** @param list<array<string, string>> $entries
+ * @return array<string, mixed>
+ */
+function tool_probe_composer_show(array $entries): array
 {
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit/id_ed25519';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAATEST orbit@test';
-        }
-    };
-}
-
-function tool_probe_known_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-}
-
-/** @param list<array<string, string>> $entries */
-function tool_probe_composer_show(array $entries): CommandResult
-{
-    return new CommandResult(
-        exitCode: 0,
-        stdout: json_encode(['installed' => $entries], flags: JSON_THROW_ON_ERROR),
-        stderr: '',
-        durationMs: 10,
-        truncated: false,
-    );
-}
-
-/** @return non-empty-list<string> */
-function tool_probe_composer_show_arguments(): array
-{
-    return ['env', 'COMPOSER_HOME=/opt/orbit/composer', '/usr/bin/composer', 'global', 'show', '--format=json', '--no-ansi'];
+    return ['packages' => $entries];
 }
 
 it('does not compare an unconstrained package with its last recorded version', function (): void {
@@ -939,10 +824,7 @@ it('keeps a conflicting unowned linux prefix informational when another manager 
     ]);
     $toolsBefore = Tool::query()->count();
     $managersBefore = ToolManagerRecord::query()->count();
-    $ssh = tool_doctor_bind_inventory([
-        tool_doctor_result('', 43),
-        tool_doctor_result('', 42),
-    ]);
+    [$ssh, $agent] = tool_doctor_bind_inventory([], 'tools.vp_scope_absent', 'tools.homebrew_scope_conflict');
 
     $report = tool_doctor_probe(tool_doctor_installed_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -958,6 +840,7 @@ it('keeps a conflicting unowned linux prefix informational when another manager 
         ->and(Tool::query()->count())->toBe($toolsBefore)
         ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);
     tool_doctor_assert_read_only($ssh);
+    expect($agent->commands())->toBe(['tools.inspect-homebrew-scope', 'tools.vp-inventory']);
 });
 
 it('marks a conflicting scope unverifiable only for a tool that uses that manager', function (): void {
@@ -969,10 +852,7 @@ it('marks a conflicting scope unverifiable only for a tool that uses that manage
         'package' => 'jq',
         'status' => 'installed',
     ]);
-    tool_doctor_bind_inventory([
-        tool_doctor_result('', 43),
-        tool_doctor_result('', 42),
-    ]);
+    tool_doctor_bind_inventory([], 'tools.vp_scope_absent', 'tools.homebrew_scope_conflict');
 
     $report = tool_doctor_probe(tool_doctor_installed_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -987,12 +867,10 @@ it('marks a conflicting scope unverifiable only for a tool that uses that manage
 
 it('reports an incomplete scan as unverifiable even when the node has no tools', function (): void {
     $node = tool_probe_linux_node();
-    $ssh = tool_doctor_bind_inventory([
-        tool_doctor_result('/home/linuxbrew/.linuxbrew'."\n"),
+    [$ssh, $agent] = tool_doctor_bind_inventory([
         tool_doctor_result("x86_64\n"),
         tool_doctor_result('{', truncated: true),
-        tool_doctor_result('[{"name":"left-pad","version":'),
-    ]);
+    ], 'tools.vp_output_invalid');
 
     $report = tool_doctor_probe(tool_doctor_unused_inspector(), app(SharedInstalledPackageInventory::class))
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
@@ -1006,6 +884,7 @@ it('reports an incomplete scan as unverifiable even when the node has no tools',
         ])
         ->and(Tool::query()->count())->toBe(0);
     tool_doctor_assert_read_only($ssh);
+    expect($agent->commands())->toBe(['tools.inspect-homebrew-scope', 'tools.vp-inventory']);
 });
 
 it('discovers an unsupported cask through the shared inventory without writing tools', function (): void {
@@ -1034,16 +913,14 @@ it('discovers an unsupported cask through the shared inventory without writing t
         ]]),
     ];
     $toolsBefore = Tool::query()->count();
-    $ssh = tool_doctor_bind_inventory([
+    [$ssh, $agent] = tool_doctor_bind_inventory([
         tool_doctor_result("/opt/homebrew\n"),
         tool_doctor_result("27.0.1\n"),
         tool_doctor_result(tool_doctor_inventory_json($formulae)),
         tool_doctor_result("jq\nripgrep\n"),
         tool_doctor_result(tool_doctor_inventory_json([], $casks)),
         tool_doctor_result("docker\nfont-hack\n"),
-        tool_doctor_result("/Users/mini/.vite-plus/bin/vp\n"),
-        tool_doctor_result('[{"name":"left-pad","version":"1.0.0"}]'),
-    ]);
+    ], [['name' => 'left-pad', 'version' => '1.0.0']]);
     DB::flushQueryLog();
     DB::enableQueryLog();
 
@@ -1066,6 +943,7 @@ it('discovers an unsupported cask through the shared inventory without writing t
         expect(strtolower((string) $query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
     }
     tool_doctor_assert_read_only($ssh);
+    expect($agent->commands())->toBe(['tools.vp-inventory']);
     expect(json_encode($report))->not->toContain($sha)->not->toContain('/opt/homebrew')->not->toContain('/Users/mini');
 });
 
@@ -1090,6 +968,7 @@ it('reports a timed out inventory command as unverifiable without writing tools'
         }
     };
     app()->instance(SshExecutor::class, $ssh);
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew']));
     DB::flushQueryLog();
     DB::enableQueryLog();
 
@@ -1188,13 +1067,28 @@ function tool_doctor_package(
     );
 }
 
-/** @param list<CommandResult> $results */
-function tool_doctor_bind_inventory(array $results): ToolManagerFakeSshExecutor
+/** @param list<CommandResult> $results
+ * @param  list<array{name: string, version: ?string}>|string  $vp
+ * @return array{ToolManagerFakeSshExecutor, FakeAgentCommandRunner}
+ */
+function tool_doctor_bind_inventory(array $results, array|string $vp, ?string $brewRefusal = null): array
 {
     $ssh = new ToolManagerFakeSshExecutor($results);
+    $agent = new FakeAgentCommandRunner;
+    if ($brewRefusal !== null) {
+        $agent->refuse('tools.inspect-homebrew-scope', $brewRefusal);
+    } else {
+        $agent->answer('tools.inspect-homebrew-scope', ['prefix' => '/home/linuxbrew/.linuxbrew']);
+    }
+    if (is_string($vp)) {
+        $agent->refuse('tools.vp-inventory', $vp);
+    } else {
+        $agent->answer('tools.vp-inventory', ['packages' => $vp, 'scan_complete' => true]);
+    }
     app()->instance(SshExecutor::class, $ssh);
+    app()->instance(AgentCommandRunner::class, $agent);
 
-    return $ssh;
+    return [$ssh, $agent];
 }
 
 function tool_doctor_result(string $stdout = '', int $exitCode = 0, bool $truncated = false): CommandResult

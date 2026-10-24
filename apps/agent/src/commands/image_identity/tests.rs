@@ -93,6 +93,9 @@ fn removes_identities_but_keeps_package_lists_and_private_service_tmp_on_repeate
             "/var/tmp/scratch",
             "/tmp/systemd-private-caddy/data",
             "/var/tmp/systemd-private-other/data",
+            "/var/cache/orbit/pi/complete.bin",
+            "/var/cache/orbit/pi/upload.partial",
+            "/home/orbit/.local/bin/pi-server",
             "/var/lib/apt/lists/packages",
         ]
         .iter(),
@@ -116,6 +119,7 @@ fn removes_identities_but_keeps_package_lists_and_private_service_tmp_on_repeate
         for path in [
             "/tmp/scratch",
             "/var/tmp/scratch",
+            "/var/cache/orbit/pi",
             "/var/log/app.log.1",
             "/var/log/app.log.gz",
             "/home/orbit/.bash_history",
@@ -126,6 +130,7 @@ fn removes_identities_but_keeps_package_lists_and_private_service_tmp_on_repeate
         for path in [
             "/tmp/systemd-private-caddy/data",
             "/var/tmp/systemd-private-other/data",
+            "/home/orbit/.local/bin/pi-server",
             "/var/lib/apt/lists/packages",
         ] {
             assert_eq!(

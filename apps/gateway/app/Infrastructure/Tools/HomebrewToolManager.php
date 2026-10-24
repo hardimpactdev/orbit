@@ -15,6 +15,9 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use JsonException;
@@ -26,8 +29,6 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
 
     private const string BREW = self::LINUX_PREFIX_PATH.'/bin/brew';
 
-    private const string EXPECTED_REVISION = 'd79ef822ab8136e393ed5f86e2b56afc68d04874';
-
     private const string EXPECTED_VERSION = 'Homebrew 7.0.0';
 
     private const int MAX_RESULT_LENGTH = 131_072;
@@ -36,71 +37,6 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
 
     /** @var list<string> */
     private const array PROTECTED = ['wireguard-go', 'wireguard-tools'];
-
-    /**
-     * Classifies an existing Linux prefix. It does not install, fetch, check out, or repin Homebrew.
-     * A clean official prefix is readable at its current revision.
-     */
-    private const string LINUX_OWNERSHIP_PROBE = <<<'BASH'
-        account=$1
-        if [ -z "${account:-}" ]; then
-            printf 'Orbit Homebrew account is missing\n' >&2
-            exit 1
-        fi
-        current=$(/usr/bin/id -un)
-        if [ "$current" != "$account" ]; then
-            printf 'Orbit Homebrew account mismatch\n' >&2
-            exit 1
-        fi
-        parent=__ORBIT_LINUX_PARENT__
-        prefix=__ORBIT_LINUX_PREFIX__
-        repository=$prefix/Homebrew
-        expected_origin=https://github.com/Homebrew/brew
-
-        if [ -e "$parent" ] || [ -L "$parent" ]; then
-            if [ -L "$parent" ] || [ ! -d "$parent" ]; then
-                printf 'Orbit Homebrew prefix conflict\n' >&2
-                exit 43
-            fi
-            parent_owner=$(/usr/bin/stat -c '%U:%G' "$parent" 2>/dev/null || true)
-            if [ "$parent_owner" != root:root ]; then
-                printf 'Orbit Homebrew prefix conflict\n' >&2
-                exit 43
-            fi
-        fi
-
-        if [ ! -e "$prefix" ] && [ ! -L "$prefix" ]; then
-            printf 'Orbit Homebrew prefix is absent\n' >&2
-            exit 42
-        fi
-
-        group=$(/usr/bin/id -gn -- "$account")
-        owner=$(/usr/bin/stat -c '%U:%G' "$prefix" 2>/dev/null || true)
-        if [ -L "$prefix" ] || [ ! -d "$prefix" ] || [ "$owner" != "$account:$group" ]; then
-            printf 'Orbit Homebrew prefix conflict\n' >&2
-            exit 43
-        fi
-        if [ -L "$repository" ] || [ ! -d "$repository/.git" ] || [ -L "$repository/.git" ]; then
-            printf 'Orbit Homebrew prefix conflict\n' >&2
-            exit 43
-        fi
-        repo_owner=$(/usr/bin/stat -c '%U:%G' "$repository" 2>/dev/null || true)
-        origin=$(/usr/bin/git -C "$repository" config --get remote.origin.url 2>/dev/null || true)
-        dirty=$(/usr/bin/git -C "$repository" status --porcelain=v1 --untracked-files=all 2>/dev/null || printf 'unreadable')
-        link_owner=$(/usr/bin/stat -c '%U:%G' "$prefix/bin/brew" 2>/dev/null || true)
-        target=$(/usr/bin/readlink "$prefix/bin/brew" 2>/dev/null || true)
-        if [ "$repo_owner" != "$account:$group" ] \
-            || [ "$origin" != "$expected_origin" ] \
-            || [ -n "$dirty" ] \
-            || [ ! -L "$prefix/bin/brew" ] \
-            || [ "$target" != "../Homebrew/bin/brew" ] \
-            || [ "$link_owner" != "$account:$group" ]; then
-            printf 'Orbit Homebrew prefix conflict\n' >&2
-            exit 43
-        fi
-        printf '%s\n' "$prefix"
-        exit 0
-        BASH;
 
     /** @var non-empty-list<string> */
     private const array LINUX_PREFIX = [
@@ -119,7 +55,9 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private SemverVersionNormalizer $versions,
+        private AgentCommandRunner $agents,
         ?HomebrewMacCommand $mac = null,
+        private ?ToolCommandBudget $budget = null,
     ) {
         $this->mac = $mac ?? new HomebrewMacCommand($commands);
     }
@@ -149,108 +87,7 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
             return;
         }
 
-        $program = strtr(<<<'BASH'
-            managed_user=$1
-            prefix=/home/linuxbrew/.linuxbrew
-            repository=$prefix/Homebrew
-            expected_origin=https://github.com/Homebrew/brew
-            expected_revision=__ORBIT_HOMEBREW_REVISION__
-            expected_version='__ORBIT_HOMEBREW_VERSION__'
-            expected_tag=${expected_version#Homebrew }
-
-            passwd_entry=$(getent passwd -- "$managed_user")
-            test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
-            managed_group=$(id -gn -- "$managed_user")
-
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get -o DPkg::Lock::Timeout=300 update
-            apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates
-
-            if { [ -e /home/linuxbrew ] || [ -L /home/linuxbrew ]; } \
-                && { [ -L /home/linuxbrew ] || [ ! -d /home/linuxbrew ] || [ "$(stat -c %U:%G /home/linuxbrew)" != root:root ]; }; then
-                printf 'Orbit Homebrew parent conflict: %s\n' /home/linuxbrew >&2
-                exit 1
-            fi
-            install -d -m 0755 -o root -g root /home/linuxbrew
-
-            if [ ! -e "$prefix" ] && [ ! -L "$prefix" ]; then
-                stage=$(mktemp -d /home/linuxbrew/.orbit-homebrew.XXXXXX)
-                cleanup_homebrew_stage() {
-                    [ -z "${stage:-}" ] || rm -rf -- "$stage"
-                }
-                trap cleanup_homebrew_stage EXIT
-                chown "$managed_user:$managed_group" "$stage"
-                sudo -u "$managed_user" -H git clone --filter=blob:none --no-checkout \
-                    "$expected_origin" "$stage/Homebrew"
-                sudo -u "$managed_user" -H git -C "$stage/Homebrew" \
-                    -c advice.detachedHead=false checkout --detach "$expected_revision"
-                sudo -u "$managed_user" -H install -d -m 0775 \
-                    "$stage/bin" "$stage/Cellar" "$stage/Caskroom" "$stage/Frameworks" \
-                    "$stage/etc" "$stage/include" "$stage/lib" "$stage/opt" "$stage/sbin" \
-                    "$stage/share" "$stage/var/homebrew/locks"
-                sudo -u "$managed_user" -H ln -s ../Homebrew/bin/brew "$stage/bin/brew"
-                mv -- "$stage" "$prefix"
-                stage=
-                trap - EXIT
-            fi
-
-            current_revision=$(git -C "$repository" rev-parse HEAD)
-            if [ "$current_revision" != "$expected_revision" ]; then
-                test ! -L "$prefix"
-                test -d "$prefix"
-                test "$(stat -c %U:%G "$prefix")" = "$managed_user:$managed_group"
-                test ! -L "$repository"
-                test -d "$repository/.git"
-                test "$(stat -c %U:%G "$repository")" = "$managed_user:$managed_group"
-                test "$(git -C "$repository" config --get remote.origin.url)" = "$expected_origin"
-                test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
-                test -L "$prefix/bin/brew"
-                test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
-                test "$(stat -c %U:%G "$prefix/bin/brew")" = "$managed_user:$managed_group"
-                sudo -u "$managed_user" -H git -C "$repository" fetch --filter=blob:none origin "$expected_revision"
-                sudo -u "$managed_user" -H git -C "$repository" \
-                    -c advice.detachedHead=false checkout --detach "$expected_revision"
-            fi
-
-            test ! -L "$prefix"
-            test -d "$prefix"
-            test "$(stat -c %U:%G "$prefix")" = "$managed_user:$managed_group"
-            test ! -L "$repository"
-            test -d "$repository/.git"
-            test "$(stat -c %U:%G "$repository")" = "$managed_user:$managed_group"
-            test "$(git -C "$repository" config --get remote.origin.url)" = "$expected_origin"
-            test "$(git -C "$repository" rev-parse HEAD)" = "$expected_revision"
-            test -z "$(git -C "$repository" status --porcelain=v1 --untracked-files=all)"
-            test -L "$prefix/bin/brew"
-            test "$(readlink "$prefix/bin/brew")" = ../Homebrew/bin/brew
-            test "$(stat -c %U:%G "$prefix/bin/brew")" = "$managed_user:$managed_group"
-            if ! git -C "$repository" show-ref --verify --quiet "refs/tags/$expected_tag"; then
-                sudo -u "$managed_user" -H git -C "$repository" fetch --filter=blob:none origin tag "$expected_tag"
-                sudo -u "$managed_user" -H rm -rf -- "$repository/.git/describe-cache"
-            fi
-            test "$(git -C "$repository" rev-parse --verify "$expected_tag^{commit}")" = "$expected_revision"
-            test "$(sudo -u "$managed_user" -H env \
-                HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1 \
-                HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
-                PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin \
-                "$prefix/bin/brew" --version | sed -n '1p')" = "$expected_version"
-            sudo -u "$managed_user" -H env \
-                HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_ENV_HINTS=1 \
-                HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
-                PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin \
-                "$prefix/bin/brew" config >/dev/null
-            BASH, [
-            '__ORBIT_HOMEBREW_REVISION__' => self::EXPECTED_REVISION,
-            '__ORBIT_HOMEBREW_VERSION__' => self::EXPECTED_VERSION,
-        ]);
-
-        $result = $this->commands->execute($node, ['sudo', 'bash', '-seu', '--', $node->user], $program);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'materialize',
-            message: 'The Homebrew manager could not be materialized.',
-        );
+        $this->scopeCommand($node, 'tools.materialize-homebrew', ['user' => $node->user], 'materialize');
     }
 
     public function managerVersion(Node $node): string
@@ -674,44 +511,29 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
             return $this->mac->resolvePrefix($node);
         }
 
-        $result = $this->commands->execute(
-            $node,
-            ['/bin/bash', '-seu', '--', $node->user],
-            strtr(self::LINUX_OWNERSHIP_PROBE, [
-                '__ORBIT_LINUX_PARENT__' => dirname(self::LINUX_PREFIX_PATH),
-                '__ORBIT_LINUX_PREFIX__' => self::LINUX_PREFIX_PATH,
-            ]),
-        );
-
-        if ($result->exitCode === HomebrewMacCommand::PREFIX_ABSENT) {
-            throw new ToolManagerException(
-                step: 'manager-absent',
-                message: 'The Homebrew prefix is absent for the enrolled account.',
-                result: $result,
-            );
+        $data = $this->scopeCommand($node, 'tools.inspect-homebrew-scope', [], 'manager-probe');
+        if (! is_string($data['prefix'] ?? null)) {
+            throw new ToolManagerException('manager-probe', 'The agent returned an invalid Homebrew scope.');
         }
 
-        if ($result->exitCode === HomebrewMacCommand::PREFIX_CONFLICT) {
-            throw new ToolManagerException(
-                step: 'manager-conflict',
-                message: 'The Homebrew prefix ownership or origin conflicts with the enrolled account.',
-                result: $result,
-            );
+        return $data['prefix'];
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function scopeCommand(Node $node, string $command, array $input, string $step): array
+    {
+        try {
+            return $this->agents->run($node, $command, $input, $this->budget?->seconds());
+        } catch (AgentCommandRefused|AgentRunnerFailure $error) {
+            $step = match ($step === 'manager-probe' && $error instanceof AgentCommandRefused ? $error->errorCode : null) {
+                'tools.homebrew_scope_absent' => 'manager-absent',
+                'tools.homebrew_scope_conflict' => 'manager-conflict',
+                default => $step,
+            };
+            throw new ToolManagerException($step, 'The Homebrew scope is unavailable.', previous: $error);
         }
-
-        $this->guardSuccessfulResult($result, 'manager-probe', 'The Homebrew prefix probe failed.');
-        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
-        $prefix = is_array($lines) ? ($lines[0] ?? '') : '';
-
-        if (! is_array($lines) || count($lines) !== 1 || $prefix !== self::LINUX_PREFIX_PATH) {
-            throw new ToolManagerException(
-                step: 'manager-probe',
-                message: 'The Homebrew prefix probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $prefix;
     }
 
     public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact

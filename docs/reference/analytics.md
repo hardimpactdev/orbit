@@ -17,6 +17,8 @@ The `analytics` role runs Plausible Community Edition for the fleet. An Instance
 
 Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
 
+The Gateway publishes and removes Analytics certificates through the shared [Node agent](/reference/node-agent#commands) Caddy commands. The agent also runs the HTTP readiness probe; the Gateway owns placement and publication intent.
+
 ## Prepare the database Processes
 
 The role keeps its data in two Docker Processes. Create them first on an active Node with the `database` role.

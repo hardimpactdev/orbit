@@ -441,6 +441,8 @@
             "concepts": [
                 "Gateway",
                 "Instance",
+                "Node",
+                "Node agent",
                 "Process"
             ],
             "governing_adrs": []
@@ -1487,6 +1489,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Role",
@@ -1528,6 +1531,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Placement",
                 "Process",
                 "Project",
@@ -1617,6 +1621,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route"
@@ -1820,6 +1825,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -1838,6 +1844,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Process",
                 "Role",
                 "Tool"
@@ -2320,6 +2327,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -2985,6 +2993,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
                 "Task",
@@ -3123,6 +3132,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",

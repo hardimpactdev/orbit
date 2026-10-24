@@ -30,6 +30,8 @@ orbit node:role:add gateway websocket
 
 The `websocket` role is a singleton. It conflicts with no other role, so it can share a Node with `gateway` and `vpn`. No Project, Instance, Route, or `.env` edit is involved.
 
+The Gateway runs the Node-side runtime, certificate, and readiness work through typed [Node agent commands](/reference/node-agent#commands). It keeps the Reverb registry and publication intent.
+
 ### What the converge does
 
 1. It installs the role packages: `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml`. `php-curl` and `php-xml` let `composer install` pass its platform check on a fresh Ubuntu 26.04 Node.

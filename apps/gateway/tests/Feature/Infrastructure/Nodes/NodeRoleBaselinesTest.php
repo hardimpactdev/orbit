@@ -42,9 +42,6 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
-use App\Domain\RemotePrograms\ProgramResult;
-use App\Domain\RemotePrograms\RemoteProgram;
-use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -53,6 +50,7 @@ use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketServerCredentials;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -94,7 +92,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
-    $this->mock(RemoteProgramRunner::class)->shouldReceive('run')->andReturn(new ProgramResult('current', [], ''));
+    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->answer('php.install-build', ['outcome' => 'current', 'data' => []]));
 });
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
@@ -337,14 +335,14 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
         $node->roles()->create(['role' => $fpmRole, 'status' => LifecycleStatus::Active]);
         $node->unsetRelation('roles');
     }
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, RemoteProgram $program, array $input) use ($node, &$events, $fpmRole): bool {
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(function (Node $target, string $command, array $input) use ($node, &$events, $fpmRole): bool {
         $events[] = 'php:verify';
         $recipe = new RecipeLoader()->load();
         expect($target->id)->toBe($node->id)
-            ->and($program->name)->toBe('php.install-build')
+            ->and($command)->toBe('php.install-build')
             ->and(array_keys($input['versions']))->toBe(['8.5'])
-            ->and($input['mode'])->toBe('apply')
+            ->and($input)->not->toHaveKey('mode')
             ->and($input['extras'])->toBe('keep')
             ->and($input['fpm'])->toBe($fpmRole === null ? 'disabled' : 'all')
             ->and($input['pcov'])->toBe($fpmRole === RoleName::AppDev)
@@ -354,8 +352,8 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
             ->toBe($recipe->tools['php8.5-cli']->version);
 
         return true;
-    })->andReturn(new ProgramResult($outcome, [], 'PHP build verified'));
-    app()->instance(RemoteProgramRunner::class, $runner);
+    })->andReturn(['outcome' => $outcome, 'data' => []]);
+    app()->instance(AgentCommandRunner::class, $runner);
     $dns = Mockery::mock(PrivateDnsManager::class);
     $dns->shouldReceive('converge')->times($active && $outcome === 'applied' ? 1 : 0)->withNoArgs()
         ->andReturnUsing(function () use (&$events): void {
@@ -372,17 +370,17 @@ it('installs and verifies the recipe PHP runtime before completing VPN convergen
 
 it('verifies VPN PHP before Gateway publication regardless of requested role order', function (bool $installFails): void {
     $events = [];
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->andReturnUsing(function (Node $node, RemoteProgram $program, array $input) use (&$events, $installFails): ProgramResult {
-        expect($program->name)->toBe('php.install-build')
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->andReturnUsing(function (Node $node, string $command, array $input) use (&$events, $installFails): array {
+        expect($command)->toBe('php.install-build')
             ->and($input['fpm'])->toBe('disabled');
         $events[] = 'php:verify';
 
         return $installFails
-            ? new ProgramResult('fpm_invalid', ['unit' => 'orbit-gateway-php8.5-fpm.service'], 'Invalid FPM')
-            : new ProgramResult('applied', ['changed' => ['php8.5-cli'], 'restarted' => ['orbit-gateway-php8.5-fpm.service']], 'Verified');
+            ? throw new AgentCommandRefused($command, 'php.build_fpm_invalid', 'Invalid FPM', ['unit' => 'orbit-gateway-php8.5-fpm.service'])
+            : ['outcome' => 'applied', 'data' => ['changed' => ['php8.5-cli'], 'restarted' => ['orbit-gateway-php8.5-fpm.service']]];
     });
-    app()->instance(RemoteProgramRunner::class, $runner);
+    app()->instance(AgentCommandRunner::class, $runner);
     $vpn = new VpnRoleBaseline(baseline_prerequisites($events), baseline_firewall($events), baseline_account_resolver());
     $gateway = gateway_role_baseline($events);
     $baselines = Mockery::mock(RoleBaselineConverger::class);
@@ -418,9 +416,9 @@ it('verifies VPN PHP before Gateway publication regardless of requested role ord
 it('stops VPN convergence when the private DNS PHP build cannot be verified', function (): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-php-failed');
-    $runner = Mockery::mock(RemoteProgramRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(new ProgramResult('modules_mismatch', ['missing' => ['sockets']], 'Missing sockets'));
-    app()->instance(RemoteProgramRunner::class, $runner);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldReceive('run')->once()->andThrow(new AgentCommandRefused('php.install-build', 'php.build_modules_mismatch', 'Missing sockets', ['missing' => ['sockets']]));
+    app()->instance(AgentCommandRunner::class, $runner);
     $baseline = new VpnRoleBaseline(baseline_prerequisites($events), baseline_firewall($events), baseline_account_resolver());
 
     expect(fn () => $baseline->converge($node, $assignment))->toThrow(function (NodeRoleOperationException $error): void {

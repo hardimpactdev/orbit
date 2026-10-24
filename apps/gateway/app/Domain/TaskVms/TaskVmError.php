@@ -62,6 +62,7 @@ enum TaskVmError: string
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageBuildFailed = 'task_vm.image_build_failed';
     case ImageChannelLost = 'task_vm.image_channel_lost';
+    case ImageBuilderRebooted = 'task_vm.image_builder_rebooted';
     case ImageBuildRunning = 'task_vm.image_build_running';
     case ImageBuildSuperseded = 'task_vm.image_build_superseded';
     case ImageSyncFailed = 'task_vm.image_sync_failed';

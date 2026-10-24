@@ -70,11 +70,8 @@
         ],
         "php_fpm_converge_commands": [
             {
-                "arguments": [
-                    "php.install-build"
-                ],
-                "input": null,
-                "protected_input": null
+                "command": "php.install-build",
+                "input": null
             },
             {
                 "command": "php.converge-production-runtime",
@@ -212,11 +209,8 @@
         ],
         "php_fpm_converge_commands": [
             {
-                "arguments": [
-                    "php.install-build"
-                ],
-                "input": null,
-                "protected_input": null
+                "command": "php.install-build",
+                "input": null
             },
             {
                 "command": "php.converge-production-runtime",

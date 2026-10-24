@@ -60,7 +60,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
                 message: "PHP version [{$version}] is not supported.",
             );
         }
-        $this->packages->installForInstance($node->loadMissing('roles'), collect([$version]), $this->ssh, RoleName::AppDev);
+        $this->packages->installForInstance($node->loadMissing('roles'), collect([$version]), RoleName::AppDev);
     }
 
     /**
@@ -138,7 +138,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $role = $desiredSites->contains(static fn (DevelopmentSite $site): bool => $site->environment === 'production')
             ? RoleName::AppProd
             : RoleName::AppDev;
-        $this->packages->installForInstance($node->loadMissing('roles'), $desiredVersions, $this->ssh, $role);
+        $this->packages->installForInstance($node->loadMissing('roles'), $desiredVersions, $role);
 
         $desiredPoolVersions = $desiredSites
             ->mapWithKeys(static fn (DevelopmentSite $site): array => [$site->poolName() => $site->phpVersion ?? ''])

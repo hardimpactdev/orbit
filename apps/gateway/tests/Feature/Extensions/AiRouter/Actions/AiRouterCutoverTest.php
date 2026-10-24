@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -25,6 +26,7 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterSourcePublisher;
 use Orbit\Extensions\AiRouter\Infrastructure\NativeAiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RecordedAiRouterState;
 
 it('defers a rollout visit during recorded cutover state and retries publication without losing model access', function (bool $failFirst, bool $switchOff, bool $failCleanup): void {
@@ -85,6 +87,8 @@ it('defers a rollout visit during recorded cutover state and retries publication
         return new CommandResult(0, $output, '', 0, false);
     });
     app()->instance(SshExecutor::class, $ssh);
+    $agents = new FakeAgentCommandRunner()->answer('caddy.remove-certificate', []);
+    app()->instance(AgentCommandRunner::class, $agents);
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->andReturn('/tmp/test-key');
     app()->instance(SshKeyProvider::class, $keys);
@@ -133,7 +137,10 @@ it('defers a rollout visit during recorded cutover state and retries publication
         ->and(app(ShowAiRouterStatusAction::class)->execute()->cutoverPending)->toBeFalse();
     expect(array_unique($converged))->toBe([$process->id])->and($activated)->toBe([$process->id]);
     expect(collect($commands)->map(fn (RemoteCommand $command): array => $command->arguments)->all())
-        ->toContain(['sudo', 'rm', '-rf', '--', '/var/lib/orbit/proxycli'], ['sudo', 'rm', '-rf', '--', '/etc/caddy/orbit-proxycli-cert-current']);
+        ->toContain(['sudo', 'rm', '-rf', '--', '/var/lib/orbit/proxycli']);
+    expect($agents->calls)->toBe([
+        ['node' => $node->name, 'command' => 'caddy.remove-certificate', 'input' => ['directory' => '/etc/caddy/orbit-proxycli-cert-current']],
+    ]);
     $footprint->converge($node, force: true);
     $this->artisan('orbit:ai-router-converge')->assertSuccessful();
     expect($activated)->toBe([$process->id]);

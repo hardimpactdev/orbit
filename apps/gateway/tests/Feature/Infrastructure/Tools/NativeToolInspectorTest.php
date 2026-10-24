@@ -8,21 +8,15 @@ use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolInspectionException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Tools\AptToolManager;
-use App\Infrastructure\Tools\ComposerDryRunVersionParser;
-use App\Infrastructure\Tools\ComposerInstalledInventoryParser;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManager;
-use Tests\Support\ToolManagerFakeSshExecutor;
 
 it('returns bounded installed state and normalized version', function (): void {
     $manager = new FakeToolManager;
@@ -55,46 +49,26 @@ it('returns absent state when the manager reports no installed version', functio
 });
 
 it('reports an APT package with retained configuration as bounded absence', function (): void {
-    [$manager, $ssh] = native_apt_inspector_manager([
-        new CommandResult(
-            exitCode: 0,
-            stdout: "redis-server\tdeinstall ok config-files\t1:2.4.3-1ubuntu2\n",
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-    ]);
+    [$manager, $agent] = native_apt_inspector_manager([]);
     $tool = native_apt_inspector_tool('redis-server');
 
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
 
     expect($data->installed)->toBeFalse()->and($data->normalizedVersion)->toBeNull();
-    expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
-    ]);
+    expect($agent->commands())->toBe(['tools.apt-inventory']);
 });
 
 it('reports installed APT meta-packages as installed when Debian versions are not SemVer', function (
     string $package,
     string $rawVersion,
 ): void {
-    [$manager, $ssh] = native_apt_inspector_manager([
-        new CommandResult(
-            exitCode: 0,
-            stdout: "{$package}\tinstall ok installed\t{$rawVersion}\n",
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-    ]);
+    [$manager, $agent] = native_apt_inspector_manager([['name' => $package, 'version' => $rawVersion]]);
     $tool = native_apt_inspector_tool($package);
 
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
 
     expect($data->installed)->toBeTrue()->and($data->normalizedVersion)->toBeNull();
-    expect($ssh->arguments())->toBe([
-        ['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n'],
-    ]);
+    expect($agent->commands())->toBe(['tools.apt-inventory']);
 })->with([
     'postgresql-client meta-package' => ['postgresql-client', '16+257build1.1'],
     'golang-go meta-package' => ['golang-go', '2:1.24~2build1'],
@@ -164,21 +138,13 @@ it('uses only the read-only installed version interaction and ignores stored ver
 });
 
 it('inspects multiple Composer tools from one installed inventory command', function (): void {
-    [$manager, $ssh] = native_composer_inspector_manager([
-        new CommandResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'installed' => [
-                    ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
-                    ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
-                    ['name' => 'other/dup', 'version' => 'v1.0.0'],
-                    ['name' => 'other/dup', 'version' => 'v1.1.0'],
-                ],
-            ], flags: JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
+    [$manager, $agent] = native_composer_inspector_manager([
+        ['packages' => [
+            ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+            ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
+            ['name' => 'other/dup', 'version' => 'v1.0.0'],
+            ['name' => 'other/dup', 'version' => 'v1.1.0'],
+        ]],
     ]);
     $installer = native_composer_inspector_tool('laravel/installer', nodeId: 1);
     $phpunit = native_composer_inspector_tool('phpunit/phpunit', nodeId: 1);
@@ -193,28 +159,20 @@ it('inspects multiple Composer tools from one installed inventory command', func
         ->and($outcomes[1]->data()->normalizedVersion)->toBe('5.16.0')
         ->and($outcomes[2]->data()->installed)->toBeFalse()
         ->and($outcomes[2]->data()->normalizedVersion)->toBeNull();
-    expect($ssh->arguments())->toBe([
-        ['env', 'COMPOSER_HOME=/opt/orbit/composer', '/usr/bin/composer', 'global', 'show', '--format=json', '--no-ansi'],
+    expect($agent->commands())->toBe([
+        'tools.composer-inventory',
     ]);
 });
 
 it('fails a requested Composer package that appears twice and keeps unrelated inventory duplicates', function (): void {
-    [$manager, $ssh] = native_composer_inspector_manager([
-        new CommandResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'installed' => [
-                    ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
-                    ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
-                    ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
-                    ['name' => 'other/dup', 'version' => 'v1.0.0'],
-                    ['name' => 'other/dup', 'version' => 'v1.1.0'],
-                ],
-            ], flags: JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
+    [$manager, $agent] = native_composer_inspector_manager([
+        ['packages' => [
+            ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+            ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
+            ['name' => 'phpunit/phpunit', 'version' => 'v11.0.0'],
+            ['name' => 'other/dup', 'version' => 'v1.0.0'],
+            ['name' => 'other/dup', 'version' => 'v1.1.0'],
+        ]],
     ]);
     $installer = native_composer_inspector_tool('laravel/installer', nodeId: 1);
     $phpunit = native_composer_inspector_tool('phpunit/phpunit', nodeId: 1);
@@ -225,44 +183,20 @@ it('fails a requested Composer package that appears twice and keeps unrelated in
     expect(fn (): mixed => $outcomes[0]->data())->toThrow(ToolInspectionException::class, '');
     expect($outcomes[1]->data()->installed)->toBeTrue()
         ->and($outcomes[1]->data()->normalizedVersion)->toBe('11.0.0');
-    expect($ssh->arguments())->toHaveCount(1);
+    expect($agent->commands())->toHaveCount(1);
 });
 
 it('reads a fresh Composer inventory for each inspection and each node', function (): void {
-    [$manager, $ssh] = native_composer_inspector_manager([
-        new CommandResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'installed' => [
-                    ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
-                ],
-            ], flags: JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-        new CommandResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'installed' => [
-                    ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
-                ],
-            ], flags: JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
-        new CommandResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'installed' => [
-                    ['name' => 'laravel/installer', 'version' => 'v5.18.0'],
-                ],
-            ], flags: JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 10,
-            truncated: false,
-        ),
+    [$manager, $agent] = native_composer_inspector_manager([
+        ['packages' => [
+            ['name' => 'laravel/installer', 'version' => 'v5.16.0'],
+        ]],
+        ['packages' => [
+            ['name' => 'laravel/installer', 'version' => 'v5.17.0'],
+        ]],
+        ['packages' => [
+            ['name' => 'laravel/installer', 'version' => 'v5.18.0'],
+        ]],
     ]);
     $first = native_composer_inspector_tool('laravel/installer', nodeId: 1);
     $second = native_composer_inspector_tool('phpunit/phpunit', nodeId: 1);
@@ -277,18 +211,12 @@ it('reads a fresh Composer inventory for each inspection and each node', functio
         ->and($firstPass[1]->data()->installed)->toBeFalse()
         ->and($secondPass[0]->data()->normalizedVersion)->toBe('5.17.0')
         ->and($other->normalizedVersion)->toBe('5.18.0');
-    expect($ssh->arguments())->toHaveCount(3);
+    expect($agent->commands())->toHaveCount(3);
 });
 
 it('marks Composer tools unverifiable when the inventory snapshot fails and keeps other managers', function (): void {
-    [$composer, $ssh] = native_composer_inspector_manager([
-        new CommandResult(
-            exitCode: 3,
-            stdout: 'secret-stdout',
-            stderr: 'secret-stderr',
-            durationMs: 10,
-            truncated: false,
-        ),
+    [$composer, $agent] = native_composer_inspector_manager([
+        null,
     ]);
     $apt = new FakeToolManager;
     $apt->inventory = new InstalledToolInventory(['jq' => ['1.2.3']]);
@@ -308,48 +236,18 @@ it('marks Composer tools unverifiable when the inventory snapshot fails and keep
     expect($outcomes[1]->data()->installed)->toBeTrue()
         ->and($outcomes[1]->data()->normalizedVersion)->toBe('1.2.3');
     expect(fn (): mixed => $outcomes[2]->data())->toThrow(ToolInspectionException::class, '');
-    expect($ssh->arguments())->toHaveCount(1);
+    expect($agent->commands())->toHaveCount(1);
     expect($apt->calls)->toBe(['installedInventory', 'validatePackage']);
 });
 
-/**
- * @param  list<CommandResult>  $results
- * @return array{AptToolManager, ToolManagerFakeSshExecutor}
+/** @param list<array{name: string, version: ?string}> $packages
+ * @return array{AptToolManager, FakeAgentCommandRunner}
  */
-function native_apt_inspector_manager(array $results): array
+function native_apt_inspector_manager(array $packages): array
 {
-    $ssh = new ToolManagerFakeSshExecutor($results);
+    $agent = new FakeAgentCommandRunner()->answer('tools.apt-inventory', ['packages' => $packages]);
 
-    return [
-        new AptToolManager(
-            commands: new RemoteToolCommandRunner(
-                ssh: $ssh,
-                keys: new class implements SshKeyProvider
-                {
-                    public function privateKeyPath(): string
-                    {
-                        return '/tmp/orbit/id_ed25519';
-                    }
-
-                    public function publicKey(): string
-                    {
-                        return 'ssh-ed25519 AAAATEST orbit@test';
-                    }
-                },
-                knownHosts: new class implements KnownHostsStore
-                {
-                    public function path(): string
-                    {
-                        return '/tmp/orbit/known_hosts';
-                    }
-
-                    public function put(string $host, int $port, HostKey $key): void {}
-                },
-            ),
-            versions: new DebianVersionNormalizer(new SemverVersionNormalizer),
-        ),
-        $ssh,
-    ];
+    return [new AptToolManager($agent, new DebianVersionNormalizer(new SemverVersionNormalizer)), $agent];
 }
 
 function native_apt_inspector_tool(string $package): Tool
@@ -372,45 +270,17 @@ function native_apt_inspector_tool(string $package): Tool
 }
 
 /**
- * @param  list<CommandResult>  $results
- * @return array{ComposerToolManager, ToolManagerFakeSshExecutor}
+ * @param  list<array<string, mixed>|null>  $results
+ * @return array{ComposerToolManager, FakeAgentCommandRunner}
  */
 function native_composer_inspector_manager(array $results): array
 {
-    $ssh = new ToolManagerFakeSshExecutor($results);
+    $agent = new FakeAgentCommandRunner;
+    $agent->answer('tools.composer-inventory', static function () use (&$results): array {
+        return array_shift($results) ?? throw new AgentCommandRefused('tools.composer-inventory', 'tools.composer_operation_failed', 'secret diagnostic');
+    });
 
-    return [
-        new ComposerToolManager(
-            commands: new RemoteToolCommandRunner(
-                ssh: $ssh,
-                keys: new class implements SshKeyProvider
-                {
-                    public function privateKeyPath(): string
-                    {
-                        return '/tmp/orbit/id_ed25519';
-                    }
-
-                    public function publicKey(): string
-                    {
-                        return 'ssh-ed25519 AAAATEST orbit@test';
-                    }
-                },
-                knownHosts: new class implements KnownHostsStore
-                {
-                    public function path(): string
-                    {
-                        return '/tmp/orbit/known_hosts';
-                    }
-
-                    public function put(string $host, int $port, HostKey $key): void {}
-                },
-            ),
-            parser: new ComposerDryRunVersionParser,
-            inventory: new ComposerInstalledInventoryParser,
-            versions: new SemverVersionNormalizer,
-        ),
-        $ssh,
-    ];
+    return [new ComposerToolManager(new SemverVersionNormalizer, $agent), $agent];
 }
 
 function native_composer_inspector_tool(string $package, int $nodeId): Tool
@@ -433,9 +303,7 @@ function native_composer_inspector_tool(string $package, int $nodeId): Tool
 }
 
 it('inspects all APT tools from one installed package inventory', function (): void {
-    [$manager, $ssh] = native_apt_inspector_manager([
-        new CommandResult(0, "jq\tinstall ok installed\t1.7.1\nredis-server\tdeinstall ok config-files\t7.0.0\n", '', 10, false),
-    ]);
+    [$manager, $agent] = native_apt_inspector_manager([['name' => 'jq', 'version' => '1.7.1']]);
     $tools = [native_apt_inspector_tool('jq'), native_apt_inspector_tool('redis-server'), native_apt_inspector_tool('absent')];
 
     $outcomes = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspectMany($tools);
@@ -443,12 +311,12 @@ it('inspects all APT tools from one installed package inventory', function (): v
     expect($outcomes[0]->data()->normalizedVersion)->toBe('1.7.1')
         ->and($outcomes[1]->data()->installed)->toBeFalse()
         ->and($outcomes[2]->data()->installed)->toBeFalse();
-    expect($ssh->arguments())->toBe([['dpkg-query', '--show', '--showformat=${Package}\t${Status}\t${Version}\n']]);
+    expect($agent->commands())->toBe(['tools.apt-inventory']);
 });
 
 it('isolates unfinished APT package state from healthy installed packages', function (): void {
     [$manager] = native_apt_inspector_manager([
-        new CommandResult(0, "jq\tinstall ok installed\t1.7.1\nbroken\tinstall ok half-configured\t1.0\n", '', 10, false),
+        ['name' => 'jq', 'version' => '1.7.1'], ['name' => 'broken', 'version' => null],
     ]);
     $outcomes = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspectMany([
         native_apt_inspector_tool('broken'), native_apt_inspector_tool('jq'),

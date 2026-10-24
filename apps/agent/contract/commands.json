@@ -27,6 +27,761 @@
       ]
     },
     {
+      "name": "tools.inspect-vp-store",
+      "summary": "Inspect exact immutable deployment runtimes without locks or network access.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.install-vp-environment",
+      "summary": "Verify and publish missing Node and package-manager runtimes as the store owner.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.prune-vp-store",
+      "summary": "Collect only unreferenced runtimes with an Orbit deployment receipt.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.store_invalid",
+        "tools.store_failed",
+        "tools.store_lock_timeout"
+      ]
+    },
+    {
+      "name": "tools.read-vp-project",
+      "summary": "Read Project runtime requirements as its account without executing hooks.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": "owner"
+      },
+      "errors": [
+        "tools.project_invalid"
+      ]
+    },
+    {
+      "name": "tools.inspect-vp-scope",
+      "summary": "Find the enrolled account's existing Vite+ scope without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable"
+      ]
+    },
+    {
+      "name": "tools.materialize-vp",
+      "summary": "Prepare the Linux Vite+ scope and verify its managed launchers.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.vp_materialize_invalid",
+        "tools.vp_materialize_conflict",
+        "tools.vp_materialize_failed",
+        "tools.vp_materialize_restore_failed"
+      ]
+    },
+    {
+      "name": "tools.composer-version",
+      "summary": "Read the Composer manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-candidate",
+      "summary": "Read one package's Composer dry-run candidate.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-inventory",
+      "summary": "Read installed Composer global package observations.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-removal-plan",
+      "summary": "Check removal of one Composer root requirement.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-install",
+      "summary": "Add one Composer global root requirement.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-update",
+      "summary": "Update one Composer global root and its dependencies.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.composer-remove",
+      "summary": "Remove one Composer global root requirement.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_input_invalid",
+        "tools.composer_operation_failed",
+        "tools.composer_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.inspect-homebrew-scope",
+      "summary": "Inspect the enrolled account's Linux Homebrew prefix without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.homebrew_account_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.materialize-homebrew",
+      "summary": "Prepare the owned Linux Homebrew prefix and verify its pinned release.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.homebrew_account_invalid",
+        "tools.homebrew_scope_absent",
+        "tools.homebrew_scope_conflict",
+        "tools.homebrew_scope_unreadable",
+        "tools.homebrew_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.inspect-composer-scope",
+      "summary": "Read Composer root requirements from the owned shared scope.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_account_invalid",
+        "tools.composer_scope_absent",
+        "tools.composer_scope_conflict",
+        "tools.composer_scope_unreadable",
+        "tools.composer_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.materialize-composer",
+      "summary": "Install Composer prerequisites and prepare the account-owned shared scope.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.composer_account_invalid",
+        "tools.composer_scope_absent",
+        "tools.composer_scope_conflict",
+        "tools.composer_scope_unreadable",
+        "tools.composer_materialize_failed"
+      ]
+    },
+    {
+      "name": "tools.apt-version",
+      "summary": "Read the APT manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-candidate",
+      "summary": "Read APT's normal candidate for one package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-inventory",
+      "summary": "Read installed APT package versions and unverifiable states.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-removal-plan",
+      "summary": "Read every package APT would remove.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-install",
+      "summary": "Install exactly the requested APT package with no recommendations.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-update",
+      "summary": "Update exactly the requested APT package to its normal candidate.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.apt-remove",
+      "summary": "Remove the requested APT package without purging or autoremoving.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "tools.apt_input_invalid",
+        "tools.apt_operation_failed",
+        "tools.apt_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-version",
+      "summary": "Read the account's Vite+ manager version.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-candidate",
+      "summary": "Read Vite+'s normal registry candidate for one package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-inventory",
+      "summary": "Read Vite+ global package observations without changing Tool intent.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-removal-plan",
+      "summary": "Check removal of exactly one Vite+ global package.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-install",
+      "summary": "Install one Vite+ global package with its normal Node selection.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-update",
+      "summary": "Update one Vite+ global package and reconcile its Node runtime.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "tools.vp-remove",
+      "summary": "Remove exactly one Vite+ global package.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": "account"
+      },
+      "errors": [
+        "tools.vp_input_invalid",
+        "tools.vp_package_protected",
+        "tools.vp_scope_absent",
+        "tools.vp_scope_conflict",
+        "tools.vp_scope_unreadable",
+        "tools.vp_operation_failed",
+        "tools.vp_output_invalid"
+      ]
+    },
+    {
+      "name": "image.inspect-phase",
+      "summary": "Observe an image phase's retained service and builder boot.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.start-phase",
+      "summary": "Start an immutable recipe phase under its bounded, retained systemd unit.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.restart-phase",
+      "summary": "Restart only the failed invocation recorded by the image build attempt.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed",
+        "task_vm.image_channel_lost",
+        "task_vm.image_builder_rebooted"
+      ]
+    },
+    {
+      "name": "image.verify",
+      "summary": "Verify image pins and guest tool access without refreshing indexes or installing packages.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
+      "name": "pi.receive-artifact",
+      "summary": "Receive a bounded Pi binary chunk into its fixed verified artifact cache.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "pi.install-artifact",
+      "summary": "Publish the verified Pi binary at the managed account's fixed runtime path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "php.inspect-build",
+      "summary": "Inspect the pinned PHP build, extra packages, and extension ownership.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.build_input_invalid",
+        "php.build_platform_unsupported",
+        "php.build_conflicting_source",
+        "php.build_extra_packages",
+        "php.build_unowned_extensions",
+        "php.build_download_failed",
+        "php.build_rollback_unavailable",
+        "php.build_install_failed",
+        "php.build_modules_mismatch",
+        "php.build_fpm_invalid",
+        "php.build_rolled_back",
+        "php.build_rollback_failed",
+        "php.build_execution_failed"
+      ]
+    },
+    {
+      "name": "php.install-build",
+      "summary": "Install and verify the exact PHP recipe build with rollback on failed activation.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.build_input_invalid",
+        "php.build_platform_unsupported",
+        "php.build_conflicting_source",
+        "php.build_extra_packages",
+        "php.build_unowned_extensions",
+        "php.build_download_failed",
+        "php.build_rollback_unavailable",
+        "php.build_install_failed",
+        "php.build_modules_mismatch",
+        "php.build_fpm_invalid",
+        "php.build_rolled_back",
+        "php.build_rollback_failed",
+        "php.build_execution_failed"
+      ]
+    },
+    {
+      "name": "php.configure-runtime",
+      "summary": "Publish and verify the shared PHP-FPM runtime module.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.runtime_input_invalid",
+        "php.runtime_platform_unsupported",
+        "php.runtime_configuration_failed"
+      ]
+    },
+    {
+      "name": "docker.plan-migration",
+      "summary": "Inspect Docker CE and plan a provider migration without changing the Node.",
+      "mutates": false,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.prepare-migration",
+      "summary": "Preserve Docker state and migrate CE to the recipe's Ubuntu provider.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.restore-migration-policies",
+      "summary": "Restore original container policies after an operator restores Docker CE.",
+      "mutates": true,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "docker.report-migration",
+      "summary": "Report final container states without exposing private Docker inventory.",
+      "mutates": false,
+      "timeout_seconds": 3600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "docker.migration_failed"
+      ]
+    },
+    {
+      "name": "recipe.inspect",
+      "summary": "Inspect recipe versions, package origins, and planned ownership changes.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.incus-preflight",
+      "summary": "Refuse an Incus recipe change unless every host instance is stopped.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.apply",
+      "summary": "Converge pinned recipe packages and runtimes, then verify their services.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
+      "name": "recipe.install-javascript",
+      "summary": "Install and verify recipe JavaScript runtimes before retiring duplicate Node packages.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "recipe.failed"
+      ]
+    },
+    {
       "name": "image.recipe-marker",
       "summary": "Record the recipe identity of the base image builder.",
       "mutates": true,

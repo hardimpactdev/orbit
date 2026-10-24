@@ -7,39 +7,20 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
-use App\Domain\Tools\ToolInventoryScanState;
-use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tools\RemoteToolCommandRunner;
-use App\Infrastructure\Tools\VpInventoryInspector;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Tests\Support\ToolManagerFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 describe(VpToolManager::class, function (): void {
-    it('implements the VP tool manager adapter', function (): void {
-        expect(new VpToolManager(
-            commands: new RemoteToolCommandRunner(
-                ssh: new ToolManagerFakeSshExecutor,
-                keys: vp_tool_keys(),
-                knownHosts: vp_tool_known_hosts(),
-            ),
-            versions: new SemverVersionNormalizer,
-        ))->toBeInstanceOf(ToolManager::class);
-    });
-
     it('supports Linux nodes independently of roles and identifies itself as VP', function (
         Node $node,
         bool $supported,
     ): void {
-        [$manager] = vp_tool_manager([]);
+        [$manager] = vp_tool_manager();
 
         expect($manager->name())
             ->toBe(ToolManagerName::Vp)
@@ -58,7 +39,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('does not load roles when checking the platform boundary', function (): void {
-        [$manager] = vp_tool_manager([]);
+        [$manager] = vp_tool_manager();
         $node = Node::query()->create([
             'name' => 'vp-macos-node',
             'status' => 'active',
@@ -97,7 +78,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('accepts only strict VP package coordinates', function (string $package, bool $valid): void {
-        [$manager] = vp_tool_manager([]);
+        [$manager] = vp_tool_manager();
 
         expect($manager->validatePackage($package))->toBe($valid);
     })->with([
@@ -122,177 +103,8 @@ describe(VpToolManager::class, function (): void {
         'oversized' => [str_repeat('a', times: 215), false],
     ]);
 
-    it('skips cache-only vite-plus homes and lets inventory return Complete', function (string $platform): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
-        $node = vp_tool_node($platform, []);
-        $manager->existingBinary($node);
-
-        [$result, $binary] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '');
-
-        expect($result->exitCode)->toBe(0, $result->stderr);
-        expect(trim($result->stdout))->toBe($binary);
-
-        $inventorySsh = new ToolManagerFakeSshExecutor([$result, vp_result("[]\n")]);
-        $runner = new RemoteToolCommandRunner(
-            ssh: $inventorySsh,
-            keys: vp_tool_keys(),
-            knownHosts: vp_tool_known_hosts(),
-        );
-        $versions = new SemverVersionNormalizer;
-        $inspector = new VpInventoryInspector($runner, new VpToolManager($runner, $versions), $versions);
-
-        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
-        expect($inventorySsh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
-    })->with(['linux', 'macos']);
-
-    it('uses the scan-resolved Linux home for mutations beside a cache-only home', function (string $operation): void {
-        [$probeManager, $probeSsh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
-        $node = vp_tool_node('linux', []);
-        $probeManager->existingBinary($node);
-        [$scopeResult, $binary] = vp_tool_run_scope_fixture($probeSsh->commands[0]->input ?? '');
-        expect($scopeResult->exitCode)->toBe(0, $scopeResult->stderr);
-
-        $ssh = new ToolManagerFakeSshExecutor([$scopeResult, vp_result("[]\n"), $scopeResult, vp_result()]);
-        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
-        $versions = new SemverVersionNormalizer;
-        $manager = new VpToolManager($runner, $versions);
-        $inspector = new VpInventoryInspector($runner, $manager, $versions);
-
-        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
-        $manager->{$operation}($node, 'typescript');
-
-        expect($ssh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
-        expect($ssh->arguments()[2])->toBe(['/bin/bash', '-seu', '--', 'orbit']);
-        expect($ssh->commands[2]->input)->toBe($probeSsh->commands[0]->input);
-        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary]);
-        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
-    })->with(['install', 'update', 'remove']);
-
-    it('preserves the managed opt home explicitly for Linux mutations', function (string $operation): void {
-        $scope = vp_result("/opt/orbit/vite-plus/bin/vp\n");
-        $ssh = new ToolManagerFakeSshExecutor([$scope, vp_result("[]\n"), $scope, vp_result()]);
-        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
-        $versions = new SemverVersionNormalizer;
-        $manager = new VpToolManager($runner, $versions);
-        $inspector = new VpInventoryInspector($runner, $manager, $versions);
-        $node = vp_tool_node('linux', []);
-
-        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
-        $manager->{$operation}($node, 'typescript');
-
-        expect(array_slice($ssh->arguments()[1], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
-        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
-        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
-    })->with(['install', 'update', 'remove']);
-
-    it('does not mutate when the Linux scope cannot be resolved', function (string $operation, int $exitCode, string $step): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result(exitCode: $exitCode)]);
-
-        expect(fn () => $manager->{$operation}(vp_tool_node('linux', []), 'typescript'))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)->toBe($step);
-            });
-
-        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit']]);
-    })->with(['install', 'update', 'remove'])->with([
-        'absent' => [42, 'manager-absent'],
-        'conflicting' => [43, 'manager-conflict'],
-        'probe failure' => [1, 'manager-probe'],
-    ]);
-
-    it('keeps genuine vite-plus scope conflicts at exit 43', function (string $platform, string $fixture): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
-        $manager->existingBinary(vp_tool_node($platform, []));
-
-        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture);
-
-        expect($result->exitCode)->toBe(43, $result->stderr);
-    })->with(['linux', 'macos'])->with([
-        'symlinked home' => 'symlink',
-        'non-directory home' => 'file',
-        'wrong home owner' => 'scope-owner',
-        'non-executable binary' => 'not-executable',
-        'wrong binary owner' => 'binary-owner',
-        'dangling binary symlink' => 'binary-symlink',
-    ]);
-
-    it('reports cache-only vite-plus homes without a real store as absent', function (string $platform): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
-        $manager->existingBinary(vp_tool_node($platform, []));
-
-        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'absent');
-
-        expect($result->exitCode)->toBe(42, $result->stderr);
-    })->with(['linux', 'macos']);
-
-    it('materializes the real vite-plus store and exports VP_HOME for every home', function (string $fixture): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true);
-
-        expect($result->exitCode)->toBe(0, $result->stderr);
-        expect($launcher)->toContain('exec "'.$binary.'" "$@"')
-            ->toContain('export VP_HOME="'.dirname($binary, 2).'"');
-    })->with(['cache-only', 'opt-store', 'home-store']);
-
-    it('upgrades only exact managed legacy launchers to export VP_HOME', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-launchers', materialize: true);
-
-        expect($result->exitCode)->toBe(0, $result->stderr);
-        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
-    });
-
-    it('restores legacy launchers when the VP_HOME runtime verification fails', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-failure', materialize: true);
-
-        expect($result->exitCode)->not->toBe(0);
-        expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
-    });
-
-    it('refuses a changed launcher rather than upgrading it for VP_HOME', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'foreign-launcher', materialize: true);
-
-        expect($result->exitCode)->not->toBe(0);
-        expect($result->stderr)->toContain('launcher conflict');
-        expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
-    });
-
-    it('rejects a wrong-owner cache-only vite-plus home before materializing launchers', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-        $manager->materialize(vp_tool_node('linux', []));
-
-        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'scope-owner', materialize: true);
-
-        expect($result->exitCode)->toBe(1, $result->stderr);
-        expect($result->stderr)->toContain('Orbit Vite Plus directory conflict:');
-        expect($launcher)->toBe('');
-    });
-
-    it('materializes the protected VP scope with fixed bootstrap input', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
-
-        $manager->materialize(vp_tool_node('linux', []));
-
-        expect($ssh->arguments())
-            ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
-            ->and($ssh->commands[0]->input)
-            ->toContain('curl -fsSL https://vite.plus | bash')
-            ->and($ssh->commands[0]->input)
-            ->toContain('/usr/local/bin/vp --version');
-    });
-
-    it('rejects an unsupported node before any SSH I/O', function (Closure $operation): void {
-        [$manager, $ssh] = vp_tool_manager([]);
+    it('rejects an unsupported node before any agent call', function (Closure $operation): void {
+        [$manager, $ssh] = vp_tool_manager();
         $node = vp_tool_node('darwin', [['app-dev', 'active']]);
 
         expect(fn () => $operation($manager, $node))
@@ -304,7 +116,7 @@ describe(VpToolManager::class, function (): void {
                     ->and($exception->getMessage())
                     ->not->toContain('gateway');
             });
-        expect($ssh->arguments())->toBeEmpty();
+        expect($ssh->commands())->toBeEmpty();
     })->with([
         'manager version' => [
             static fn (VpToolManager $manager, Node $node): string => $manager->managerVersion($node),
@@ -333,8 +145,8 @@ describe(VpToolManager::class, function (): void {
         }],
     ]);
 
-    it('rejects an invalid package before any SSH I/O', function (Closure $operation): void {
-        [$manager, $ssh] = vp_tool_manager([]);
+    it('rejects an invalid package before any agent call', function (Closure $operation): void {
+        [$manager, $ssh] = vp_tool_manager();
         $node = vp_tool_node();
 
         expect(fn () => $operation($manager, $node))
@@ -346,7 +158,7 @@ describe(VpToolManager::class, function (): void {
                     ->and($exception->getMessage())
                     ->not->toContain('@openai/');
             });
-        expect($ssh->arguments())->toBeEmpty();
+        expect($ssh->commands())->toBeEmpty();
     })->with([
         'candidate version' => [
             static fn (VpToolManager $manager, Node $node): ?string => $manager->candidateVersion(
@@ -370,430 +182,129 @@ describe(VpToolManager::class, function (): void {
         }],
     ]);
 
-    it('uses the approved fixed VP argv through the complete lifecycle', function (): void {
-        [$manager, $ssh] = vp_linux_tool_manager([
-            vp_result("2.4.1\nextra line ignored\n"),
-            vp_result('"5.8.2"'."\n"),
-            vp_result('[{"name":"typescript","version":"5.7.3"}]'."\n"),
-            vp_result(),
-            vp_result(),
-            vp_result('dry run text that is ignored'),
-            vp_result(),
-        ]);
-        $node = vp_tool_node();
-
-        $managerVersion = $manager->managerVersion($node);
-        $candidateVersion = $manager->candidateVersion($node, 'typescript', ToolOperation::Install);
-        $installedVersion = $manager->installedVersion($node, 'typescript');
-        $manager->install($node, 'typescript');
-        $manager->update($node, 'typescript');
-        $removalPlan = $manager->planRemoval($node, 'typescript');
-        $manager->remove($node, 'typescript');
-
-        expect($managerVersion)->toBe('2.4.1');
-        expect($candidateVersion)->toBe('5.8.2');
-        expect($installedVersion)->toBe('5.7.3');
-        expect($removalPlan->packages)->toBe(['typescript']);
-        expect($removalPlan->removesOnly('typescript'))->toBeTrue();
-        expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', '--version'],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'info', 'typescript', 'version', '--json'],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', '--json'],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
-                '/opt/orbit/vite-plus/bin/vp',
-                'install',
-                '-g',
-                'typescript',
-                '--node',
-                'lts',
-            ],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
-                '/opt/orbit/vite-plus/bin/vp',
-                'update',
-                '-g',
-                'typescript',
-                '--reinstall-node-mismatch',
-            ],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
-        ]);
-    });
-
-    it('delegates version normalization to the semver normalizer', function (): void {
-        [$manager] = vp_tool_manager([]);
-
-        expect($manager->normalizeVersion('v1.2'))
-            ->toBe('1.2.0')
-            ->and($manager->normalizeVersion('not-a-version'))
-            ->toBeNull();
-    });
-
-    it('returns null when the installed package list is empty', function (): void {
-        [$manager, $ssh] = vp_linux_tool_manager([
-            vp_result("[]\n"),
-        ]);
-
-        $version = $manager->installedVersion(vp_tool_node(), 'typescript');
-
-        expect($version)->toBeNull();
-        expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', '--json'],
-        ]);
-    });
-
-    it('rejects an empty top-level object for installed packages', function (): void {
-        [$manager] = vp_linux_tool_manager([
-            vp_result("{}\n"),
-        ]);
-
-        expect(fn () => $manager->installedVersion(vp_tool_node(), 'typescript'))
-            ->toThrow(ToolManagerException::class, 'malformed');
-    });
-
-    it('rejects a numeric-key top-level object for installed packages', function (): void {
-        [$manager] = vp_linux_tool_manager([
-            vp_result('{"0":{"name":"typescript","version":"5.7.3"}}'."\n"),
-        ]);
-
-        expect(fn () => $manager->installedVersion(vp_tool_node(), 'typescript'))
-            ->toThrow(ToolManagerException::class, 'malformed');
-    });
-
-    it('returns null when the installed package list contains only substring matches', function (): void {
-        [$manager] = vp_linux_tool_manager([
-            vp_result('[{"name":"typescript-eslint","version":"8.0.0"}]'),
-        ]);
-
-        expect($manager->installedVersion(vp_tool_node(), 'typescript'))->toBeNull();
-    });
-
-    it('fails closed on an invalid manager-version result', function (CommandResult $result, string $step): void {
-        [$manager] = vp_linux_tool_manager([$result]);
-
-        expect(fn () => $manager->managerVersion(vp_tool_node()))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)
-                    ->toBe($step)
-                    ->and($exception->result?->stdout)
-                    ->toBeEmpty()
-                    ->and($exception->result?->stderr)
-                    ->toBeEmpty();
-            });
-    })->with([
-        'nonzero' => [vp_result('secret stdout', exitCode: 11, stderr: 'secret stderr'), 'manager-version'],
-        'truncated' => [vp_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
-        'missing' => [vp_result(), 'manager-version'],
-        'empty first line' => [vp_result("\n2.4.1\n"), 'manager-version'],
-        'control bearing' => [vp_result("2.4.1\0hidden\n"), 'manager-version'],
-        'oversized' => [vp_result(str_repeat('1', times: 256)."\n"), 'manager-version'],
-    ]);
-
-    it('fails closed on invalid candidate-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_linux_tool_manager([$result]);
-
-        expect(fn () => $manager->candidateVersion(vp_tool_node(), 'typescript', ToolOperation::Install))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)
-                    ->toBe($step)
-                    ->and($exception->result?->stdout)
-                    ->toBeEmpty()
-                    ->and($exception->result?->stderr)
-                    ->toBeEmpty();
-            });
-    })->with([
-        'nonzero' => [vp_result('secret stdout', exitCode: 12, stderr: 'secret stderr'), 'candidate-version'],
-        'truncated' => [vp_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
-        'empty string' => [vp_result('""'), 'candidate-version'],
-        'malformed json' => [vp_result('{"version":"5.0.0"}'), 'candidate-version'],
-        'non-string' => [vp_result('["5.0.0"]'), 'candidate-version'],
-        'duplicate documents' => [vp_result("\"5.0.0\"\n\"6.0.0\""), 'candidate-version'],
-        'control bearing' => [vp_result('"5.0.0\\u0000hidden"'), 'candidate-version'],
-        'oversized' => [vp_result('"'.str_repeat('1', times: 256).'"'), 'candidate-version'],
-    ]);
-
-    it('fails closed on invalid installed-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_linux_tool_manager([$result]);
-
-        expect(fn () => $manager->installedVersion(vp_tool_node(), 'typescript'))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)
-                    ->toBe($step)
-                    ->and($exception->result?->stdout)
-                    ->toBeEmpty()
-                    ->and($exception->result?->stderr)
-                    ->toBeEmpty();
-            });
-    })->with([
-        'nonzero' => [vp_result('secret stdout', exitCode: 13, stderr: 'secret stderr'), 'installed-version'],
-        'truncated' => [vp_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
-        'malformed json' => [vp_result('{"name":"typescript"}'), 'installed-version'],
-        'non-array' => [vp_result('"typescript"'), 'installed-version'],
-        'malformed entry type' => [vp_result('[1]'), 'installed-version'],
-        'missing version' => [vp_result('[{"name":"typescript"}]'), 'installed-version'],
-        'duplicate exact entries' => [
-            vp_result('[{"name":"typescript","version":"5.7.3"},{"name":"typescript","version":"5.8.0"}]'),
-            'installed-version',
-        ],
-        'unsafe version' => [vp_result('[{"name":"typescript","version":"5.7.3\u0000hidden"}]'), 'installed-version'],
-    ]);
-
-    it('fails closed and sanitizes failed mutations', function (
-        Closure $operation,
-        array $arguments,
-        string $step,
-    ): void {
-        $stdoutSentinel = 'secret mutation stdout';
-        $stderrSentinel = 'secret mutation stderr';
-        [$manager, $ssh] = vp_linux_tool_manager([
-            vp_result($stdoutSentinel, exitCode: 14, stderr: $stderrSentinel),
-        ]);
-
-        expect(fn () => $operation($manager, vp_tool_node()))
-            ->toThrow(function (ToolManagerException $exception) use ($stdoutSentinel, $stderrSentinel, $step): void {
-                expect($exception->step)
-                    ->toBe($step)
-                    ->and($exception->result?->stdout)
-                    ->toBeEmpty()
-                    ->and($exception->result?->stderr)
-                    ->toBeEmpty()
-                    ->and($exception->getMessage())
-                    ->not->toContain($stdoutSentinel, $stderrSentinel);
-            });
-        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit'], ['env', 'VP_HOME=/opt/orbit/vite-plus', ...$arguments]]);
-    })->with([
-        'install' => [
-            static function (VpToolManager $manager, Node $node): void {
-                $manager->install($node, 'typescript');
-            },
-            [
-                '/opt/orbit/vite-plus/bin/vp',
-                'install',
-                '-g',
-                'typescript',
-                '--node',
-                'lts',
-            ],
-            'install',
-        ],
-        'update' => [
-            static function (VpToolManager $manager, Node $node): void {
-                $manager->update($node, 'typescript');
-            },
-            [
-                '/opt/orbit/vite-plus/bin/vp',
-                'update',
-                '-g',
-                'typescript',
-                '--reinstall-node-mismatch',
-            ],
-            'update',
-        ],
-        'removal plan' => [
-            static fn (VpToolManager $manager, Node $node) => $manager->planRemoval($node, 'typescript'),
-            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
-            'removal-plan',
-        ],
-        'remove' => [
-            static function (VpToolManager $manager, Node $node): void {
-                $manager->remove($node, 'typescript');
-            },
-            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
-            'remove',
-        ],
-    ]);
-
-    it('remove executes exactly one VP removal command without replanning', function (): void {
-        [$manager, $ssh] = vp_linux_tool_manager([vp_result()]);
-
-        $manager->remove(vp_tool_node(), 'typescript');
-
-        expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-seu', '--', 'orbit'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
-        ]);
-    });
-
-    it('verifies the enrolled macOS Vite+ scope without installing a second one', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
-            vp_result("/Users/mini/.vite-plus/bin/vp\n"),
-        ]);
-
-        $manager->materialize(vp_tool_node('macos', [], 'mini'));
-
-        $program = $ssh->commands[0]->input;
-        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']])
-            ->and($ssh->connections[0]->user)->toBe('mini')
-            ->and($program)->toContain('/usr/bin/dscacheutil')
-            ->and($program)->toContain('/.vite-plus')
-            ->and($program)->toContain('/.local/share/vite-plus')
-            ->and($program)->not->toContain('getent')
-            ->and($program)->not->toContain('stat -c')
-            ->and($program)->not->toContain('/home/')
-            ->and($program)->not->toContain('systemd')
-            ->and($program)->not->toContain('curl')
-            ->and($program)->not->toContain('/usr/local/bin')
-            ->and($program)->not->toContain('/opt/orbit');
-
-        $script = tempnam(sys_get_temp_dir(), 'orbit-mac-vp-');
-        file_put_contents($script, $program);
-
-        try {
-            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
-            expect($syntaxStatus)->toBe(0);
-        } finally {
-            unlink($script);
-        }
-    });
-
-    it('reports a missing or conflicting macOS Vite+ scope without raw output', function (int $exitCode, string $step): void {
-        [$manager] = vp_tool_manager([
-            vp_result('secret scope', exitCode: $exitCode, stderr: 'secret stat'),
-        ]);
-
-        expect(fn () => $manager->materialize(vp_tool_node('macos', [], 'mini')))
-            ->toThrow(function (ToolManagerException $exception) use ($step): void {
-                expect($exception->step)->toBe($step)
-                    ->and($exception->result?->stdout)->toBeEmpty()
-                    ->and($exception->result?->stderr)->toBeEmpty()
-                    ->and($exception->getMessage())->not->toContain('secret');
-            });
-    })->with([
-        'absent' => [42, 'manager-absent'],
-        'conflicting store' => [43, 'manager-conflict'],
-        'unreadable probe' => [1, 'manager-probe'],
-    ]);
-
-    it('uses the enrolled macOS Vite+ binary for one global package', function (): void {
-        $binary = '/Users/mini/.local/share/vite-plus/bin/vp';
-        $scope = vp_result($binary."\n");
-        $list = (string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.json');
-        [$manager, $ssh] = vp_tool_manager([
-            $scope,
-            vp_result("vp v0.2.6\n"),
-            $scope,
-            vp_result('"0.150.0"'."\n"),
-            $scope,
-            vp_result($list),
-            $scope,
-            vp_result($list),
-            $scope,
-            vp_result(),
-            $scope,
-            vp_result(),
-            $scope,
-            vp_result('dry run'),
-            $scope,
-            vp_result(),
-        ]);
-        $node = vp_tool_node('macos', [], 'mini');
-
-        expect($manager->managerVersion($node))->toBe('vp v0.2.6')
-            ->and($manager->candidateVersion($node, '@openai/codex', ToolOperation::Install))->toBe('0.150.0')
-            ->and($manager->installedVersion($node, '@openai/codex'))->toBe('0.150.0')
-            ->and($manager->installedVersion($node, 'pnpm'))->toBe('10.15.1');
+    it('requests one typed command per global operation on Linux and macOS', function (string $platform): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tools.vp-version', ['version' => 'vp v0.3.3'])
+            ->answer('tools.vp-candidate', ['version' => '0.150.0'])
+            ->answer('tools.vp-inventory', ['packages' => [['name' => '@openai/codex', 'version' => '0.150.0']], 'scan_complete' => true])
+            ->answer('tools.vp-install', [])->answer('tools.vp-update', [])
+            ->answer('tools.vp-removal-plan', ['packages' => ['@openai/codex']])->answer('tools.vp-remove', []);
+        $node = vp_tool_node($platform);
+        expect($manager->managerVersion($node))->toBe('vp v0.3.3');
+        expect($manager->candidateVersion($node, '@openai/codex', ToolOperation::Install))->toBe('0.150.0');
+        expect($manager->installedVersion($node, '@openai/codex'))->toBe('0.150.0');
         $manager->install($node, '@openai/codex');
         $manager->update($node, '@openai/codex');
         expect($manager->planRemoval($node, '@openai/codex')->packages)->toBe(['@openai/codex']);
         $manager->remove($node, '@openai/codex');
+        expect($agent->commands())->toBe(['tools.vp-version', 'tools.vp-candidate', 'tools.vp-inventory', 'tools.vp-install', 'tools.vp-update', 'tools.vp-removal-plan', 'tools.vp-remove']);
+        expect(array_column($agent->calls, 'input'))->toBe([[], ['package' => '@openai/codex'], [], ['package' => '@openai/codex'], ['package' => '@openai/codex'], ['package' => '@openai/codex'], ['package' => '@openai/codex']]);
+    })->with(['linux', 'macos']);
 
-        expect($ssh->arguments())->toBe([
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, '--version'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'info', '@openai/codex', 'version', '--json'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '--json'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '--json'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '--dry-run', '@openai/codex'],
-            ['/bin/bash', '-su', '--', 'mini'],
-            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '@openai/codex'],
-        ]);
+    it('maps scope refusals consistently for reads and mutations', function (string $code, string $step): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->refuse('tools.vp-inventory', $code)->refuse('tools.vp-remove', $code);
+        foreach ([fn () => $manager->installedInventory(vp_tool_node()), fn () => $manager->remove(vp_tool_node(), 'typescript')] as $call) {
+            expect($call)->toThrow(function (ToolManagerException $error) use ($step): void {
+                expect($error->step)->toBe($step);
+                expect($error->result)->toBeNull();
+            });
+        }
+        expect($agent->commands())->toBe(['tools.vp-inventory', 'tools.vp-remove']);
+    })->with([
+        ['tools.vp_scope_absent', 'manager-absent'],
+        ['tools.vp_scope_conflict', 'manager-conflict'],
+        ['tools.vp_scope_unreadable', 'manager-probe'],
+    ]);
+
+    it('maps typed operation refusals without exposing manager output', function (string $method, string $command, string $step): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->refuse($command, 'tools.vp_operation_failed');
+        expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))
+            ->toThrow(function (ToolManagerException $error) use ($step): void {
+                expect($error->step)->toBe($step);
+                expect($error->result)->toBeNull();
+            });
+        expect($agent->commands())->toBe([$command]);
+    })->with([
+        ['managerVersion', 'tools.vp-version', 'manager-version'],
+        ['candidateVersion', 'tools.vp-candidate', 'candidate-version'],
+        ['installedInventory', 'tools.vp-inventory', 'installed-version'],
+        ['install', 'tools.vp-install', 'install'],
+        ['update', 'tools.vp-update', 'update'],
+        ['planRemoval', 'tools.vp-removal-plan', 'removal-plan'],
+        ['remove', 'tools.vp-remove', 'remove'],
+    ]);
+
+    it('refuses malformed typed agent results', function (string $method, string $command, array $data): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer($command, $data);
+        expect(fn () => $manager->{$method}(vp_tool_node(), 'typescript', ToolOperation::Install))->toThrow(ToolManagerException::class);
+    })->with([
+        ['managerVersion', 'tools.vp-version', ['version' => []]],
+        ['candidateVersion', 'tools.vp-candidate', []],
+        ['installedInventory', 'tools.vp-inventory', ['packages' => [], 'scan_complete' => null]],
+        ['installedInventory', 'tools.vp-inventory', ['packages' => [['name' => 'typescript']], 'scan_complete' => true]],
+        ['planRemoval', 'tools.vp-removal-plan', ['packages' => [42]]],
+    ]);
+
+    it('keeps individual Tools verifiable beside ambiguous and unmanageable observations', function (): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tools.vp-inventory', ['packages' => [
+            ['name' => 'JSONStream', 'version' => '1.3.5'],
+            ['name' => 'typescript', 'version' => '5.7.3'],
+            ['name' => 'unreadable', 'version' => null],
+            ['name' => 'dup', 'version' => '1.0.0'], ['name' => 'dup', 'version' => '2.0.0'],
+            ['name' => 'typescript-extra', 'version' => '5.0.0'],
+        ], 'scan_complete' => false]);
+        $inventory = $manager->installedInventory(vp_tool_node());
+        expect($inventory->versionFor('typescript'))->toBe('5.7.3');
+        expect($inventory->versionFor('JSONStream'))->toBeNull();
+        expect($inventory->versionFor('absent'))->toBeNull();
+        expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
+        expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
+        expect($agent->commands())->toBe(['tools.vp-inventory']);
     });
 
-    it('reads scoped package names and versions from Vite+ global list fixtures', function (): void {
-        $human = (string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.txt');
-        $json = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.json'), true);
-
-        expect($human)->toContain('Package')
-            ->and($human)->toContain('Node version')
-            ->and($human)->toContain('Binaries')
-            ->and($human)->toMatch('/@[a-z0-9._~-]+\/[a-z0-9._~-]+@\d+\.\d+\.\d+/');
-        expect($json)->toBeArray();
-        $names = array_column($json, 'name');
-        $versions = array_column($json, 'version');
-        expect($names)->toContain('@openai/codex')
-            ->and($names)->toContain('@anthropic-ai/claude-code')
-            ->and($versions)->toContain('0.150.0')
-            ->and($versions)->toContain('1.0.24');
+    it('protects pnpm adoption while leaving missing packages absent', function (): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tools.vp-inventory', ['packages' => [['name' => 'pnpm', 'version' => '12.0.0']], 'scan_complete' => true]);
+        expect($manager->inspectForAdoption(vp_tool_node(), 'pnpm'))->toEqual(new ToolAdoptionFact('12.0.0', ToolInventoryPackage::BLOCK_PROTECTED));
+        expect($manager->inspectForAdoption(vp_tool_node(), 'missing'))->toEqual(new ToolAdoptionFact(null, null));
+        expect($agent->commands())->toBe(['tools.vp-inventory', 'tools.vp-inventory']);
     });
 
-    it('protects the Vite+ pnpm root without installing it', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
-            vp_result("/opt/orbit/vite-plus/bin/vp\n"),
-            vp_result("[{\"name\":\"pnpm\",\"version\":\"10.15.1\"}]\n"),
-        ]);
+    it('materializes Linux from verified pins and only inspects the macOS scope', function (): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tools.materialize-vp', ['changed' => true])
+            ->answer('tools.inspect-vp-scope', ['binary' => '/Users/mini/.vite-plus/bin/vp']);
+        $manager->materialize(vp_tool_node());
+        $manager->materialize(vp_tool_node('macos', [], 'mini'));
+        expect($agent->commands())->toBe(['tools.materialize-vp', 'tools.inspect-vp-scope']);
+        $input = $agent->calls[0]['input'];
+        expect($input)->toMatchArray(['user' => 'orbit', 'architecture' => 'amd64']);
+        expect(array_keys($input['tools']))->toEqualCanonicalizing(['node', 'vp-cli', 'vp', 'pnpm']);
+        expect(hash('sha256', $input['vp_lock']))->toBe($input['tools']['vp']['lock_sha256']);
+        expect($agent->calls[1]['input'])->toBe([]);
+    });
 
-        expect($manager->inspectForAdoption(vp_tool_node('linux', []), 'pnpm'))
-            ->toEqual(new ToolAdoptionFact('10.15.1', ToolInventoryPackage::BLOCK_PROTECTED))
-            ->and(json_encode($ssh->arguments()))
-            ->not->toContain('install')
-            ->not->toContain('curl');
+    it('gates project requirements against the observed recipe manager without upgrading', function (): void {
+        [$manager, $agent] = vp_tool_manager();
+        $agent->answer('tools.vp-version', ['version' => 'vp v0.3.3']);
+        $manager->ensureVersion(vp_tool_node(), '0.3.3');
+        expect(fn () => $manager->ensureVersion(vp_tool_node(), '0.4.0'))->toThrow(ToolManagerException::class);
+        expect($manager->normalizeVersion('v1.2.3'))->toBe('1.2.3');
+        expect($manager->normalizeVersion('latest'))->toBeNull();
+        expect($agent->commands())->toBe(['tools.vp-version', 'tools.vp-version']);
     });
 });
 
-/**
- * @param  list<CommandResult>  $results
- * @return array{VpToolManager, ToolManagerFakeSshExecutor}
- */
-function vp_tool_manager(array $results): array
+/** @return array{VpToolManager, FakeAgentCommandRunner} */
+function vp_tool_manager(): array
 {
-    $ssh = new ToolManagerFakeSshExecutor($results);
-    $runner = new RemoteToolCommandRunner(
-        ssh: $ssh,
-        keys: vp_tool_keys(),
-        knownHosts: vp_tool_known_hosts(),
-    );
+    $agent = new FakeAgentCommandRunner;
 
-    return [
-        new VpToolManager(
-            commands: $runner,
-            versions: new SemverVersionNormalizer,
-        ),
-        $ssh,
-    ];
-}
-
-/**
- * @param  list<CommandResult>  $results
- * @return array{VpToolManager, ToolManagerFakeSshExecutor}
- */
-function vp_linux_tool_manager(array $results): array
-{
-    $probedResults = [];
-    foreach ($results as $result) {
-        $probedResults[] = vp_result("/opt/orbit/vite-plus/bin/vp\n");
-        $probedResults[] = $result;
-    }
-
-    return vp_tool_manager($probedResults);
+    return [new VpToolManager(new SemverVersionNormalizer, $agent), $agent];
 }
 
 /**
@@ -802,7 +313,7 @@ function vp_linux_tool_manager(array $results): array
 function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'active']], string $user = 'orbit'): Node
 {
     $node = new Node([
-        'name' => 'vp-tool-node',
+        'name' => 'vp-tool-node', 'architecture' => 'x86_64',
         'status' => 'active',
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
@@ -823,231 +334,3 @@ function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'a
 
     return $node;
 }
-
-function vp_result(
-    string $stdout = '',
-    int $exitCode = 0,
-    string $stderr = '',
-    bool $truncated = false,
-): CommandResult {
-    return new CommandResult(
-        exitCode: $exitCode,
-        stdout: $stdout,
-        stderr: $stderr,
-        durationMs: 10,
-        truncated: $truncated,
-    );
-}
-
-/**
- * Runs the emitted Bash against disposable homes, with account lookup and ownership stubs.
- * Materialization publishes launchers only inside the fixture, with no sudo or network access.
- *
- * @return array{CommandResult, string, string}
- */
-function vp_tool_run_scope_fixture(
-    string $program,
-    string $fixture = 'cache-only',
-    bool $materialize = false,
-): array {
-    $root = sys_get_temp_dir().'/orbit-vp-cache-'.bin2hex(random_bytes(4));
-    $home = $root.'/home';
-    $orbit = $root.'/orbit';
-    $scope = $home.'/.vite-plus';
-    $store = match ($fixture) {
-        'opt-store', 'opt-legacy' => $orbit.'/vite-plus',
-        'home-store' => $scope,
-        default => $home.'/.local/share/vite-plus',
-    };
-    $account = trim((string) shell_exec('id -un'));
-    mkdir($scope.'/package_manager/npm/cache', 0755, true);
-    mkdir($orbit.'/vite-plus/package_manager/npm/cache', 0755, true);
-    mkdir($root.'/launchers', 0755, true);
-    if ($fixture !== 'absent') {
-        mkdir($store.'/bin', 0755, true);
-        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
-            file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 0\n");
-            chmod($store.'/bin/'.$binary, 0755);
-            if (in_array($fixture, ['legacy-launchers', 'legacy-failure', 'opt-legacy'], true)) {
-                file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\ntest \"\$VP_HOME\" = \"$store\"\n");
-                $legacyExport = $fixture === 'opt-legacy' ? "export VP_HOME=$store\n" : '';
-                file_put_contents($root.'/launchers/'.$binary, "#!/bin/sh\n".$legacyExport."exec \"$store/bin/$binary\" \"\$@\"\n");
-                chmod($root.'/launchers/'.$binary, 0755);
-                if ($fixture === 'legacy-failure' && $binary === 'npx') {
-                    file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 1\n");
-                }
-            }
-        }
-    }
-    if ($fixture === 'foreign-launcher') {
-        file_put_contents($root.'/launchers/vp', "#!/bin/sh\nexit 0\n");
-        chmod($root.'/launchers/vp', 0755);
-    }
-    if ($fixture === 'symlink' || $fixture === 'file') {
-        rename($scope, $home.'/cache');
-        if ($fixture === 'symlink') {
-            symlink($home.'/cache', $scope);
-        } else {
-            file_put_contents($scope, 'not a directory');
-        }
-    }
-    if (in_array($fixture, ['not-executable', 'binary-owner', 'binary-symlink'], true)) {
-        mkdir($scope.'/bin', 0755, true);
-        if ($fixture === 'binary-symlink') {
-            symlink($root.'/missing', $scope.'/bin/vp');
-        } else {
-            file_put_contents($scope.'/bin/vp', "#!/bin/sh\nexit 0\n");
-            chmod($scope.'/bin/vp', $fixture === 'not-executable' ? 0644 : 0755);
-        }
-    }
-    $wrongOwnerPath = match ($fixture) {
-        'scope-owner' => $scope,
-        'binary-owner' => $scope.'/bin/vp',
-        default => $root.'/unused',
-    };
-    $stubs = [
-        'getent' => "#!/bin/sh\nprintf '%s\\n' '{$account}:x:1:1::{$home}:/bin/sh'\n",
-        'dscacheutil' => "#!/bin/sh\nprintf '%s\\n' 'dir: {$home}'\n",
-        'stat' => <<<SH
-            #!/bin/sh
-            path=
-            for path do :; done
-            if [ "\$path" = '{$orbit}' ]; then
-                printf 'root:root\n'
-            elif [ "\${path%/*}" = '{$root}/launchers' ] && [ "\$2" = '%U:%G' ]; then
-                printf 'root:root\n'
-            elif [ "\$path" = '{$wrongOwnerPath}' ]; then
-                printf 'other:other\n'
-            elif [ "\$1" = '-f' ]; then
-                printf '%s\n' '{$account}'
-            else
-                exec /usr/bin/stat "\$@"
-            fi
-            SH,
-        'sudo' => "#!/bin/sh\nshift 3\nexec \"\$@\"\n",
-        'curl' => "#!/bin/sh\nprintf 'unexpected installer invocation\\n' >&2\nexit 99\n",
-    ];
-    foreach ($stubs as $name => $contents) {
-        file_put_contents($root.'/'.$name, $contents);
-        chmod($root.'/'.$name, 0755);
-    }
-    $program = strtr($program, [
-        '/usr/bin/getent' => $root.'/getent',
-        'getent passwd' => $root.'/getent passwd',
-        '/usr/bin/dscacheutil' => $root.'/dscacheutil',
-        '/usr/bin/stat' => $root.'/stat',
-        'stat -c' => $root.'/stat -c',
-        '/opt/orbit' => $orbit,
-        '/usr/local/bin' => $root.'/launchers',
-        'chown root:root' => 'true',
-        'sudo -u' => $root.'/sudo -u',
-        'curl -fsSL' => $root.'/curl -fsSL',
-    ]);
-    $script = $root.'/program.sh';
-    file_put_contents($script, $program);
-    $pipes = [];
-    $process = proc_open(
-        ['bash', '-seu', '--', $account],
-        [0 => ['file', $script, 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-    );
-
-    try {
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $status = proc_close($process);
-        $launcher = $materialize && is_file($root.'/launchers/vp')
-            ? (string) file_get_contents($root.'/launchers/vp')
-            : '';
-
-        return [vp_result((string) $stdout, $status, (string) $stderr), $store.'/bin/vp', $launcher];
-    } finally {
-        exec('rm -rf -- '.escapeshellarg($root));
-    }
-}
-
-function vp_tool_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit/id_ed25519';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAATEST orbit@test';
-        }
-    };
-}
-
-function vp_tool_known_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit/known_hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-}
-
-it('reads all global packages after the normal scope probe', function (string $platform): void {
-    $binary = $platform === 'macos' ? '/Users/mini/.vite-plus/bin/vp' : '/opt/orbit/vite-plus/bin/vp';
-    [$manager, $ssh] = vp_tool_manager([
-        vp_result($binary."\n"),
-        vp_result('[{"name":"@openai/codex","version":"0.156.1"},{"name":"pnpm","version":"10.0.0"},{"name":"dup","version":"1.0.0"},{"name":"dup","version":"2.0.0"}]'),
-    ]);
-    $inventory = $manager->installedInventory(vp_tool_node($platform));
-    expect($inventory->versionFor('@openai/codex'))->toBe('0.156.1')
-        ->and($inventory->versionFor('pnpm'))->toBe('10.0.0')
-        ->and($inventory->versionFor('absent'))->toBeNull();
-    expect(fn () => $inventory->versionFor('dup'))->toThrow(ToolManagerException::class);
-    expect($ssh->commands)->toHaveCount(2)
-        ->and($ssh->commands[0]->input)->toContain('Orbit Vite Plus account mismatch');
-    expect($ssh->commands[1]->arguments)->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
-})->with(['linux', 'macos']);
-
-it('refuses an unverifiable global inventory instead of reporting absent Tools', function (CommandResult $result): void {
-    [$manager] = vp_linux_tool_manager([$result]);
-
-    expect(fn () => $manager->installedInventory(vp_tool_node()))->toThrow(ToolManagerException::class);
-})->with([
-    'failed command' => [new CommandResult(1, '', '', 10, false)],
-    'truncated list' => [new CommandResult(0, '[]', '', 10, true)],
-    'malformed entry' => [new CommandResult(0, '[{}]', '', 10, false)],
-]);
-
-it('keeps manageable Vite+ tools verifiable beside unmanageable global entries', function (): void {
-    $packages = vp_result('[{"name":"JSONStream","version":"1.3.5"},{"name":"typescript","version":"5.7.3"},{"name":"unreadable","version":null}]');
-    [$manager] = vp_linux_tool_manager([$packages, $packages]);
-
-    $inventory = $manager->installedInventory(vp_tool_node());
-
-    expect($inventory->versionFor('typescript'))->toBe('5.7.3')
-        ->and($inventory->versionFor('JSONStream'))->toBeNull()
-        ->and($manager->installedVersion(vp_tool_node(), 'typescript'))->toBe('5.7.3');
-    expect(fn () => $inventory->versionFor('unreadable'))->toThrow(ToolManagerException::class);
-});
-
-it('uses the normal Vite+ scope checks before reading installed packages', function (string $platform, CommandResult $scope, string $step): void {
-    [$manager, $ssh] = vp_tool_manager([$scope]);
-
-    expect(fn () => $manager->installedInventory(vp_tool_node($platform)))
-        ->toThrow(function (ToolManagerException $exception) use ($step): void {
-            expect($exception->step)->toBe($step);
-        });
-    expect($ssh->commands)->toHaveCount(1);
-})->with([
-    'Linux absent scope' => ['linux', new CommandResult(42, '', '', 10, false), 'manager-absent'],
-    'macOS conflicting scope' => ['macos', new CommandResult(43, '', '', 10, false), 'manager-conflict'],
-    'Linux unsafe binary' => ['linux', new CommandResult(0, "/tmp/vp\n", '', 10, false), 'manager-probe'],
-    'macOS unsafe binary' => ['macos', new CommandResult(0, "/tmp/vp\n", '', 10, false), 'manager-probe'],
-    'extra output' => ['linux', new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\nextra\n", '', 10, false), 'manager-probe'],
-    'truncated scope' => ['macos', new CommandResult(0, "/Users/mini/.vite-plus/bin/vp\n", '', 10, true), 'ssh'],
-]);

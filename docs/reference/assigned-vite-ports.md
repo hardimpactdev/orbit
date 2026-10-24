@@ -12,6 +12,8 @@ covers:
 
 Several development Instances can run Vite on one Node. Orbit gives each development Instance its own Vite port on its Node. The `vp-dev` Process preset runs Vite on that port and connects it to Caddy and to [wake](/reference/app-dev-runtime-hibernation). Browsers never see the port: they load assets through the Route's HTTPS origin.
 
+The Gateway calls the [Node agent](/reference/node-agent#commands) to select a port, check its listener, and write the Vite environment and traffic markers. The Gateway owns the stored assignment and the retry policy.
+
 ## Assignment
 
 Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process. Caddy, wake, and the `vp-dev` preset use only that assigned port.

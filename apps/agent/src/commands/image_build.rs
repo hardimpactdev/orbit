@@ -178,6 +178,17 @@ fn append(root: &Path, input: &Log) -> Result<Ready, Error> {
     write().map_err(|e| failed("log", e))?;
     Ok(Ready { ready: true })
 }
+pub(super) fn phase_log(root: &Path, phase: &str, prepare: bool) -> Result<PathBuf, Error> {
+    let input = Log {
+        profile: "base".into(),
+        phase: phase.into(),
+        text: String::new(),
+    };
+    if prepare {
+        append(root, &input)?;
+    }
+    log_path(root, &input)
+}
 pub struct WriteMarker;
 impl Command for WriteMarker {
     const NAME: &'static str = "image.recipe-marker";

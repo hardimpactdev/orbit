@@ -18,7 +18,6 @@ use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -134,16 +133,15 @@ function prod_equivalence_render(Node $node, array $instances): array
         $deployment = new RemoteProductionDeployment($agents, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
-        // The PHP build installer still runs over SSH; the runtime itself goes through the agent.
+        // Both the PHP build and runtime use typed agent commands.
         $runtime = static function (Closure $operation): array {
-            $fake = new AppDevFakeSshExecutor;
             $agents = new FakeAgentCommandRunner()
-                ->answer('php.converge-production-runtime', ['published' => true])
+                ->answer('php.install-build', ['outcome' => 'current', 'data' => []])->answer('php.converge-production-runtime', ['published' => true])
                 ->answer('php.remove-production-runtime', ['removed' => true])
                 ->answer('php.refresh-production-cache', ['complete' => true]);
-            $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents, prod_equivalence_executor($fake)));
+            $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, $agents));
 
-            return [...array_map(prod_equivalence_command(...), $fake->commands), ...array_map(static fn (array $call): array => ['command' => $call['command'], 'input' => $call['input']], $agents->calls)];
+            return array_map(static fn (array $call): array => ['command' => $call['command'], 'input' => $call['command'] === 'php.install-build' ? null : $call['input']], $agents->calls);
         };
 
         $rendered[$instance->production_user] = [
@@ -162,24 +160,6 @@ function prod_equivalence_render(Node $node, array $instances): array
     }
 
     return $rendered;
-}
-
-/** @return array{arguments: list<string>, input: ?string, protected_input: ?string} */
-function prod_equivalence_command(RemoteCommand $command): array
-{
-    $protected = $command->protectedInput?->stream();
-
-    // The PHP build installer carries the recipe's pins and its own source, which a PHP bump changes. Web roots do not
-    // reach it, so the fixture records only that the step ran.
-    if (($command->arguments[4] ?? null) === 'php.install-build') {
-        return ['arguments' => ['php.install-build'], 'input' => null, 'protected_input' => null];
-    }
-
-    return [
-        'arguments' => $command->arguments,
-        'input' => $command->input,
-        'protected_input' => $protected === null ? null : (string) stream_get_contents($protected),
-    ];
 }
 
 function prod_equivalence_executor(AppDevFakeSshExecutor $ssh): ProductionSshExecutor

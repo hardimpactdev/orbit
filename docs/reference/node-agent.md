@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Infrastructure,Domain}/AgentView/**
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
-  - apps/gateway/app/Http/Controllers/Api/AgentRealtimeController.php
+  - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - .github/workflows/orbit-agent-release.yml
@@ -170,7 +170,7 @@ Target and resource locks live in `/run/orbit-agent/locks/<uid>`, one directory 
 
 ### The contract
 
-Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. Its fake runner for PHP tests refuses any command or error code that the file does not declare. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
+Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Its fake runner for PHP tests refuses any command or error code that the file does not declare. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
 
 These errors can come from any command:
 

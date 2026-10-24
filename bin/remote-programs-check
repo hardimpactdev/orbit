@@ -27,12 +27,6 @@ RUFF_VERSION = '0.17.0'
 UNIT_MARKER = '# ORBIT_TASK_UNIT_STATE'
 UNIT_LIBRARY = RESOURCES / 'tasks/unit-state.py'
 
-# Fragments that the Gateway appends to another program before it sends them, so they are checked after it.
-# RecipeImagePrograms appends build-image.py to the shared recipe library.
-FRAGMENTS = {
-    'machine-software/build-image.py': ['remote/lib/artifacts.py', 'remote/lib/recipe.py'],
-    'remote/lib/recipe.py': ['remote/lib/artifacts.py'],
-}
 
 
 def require_tool(name):
@@ -70,9 +64,6 @@ def parts(path):
     """The files that make up what the Node receives for this program, in order."""
     root = next(root for root in RESOURCE_ROOTS if path.is_relative_to(root))
     remote = root / 'remote'
-    relative = path.relative_to(root).as_posix()
-    if root == RESOURCES and relative in FRAGMENTS:
-        return [RESOURCES / name for name in FRAGMENTS[relative]] + [path]
     if path.is_relative_to(remote) and path.parent != remote and path.parent.name != 'lib':
         return [remote / name for name in header_uses(path.read_text())] + [path]
     return [path]

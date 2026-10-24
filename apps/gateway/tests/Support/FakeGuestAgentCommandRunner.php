@@ -14,6 +14,9 @@ final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
     /** @var list<array{guest: AgentGuest, command: string, input: array<string, mixed>}> */
     public array $calls = [];
 
+    /** @var list<float|null> */
+    public array $deadlines = [];
+
     /** @var list<AgentGuest> */
     public array $installs = [];
 
@@ -26,6 +29,7 @@ final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
     public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         $this->calls[] = ['guest' => $guest, 'command' => $command, 'input' => $input];
+        $this->deadlines[] = $deadlineSeconds;
 
         return $this->answer === null ? ['ready' => true] : ($this->answer)($guest, $command, $input);
     }

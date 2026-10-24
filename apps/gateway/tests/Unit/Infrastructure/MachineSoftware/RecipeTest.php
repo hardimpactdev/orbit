@@ -219,12 +219,11 @@ describe('machine recipe structure and identity', function (): void {
 
     it('seeds the existing enrollment and image-build packages without adding base-only software to roles', function (): void {
         $recipe = new RecipeLoader()->load();
-        $node = new Node;
+        $node = new Node(['platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit']);
         $packages = new NodeBootstrapPackageCatalog;
         $common = [...$packages->forNode($node), 'git', 'git-man'];
-        $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
-        [, $json] = explode("\0", $programs['install']->input ?? '', 2);
-        $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        $programs = new RemotePhpPackageManager()->appDevPrograms($node, new InstancePhpVersionCatalog()->versions());
+        $input = json_decode($programs['install']->input, true, flags: JSON_THROW_ON_ERROR)['input'];
         $php = [];
         foreach ($input['versions'] as $set) {
             $php = [...$php, ...array_column($set['packages'], 'name')];

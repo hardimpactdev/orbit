@@ -7,7 +7,7 @@
   bin/php-build key [--all]            # digest of the pins, for a download cache key
   bin/php-build describe               # the upstream PHP releases the recipe pins
 
-`install` runs apps/gateway/resources/remote/php/install-build.py, the one installer that Nodes and images run too.
+`install` calls php.install-build in the agent built from this checkout. Build apps/agent with cargo build --release --locked first.
 `verify` exits 1 when the `php` on PATH is not the recipe build: its PHP_VERSION, its CLI modules, or a package version.
 """
 import argparse
@@ -24,8 +24,8 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
-REMOTE = ROOT / 'apps/gateway/resources/remote'
-artifact_candidates = runpy.run_path(str(REMOTE / 'lib/artifacts.py'))['artifact_candidates']
+AGENT = ROOT / 'apps/agent/target/release/orbit-agent'
+agent_command = runpy.run_path(str(ROOT / 'tools/agent_command.py'))
 # php.install-build keeps every pinned and repacked file here; they are the rollback.
 CACHE = Path('/var/cache/orbit/php-packages')
 CODENAMES = {'26.04': 'resolute'}
@@ -177,7 +177,7 @@ def download(url, destination, digest, *, algorithm='sha256'):
     partial.rename(destination)
 
 
-def installer_input(recipe, versions, *, profile, mode='apply', extras='refuse', fpm='shared'):
+def installer_input(recipe, versions, *, profile, extras='refuse', fpm='shared'):
     """The input of php.install-build, as PhpBuildInstaller::input() builds it in the Gateway."""
     sets = {}
     for version in versions:
@@ -191,30 +191,23 @@ def installer_input(recipe, versions, *, profile, mode='apply', extras='refuse',
         sets[version] = {'packages': packages, 'extensions': selected['extensions']}
     policy = profile_policy(recipe, profile, versions[0])
     rollback = recipe['php']['rollback']
-    return {'mode': mode, 'versions': sets, 'mirror': recipe['artifact_mirror'], **policy, 'extras': extras,
+    return {'versions': sets, 'mirror': recipe['artifact_mirror'], **policy, 'extras': extras,
             'fpm': 'disabled' if profile == 'vpn' else fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
-            'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
-
-
-def assemble(name):
-    """The program as the Gateway sends it: the libraries on its `Uses` line, then the program."""
-    area, stem = name.split('.')
-    text = (REMOTE / area / f'{stem}.py').read_text()
-    uses = next((line.split(':', 1)[1].split() for line in text.splitlines() if line.startswith('# Uses:')), [])
-    parts = [(REMOTE / library).read_text() for library in uses] + [text]
-    return ''.join(part if part.endswith('\n') else part + '\n' for part in parts)
+            'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}}
 
 
 def run_installer(payload):
     """Run php.install-build, the one installer of the PHP build (ADR 0216), and return (outcome, data, log)."""
-    completed = subprocess.run(['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
-                               input=assemble('php.install-build').encode() + b'\0' + json.dumps(payload).encode(),
-                               capture_output=True, timeout=1800)
-    log = completed.stderr.decode(errors='replace')
     try:
-        result = json.loads(completed.stdout.decode().strip().splitlines()[-1])
-    except (IndexError, ValueError):
-        raise BuildError('php.install-build ended without a result:\n' + log[-4000:])
+        result, log = agent_command['run'](AGENT, 'php.install-build', payload, 1800)
+    except agent_command['Refused'] as error:
+        if error.code.startswith('php.build_'):
+            return error.code.removeprefix('php.build_'), error.details, error.log
+        raise BuildError(f'php.install-build refused: {error}') from error
+    except agent_command['CommandError'] as error:
+        raise BuildError(str(error)) from error
+    if result.get('outcome') not in ('current', 'applied') or not isinstance(result.get('data'), dict):
+        raise BuildError('php.install-build ended without a valid agent result.')
     return result['outcome'], result['data'], log
 
 
@@ -264,7 +257,10 @@ def mirror(recipe, directory, published=()):
             filename = name + '_' + artifact[algorithm] + '.deb'
             if filename in seen:
                 continue
-            urls = artifact_candidates(name, artifact, recipe['artifact_mirror'])
+            urls = list(dict.fromkeys([
+                *([recipe['artifact_mirror'] + '/' + filename] if recipe['artifact_mirror'] else []),
+                artifact['url'],
+            ]))
             for index, url in enumerate(urls):
                 try:
                     download(url, directory / filename, artifact[algorithm], algorithm=algorithm)
