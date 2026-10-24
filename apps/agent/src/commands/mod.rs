@@ -292,6 +292,7 @@ pub fn all() -> Vec<Entry> {
         entry::<service_metrics::ServiceRuntime>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),
+        entry::<hibernation::PrepareDirectories>(),
         entry::<hibernation::MarkHibernation>(),
         entry::<hibernation::ReadHibernationTimes>(),
         entry::<hibernation::InspectCheckout>(),

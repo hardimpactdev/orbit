@@ -102,14 +102,14 @@ The awake markers live in `/dev/shm`, so a reboot clears them. Development Proce
 
 ## Host directories
 
-The `app-dev` role and each marker write create these directories before Caddy reloads or reads a marker.
+The `app-dev` role calls `hibernation.prepare-directories` through the Node agent before Caddy reloads. Each marker write uses the same native directory setup before Caddy reads a marker. The agent checks both directory paths and resolves the Caddy group before changing either directory.
 
 | Path | Owner | Mode | Use |
 | --- | --- | --- | --- |
 | `/dev/shm/orbit/hibernation` | `root:caddy` | `0755` | `app-instance-{id}.awake` markers. |
 | `/data/caddy/orbit/hibernation` | `root:caddy` | `2775` | `app-instance-{id}.log` access logs and `app-instance-{id}.cold` markers. |
 
-Orbit sets each parent directory to `0755` so the `caddy` user can reach them. The Gateway validates each Caddy build as the Caddy user, so new log files stay writable by the service.
+Orbit sets each parent directory below the protected host roots to `0755` so the `caddy` user can reach them. It leaves protected roots such as `/dev/shm` and `/tmp` unchanged. Awake markers belong in the marker directory; cold markers belong in the access-log directory. A marker outside those directories is refused before directory setup. The Gateway validates each Caddy build as the Caddy user, so new log files stay writable by the service.
 
 ## Docker Processes
 

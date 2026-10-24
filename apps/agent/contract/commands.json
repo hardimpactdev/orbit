@@ -3181,6 +3181,19 @@
       ]
     },
     {
+      "name": "hibernation.prepare-directories",
+      "summary": "Prepare Caddy's hibernation marker and access-log directories.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "hibernation.node_failed"
+      ]
+    },
+    {
       "name": "hibernation.marker",
       "summary": "Create or remove a hibernation marker that Caddy reads.",
       "mutates": true,

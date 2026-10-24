@@ -14,6 +14,7 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -109,13 +110,29 @@ it('converges and removes only app development role-owned infrastructure', funct
         "dns:{$node->id}",
         'ssh:caddy-source',
         'ssh:app-dev',
-        'ssh:'.RuntimeHibernation::MarkerDirectory,
+        'agent:hibernation-directories',
         'caddy:converge',
         'firewall:converge:app-dev',
         'caddy:remove',
         'firewall:remove:app-dev',
         'dns:none',
     ]);
+});
+
+it('stops before publishing Caddy when hibernation directory preparation refuses', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::AppDev);
+    $agents = (new FakeAgentCommandRunner)->refuse('hibernation.prepare-directories', 'hibernation.node_failed', ['step' => 'hibernation-directories']);
+
+    try {
+        app_dev_role_baseline($events, $agents)->converge($node, $assignment);
+        test()->fail('Convergence should refuse.');
+    } catch (RuntimeConvergenceException $error) {
+        expect($error->errorCode)->toBe('app-dev.prerequisite_failed');
+        expect($error->getPrevious())->toBeInstanceOf(AgentCommandRefused::class);
+    }
+
+    expect($events)->toBe(["dns:{$node->id}", 'ssh:caddy-source', 'ssh:app-dev']);
 });
 
 it('rejects stored protected settings before preparing app-dev roots', function (): void {
@@ -437,21 +454,6 @@ it('passes a nondefault managed account into every baseline prerequisite command
     [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, name: 'app-prod-managed-account');
     $accounts = baseline_account_resolver($account);
     $agents = new FakeAgentCommandRunner;
-    $ssh = new class($events) implements SshExecutor
-    {
-        /** @param list<string> $events */
-        public function __construct(
-            private array &$events,
-        ) {}
-
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $this->events[] = json_encode($command->arguments, JSON_THROW_ON_ERROR);
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-    };
-
     new VpnRoleBaseline(
         baseline_prerequisites($events, agents: $agents),
         baseline_firewall($events),
@@ -460,7 +462,7 @@ it('passes a nondefault managed account into every baseline prerequisite command
 
     new DevelopmentRoleBaseline(
         baseline_prerequisites($events, agents: $agents),
-        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        $agents->answer('hibernation.prepare-directories', []),
         new class implements AppDevCaddyManager
         {
             public function converge(Node $node, RoleName $role = RoleName::AppDev): void {}
@@ -1015,7 +1017,7 @@ it('checks the remote operating system before every role convergence', function 
         'dns:3',
         'ssh:caddy-source',
         'ssh:app-dev',
-        'ssh:'.RuntimeHibernation::MarkerDirectory,
+        'agent:hibernation-directories',
         'caddy:converge',
         'firewall:converge:app-dev',
         'guard:app-prod',
@@ -1306,7 +1308,7 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
     );
 }
 
-function app_dev_role_baseline(array &$events): DevelopmentRoleBaseline
+function app_dev_role_baseline(array &$events, ?FakeAgentCommandRunner $agents = null): DevelopmentRoleBaseline
 {
     $caddy = new class($events) implements AppDevCaddyManager
     {
@@ -1340,7 +1342,15 @@ function app_dev_role_baseline(array &$events): DevelopmentRoleBaseline
 
     return new DevelopmentRoleBaseline(
         baseline_prerequisites($events),
-        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        $agents ?? (new FakeAgentCommandRunner)->answer('hibernation.prepare-directories', static function (array $input) use (&$events): array {
+            expect($input)->toBe([
+                'marker_directory' => RuntimeHibernation::MarkerDirectory,
+                'log_directory' => RuntimeHibernation::AccessLogDirectory,
+            ]);
+            $events[] = 'agent:hibernation-directories';
+
+            return [];
+        }),
         $caddy,
         baseline_firewall($events),
         $dns,

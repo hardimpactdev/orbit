@@ -14,10 +14,9 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Nodes\EnrollmentProgram;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -25,7 +24,7 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
 {
     public function __construct(
         private RolePrerequisites $prerequisites,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private AppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
@@ -56,15 +55,17 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             packages: ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev)),
         );
         // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
-        $this->ssh->execute(
+        AgentStep::run(
+            $this->agents,
             $node,
-            new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', RuntimeHibernation::MarkerDirectory, RuntimeHibernation::AccessLogDirectory],
-                HibernationDirectoryEnsure::script(),
-            ),
+            'hibernation.prepare-directories',
+            [
+                'marker_directory' => RuntimeHibernation::MarkerDirectory,
+                'log_directory' => RuntimeHibernation::AccessLogDirectory,
+            ],
             'hibernation-directories',
             'app-dev.prerequisite_failed',
-            failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
+            CaddyRoleFailure::sshLabel(RoleName::AppDev),
         );
         $this->caddy->converge($node, RoleName::AppDev);
         $this->firewall->converge($node, RoleName::AppDev, $node->user);

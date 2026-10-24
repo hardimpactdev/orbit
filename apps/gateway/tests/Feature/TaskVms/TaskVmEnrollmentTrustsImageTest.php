@@ -69,6 +69,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     };
     app()->instance(SshExecutor::class, $ssh);
     $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', [])
+        ->answer('hibernation.prepare-directories', [])
         ->answer('tools.materialize-composer', [])
         ->answer('tools.materialize-vp', ['binary' => '/opt/orbit/vite-plus/bin/vp', 'changed' => false])
         ->answer('tools.composer-version', ['version' => 'Composer version 2.9.0'])
@@ -156,5 +157,10 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     ]);
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     // Hibernation directories are per-VM state, not part of the software skip.
-    expect(collect($ssh->commands)->contains(static fn (RemoteCommand $command): bool => in_array(RuntimeHibernation::MarkerDirectory, $command->arguments, true)))->toBeTrue();
+    expect(array_values(array_filter($agents->calls, static fn (array $call): bool => $call['command'] === 'hibernation.prepare-directories')))->toBe([
+        ['node' => $node->name, 'command' => 'hibernation.prepare-directories', 'input' => [
+            'marker_directory' => RuntimeHibernation::MarkerDirectory,
+            'log_directory' => RuntimeHibernation::AccessLogDirectory,
+        ]],
+    ]);
 })->with(['task VM without metadata' => true, 'ordinary app-dev Node' => false]);

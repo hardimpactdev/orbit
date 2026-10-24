@@ -9,7 +9,7 @@ use std::{
     collections::BTreeMap,
     fs,
     os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::{Command as Process, Stdio},
     time::{Duration, UNIX_EPOCH},
 };
@@ -30,7 +30,7 @@ const PROTECTED: [&str; 9] = [
 ];
 
 /// Makes each ancestor of `directory` below the protected roots passable, then `directory` itself for Caddy.
-fn ensure_directory(directory: &Path, mode: u32) -> std::io::Result<()> {
+fn ensure_directory(directory: &Path, mode: u32, owner: (u32, u32)) -> std::io::Result<()> {
     let mut ancestors: Vec<&Path> = directory
         .ancestors()
         .skip(1)
@@ -48,10 +48,53 @@ fn ensure_directory(directory: &Path, mode: u32) -> std::io::Result<()> {
     if !directory.is_dir() {
         fs::DirBuilder::new().mode(0o755).create(directory)?;
     }
-    let caddy =
-        group_id("caddy").ok_or_else(|| std::io::Error::other("the caddy group does not exist"))?;
-    chown(directory, 0, caddy)?;
+    chown(directory, owner.0, owner.1)?;
     fs::set_permissions(directory, fs::Permissions::from_mode(mode))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectoriesInput {
+    pub marker_directory: PathBuf,
+    pub log_directory: PathBuf,
+}
+
+fn valid_directory(path: &Path) -> bool {
+    path.is_absolute()
+        && path != Path::new("/")
+        && !PROTECTED.contains(&path.to_string_lossy().as_ref())
+        && path
+            .components()
+            .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
+        && path
+            .ancestors()
+            .all(|ancestor| match fs::symlink_metadata(ancestor) {
+                Ok(metadata) => metadata.is_dir(),
+                Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+            })
+}
+
+fn caddy_owner(step: &str) -> Result<(u32, u32), HibernationError> {
+    group_id("caddy")
+        .map(|gid| (0, gid))
+        .ok_or_else(|| failed(step))
+}
+
+fn prepare_directories(
+    input: &DirectoriesInput,
+    owner: (u32, u32),
+) -> Result<Done, HibernationError> {
+    let step = "hibernation-directories";
+    if !valid_directory(&input.marker_directory)
+        || !valid_directory(&input.log_directory)
+        || input.marker_directory.starts_with(&input.log_directory)
+        || input.log_directory.starts_with(&input.marker_directory)
+    {
+        return Err(failed(step));
+    }
+    ensure_directory(&input.marker_directory, 0o755, owner).map_err(|_| failed(step))?;
+    ensure_directory(&input.log_directory, 0o2775, owner).map_err(|_| failed(step))?;
+    Ok(Done {})
 }
 
 #[derive(Deserialize)]
@@ -72,6 +115,13 @@ pub enum MarkerInput {
 pub struct Done {}
 
 pub fn marker(input: &MarkerInput) -> Result<Done, HibernationError> {
+    marker_with_owner(input, || caddy_owner("hibernation-marker"))
+}
+
+fn marker_with_owner(
+    input: &MarkerInput,
+    owner: impl FnOnce() -> Result<(u32, u32), HibernationError>,
+) -> Result<Done, HibernationError> {
     match input {
         MarkerInput::Mark {
             marker_directory,
@@ -79,11 +129,26 @@ pub fn marker(input: &MarkerInput) -> Result<Done, HibernationError> {
             path,
         } => {
             let step = "hibernation-marker";
-            ensure_directory(marker_directory, 0o755).map_err(|_| failed(step))?;
-            ensure_directory(log_directory, 0o2775).map_err(|_| failed(step))?;
-            if !path.starts_with(marker_directory) {
+            if ![marker_directory.as_path(), log_directory.as_path()]
+                .contains(&path.parent().unwrap_or(Path::new("")))
+                || !path
+                    .components()
+                    .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
+                || match fs::symlink_metadata(path) {
+                    Ok(metadata) => !metadata.is_file(),
+                    Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+                }
+            {
                 return Err(failed(step));
             }
+            prepare_directories(
+                &DirectoriesInput {
+                    marker_directory: marker_directory.clone(),
+                    log_directory: log_directory.clone(),
+                },
+                owner()?,
+            )
+            .map_err(|_| failed(step))?;
             fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -304,6 +369,26 @@ pub fn restore(input: &RestoreInput) -> Result<Done, HibernationError> {
     Ok(Done {})
 }
 
+pub struct PrepareDirectories;
+
+impl Command for PrepareDirectories {
+    const NAME: &'static str = "hibernation.prepare-directories";
+    const SUMMARY: &'static str = "Prepare Caddy's hibernation marker and access-log directories.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    type Input = DirectoriesInput;
+    type Output = Done;
+    type Error = HibernationError;
+
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+
+    fn run(input: DirectoriesInput, _: &Context) -> Result<Done, HibernationError> {
+        prepare_directories(&input, caddy_owner("hibernation-directories")?)
+    }
+}
+
 pub struct MarkHibernation;
 
 impl Command for MarkHibernation {
@@ -415,6 +500,180 @@ impl Command for RestoreDependencies {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture(PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn fixture() -> (Fixture, DirectoriesInput, (u32, u32)) {
+        let path = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("orbit-hibernation-{:016x}", rand::random::<u64>()));
+        fs::create_dir(&path).unwrap();
+        let root = Fixture(path.clone());
+        let input = DirectoriesInput {
+            marker_directory: path.join("markers/hibernation"),
+            log_directory: path.join("logs/hibernation"),
+        };
+        let metadata = fs::metadata(&path).unwrap();
+        (root, input, (metadata.uid(), metadata.gid()))
+    }
+
+    #[test]
+    fn directory_setup_repairs_modes_and_preserves_protected_roots_on_repeat() {
+        let (_root, input, owner) = fixture();
+        let protected_modes: Vec<_> = PROTECTED
+            .iter()
+            .map(|p| (p, fs::metadata(p).ok().map(|m| m.mode())))
+            .collect();
+        fs::create_dir_all(&input.marker_directory).unwrap();
+        fs::set_permissions(
+            input.marker_directory.parent().unwrap(),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        for _ in 0..2 {
+            assert_eq!(prepare_directories(&input, owner), Ok(Done {}));
+            for (path, mode) in [
+                (&input.marker_directory, 0o755),
+                (&input.log_directory, 0o2775),
+            ] {
+                let metadata = fs::metadata(path).unwrap();
+                assert_eq!(metadata.mode() & 0o7777, mode);
+                assert_eq!((metadata.uid(), metadata.gid()), owner);
+                assert_eq!(
+                    fs::metadata(path.parent().unwrap()).unwrap().mode() & 0o7777,
+                    0o755
+                );
+            }
+        }
+        for (path, mode) in protected_modes {
+            assert_eq!(fs::metadata(path).ok().map(|m| m.mode()), mode);
+        }
+    }
+
+    #[test]
+    fn invalid_second_directory_refuses_before_creating_the_first() {
+        let (root, mut input, owner) = fixture();
+        let occupied = root.0.join("occupied");
+        fs::write(&occupied, "keep").unwrap();
+        for invalid in [
+            occupied.clone(),
+            PathBuf::from("relative/path"),
+            PathBuf::from("/tmp"),
+            input.marker_directory.clone(),
+            input.marker_directory.join("child"),
+        ] {
+            input.log_directory = invalid;
+            assert_eq!(
+                prepare_directories(&input, owner),
+                Err(failed("hibernation-directories"))
+            );
+            assert!(!input.marker_directory.parent().unwrap().exists());
+        }
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), "keep");
+    }
+
+    #[test]
+    fn linked_directory_and_marker_are_refused_without_changing_their_targets() {
+        let (root, mut input, owner) = fixture();
+        let target = root.0.join("target");
+        fs::create_dir(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+        let link = root.0.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        input.log_directory = link.join("logs");
+        assert_eq!(
+            prepare_directories(&input, owner),
+            Err(failed("hibernation-directories"))
+        );
+        assert!(!input.marker_directory.exists());
+        assert_eq!(fs::metadata(&target).unwrap().mode() & 0o7777, 0o700);
+
+        fs::create_dir_all(&input.marker_directory).unwrap();
+        let path = input.marker_directory.join("app-instance-1.awake");
+        let outside = root.0.join("outside");
+        fs::write(&outside, "keep").unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert_eq!(
+            marker_with_owner(
+                &MarkerInput::Mark {
+                    marker_directory: input.marker_directory,
+                    log_directory: root.0.join("logs"),
+                    path,
+                },
+                || Ok(owner)
+            ),
+            Err(failed("hibernation-marker"))
+        );
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "keep");
+        assert_eq!(fs::metadata(&outside).unwrap().mode() & 0o7777, 0o600);
+    }
+
+    #[test]
+    fn awake_and_cold_markers_are_created_repeatedly_in_their_own_directories() {
+        let (_root, input, owner) = fixture();
+        for path in [
+            input.marker_directory.join("app-instance-1.awake"),
+            input.log_directory.join("app-instance-1.cold"),
+        ] {
+            let mark = MarkerInput::Mark {
+                marker_directory: input.marker_directory.clone(),
+                log_directory: input.log_directory.clone(),
+                path: path.clone(),
+            };
+            for _ in 0..2 {
+                assert_eq!(marker_with_owner(&mark, || Ok(owner)), Ok(Done {}));
+                assert_eq!(fs::metadata(&path).unwrap().mode() & 0o7777, 0o644);
+            }
+            for _ in 0..2 {
+                assert_eq!(
+                    marker(&MarkerInput::Remove { path: path.clone() }),
+                    Ok(Done {})
+                );
+                assert!(!path.exists());
+            }
+        }
+    }
+
+    #[test]
+    fn marker_refuses_invalid_path_or_missing_group_before_directory_setup() {
+        let (root, input, owner) = fixture();
+        for path in [
+            root.0.join("outside"),
+            input.marker_directory.join("../outside"),
+        ] {
+            assert_eq!(
+                marker_with_owner(
+                    &MarkerInput::Mark {
+                        marker_directory: input.marker_directory.clone(),
+                        log_directory: input.log_directory.clone(),
+                        path,
+                    },
+                    || Ok(owner)
+                ),
+                Err(failed("hibernation-marker"))
+            );
+            assert!(!input.marker_directory.parent().unwrap().exists());
+        }
+        assert_eq!(
+            marker_with_owner(
+                &MarkerInput::Mark {
+                    path: input.marker_directory.join("app-instance-1.awake"),
+                    marker_directory: input.marker_directory.clone(),
+                    log_directory: input.log_directory.clone(),
+                },
+                || Err(failed("hibernation-marker"))
+            ),
+            Err(failed("hibernation-marker"))
+        );
+        assert!(!input.marker_directory.parent().unwrap().exists());
+    }
 
     #[test]
     fn inspection_reports_dependency_files_and_prune_removes_only_real_dependency_directories() {
