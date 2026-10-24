@@ -43,6 +43,42 @@
       ]
     },
     {
+      "name": "gateway.converge-fpm",
+      "summary": "Validate and activate the Gateway pool and startup hooks, preserving unchanged requests.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.fpm_invalid",
+        "gateway.fpm_unsafe",
+        "gateway.fpm_failed",
+        "gateway.fpm_hook_failed",
+        "gateway.fpm_recovery_failed",
+        "gateway.fpm_observation_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-fpm-connections",
+      "summary": "Count accepted connections on every enabled Gateway PHP-FPM pool socket.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.fpm_invalid",
+        "gateway.fpm_unsafe",
+        "gateway.fpm_failed",
+        "gateway.fpm_hook_failed",
+        "gateway.fpm_recovery_failed",
+        "gateway.fpm_observation_failed"
+      ]
+    },
+    {
       "name": "tools.inspect-vp-store",
       "summary": "Inspect exact immutable deployment runtimes without locks or network access.",
       "mutates": false,

@@ -45,7 +45,6 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
@@ -144,7 +143,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 builds: $app->make(NodeCaddyBuilds::class),
                 fpmRenderer: $app->make(GatewayFpmConfigRenderer::class),
                 fpm: $app->make(NativeGatewayFpmConverger::class),
-                files: $app->make(ProtectedFileWriter::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),
                 agentView: $app->make(AgentViewConverger::class),
                 releaseUnits: $app->make(GatewayReleaseUnitConverger::class),

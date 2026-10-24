@@ -13,7 +13,6 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Models\Node;
 
 final readonly class NativeGatewayWebConverger implements GatewayWebConverger
@@ -21,7 +20,6 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
     public function __construct(
         private GatewayCertificateIssuer $certificates,
         private GatewayFpmConfigRenderer $fpmRenderer,
-        private ProtectedFileWriter $files,
         private GatewayCheckoutAccessConverger $checkout,
         private GatewayWebDirectoryConverger $webDirectory,
         private NativeGatewayCertificatePublisher $certificatePublisher,
@@ -48,14 +46,8 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->checkout->converge($node);
         $this->webDirectory->converge($node);
         $certificate = $this->certificates->issue($hostname, $wireguardIp);
-        $generatedFpmPool = rtrim(string: $this->orbitHome, characters: '/').'/generated/gateway/php-fpm-pool.conf';
-        $this->files->put(
-            $generatedFpmPool,
-            $this->fpmRenderer->renderPool($this->checkoutPath, $this->orbitHome),
-            0o644,
-        );
         $this->certificatePublisher->publish($node, $certificate);
-        $this->fpm->converge($node, $generatedFpmPool);
+        $this->fpm->converge($node, $this->fpmRenderer->renderPool($this->checkoutPath, $this->orbitHome));
         $this->build($node);
         $this->hibernator->converge();
         $this->agentView->converge();

@@ -353,13 +353,15 @@ The scheduler phase:
 5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 6. resets OPcache, described below.
 
-The handoff compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf`. A reload ends requests in flight, so a matching pool keeps running, and the handoff only installs the contributed [start hooks](/reference/extensions#plug-in-points). For a different pool, it checks and installs the pool. Then it installs and runs the start hooks and reloads PHP-FPM.
+The handoff sends the rendered pool and contributed [start hooks](/reference/extensions#plug-in-points) to `gateway.converge-fpm`. The agent compares the pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` under the shared PHP-FPM publication lock. A matching active pool keeps serving without a reload; hook configuration still converges. For a changed pool, the agent validates a private candidate with every other enabled pool, installs and runs the hooks, publishes the pool atomically, and activates PHP-FPM. A failed activation restores the prior pool bytes, permissions, and service state; a failed restoration has its own refusal. An inactive service starts even when the pool matches.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
 Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The scheduler phase therefore ends with an OPcache reset through the pool's socket, with a script outside `public/`.
 
-All pools of the PHP-FPM master share one OPcache. OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout` (180 seconds) kills the workers that still serve a request, and a Gateway request may run 600 seconds. So the handoff resets only while no enabled pool has a connection on its `listen` socket, and the restart happens with the next request. It waits up to 60 seconds for that moment. Then it asks the pool again until the restart has happened.
+All pools of the PHP-FPM master share one OPcache. OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout` (180 seconds) kills the workers that still serve a request, and a Gateway request may run 600 seconds.
+
+The native `gateway.inspect-fpm-connections` command counts connections on the `listen` sockets of all enabled pools. An unavailable observation fails the reset without stopping the release. So the handoff resets only while no enabled pool has a connection on its `listen` socket, and the restart happens with the next request. It waits up to 60 seconds for that moment. Then it asks the pool again until the restart has happened.
 
 | `opcache.outcome` | Meaning |
 | --- | --- |

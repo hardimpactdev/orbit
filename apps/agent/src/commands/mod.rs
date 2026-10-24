@@ -29,6 +29,7 @@ pub mod environment;
 pub mod firewall;
 mod gateway_certificate;
 mod gateway_checkout;
+mod gateway_fpm;
 pub mod gateway_start_hooks;
 mod gateway_web;
 mod guest;
@@ -53,6 +54,7 @@ pub mod os_release;
 mod package_cache;
 pub mod peer_dns;
 pub mod php_build;
+mod php_fpm;
 mod php_profile;
 pub mod php_runtime;
 mod php_shared;
@@ -101,6 +103,8 @@ pub fn all() -> Vec<Entry> {
     vec![
         entry::<agent::Status>(),
         entry::<gateway_start_hooks::Converge>(),
+        entry::<gateway_fpm::Converge>(),
+        entry::<gateway_fpm::Connections>(),
         entry::<vp_store::Inspect>(),
         entry::<vp_store::Install>(),
         entry::<vp_store::Prune>(),

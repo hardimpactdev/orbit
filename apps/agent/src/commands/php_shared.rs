@@ -1,6 +1,6 @@
 //! Shared distribution PHP-FPM pools: discover, retire moving sockets, publish, and recover as one mutation.
 use super::php_runtime::valid_version as version;
-use super::recipe::{self, Files, Host, Invocation, Native, WorkDir};
+use super::recipe::{self, Files, Host, Invocation, Native};
 use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
@@ -291,63 +291,13 @@ fn validate(
     version: &str,
     configuration: &str,
 ) -> Result<(), Error> {
-    let work = WorkDir::new().map_err(|_| failed("stage"))?;
-    let pools = work.0.join("pool.d");
-    fs::create_dir(&pools).map_err(|_| failed("stage"))?;
-    let live = pool_path(files, version);
-    for entry in fs::read_dir(live.parent().unwrap()).map_err(|_| failed("read"))? {
-        let entry = entry.map_err(|_| failed("read"))?;
-        if entry.file_name() == "orbit-scopes.conf"
-            || entry.path().extension().is_none_or(|s| s != "conf")
-        {
-            continue;
-        }
-        metadata(&entry.path(), files.uid, false)?.ok_or(Error::Unsafe {})?;
-        fs::copy(entry.path(), pools.join(entry.file_name())).map_err(|_| failed("stage"))?;
-    }
-    fs::write(pools.join("orbit-scopes.conf"), configuration).map_err(|_| failed("stage"))?;
-    let main = live
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("php-fpm.conf");
-    metadata(&main, files.uid, false)?.ok_or_else(|| failed("main"))?;
-    let text = fs::read_to_string(main).map_err(|_| failed("read"))?;
-    let expected = format!("/etc/php/{version}/fpm/pool.d/*.conf");
-    let mut count = 0;
-    let rewritten = text
-        .split_inclusive('\n')
-        .map(|line| {
-            if line
-                .trim()
-                .split_once('=')
-                .is_some_and(|(key, value)| key.trim() == "include" && value.trim() == expected)
-            {
-                count += 1;
-                format!("include = {}/*.conf\n", pools.display())
-            } else {
-                line.into()
-            }
-        })
-        .collect::<String>();
-    if count != 1 {
-        return Err(Error::Invalid {});
-    }
-    let candidate = work.0.join("php-fpm.conf");
-    fs::write(&candidate, rewritten).map_err(|_| failed("stage"))?;
-    call(
-        host,
-        &[
-            &format!("/usr/sbin/php-fpm{version}"),
-            "--test",
-            "--fpm-config",
-            candidate.to_str().ok_or(Error::Invalid {})?,
-        ],
-        "validate",
-        true,
-    )?;
-    Ok(())
+    super::php_fpm::validate(files, host, version, "orbit-scopes.conf", configuration).map_err(
+        |error| match error {
+            super::php_fpm::Error::Invalid => Error::Invalid {},
+            super::php_fpm::Error::Unsafe => Error::Unsafe {},
+            super::php_fpm::Error::Failed(stage) => failed(stage),
+        },
+    )
 }
 fn publish(
     files: &Files,
@@ -559,6 +509,7 @@ impl Command for Inspect {
 }
 pub struct Converge;
 impl Command for Converge {
+    const RESOURCES: &'static [&'static str] = &["php-fpm"];
     const NAME: &'static str = "php.converge-shared-pools";
     const SUMMARY: &'static str =
         "Publish shared PHP pools with ordered version changes and recovery.";

@@ -14,8 +14,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Files\ProtectedFileWriter;
-use App\Infrastructure\Gateway\FpmPoolConnections;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
@@ -45,16 +43,8 @@ use Throwable;
  */
 final readonly class GatewayRuntimeHandoff
 {
-    public const string LivePool = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
-
-    /** @var Closure(string): (string|false) */
-    private Closure $readLivePool;
-
     /** @var Closure(string, string): string */
     private Closure $resetOpcache;
-
-    /** @var Closure(): int */
-    private Closure $fpmConnections;
 
     /** @var Closure(int): void */
     private Closure $sleep;
@@ -63,7 +53,6 @@ final readonly class GatewayRuntimeHandoff
     private Closure $clock;
 
     /**
-     * @param  (Closure(string): (string|false))|null  $readLivePool
      * @param  (Closure(string, string): string)|null  $resetOpcache  runs the reset script inside the pool with a query and returns its JSON
      * @param  (Closure(): int)|null  $fpmConnections  requests in flight in every pool of the PHP-FPM master, which share one OPcache
      * @param  (Closure(int): void)|null  $sleep  microseconds
@@ -74,7 +63,6 @@ final readonly class GatewayRuntimeHandoff
         private NodeCaddyBuilds $builds,
         private GatewayFpmConfigRenderer $fpmRenderer,
         private NativeGatewayFpmConverger $fpm,
-        private ProtectedFileWriter $files,
         private RuntimeHibernatorConverger $hibernator,
         private AgentViewConverger $agentView,
         private GatewayReleaseUnitConverger $releaseUnits,
@@ -82,10 +70,8 @@ final readonly class GatewayRuntimeHandoff
         private GatewayCleanupHandoff $cleanup,
         private string $applicationPath,
         private string $orbitHome,
-        private string $livePool = self::LivePool,
-        ?Closure $readLivePool = null,
         ?Closure $resetOpcache = null,
-        ?Closure $fpmConnections = null,
+        private ?Closure $fpmConnections = null,
         ?Closure $sleep = null,
         private int $idleWaitSeconds = 60,
         private ?FleetConvergeUnits $fleet = null,
@@ -95,9 +81,7 @@ final readonly class GatewayRuntimeHandoff
         ?Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): float => hrtime(true);
-        $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
-        $this->fpmConnections = $fpmConnections ?? new FpmPoolConnections(dirname($this->livePool))->count(...);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -177,7 +161,7 @@ final readonly class GatewayRuntimeHandoff
             'cleanup_paused' => $cleanup['paused'],
             'gateway_agent' => $agent,
             // Last, after verify: the reset may wait up to a minute for the pools to go idle.
-            'opcache' => $this->opcache(),
+            'opcache' => $this->opcache($gateway),
         ];
     }
 
@@ -260,21 +244,9 @@ final readonly class GatewayRuntimeHandoff
     {
         $rendered = $this->fpmRenderer->renderPool($this->applicationPath, $this->orbitHome);
 
-        if (($this->readLivePool)($this->livePool) === $rendered) {
-            $this->step('fpm', 'gateway.release_fpm_failed', function () use ($gateway): void {
-                $this->fpm->installStartHooks($gateway);
-            });
+        $activated = $this->step('fpm', 'gateway.release_fpm_failed', fn (): bool => $this->fpm->converge($gateway, $rendered));
 
-            return 'unchanged';
-        }
-
-        $this->step('fpm', 'gateway.release_fpm_failed', function () use ($rendered, $gateway): void {
-            $generated = rtrim($this->orbitHome, '/').'/generated/gateway/php-fpm-pool.conf';
-            $this->files->put($generated, $rendered, 0o644);
-            $this->fpm->converge($gateway, $generated);
-        });
-
-        return 'reloaded';
+        return $activated ? 'reloaded' : 'unchanged';
     }
 
     /**
@@ -290,16 +262,20 @@ final readonly class GatewayRuntimeHandoff
      *
      * @return array<string, mixed>
      */
-    private function opcache(): array
+    private function opcache(Node $gateway): array
     {
         $deadline = ($this->clock)() + $this->idleWaitSeconds * 1_000_000_000;
 
-        while (($this->fpmConnections)() > 0) {
-            if (($this->clock)() >= $deadline) {
-                return ['outcome' => 'deferred'];
-            }
+        try {
+            while (($this->fpmConnections !== null ? ($this->fpmConnections)() : $this->fpm->connections($gateway)) > 0) {
+                if (($this->clock)() >= $deadline) {
+                    return ['outcome' => 'deferred'];
+                }
 
-            ($this->sleep)(100_000);
+                ($this->sleep)(100_000);
+            }
+        } catch (Throwable) {
+            return ['outcome' => 'failed'];
         }
 
         $release = realpath($this->applicationPath);

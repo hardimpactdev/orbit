@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::recipe::WorkDir;
 use recipe::{Failure, Output as ProcessOutput};
 use std::os::unix::fs::{symlink, PermissionsExt};
 

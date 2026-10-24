@@ -860,7 +860,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
                 certificates: app(GatewayCertificateIssuer::class),
                 fpmRenderer: app(GatewayFpmConfigRenderer::class),
-                files: app(ProtectedFileWriter::class),
                 checkout: new GatewayCheckoutAccessConverger(
                     agents: app(AgentCommandRunner::class),
                     checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),

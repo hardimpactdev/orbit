@@ -16,7 +16,6 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -189,6 +188,8 @@ final class SchedulerDrainProbe
 
     public bool $pending = false;
 
+    public bool $observationFails = false;
+
     /** @var list<int> open pool connections, one entry per look; the last one repeats */
     public array $connections = [0];
 
@@ -215,8 +216,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             recipeImages: $recipeImages,
             builds: $builds,
             fpmRenderer: new GatewayFpmConfigRenderer,
-            fpm: new NativeGatewayFpmConverger($processes, $hooks ?? new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]), [...app()->tagged(GatewayServiceStartHook::class)]),
-            files: new ProtectedFileWriter,
+            fpm: new NativeGatewayFpmConverger($hooks ?? new FakeAgentCommandRunner()->answer('gateway.converge-fpm', ['changed' => true, 'activated' => $livePool !== null]), [...app()->tagged(GatewayServiceStartHook::class)]),
             hibernator: $units,
             agentView: $units,
             releaseUnits: $units,
@@ -236,13 +236,18 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             cleanup: new GatewayCleanupHandoff([$cleanup], generationWaitSeconds: 1, sleep: $probe->time->sleep(...), clock: $probe->time->now(...)),
             applicationPath: HANDOFF_APP,
             orbitHome: $orbitHome,
-            readLivePool: static fn (): string => $livePool ?? $rendered,
             resetOpcache: static function (string $script, string $query) use ($probe): string {
                 $probe->opcacheCalls[] = $script.'?'.$query;
 
                 return json_encode(['reset' => $query === '', 'before' => ['restart_pending' => $probe->pending, 'cache_full' => false]], JSON_THROW_ON_ERROR);
             },
-            fpmConnections: static fn (): int => count($probe->connections) > 1 ? array_shift($probe->connections) : $probe->connections[0],
+            fpmConnections: static function () use ($probe): int {
+                if ($probe->observationFails) {
+                    throw new RuntimeException('Native observation refused.');
+                }
+
+                return count($probe->connections) > 1 ? array_shift($probe->connections) : $probe->connections[0];
+            },
             sleep: $probe->time->sleep(...),
             clock: $probe->time->now(...),
             idleWaitSeconds: 1,
@@ -503,31 +508,26 @@ describe('gateway:release:handoff', function (): void {
             ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
     });
 
-    it('installs the start hooks for an unchanged pool and runs them only before a reload', function (?string $livePool, bool $run): void {
-        handoff_gateway();
-        $agents = new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]);
-        [$handoff] = runtime_handoff(livePool: $livePool, hooks: $agents);
-
-        $handoff->serve();
-
-        expect($agents->calls[0]['input']['run'])->toBe($run)
-            ->and($agents->calls[0]['input']['hooks'][0]['command'])->toBe('documents.prepare-cleanup');
-    })->with([
-        'unchanged pool' => [null, false],
-        'changed pool' => ["[orbit-gateway]\nchdir = /old\n", true],
-    ]);
-
-    it('reloads FPM only when the rendered pool differs from the live pool', function (): void {
+    it('does not reset OPcache or fail the release when native connection observation fails', function (): void {
         handoff_scheduler(handoff_gateway());
-        [$handoff, $processes] = runtime_handoff(livePool: "[orbit-gateway]\nchdir = /old\n");
+        [$handoff, , , , , $probe] = runtime_handoff();
+        $probe->observationFails = true;
 
-        $result = $handoff->run();
-        $commands = array_map(static fn (array $arguments): string => implode(' ', $arguments), $processes->ran);
-
-        expect($result['fpm'])->toBe('reloaded')
-            ->and($commands)->toContain('sudo systemctl reload-or-restart php8.5-fpm')
-            ->and(array_values(array_filter($commands, static fn (string $command): bool => str_contains($command, 'php-fpm8.5 --test'))))->toHaveCount(1);
+        expect($handoff->schedule()['opcache'])->toBe(['outcome' => 'failed'])
+            ->and($probe->opcacheCalls)->toBe([]);
     });
+
+    it('sends rendered pool and hooks and reports native activation', function (bool $activated): void {
+        handoff_gateway();
+        $agents = new FakeAgentCommandRunner()->answer('gateway.converge-fpm', ['changed' => $activated, 'activated' => $activated]);
+        [$handoff] = runtime_handoff(hooks: $agents);
+
+        $result = $handoff->serve();
+
+        expect($result['fpm'])->toBe($activated ? 'reloaded' : 'unchanged')
+            ->and($agents->calls[0]['input']['pool'])->toContain('[orbit-gateway]')
+            ->and($agents->calls[0]['input']['hooks'][0]['command'])->toBe('documents.prepare-cleanup');
+    })->with([false, true]);
 
     it('fails when the Gateway scheduler Process is missing, or runs outside the Gateway application path', function (): void {
         $gateway = handoff_gateway();

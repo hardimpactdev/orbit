@@ -29,7 +29,7 @@ command_errors! {
         HookFailed { hook: String, cause: String } => "gateway.start_hook_failed", "A Gateway startup hook failed before pool activation.";
     }
 }
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookInput {
     pub command: String,
@@ -98,7 +98,10 @@ fn valid_pair(hook: &str, drop_in: &str) -> bool {
             .and_then(|s| s.strip_suffix(".conf"))
             .is_some_and(name)
 }
-fn validate<'a>(input: &Input, registry: &'a [HookEntry]) -> Result<Vec<&'a HookEntry>, Error> {
+pub(super) fn validate<'a>(
+    input: &Input,
+    registry: &'a [HookEntry],
+) -> Result<Vec<&'a HookEntry>, Error> {
     let mut names = BTreeSet::new();
     let mut units = BTreeSet::new();
     input

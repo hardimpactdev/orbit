@@ -51,190 +51,24 @@ it('refuses FPM reload or restart when cleanup invalidation fails during converg
     }
 });
 
-it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
+it('sends Gateway FPM and certificate intent before building Caddy', function (): void {
     [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger();
-
     try {
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
-        $calls = Collection::make($processes->calls);
-        $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-        $fpmStage = $calls->first(
-            static fn (ProcessInvocation $invocation): bool => (
-                array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
-                && str_ends_with($invocation->arguments[4] ?? '', '/generated/gateway/php-fpm-pool.conf')
-            ),
-        );
-        $fpmCandidateDirectory = $fpmStage?->arguments[5] ?? null;
-        $fpmCandidateMain = $fpmStage?->arguments[6] ?? null;
-        $fpmCandidatePool = $fpmStage?->arguments[7] ?? null;
-        $fpmValidationIndex = $commands->search(
-            static fn (array $arguments): bool => $arguments === [
-                'sudo',
-                'php-fpm8.5',
-                '--test',
-                '--fpm-config',
-                $fpmCandidateMain,
-            ],
-        );
-        $fpmPublishIndex = $commands->search(
-            static fn (array $arguments): bool => $arguments === [
-                'sudo',
-                'mv',
-                '-f',
-                '--',
-                $fpmCandidatePool,
-                '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
-            ],
-        );
-        $certificatePublishIndex = $commands->search(['orbit-agent', 'command', 'gateway.publish-certificate']);
-        $buildIndex = $calls->search(gateway_web_is_build(...));
-        $certificatePublish = $commands->get($certificatePublishIndex);
-        $pushed = gateway_web_pushed($calls->get($buildIndex));
-
-        expect($issuer->calls)
-            ->toBe([['hostname' => 'gateway.orbit', 'address' => '10.44.0.1']])
-            ->and(file_get_contents($orbitHome.'/generated/gateway/php-fpm-pool.conf'))
-            ->toContain(
-                '[orbit-gateway]',
-                'listen = /run/php/orbit-gateway.sock',
-                'listen.group = caddy',
-                'listen.mode = 0660',
-                'request_terminate_timeout = 600s',
-                'php_admin_value[max_execution_time] = 600',
-                'php_admin_value[opcache.validate_timestamps] = 1',
-            )
-            ->and($pushed)
-            ->toStartWith(NodeCaddyfileRenderer::Marker)
-            ->toContain(
-                '# orbit: gateway gateway.orbit',
-                'gateway.orbit, 10.44.0.1',
-                'bind 10.44.0.1',
-                'root * /home/orbit/orbit-gateway/public',
-                'tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key',
-                'php_fastcgi unix//run/php/orbit-gateway.sock',
-                'resolve_root_symlink',
-                'dial_timeout 10s',
-                'read_timeout 600s',
-                'write_timeout 600s',
-                'flush_interval 1ms',
-                'root * /home/orbit/web/current',
-                'reverse_proxy https://10.44.0.1',
-            )
-            ->and(file_exists($orbitHome.'/generated/gateway/Caddyfile'))
-            ->toBeFalse()
-            ->and(fileperms($orbitHome.'/generated/gateway/php-fpm-pool.conf') & 0o777)
-            ->toBe(0o644)
-            ->and(fileperms($orbitHome.'/generated/gateway') & 0o777)
-            ->toBe(0o700)
-            ->and($fpmCandidateDirectory)
-            ->toMatch('#^/etc/php/8\.5/fpm/orbit-candidates/[a-f0-9]{16}$#')
-            ->and($fpmCandidateMain)
-            ->toBe($fpmCandidateDirectory.'/php-fpm.conf')
-            ->and($fpmCandidatePool)
-            ->toBe($fpmCandidateDirectory.'/pool.d/orbit-gateway.conf')
-            ->and($fpmStage?->input)
-            ->toContain(
-                'candidate_directory=$2',
-                'candidate_main=$3',
-                'candidate_pool=$4',
-                'for pool in /etc/php/8.5/fpm/pool.d/*.conf',
-                'if [ "$pool_name" = orbit-gateway.conf ]; then',
-                'cp --preserve=mode,ownership -- "$pool" "$candidate_pool_directory/$pool_name"',
-                'install -o root -g root -m 0644 -- "$replacement" "$candidate_pool"',
-                'replacement_count',
-            )
-            ->and($fpmValidationIndex)
-            ->toBeInt()
-            ->toBeLessThan($fpmPublishIndex)
-            ->and($certificatePublishIndex)
-            ->toBeInt()
-            ->toBeLessThan($buildIndex)
-            ->and($fpmPublishIndex)
-            ->toBeLessThan($buildIndex)
-            ->and($calls->filter(gateway_web_is_build(...)))
-            ->toHaveCount(1)
-            ->and($calls->contains(
-                static fn (ProcessInvocation $invocation): bool => str_contains($invocation->input ?? '', 'orbit.d')
-                    || str_contains($invocation->input ?? '', 'fragments/*.caddy'),
-            ))
-            ->toBeFalse()
-            ->and($certificatePublish)
-            ->toBeArray()
-            ->and($commands->contains(
-                static fn (array $arguments): bool => (
-                    in_array(needle: '/etc/caddy/orbit-cert-current/gateway.pem', haystack: $arguments, strict: true)
-                    || in_array(needle: '/etc/caddy/orbit-cert-current/gateway.key', haystack: $arguments, strict: true)
-                ),
-            ))
-            ->toBeFalse()
-            ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-checkout']))
-            ->toBeTrue()
-            ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-web-directory']))
-            ->toBeTrue()
-            ->and(json_decode($calls->get($certificatePublishIndex)->input, true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(['certificate' => 'CERTIFICATE', 'key' => 'PRIVATE KEY', 'root_certificate' => 'ROOT CERTIFICATE'])
-            ->and($hibernator->calls)
-            ->toBe(1)
-            ->and($agentView->calls)
-            ->toBe(1)
-            ->and($releaseUnits->calls)
-            ->toBe(1);
+        $calls = collect($processes->calls);
+        $commands = $calls->map(fn (ProcessInvocation $call): array => $call->arguments);
+        $certificate = $commands->search(['orbit-agent', 'command', 'gateway.publish-certificate']);
+        $fpm = $commands->search(['orbit-agent', 'command', 'gateway.converge-fpm']);
+        $build = $calls->search(gateway_web_is_build(...));
+        expect($certificate)->toBeInt()->toBeLessThan($fpm);
+        expect($fpm)->toBeInt()->toBeLessThan($build);
+        expect(gateway_web_pushed($calls->get($build)))->toContain('gateway.orbit', 'php_fastcgi unix//run/php/orbit-gateway.sock');
+        expect($hibernator->calls)->toBe(1);
+        expect($agentView->calls)->toBe(1);
+        expect($releaseUnits->calls)->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
-});
-
-it('keeps staged FPM candidates bound to their invocation under contention', function (): void {
-    $processes = new GatewayFpmContentionProcessRunner;
-    $primary = new NativeGatewayFpmConverger($processes, new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]), [...app()->tagged(GatewayServiceStartHook::class)]);
-    $processes->contender = new NativeGatewayFpmConverger($processes, new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]), [...app()->tagged(GatewayServiceStartHook::class)]);
-
-    $primary->converge(new Node(['name' => 'gateway']), '/tmp/primary-gateway-pool.conf');
-
-    $calls = Collection::make($processes->calls);
-    $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-    $primaryStage = $calls->firstOrFail(
-        static fn (ProcessInvocation $invocation): bool => (
-            ($invocation->arguments[4] ?? null) === '/tmp/primary-gateway-pool.conf'
-        ),
-    );
-    $contenderStage = $calls->firstOrFail(
-        static fn (ProcessInvocation $invocation): bool => (
-            ($invocation->arguments[4] ?? null) === '/tmp/contending-gateway-pool.conf'
-        ),
-    );
-    [$primaryDirectory, $primaryMain, $primaryPool] = array_slice($primaryStage->arguments, 5, 3);
-    [$contenderDirectory, $contenderMain, $contenderPool] = array_slice($contenderStage->arguments, 5, 3);
-    $contenderCleanupIndex = $commands->search(['sudo', 'rm', '-rf', '--', $contenderDirectory]);
-    $primaryPublishIndex = $commands->search(
-        ['sudo', 'mv', '-f', '--', $primaryPool, '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf'],
-    );
-
-    expect($primaryDirectory)
-        ->not->toBe($contenderDirectory)->and($primaryMain)
-        ->not->toBe($contenderMain)->and($primaryPool)
-        ->not->toBe($contenderPool)->and($commands->contains([
-            'sudo',
-            'php-fpm8.5',
-            '--test',
-            '--fpm-config',
-            $primaryMain,
-        ]))->toBeTrue()->and($commands->contains([
-            'sudo',
-            'php-fpm8.5',
-            '--test',
-            '--fpm-config',
-            $contenderMain,
-        ]))->toBeTrue()->and($commands->contains([
-            'sudo',
-            'mv',
-            '-f',
-            '--',
-            $contenderPool,
-            '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
-        ]))->toBeTrue()->and($contenderCleanupIndex)->toBeInt()->toBeLessThan(
-            $primaryPublishIndex,
-        )->and($commands->contains(['sudo', 'rm', '-rf', '--', $primaryDirectory]))->toBeTrue();
 });
 
 it('publishes one complete gateway file from distinct candidates under contention', function (): void {
@@ -350,51 +184,6 @@ it('adapts Caddy to a listener bound only to the gateway WireGuard address', fun
         ->and($listeners)
         ->toBe(['10.44.0.1:443'])
         ->not->toContain(':443', '0.0.0.0:443');
-});
-
-it('preserves live FPM disk and does not reload when complete effective validation fails', function (): void {
-    [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'fpm-validation');
-
-    try {
-        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('gateway-fpm-validate')
-                    ->and($exception->errorCode)
-                    ->toBe('gateway.fpm_config_invalid')
-                    ->and($exception->result?->stderr)
-                    ->toBe('duplicate pool listener');
-            });
-
-        $calls = Collection::make($processes->calls);
-        $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-        $fpmStage = $calls->firstOrFail(
-            static fn (ProcessInvocation $invocation): bool => (
-                array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'bash', '-seu', '--']
-                && str_ends_with($invocation->arguments[4] ?? '', '/generated/gateway/php-fpm-pool.conf')
-            ),
-        );
-        $candidateDirectory = $fpmStage->arguments[5];
-        $candidatePool = $fpmStage->arguments[7];
-
-        expect($commands->contains([
-            'sudo',
-            'mv',
-            '-f',
-            '--',
-            $candidatePool,
-            '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
-        ]))
-            ->toBeFalse()
-            ->and($commands->contains(['sudo', 'rm', '-rf', '--', $candidateDirectory]))
-            ->toBeTrue()
-            ->and($commands->contains(['sudo', 'rm', '-rf', '--', '/etc/php/8.5/fpm/orbit-candidates']))
-            ->toBeFalse()
-            ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))
-            ->toBeFalse();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
 });
 
 it('installs Caddy from the pinned source and orders it after WireGuard before any Caddy step', function (): void {
@@ -766,18 +555,6 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 return new CommandResult(1, '', 'The caddy candidate does not come from the pinned Orbit source.', 2, false);
             }
 
-            if (
-                $this->failure === 'fpm-validation'
-                && array_slice(array: $arguments, offset: 0, length: 4) === [
-                    'sudo',
-                    'php-fpm8.5',
-                    '--test',
-                    '--fpm-config',
-                ]
-            ) {
-                return new CommandResult(1, '', 'duplicate pool listener', 2, false);
-            }
-
             if (is_string($this->failure) && str_starts_with($this->failure, 'caddy-build:') && gateway_web_is_build($invocation)) {
                 $stage = substr($this->failure, strlen('caddy-build:'));
 
@@ -796,7 +573,6 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
         new NativeGatewayWebConverger(
             certificates: $issuer,
             fpmRenderer: new GatewayFpmConfigRenderer,
-            files: new ProtectedFileWriter,
             checkout: new GatewayCheckoutAccessConverger(
                 new FakeAgentCommandRunner()
                     ->answer('gateway.check-checkout', static function (array $input) use ($processes): array {
@@ -833,13 +609,13 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 }),
                 $orbitHome,
             ),
-            fpm: new NativeGatewayFpmConverger($processes, new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', static function () use ($processes, $failure): array {
-                $processes->calls[] = new ProcessInvocation(['orbit-agent', 'command', 'gateway.converge-start-hooks']);
+            fpm: new NativeGatewayFpmConverger(new FakeAgentCommandRunner()->answer('gateway.converge-fpm', static function () use ($processes, $failure): array {
+                $processes->calls[] = new ProcessInvocation(['orbit-agent', 'command', 'gateway.converge-fpm']);
                 if ($failure === 'cleanup-invalidation') {
-                    throw new AgentCommandRefused('gateway.converge-start-hooks', 'gateway.start_hook_failed', 'Cleanup gate refused.');
+                    throw new AgentCommandRefused('gateway.converge-fpm', 'gateway.fpm_hook_failed', 'Cleanup gate refused.');
                 }
 
-                return ['changed' => true];
+                return ['changed' => true, 'activated' => true];
             }), [...app()->tagged(GatewayServiceStartHook::class)]),
             builds: new NodeCaddyBuilder(
                 app(NodeCaddyfileRenderer::class),
@@ -939,35 +715,5 @@ final class RecordingAgentViewConverger implements AgentViewConverger
     public function converge(): void
     {
         $this->calls++;
-    }
-}
-
-final class GatewayFpmContentionProcessRunner implements ProcessRunner
-{
-    /** @var list<ProcessInvocation> */
-    public array $calls = [];
-
-    public ?NativeGatewayFpmConverger $contender = null;
-
-    private bool $contentionStarted = false;
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        $this->calls[] = $invocation;
-
-        if (
-            ! $this->contentionStarted
-            && array_slice(array: $invocation->arguments, offset: 0, length: 4) === [
-                'sudo',
-                'php-fpm8.5',
-                '--test',
-                '--fpm-config',
-            ]
-        ) {
-            $this->contentionStarted = true;
-            $this->contender?->converge(new Node(['name' => 'gateway']), '/tmp/contending-gateway-pool.conf');
-        }
-
-        return new CommandResult(0, '', '', 2, false);
     }
 }
