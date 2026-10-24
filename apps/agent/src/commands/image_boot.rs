@@ -101,6 +101,28 @@ fn check(host: &mut impl Host, input: &CheckInput) -> Result<Ready, Error> {
         ));
     }
     if input.lean_boot {
+        super::guest::fingerprint(host.run(
+            "/usr/bin/ssh-keygen",
+            &["-l", "-f", "/etc/ssh/ssh_host_ed25519_key.pub"],
+        ))
+        .map_err(|_| {
+            failed(
+                "host identity",
+                "The smoke VM has no valid ed25519 host key.",
+            )
+        })?;
+        let boots = checked(
+            host,
+            "/usr/bin/journalctl",
+            &["--list-boots", "--no-pager", "--quiet"],
+            "boot count",
+        )?;
+        if boots.lines().filter(|line| !line.trim().is_empty()).count() != 1 {
+            return Err(failed(
+                "boot count",
+                "The smoke VM did not complete exactly one boot.",
+            ));
+        }
         let state = host.run(
             "/usr/bin/systemctl",
             &["is-enabled", "systemd-firstboot.service"],

@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\TaskVm;
 
@@ -31,6 +29,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
         private UpCloudServers $servers,
         private UpCloudGuest $guest,
         private SshKeyProvider $keys,
+        private GuestBootstrap $bootstrap,
     ) {}
 
     public function create(TaskVm $vm, string $gatewayPublicKey): void
@@ -67,23 +66,15 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
         return UpCloudGuest::fingerprint($this->hostKey($vm));
     }
 
-    /**
-     * Runs the command as `orbit` over SSH at the server's public address, which must present the pinned host key.
-     * Until sshd runs with the key from the user-data, the connection fails and prints nothing on stdout. A server
-     * without an address yet gives such a result too.
-     */
-    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
+    public function bootstrapReady(TaskVm $vm): bool
     {
         $address = $this->observe($vm)?->address;
         if ($address === null) {
-            return new CommandResult(255, '', "Task VM [{$vm->name}] has no address.", 0, false);
+            return false;
         }
+        $guest = AgentGuest::ssh($vm->name, 'x86_64', $this->guest->connection($address, $this->hostKey($vm)));
 
-        return $this->guest->run($address, $this->hostKey($vm), new RemoteCommand(
-            $command->argv(),
-            maxOutputBytes: TaskVmGuestCommand::MaxOutputBytes,
-            timeout: $command->timeoutSeconds(),
-        ));
+        return $this->bootstrap->ready($guest, "task VM [{$vm->name}]");
     }
 
     public function start(TaskVm $vm): void

@@ -57,6 +57,7 @@ final readonly class UpCloudTaskVmImageBuilder
         private TaskVmImageRecipe $recipe,
         private RecipeImagePrograms $programs,
         private RecipeImageBuilds $builds,
+        private GuestBootstrap $bootstrap,
     ) {}
 
     /**
@@ -222,7 +223,7 @@ final readonly class UpCloudTaskVmImageBuilder
     /** Waits over SSH until cloud-init is done without errors. Until sshd has the key from the user-data, SSH fails. */
     private function awaitCloudInit(string $name, UpCloudGuestShell $shell): void
     {
-        TaskVmGuest::awaitCloudInit("UpCloud server [{$name}]", self::CloudInitSeconds, static fn (array $command, float $timeout): CommandResult => $shell->asUser($command, timeout: $timeout));
+        $this->bootstrap->awaitReady($shell->agentTarget(), "UpCloud server [{$name}]", self::CloudInitSeconds);
     }
 
     /**

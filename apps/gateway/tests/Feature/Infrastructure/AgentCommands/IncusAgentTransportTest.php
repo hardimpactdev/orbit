@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
 use App\Infrastructure\AgentCommands\IncusAgentTransport;
 use App\Infrastructure\Processes\CommandResult;
@@ -75,7 +76,10 @@ it('removes the host candidate even when guest staging fails', function (): void
     $host = new IncusCarrierFixture;
     $host->failPush = true;
 
-    expect(fn () => new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check')->stage('/local/agent'))->toThrow(RuntimeException::class, 'could not be staged');
+    expect(fn () => new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check')->stage('/local/agent'))->toThrow(function (AgentRunnerFailure $error): void {
+        expect($error->kind)->toBe(AgentRunnerFailure::Transport)
+            ->and($error->result?->exitCode)->toBe(1);
+    });
     expect($host->calls[1][0])->toBe(['rm', '-f', '--', '/var/tmp/host-candidate-1']);
 });
 

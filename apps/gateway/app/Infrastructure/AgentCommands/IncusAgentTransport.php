@@ -46,7 +46,7 @@ final readonly class IncusAgentTransport implements AgentTransport
                 '--mode', '0700', '--uid', '0', '--gid', '0', '--', $hostPath, $this->vm.$guestPath,
             ], ProtectedInput::fromString(''), 180.0);
             if (! $result->succeeded()) {
-                throw new RuntimeException("The agent candidate could not be staged in guest [{$this->vm}]: ".trim($result->stderr));
+                throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, "The agent candidate could not be staged in guest [{$this->vm}]: ".trim($result->stderr), result: $result);
             }
         } finally {
             $removed = $this->host->run(['rm', '-f', '--', $hostPath], ProtectedInput::fromString(''), 30.0);

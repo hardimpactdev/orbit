@@ -873,14 +873,12 @@ it('builds the topology seed in the smoke VM, then deletes the VM and gives the 
 
     $fingerprint = $build->images['base']['fingerprint'];
     $seed = 'orbit-topology-seed-'.substr($fingerprint, 0, 12);
-    expect($incus->seeds)->toBe([['project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'vm' => 'tvm-image-1-smoke', 'device' => 'topology-seed',
-        'volume' => $seed.'-new', 'size' => '45GiB', 'fingerprint' => $fingerprint, 'git_read' => []]])
+    expect($incus->seeds)->toBe([['project' => 'orbit-tasks', 'pool' => 'orbit-tasks', 'vm' => 'tvm-image-1-smoke',
+        'size' => '45GiB', 'fingerprint' => $fingerprint]])
         ->and($incus->volumes)->toBe([$seed])
         ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke');
-    $program = array_values(array_filter($incus->commands, static fn ($command): bool => in_array('task-vms.build-topology-seed', $command->arguments, true)));
-    expect(array_slice($program[0]->arguments, 0, 6))->toBe(['sudo', '-n', '-u', 'root', '-H', 'python3']);
     $order = $incus->events;
-    $built = array_search('python3 -I -c '.$program[0]->arguments[8], $order, true);
+    $built = array_search('incus.build-topology-seed', $order, true);
     $deleted = min(array_filter(array_keys($order, 'delete --force -- tvm-image-1-smoke', true), static fn (int $index): bool => $index > $built));
     $renamed = array_find_key($incus->events, static fn (string $line): bool => $line === 'incus.volume.finish_seed');
     expect($built)->toBeLessThan($deleted)->and($deleted)->toBeLessThan($renamed);
@@ -888,21 +886,16 @@ it('builds the topology seed in the smoke VM, then deletes the VM and gives the 
         ->and($build->promoted_at)->not->toBeNull();
 });
 
-it('fails the phase with the program log and no guest log, and builds the seed again in a fresh smoke VM on resume', function (bool $smokeGone): void {
+it('fails the phase with the agent diagnostic and no guest log, and builds the seed again in a fresh smoke VM on resume', function (bool $smokeGone): void {
     $host = recipeImageHost();
     $incus = recipeImageTransport($host);
     recipeImageCurrent(recipeImageDocument());
     $build = app(RecipeImageBuilds::class)->reconcile()[0];
-    // The program created the `-new` volume and changed the smoke VM before it failed.
+    // The agent created the `-new` volume and changed the smoke VM before it failed.
     $incus->fail = 'topology seed';
-    $incus->afterExecute = function ($command) use ($incus): void {
-        if (in_array('task-vms.build-topology-seed', $command->arguments, true) && $incus->fail !== null) {
-            $incus->volumes[] = 'orbit-topology-seed-'.substr((string) json_decode(explode("\0", (string) $command->input, 2)[1], true)['fingerprint'], 0, 12).'-new';
-        }
-    };
     expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class, 'topology seed');
     $failed = array_find($build->refresh()->steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed');
-    expect($failed['error'])->toContain('Building the topology seed in [tvm-image-1-smoke] failed: no_result.', 'Error: topology seed failed')
+    expect($failed['error'])->toContain('Building the topology seed in [tvm-image-1-smoke] failed: Error: topology seed failed', 'Error: topology seed failed')
         ->not->toContain('/var/log/orbit/recipe-images/base-topology-seed.log')
         ->and($build->promoted_at)->toBeNull()
         ->and($incus->instances)->toHaveKey('tvm-image-1-smoke');

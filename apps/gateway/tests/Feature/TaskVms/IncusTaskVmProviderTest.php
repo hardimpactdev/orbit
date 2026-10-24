@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\GuestBootstrap;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmGuest;
@@ -24,6 +25,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
 
 const INCUS_PREFIX = ['sudo', '-n', 'incus', '--project', 'orbit-tasks'];
@@ -84,7 +86,8 @@ beforeEach(function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     }, app(AgentCommandRunner::class));
     $this->volumes = new TaskVmVolumes($incus);
-    $this->provider = new IncusTaskVmProvider($incus, $settings);
+    $this->guestAgents = new FakeGuestAgentCommandRunner;
+    $this->provider = new IncusTaskVmProvider($incus, $settings, new GuestBootstrap($this->guestAgents));
     $this->host = $host;
     $this->hostSettings = $settings->host($host->id);
     $this->guest = new TaskVmGuest($this->provider);
@@ -170,49 +173,17 @@ it('sends start stop and delete intent to the native lifecycle command', functio
     expect($this->ssh->calls)->toBe([]);
 })->with([['start', ['kind' => 'start']], ['stop', ['kind' => 'stop']], ['destroy', ['kind' => 'delete', 'pool' => 'tank']]]);
 
-it('reads the cloud-init status', function (CommandResult $result, bool $ready): void {
-    ($this->answer)($result);
+it('reads typed readiness and fingerprint through the trusted guest target', function (bool $ready): void {
+    $pin = 'SHA256:'.str_repeat('a', 43);
+    $this->guestAgents->answer = static fn ($guest, string $command): array => $command === 'guest.cloud-init' ? ['ready' => $ready] : ['fingerprint' => $pin];
 
     expect($this->guest->bootstrapReady($this->vm))->toBe($ready)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'timeout', '30', 'cloud-init', 'status', '--wait', '--format=json']]);
-})->with([
-    'agent not running' => [incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"), false],
-    'still running after the wait' => [incusResult(exitCode: 124), false],
-    'running' => [incusResult('{"status":"running","errors":[]}'), false],
-    'done' => [incusResult('{"status":"done","extended_status":"done","errors":[]}'), true],
-    'done with warnings' => [incusResult('{"status":"done","errors":[],"recoverable_errors":{"WARNING":["schema"]}}', 2), true],
-]);
-
-it('fails when cloud-init failed', function (): void {
-    ($this->answer)(incusResult('{"status":"error","errors":["apt failed"]}', 1));
-
-    expect(fn () => $this->guest->bootstrapReady($this->vm))->toThrow(TaskVmException::class, 'Cloud-init failed on task VM [tvm-1]: ["apt failed"]');
-});
-
-it('refuses an invalid cloud-init status', function (string $stdout): void {
-    ($this->answer)(incusResult($stdout));
-
-    expect(fn () => $this->guest->bootstrapReady($this->vm))->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.invalid_host_output', 'Task VM [tvm-1] returned invalid guest output: '.($stdout === 'done' ? 'the cloud-init status is not complete JSON.' : 'the cloud-init status has no status or errors.')]));
-})->with(['done', '{"status":"done"}', '{"status":"done","errors":{"a":1}}', '{"errors":[]}']);
-
-it('reads the ed25519 host key fingerprint', function (): void {
-    $fingerprint = 'SHA256:'.str_repeat('Ab3+/', 8).'xyz';
-    ($this->answer)(incusResult("256 {$fingerprint} root@tvm-1 (ED25519)\n"));
-
-    expect($this->provider->sshHostFingerprint($this->vm))->toBe($fingerprint)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']]);
-});
-
-it('refuses an invalid fingerprint', function (CommandResult $result, string $code): void {
-    ($this->answer)($result);
-
-    expect(fn () => $this->provider->sshHostFingerprint($this->vm))->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe($code));
-})->with([
-    'rsa' => [incusResult('3072 SHA256:'.str_repeat('a', 43)." root@tvm-1 (RSA)\n"), 'task_vm.invalid_host_output'],
-    'short' => [incusResult("256 SHA256:abc root@tvm-1 (ED25519)\n"), 'task_vm.invalid_host_output'],
-    'two lines' => [incusResult(str_repeat('256 SHA256:'.str_repeat('a', 43)." root@tvm-1 (ED25519)\n", 2)), 'task_vm.invalid_host_output'],
-    'no key' => [incusResult(exitCode: 1, stderr: 'No such file'), 'task_vm.host_command_failed'],
-]);
+        ->and($this->provider->sshHostFingerprint($this->vm))->toBe($pin);
+    expect(array_column($this->guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'guest.fingerprint']);
+    expect($this->guestAgents->calls[0]['guest']->name)->toBe('tvm-1')
+        ->and($this->guestAgents->calls[0]['guest']->host->is($this->host))->toBeTrue()
+        ->and($this->ssh->calls)->toBe([]);
+})->with([true, false]);
 
 it('sweeps only the clones of VMs without live rows, and keeps topology seeds', function (): void {
     $this->vm->update(['state' => TaskVmState::Parked]);

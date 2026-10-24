@@ -50,6 +50,8 @@ impl Host for Fake {
     }
 }
 const LEAN: &[&str] = &[
+    "256 SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA root@smoke (ED25519)\n",
+    "0 boot-id time\n",
     "masked\n",
     "active\n",
     "[Service]\nExecStart=wait --ipv4\n",
@@ -74,7 +76,7 @@ fn verifies_owner_key_lean_boot_and_firewall_on_repeated_checks() {
         );
     }
     assert_eq!(
-        host.calls[4],
+        host.calls[6],
         vec![
             "/usr/bin/networkctl",
             "status",
@@ -92,7 +94,7 @@ fn verifies_owner_key_lean_boot_and_firewall_on_repeated_checks() {
     )
     .is_ok());
     let mut host = Fake::new(LEAN);
-    host.answers[0].code = 1;
+    host.answers[2].code = 1;
     assert!(check(
         &mut host,
         &CheckInput {
@@ -130,7 +132,7 @@ fn refuses_each_failed_or_malformed_provider_observation() {
     for index in 0..LEAN.len() {
         for truncated in [false, true] {
             let mut host = Fake::new(LEAN);
-            host.answers[index].stdout = "invalid".into();
+            host.answers[index].stdout = if index == 1 { "two\nboots" } else { "invalid" }.into();
             host.answers[index].truncated = truncated;
             assert!(matches!(
                 check(
@@ -145,7 +147,7 @@ fn refuses_each_failed_or_malformed_provider_observation() {
             assert_eq!(host.calls.len(), index + 1);
         }
     }
-    for index in 1..LEAN.len() {
+    for index in (0..LEAN.len()).filter(|i| *i != 2) {
         let mut host = Fake::new(LEAN);
         host.answers[index].code = 1;
         assert!(matches!(

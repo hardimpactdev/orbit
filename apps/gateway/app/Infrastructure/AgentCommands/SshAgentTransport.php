@@ -62,7 +62,7 @@ final readonly class SshAgentTransport implements AgentTransport
             timeout: 180.0,
         ));
         if (! $result->succeeded()) {
-            throw new RuntimeException("The agent candidate could not be staged on Node [{$this->node->name}]: ".trim($result->stderr));
+            throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, "The agent candidate could not be staged on Node [{$this->node->name}]: ".trim($result->stderr), result: $result);
         }
 
         return $path;

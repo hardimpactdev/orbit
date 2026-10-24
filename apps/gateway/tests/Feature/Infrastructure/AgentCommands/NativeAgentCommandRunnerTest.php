@@ -352,3 +352,28 @@ it('fails an unenrolled guest installation without changing host pin state or ad
     expect($host->fresh()->agent_failed_pin)->toBeNull();
     expect(Node::query()->count())->toBe($count);
 });
+
+it('classifies failed SSH candidate staging with its transport result', function (): void {
+    $result = new CommandResult(255, '', 'Connection refused', 1, false);
+    $ssh = new class($result) implements SshExecutor
+    {
+        public function __construct(private CommandResult $result) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return $this->result;
+        }
+    };
+    $keys = new FleetTestSsh;
+    $file = tempnam(sys_get_temp_dir(), 'agent-stage-');
+    file_put_contents($file, 'candidate bytes');
+    try {
+        expect(fn () => new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys)->stage($file))->toThrow(function (AgentRunnerFailure $error) use ($result): void {
+            expect($error->kind)->toBe(AgentRunnerFailure::Transport)
+                ->and($error->command)->toBe('agent.install')
+                ->and($error->result)->toBe($result);
+        });
+    } finally {
+        unlink($file);
+    }
+});

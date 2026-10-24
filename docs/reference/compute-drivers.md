@@ -372,6 +372,8 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 
 `image.boot` applies the fixed first-boot and APT service masks. Incus images also receive the DHCPv4 network file and IPv4 wait-online drop-in. `image.owner` verifies the fixed `orbit` UID and GID. `image.check` verifies that account and its authorized key, plus the provider’s requested lean-boot or active-firewall checks. These commands replace delivered image-check and boot scripts.
 
+`guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
+
 Before publication, `image.clean` stops identity-writing services and removes the builder's machine, SSH, Incus, and service identities. It clears authorized keys, temporary files, and logs, then verifies that the identities are absent. It preserves package lists and systemd private temporary directories. An agent secret or WireGuard configuration refuses cleanup before any change: an enrolled Node cannot become a base image.
 
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
@@ -1048,7 +1050,7 @@ Images live in each host's configured Incus project. The base is a VM image. Its
 
 The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it. A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
 
-The Gateway runs the [remote program](/reference/remote-programs) `task-vms.build-topology-seed` as root on the host. Its input names the host's project and pool, the smoke VM, the disk device `topology-seed`, the volume, its size, and the base fingerprint. The volume must end in `-new`. It runs these steps:
+The Gateway calls `incus.build-topology-seed` through the agent runner as root on the host. Its typed input names the host project and pool, the smoke VM, the volume size, and the base fingerprint. Rust derives the temporary volume name from the fingerprint and owns the fixed disk device, pool, and template names. The command holds the Incus volume lock and runs these steps:
 
 1. It deletes the volume of an earlier run.
 2. It creates the block volume `orbit-topology-seed-<12 hex of the base fingerprint>-new`, 45 GiB, in the host's project and pool. ZFS volumes are thin, so the size costs nothing until Nodes write.
@@ -1059,9 +1061,9 @@ The Gateway runs the [remote program](/reference/remote-programs) `task-vms.buil
 7. In the VM, Incus deletes the image. The template never boots, so it holds no machine identity.
 8. In the VM, it checks that `node-template` is the one stopped VM, and stops Incus, which unmounts the pool.
 
-Every command of the program reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
+Every child command reads no standard input. Then the phase deletes the smoke VM and renames the volume to `orbit-topology-seed-<12 hex>`. So a seed with that name is always a finished one. A phase that finds a finished seed builds nothing and only deletes the smoke VM.
 
-The program creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
+The agent creates the `-new` volume before it changes anything in the smoke VM. So when a retry finds a `-new` volume, the smoke VM may hold the Incus state of the failed attempt: the phase deletes that VM and launches a fresh one from the published base. A retry also launches a smoke VM that is gone. Like `smoke` and `publish`, the phase runs even when the build already holds its base image.
 
 The template's root disk keeps the size of the base image's disk. Each Node copies it, and a copy is a btrfs snapshot that uses only what the Node writes.
 
@@ -1245,7 +1247,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
-| `task_vm.topology_seed_failed` | 502 | `task-vms.build-topology-seed` failed in the smoke VM. The error ends with the program's log |
+| `task_vm.topology_seed_failed` | 502 | `incus.build-topology-seed` refused the build. The error includes its bounded diagnostic |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_channel_lost` | 409 | The bounded observation period ended without a readable phase result. The guest outcome is unknown; inspect the retained builder before resuming |
 | `task_vm.image_build_running` | 409 | A recipe image build on the host is already running |

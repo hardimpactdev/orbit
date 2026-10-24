@@ -54,7 +54,7 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var list<string> the custom volumes of the host's pool */
     public array $volumes = [];
 
-    /** @var list<array<string, mixed>> the input of each `task-vms.build-topology-seed` run */
+    /** @var list<array<string, mixed>> the input of each `incus.build-topology-seed` run */
     public array $seeds = [];
 
     public ?string $fail = null;
@@ -78,8 +78,6 @@ final class FakeIncusImageHost implements SshExecutor
     /** How many boots the smoke VM's journal lists. */
     public int $boots = 1;
 
-    private int $cloudInitPolls = 0;
-
     public bool $bootRunning = false;
 
     /** A test can interleave another operation after the remote result has been captured. */
@@ -94,6 +92,17 @@ final class FakeIncusImageHost implements SshExecutor
         $guests = new FakeGuestAgentCommandRunner;
         $guests->answer = function (AgentGuest $guest, string $command): array {
             $this->events[] = $command;
+            if ($command === 'guest.cloud-init') {
+                if ($this->fail === 'cloud-init') {
+                    throw new AgentCommandRefused($command, 'task_vm.bootstrap_failed', 'Cloud-init failed.', ['errors' => '["apt failed"]']);
+                }
+
+                return ['ready' => ! $this->bootRunning];
+            }
+            if ($command === 'image.check' && ($this->boots !== 1 || in_array($this->fail, ['ssh-keygen', 'authorized key'], true))) {
+                throw new AgentCommandRefused($command, 'task_vm.image_check_failed', 'The smoke image is invalid.');
+            }
+
             if ($command === 'image.clean' && $this->fail === 'clean') {
                 throw new AgentCommandRefused('image.clean', 'task_vm.image_clean_failed', 'An SSH host key remains.');
             }
@@ -147,6 +156,17 @@ final class FakeIncusImageHost implements SshExecutor
 
             return ['ready' => true, 'fingerprint' => $fingerprint];
         });
+        $agents->answer('incus.build-topology-seed', function (array $input): array {
+            $this->events[] = 'incus.build-topology-seed';
+            $volume = 'orbit-topology-seed-'.substr($input['fingerprint'], 0, 12).'-new';
+            $this->volumes = [...array_values(array_diff($this->volumes, [$volume])), $volume];
+            if ($this->fail === 'topology seed') {
+                throw new AgentCommandRefused('incus.build-topology-seed', 'task_vm.topology_seed_failed', 'Seed failed.', ['reason' => 'Error: topology seed failed']);
+            }
+            $this->seeds[] = $input;
+
+            return ['ready' => true, 'seconds' => []];
+        });
         $agents->answer('incus.instances', fn (): array => ['names' => array_keys($this->instances)]);
         $agents->answer('incus.volumes', fn (): array => ['names' => $this->volumes]);
         $agents->answer('incus.volume', function (array $input): array {
@@ -197,13 +217,6 @@ final class FakeIncusImageHost implements SshExecutor
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
                 unset($this->instances[end($operation)]);
             }),
-            $operation[0] === 'python3' && end($operation) === 'task-vms.build-topology-seed' => $this->answer('topology seed', function () use ($command): string {
-                $input = json_decode(explode("\0", (string) $command->input, 2)[1], true, flags: JSON_THROW_ON_ERROR);
-                $this->seeds[] = $input;
-                $this->volumes[] = $input['volume'];
-
-                return "{\"outcome\":\"built\",\"data\":{\"seconds\":{}}}\n";
-            }),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
         };
     }
@@ -234,14 +247,6 @@ final class FakeIncusImageHost implements SshExecutor
             'tail' => isset($this->recipeLogs[$command[4]])
                 ? new CommandResult(0, implode("\n", array_slice(explode("\n", rtrim($this->recipeLogs[$command[4]])), -40)), '', 1, false)
                 : new CommandResult(1, '', 'Log unavailable', 1, false),
-            // The guest agent is not up on the first poll, cloud-init runs on the second.
-            'cloud-init' => match (true) {
-                $this->bootRunning => new CommandResult(0, '{"status":"running","errors":[]}', '', 1, false),
-                $this->fail === 'cloud-init' => new CommandResult(1, '{"status":"error","errors":["apt failed"]}', '', 1, false),
-                $this->cloudInitPolls++ % 3 === 0 => new CommandResult(1, '', 'Error: VM agent isn\'t currently running', 1, false),
-                $this->cloudInitPolls % 3 === 2 => new CommandResult(0, '{"status":"running","errors":[]}', '', 1, false),
-                default => new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false),
-            },
             'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
             'python3' => $this->recipeResult($units, RecipeProgramPayload::read($call->input)['profile'], $command[2]),
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),

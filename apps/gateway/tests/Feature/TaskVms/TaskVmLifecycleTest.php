@@ -672,7 +672,7 @@ describe(EnrollTaskVm::class, function (): void {
     })->with([
         'absent' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
         'stopped' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
-        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->cloudInitOutput = '{"status":"error","errors":["apt failed"]}', 'task_vm.bootstrap_failed'],
+        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed: apt failed'), 'task_vm.bootstrap_failed'],
         'slow boot' => [function (RecordingTaskVmProvider $provider): int {
             $provider->ready = false;
 

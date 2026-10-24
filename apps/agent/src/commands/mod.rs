@@ -23,6 +23,7 @@ mod doctor_role;
 mod doctor_route;
 pub mod environment;
 pub mod firewall;
+mod guest;
 pub mod health;
 pub mod hibernation;
 pub mod horizon_queue;
@@ -107,9 +108,12 @@ pub fn all() -> Vec<Entry> {
         entry::<image_boot::PrepareBoot>(),
         entry::<image_boot::CheckImage>(),
         entry::<image_boot::CheckOwner>(),
+        entry::<guest::ReadCloudInit>(),
+        entry::<guest::ReadFingerprint>(),
         entry::<image_identity::PrepareIncus>(),
         entry::<incus::image::ReadInstanceImages>(),
         entry::<incus::image::ChangeImage>(),
+        entry::<incus::seed::BuildSeed>(),
         entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),

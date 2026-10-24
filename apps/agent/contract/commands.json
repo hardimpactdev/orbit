@@ -225,6 +225,36 @@
       ]
     },
     {
+      "name": "guest.cloud-init",
+      "summary": "Wait briefly for cloud-init and return typed bootstrap readiness.",
+      "mutates": false,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.bootstrap_failed"
+      ]
+    },
+    {
+      "name": "guest.fingerprint",
+      "summary": "Read the guest's ed25519 SSH host fingerprint through its trusted transport.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.bootstrap_failed"
+      ]
+    },
+    {
       "name": "image.prepare-incus",
       "summary": "Order the image's cloud-init after the Incus agent before publication.",
       "mutates": true,
@@ -274,6 +304,20 @@
         "task_vm.image_mismatch",
         "task_vm.base_image_missing",
         "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.build-topology-seed",
+      "summary": "Build a topology seed from a published image in a disposable smoke VM.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.topology_seed_failed"
       ]
     },
     {

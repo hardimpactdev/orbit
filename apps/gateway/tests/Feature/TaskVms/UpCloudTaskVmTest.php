@@ -28,7 +28,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
-use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
@@ -258,8 +257,6 @@ class FakeUpCloudSsh implements SshExecutor
     /** @var list<array{string, list<string>, ?string}> */
     public array $calls = [];
 
-    public string $cloudInit = '{"status":"done","errors":[]}';
-
     /** The smoke disk inherits the builder's recipe marker. */
     public ?string $recipeMarker = null;
 
@@ -287,7 +284,6 @@ class FakeUpCloudSsh implements SshExecutor
         }
 
         return match (true) {
-            str_contains($line, 'cloud-init status') => new CommandResult($this->cloudInit === '' ? 255 : 0, $this->cloudInit, '', 1, false),
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             $command->arguments === ['sudo', '-n', 'dpkg', '--print-architecture'] => new CommandResult(0, "amd64\n", '', 1, false),
             str_starts_with($line, 'sha256sum ') || str_starts_with($line, 'sudo -n sha256sum ') => new CommandResult(0, app(RecipeImageBuilds::class)->currentRecipe()->tools['pi']->artifacts['amd64']->digest.'  pi', '', 1, false),
@@ -647,27 +643,18 @@ describe('placement', function (): void {
             ->and($this->upcloud->created)->toBe([]);
     });
 
-    it('reads the state and address and cloud-init over SSH with the pinned key', function (): void {
+    it('reads readiness over the guest connection with the recorded pinned key', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
+        $agents = new FakeGuestAgentCommandRunner;
+        app()->instance(GuestAgentCommandRunner::class, $agents);
         $provider = app(UpCloudTaskVmProvider::class);
-        $guest = new TaskVmGuest($provider);
 
-        $observation = $provider->observe($vm);
-
-        expect($observation?->running)->toBeTrue()
-            ->and($observation?->address)->toBe('94.237.1.10')
-            ->and($guest->bootstrapReady($vm))->toBeTrue()
-            ->and(array_unique(array_column($this->ssh->calls, 0)))->toBe(['94.237.1.10'])
+        expect($provider->observe($vm)?->address)->toBe('94.237.1.10')
+            ->and($provider->bootstrapReady($vm))->toBeTrue();
+        expect($agents->calls[0]['command'])->toBe('guest.cloud-init')
+            ->and($agents->calls[0]['guest']->connection->host)->toBe('94.237.1.10')
             ->and(file_get_contents(app(KnownHostsStore::class)->path()))->toContain('94.237.1.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
-
-        $this->ssh->cloudInit = '';
-        expect($guest->bootstrapReady($vm))->toBeFalse();
-        $this->ssh->cloudInit = '{"status":"error","errors":["boom"]}';
-        expect(fn () => $guest->bootstrapReady($vm))->toThrow(TaskVmException::class, 'Cloud-init failed');
-        // The Incus provider fails with the same code: TaskVmGuest reads the guest of both.
-        $this->ssh->cloudInit = '{"status":"done"}';
-        expect(fn () => $guest->bootstrapReady($vm))->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe('task_vm.invalid_host_output'));
     });
 
     it('stops a server cleanly for a park and deletes it with its disk on destroy', function (): void {
@@ -827,7 +814,7 @@ describe('image build', function (): void {
                 'sudo -n ufw status',
             ])
             ->and($cleanupAfterFirewall)->toBeTrue()
-            ->and(array_column($guestAgents->calls, 'command'))->toBe(['image.owner', 'image.boot', 'image.clean', 'image.check'])
+            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.check'])
             ->and(array_last($guestAgents->calls)['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'systemd-run') && str_ends_with($command, ' packages')))->toHaveCount(1)
@@ -879,7 +866,7 @@ describe('image build', function (): void {
     })->with([TaskVmState::Provisioning, TaskVmState::Ready, TaskVmState::Parked]);
 
     it('records failure before cleanup and preserves the build error when cleanup fails', function (): void {
-        $this->ssh->cloudInit = '{"status":"error","errors":["build failure"]}';
+        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'build failure');
         $this->freezeTime();
         $cleanupAttempts = 0;
         $observed = null;
@@ -1038,7 +1025,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
 
     it('does not re-dispatch a failed recipe on the next tick and only retries explicitly', function (): void {
         Queue::fake();
-        $this->ssh->cloudInit = '{"status":"error","errors":["deterministic failure"]}';
+        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'deterministic failure');
         $builds = app(RecipeImageBuilds::class);
         $builds->reconcile();
         $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
@@ -1052,7 +1039,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         app()->call([$job, 'handle']);
         expect($this->upcloud->created)->toHaveCount($created);
 
-        $this->ssh->cloudInit = '{"status":"done","errors":[]}';
+        app(GuestAgentCommandRunner::class)->answer = null;
         $this->artisan('task-vms:build-recipe', ['--retry' => true])->expectsOutputToContain('UpCloud refresh requested')->assertSuccessful();
         Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
         app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
@@ -1233,7 +1220,7 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
             $this->upcloud->storages = [];
             app(RecipeImageBuilds::class)->reconcile();
             $oldJob = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
-            $this->ssh->cloudInit = '{"status":"error","errors":["failure"]}';
+            app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'failure');
             expect(fn () => app()->call([$oldJob, 'handle']))->toThrow(TaskVmException::class);
             app(UniqueLock::class)->release($oldJob);
             $created = count($this->upcloud->created);
@@ -1269,7 +1256,7 @@ it('cold rebuilds an unchanged verified UpCloud template and preserves it until 
     $this->artisan('task-vms:build-recipe', ['--rebuild' => true])->expectsOutputToContain('pending')->assertFailed();
     expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
     if ($fails) {
-        $this->ssh->cloudInit = '{"status":"error","errors":["candidate failed"]}';
+        app(GuestAgentCommandRunner::class)->answer = static fn () => throw new AgentCommandRefused('guest.cloud-init', 'task_vm.bootstrap_failed', 'candidate failed');
         expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class);
         expect(app(UpCloudServers::class)->currentTemplate($identity))->toBe($previous);
     } else {

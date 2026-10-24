@@ -14,6 +14,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\Tools\ToolManagerName;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
@@ -69,6 +70,9 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     app()->instance(SshExecutor::class, $ssh);
     $agents = (new FakeAgentCommandRunner)->answer('caddy.install-package', ['changed' => false])->answer('roles.install-prerequisites', []);
     app()->instance(AgentCommandRunner::class, $agents);
+    $admission = Mockery::mock(AdmissionAgentRunner::class);
+    $admission->shouldReceive('installOver')->once()->with($node, Mockery::type(SshConnection::class))->andReturn(false);
+    app()->instance(AdmissionAgentRunner::class, $admission);
     $keys = Mockery::mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->andReturn('/tmp/orbit-test-key');
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 TEST');

@@ -136,7 +136,6 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | `docker.migrate` | Plans, prepares and reports the guarded [Docker provider migration](/reference/docker-provider-migration). Preparation uses a transient unit and a root-only recovery journal. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
-| `task-vms.build-topology-seed` | Builds a task VM host's [topology seed](/reference/compute-drivers#the-topology-seed) in the smoke VM, as root. |
 
 ## Why it works this way
 

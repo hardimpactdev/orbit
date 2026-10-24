@@ -20,6 +20,9 @@ final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
     /** @var (Closure(AgentGuest, string, array<string,mixed>): array<string,mixed>)|null */
     public ?Closure $answer = null;
 
+    /** @var (Closure(AgentGuest): bool)|null */
+    public ?Closure $installAnswer = null;
+
     public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         $this->calls[] = ['guest' => $guest, 'command' => $command, 'input' => $input];
@@ -31,6 +34,6 @@ final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
     {
         $this->installs[] = $guest;
 
-        return true;
+        return $this->installAnswer === null ? true : ($this->installAnswer)($guest);
     }
 }
