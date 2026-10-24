@@ -1,0 +1,16 @@
+{
+  "schema": 3,
+  "project": "packages/php-sdk",
+  "commit": "0364765d6d41794f3f89d702e0f72cc54e954b07",
+  "run_id": "40141228138",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "8659279ff07894ef78df963033e0358bad60a7653df88a00c89c4f3ad3adc159",
+    "phpstan": "4d3261cecada193575c14ad9822ba9f285bcf5500d8f1ff99d965493975ed13d"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "ca074f232dc103f1d1e9e3ecf933907b826048d8e708f5950922ffd718e3ff69",
+    "phpstan": "6c1835bd3d95243244d24213a186f80bef664e2930663bdb7a112d1afb00eb3a"
+  }
+}

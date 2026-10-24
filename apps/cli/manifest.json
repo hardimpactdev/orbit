@@ -1,0 +1,16 @@
+{
+  "schema": 3,
+  "project": "apps/cli",
+  "commit": "0364765d6d41794f3f89d702e0f72cc54e954b07",
+  "run_id": "40141228138",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "aba43ce65ce128b04f76de441912cde26fb1cd741ff1bab40c0ddacdf90d925b",
+    "phpstan": "33be2e294043fdd616c059365c302d8c356f7a1fe6e8a85b2c3645fffe6f2e30"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "3caf4068fc3c1297d3975b2c1bff267df329b8665303a776a1753489f5c89366",
+    "phpstan": "51bd5f6765ea12767300ca222877636c5f8389e62e607dbc149c0a83f0cf82ae"
+  }
+}
