@@ -5,14 +5,12 @@ hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
 upgrades as the test case. Nothing here changes Orbit code, the live Gateway,
 or Orbit task records.
 
-The current slice adopts native `tasks.analyze` in the official factory.
-See [repository-analysis adoption and isolated proof](docs/repository-analysis-adoption.md).
-The [execution/evidence contract](docs/repository-analysis-contract.md) and
-[first native brief](docs/gateway-repository-analysis-brief.md) record the earlier
-design; ORB2068 and ORB2074 delivered the native prerequisites. This slice
-adopts the public failure metadata and immutable provision identity. Dependency adoption follows
-independent acceptance. External review-and-merge/topology admission stays closed.
-Live Swamp has not been updated by this change.
+The isolated [documentation workflow](docs/repository-analysis-adoption.md) was
+accepted through PR10. The next [dependency workflow slice](docs/dependency-workflow-adoption.md)
+corrects registry-failure handling and records the missing task-owned mechanical
+update capability. Dependency task-VM execution stays blocked pending normal
+native contract review and delivery. External review-and-merge/topology admission
+stays closed. Live Swamp has not been updated by these changes.
 
 ## Setup on Beast
 
@@ -27,17 +25,15 @@ Live Swamp has not been updated by this change.
 - `/fast/apps/orbit-swamp-scratch/base` is a scratch clone of
   `hardimpactdev/orbit` with its push URL disabled.
 
-## Phase 1: the upgrade plan (read-only)
+## Phase 1: historical host-side upgrade plan (read-only)
 
 `workflows/workflow-dependency-upgrade.yaml` runs `scan → plan → assert`, then
 an approval gate that runs only when the plan has a major upgrade (or
 `--input requireApproval=true`).
 
-```bash
-swamp workflow run dependency-upgrade
-swamp data query 'modelName == "orbit-deps" && name == "upgrade-plan"' \
-  --select 'attributes.subtasks.map(s, s.id)' --json
-```
+This is the earlier host-scratch spike, not a supported task-VM execution path.
+Do not run it to bypass the [dependency adoption boundary](docs/dependency-workflow-adoption.md).
+Its major-approval stub is not exact dependency-plan consent.
 
 The behavior type `@nckrtl/orbit-deps` is in `extensions/behaviors/orbit_deps.ts`.
 
@@ -52,13 +48,15 @@ The behavior type `@nckrtl/orbit-deps` is in `extensions/behaviors/orbit_deps.ts
   Packagist (`p2`) or the npm registry. It records an `upgrade-plan` with one
   `within-constraints` subtask per sub-project and one `constraint-change`
   subtask per package whose newest stable release is outside its constraint.
-  Subtasks that leave the caret range are flagged `major`.
+  Subtasks that leave the caret range are flagged `major`. Malformed, incomplete
+  or unavailable registry evidence is retained as diagnostic `unknown` rows and
+  fails the method; an empty successful plan cannot represent registry failure.
 
 Limits: the plan counts direct dependencies only; `composer update` moves
 transitive ones as well. `dev-*` and path packages are skipped. `apps/agent`
 (Cargo) is outside the Gateway's monorepo rule and is not scanned.
 
-## Phase 2: the subtask factory, run locally
+## Phase 2: historical host-side subtask factory
 
 One upgrade-plan subtask is one work item of `@swamp/software-factory`. There
 are two versions; **v2 is the current one**, aligned with Swamp's practices.

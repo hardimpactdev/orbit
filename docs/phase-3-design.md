@@ -3,8 +3,9 @@
 Status: design proposal for independent parent review, updated 2026-10-24. This document
 supersedes the earlier B1/B2 options. It authorizes no implementation or rollout.
 
-Current serial priority: [Swamp repository-analysis adoption and isolated proof](repository-analysis-adoption.md),
-then dependency updates after independent acceptance. The
+Current serial priority: isolated [Swamp docs adoption](repository-analysis-adoption.md)
+was accepted through PR10; [dependency preparation and its native execution gap](dependency-workflow-adoption.md)
+now follow. Dependency task-VM updates remain blocked. The
 [analysis contract](repository-analysis-contract.md) and
 [native brief](gateway-repository-analysis-brief.md) were reviewed in PR8;
 ORB2068/PR1504 delivered the native prerequisite at
