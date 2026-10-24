@@ -230,6 +230,7 @@ pub fn all() -> Vec<Entry> {
         entry::<php_runtime::InspectPool>(),
         entry::<php_runtime::RefreshCache>(),
         entry::<wireguard::ProjectHub>(),
+        entry::<wireguard::BootstrapHub>(),
         entry::<wireguard::InspectHub>(),
         entry::<peer_dns::InspectPeerDns>(),
         entry::<peer_dns::QueryDns>(),

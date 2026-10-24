@@ -191,6 +191,8 @@ pub fn copy_exact(from: &Path, to: &Path) -> io::Result<()> {
 command_errors! {
     pub enum HubError {
         InstallFailed {} => "wireguard.hub_install_failed", "The hub configuration could not be installed.";
+        ForwardingInstallFailed {} => "wireguard.forwarding_install_failed", "The forwarding configuration could not be installed.";
+        ForwardingInvalid {} => "wireguard.forwarding_config_invalid", "The forwarding configuration could not be applied.";
         ConfigInvalid {} => "wireguard.hub_config_invalid", "wg-quick does not accept the hub configuration.";
         StartFailed {} => "wireguard.hub_start_failed", "wg-quick@orbit did not run the hub configuration; the previous one is back.";
     }
@@ -209,6 +211,25 @@ pub struct Projected {}
 const SERVICE: &str = "wg-quick@orbit";
 
 pub fn project(input: &ProjectInput, host: &Host) -> Result<Projected, HubError> {
+    publish_hub(input, host, None)
+}
+
+fn publish_hub(
+    input: &ProjectInput,
+    host: &Host,
+    sysctl: Option<&Path>,
+) -> Result<Projected, HubError> {
+    if input.config.is_empty()
+        || input.config.len() > 1024 * 1024
+        || input.config.lines().any(|line| {
+            let key = line.split('=').next().unwrap_or("").trim();
+            ["PreUp", "PostUp", "PreDown", "PostDown"]
+                .iter()
+                .any(|hook| key.eq_ignore_ascii_case(hook))
+        })
+    {
+        return Err(HubError::ConfigInvalid {});
+    }
     let candidate = host.path("orbit-candidate.conf");
     let live = host.path("orbit.conf");
     let backup = host.path(".orbit.conf.rollback");
@@ -225,31 +246,46 @@ pub fn project(input: &ProjectInput, host: &Host) -> Result<Projected, HubError>
         let _ = remove(&candidate);
         return Err(HubError::ConfigInvalid {});
     }
-    let swapped = remove(&backup)
-        .and_then(|()| {
-            if regular(&live) {
-                fs::copy(&live, &backup)?;
-                let metadata = fs::metadata(&live)?;
-                chown(&backup, metadata.uid(), metadata.gid())?;
-                fs::set_permissions(
-                    &backup,
-                    fs::Permissions::from_mode(metadata.mode() & 0o7777),
-                )?;
+    let forwarding = sysctl.map(|directory| {
+        (
+            directory.join(".90-orbit-wireguard-forwarding.conf.candidate"),
+            directory.join("90-orbit-wireguard-forwarding.conf"),
+        )
+    });
+    let publish = (|| {
+        if let Some((candidate, _)) = &forwarding {
+            host.write_private(candidate, b"net.ipv4.ip_forward=1\n")
+                .and_then(|()| fs::set_permissions(candidate, fs::Permissions::from_mode(0o644)))
+                .map_err(|_| HubError::ForwardingInstallFailed {})?;
+            if !host.succeeds("sysctl", &["-p", &candidate.to_string_lossy()]) {
+                return Err(HubError::ForwardingInvalid {});
             }
-            Ok(())
-        })
-        .and_then(|()| host.rename(&candidate, &live));
-    if let Err(error) = swapped {
+        }
+        remove(&backup).map_err(install)?;
+        if regular(&live) {
+            copy_exact(&live, &backup).map_err(install)?;
+        }
+        if let Some((candidate, live)) = &forwarding {
+            host.rename(candidate, live)
+                .map_err(|_| HubError::ForwardingInstallFailed {})?;
+        }
+        host.rename(&candidate, &live).map_err(install)?;
+        Ok(())
+    })();
+    if let Err(error) = publish {
         let _ = remove(&candidate);
         let _ = remove(&backup);
-        return Err(install(error));
+        if let Some((candidate, _)) = &forwarding {
+            let _ = remove(candidate);
+        }
+        return Err(error);
     }
-    activate(host, &live, &backup)
+    activate(host, &live, &backup, sysctl.is_some())
 }
 
 /// Starts or live-syncs `wg-quick@orbit` on the installed configuration; on failure puts the backup and the previous
 /// enabled and active state back.
-fn activate(host: &Host, live: &Path, backup: &Path) -> Result<Projected, HubError> {
+fn activate(host: &Host, live: &Path, backup: &Path, restart: bool) -> Result<Projected, HubError> {
     let was_active = host.succeeds("systemctl", &["is-active", "--quiet", SERVICE]);
     let was_enabled = host.succeeds("systemctl", &["is-enabled", "--quiet", SERVICE]);
     let mut runtime: Option<PathBuf> = None;
@@ -274,7 +310,9 @@ fn activate(host: &Host, live: &Path, backup: &Path) -> Result<Projected, HubErr
         if regular(backup) {
             let _ = host.rename(backup, live);
             if was_active {
-                if let Some(runtime) = runtime {
+                if restart {
+                    host.succeeds("systemctl", &["restart", SERVICE]);
+                } else if let Some(runtime) = runtime {
                     if !sync(runtime) {
                         host.succeeds("systemctl", &["restart", SERVICE]);
                     }
@@ -296,7 +334,9 @@ fn activate(host: &Host, live: &Path, backup: &Path) -> Result<Projected, HubErr
             return Err(());
         }
         runtime = Some(runtime_file(host).map_err(|_| ())?);
-        let started = if was_active {
+        let started = if restart {
+            host.succeeds("systemctl", &["restart", SERVICE])
+        } else if was_active {
             sync(runtime.as_deref().expect("created above"))
         } else {
             host.succeeds("systemctl", &["start", SERVICE])
@@ -364,6 +404,26 @@ impl Command for ProjectHub {
 
     fn run(input: ProjectInput, _: &Context) -> Result<Projected, HubError> {
         project(&input, &Host::system())
+    }
+}
+
+pub struct BootstrapHub;
+impl Command for BootstrapHub {
+    const NAME: &'static str = "wireguard.bootstrap-hub";
+    const SUMMARY: &'static str = "Validate the Gateway hub, enable forwarding and restart WireGuard with configuration recovery.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(120);
+    type Input = ProjectInput;
+    type Output = Projected;
+    type Error = HubError;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Root)
+    }
+    fn target(_: &ProjectInput) -> Option<String> {
+        Some("wireguard-hub".into())
+    }
+    fn run(input: ProjectInput, _: &Context) -> Result<Projected, HubError> {
+        publish_hub(&input, &Host::system(), Some(Path::new("/etc/sysctl.d")))
     }
 }
 

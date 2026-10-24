@@ -2495,6 +2495,25 @@
       },
       "errors": [
         "wireguard.hub_install_failed",
+        "wireguard.forwarding_install_failed",
+        "wireguard.forwarding_config_invalid",
+        "wireguard.hub_config_invalid",
+        "wireguard.hub_start_failed"
+      ]
+    },
+    {
+      "name": "wireguard.bootstrap-hub",
+      "summary": "Validate the Gateway hub, enable forwarding and restart WireGuard with configuration recovery.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.hub_install_failed",
+        "wireguard.forwarding_install_failed",
+        "wireguard.forwarding_config_invalid",
         "wireguard.hub_config_invalid",
         "wireguard.hub_start_failed"
       ]

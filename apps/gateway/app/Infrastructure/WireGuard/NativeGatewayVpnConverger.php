@@ -27,16 +27,6 @@ use InvalidArgumentException;
 
 final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 {
-    private const string CANDIDATE_CONFIG = '/etc/wireguard/orbit-candidate.conf';
-
-    private const string LIVE_CONFIG = '/etc/wireguard/orbit.conf';
-
-    private const string BACKUP_CONFIG = '/etc/wireguard/.orbit.conf.rollback';
-
-    private const string FORWARDING_CANDIDATE = '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate';
-
-    private const string FORWARDING_CONFIG = '/etc/sysctl.d/90-orbit-wireguard-forwarding.conf';
-
     public function __construct(
         private WireGuardServerConfigRenderer $renderer,
         private ProtectedFileWriter $files,
@@ -102,92 +92,23 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             serverPublicKey: $publicKey,
         );
         $generatedPath = rtrim(string: $this->orbitHome, characters: '/').'/generated/wireguard/orbit.conf';
-        $this->files->put(
-            $generatedPath,
-            $this->renderer->render(
-                $configuration,
-                Node::query()->whereNotNull('wireguard_public_key')->get(),
-            ),
-        );
-        $generatedForwardingPath =
-            rtrim(string: $this->orbitHome, characters: '/').'/generated/wireguard/90-orbit-forwarding.conf';
-        $this->files->put($generatedForwardingPath, "net.ipv4.ip_forward=1\n");
-
-        $backupCreated = false;
-
+        $configuration = $this->renderer->render($configuration, Node::query()->whereNotNull('wireguard_public_key')->get());
+        $this->files->put($generatedPath, $configuration);
+        $this->installAgent($gateway);
         try {
-            $this->run(
-                step: 'wireguard-server-install',
-                errorCode: 'vpn.server_config_install_failed',
-                arguments: [
-                    'sudo',
-                    'install',
-                    '-D',
-                    '-o',
-                    'root',
-                    '-g',
-                    'root',
-                    '-m',
-                    '0600',
-                    '--',
-                    $generatedPath,
-                    self::CANDIDATE_CONFIG,
-                ],
-            );
-            $this->run(
-                step: 'wireguard-server-validate',
-                errorCode: 'vpn.server_config_invalid',
-                arguments: ['sudo', 'wg-quick', 'strip', self::CANDIDATE_CONFIG],
-            );
-            $this->run(
-                step: 'wireguard-forwarding-install',
-                errorCode: 'vpn.forwarding_config_install_failed',
-                arguments: [
-                    'sudo',
-                    'install',
-                    '-D',
-                    '-o',
-                    'root',
-                    '-g',
-                    'root',
-                    '-m',
-                    '0644',
-                    '--',
-                    $generatedForwardingPath,
-                    self::FORWARDING_CANDIDATE,
-                ],
-            );
-            $this->run(
-                step: 'wireguard-forwarding-apply',
-                errorCode: 'vpn.forwarding_config_invalid',
-                arguments: ['sudo', 'sysctl', '-p', self::FORWARDING_CANDIDATE],
-            );
-            $this->backupLiveConfig();
-            $backupCreated = true;
-            $this->run(
-                step: 'wireguard-forwarding-install',
-                errorCode: 'vpn.forwarding_config_install_failed',
-                arguments: [
-                    'sudo',
-                    'mv',
-                    '-f',
-                    '--',
-                    self::FORWARDING_CANDIDATE,
-                    self::FORWARDING_CONFIG,
-                ],
-            );
-            $this->run(
-                step: 'wireguard-server-install',
-                errorCode: 'vpn.server_config_install_failed',
-                arguments: ['sudo', 'mv', '-f', '--', self::CANDIDATE_CONFIG, self::LIVE_CONFIG],
-            );
-        } catch (NodeProvisioningException $exception) {
-            $this->cleanupCandidate($backupCreated);
-
-            throw $exception;
+            $this->agents->run($gateway, 'wireguard.bootstrap-hub', ['config' => $configuration]);
+        } catch (AgentCommandRefused $refused) {
+            [$step, $code] = match ($refused->errorCode) {
+                'wireguard.hub_install_failed' => ['wireguard-server-install', 'vpn.server_config_install_failed'],
+                'wireguard.hub_config_invalid' => ['wireguard-server-validate', 'vpn.server_config_invalid'],
+                'wireguard.forwarding_install_failed' => ['wireguard-forwarding-install', 'vpn.forwarding_config_install_failed'],
+                'wireguard.forwarding_config_invalid' => ['wireguard-forwarding-apply', 'vpn.forwarding_config_invalid'],
+                default => ['wireguard-server-restart', 'vpn.server_start_failed'],
+            };
+            throw new NodeProvisioningException($step, $code, $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException('wireguard-server-restart', 'vpn.server_start_failed', 'The Gateway WireGuard command could not run.', previous: $failure, result: $failure->result);
         }
-
-        $this->activateServerConfig();
     }
 
     private function withServerProjectionLock(Closure $operation): void
@@ -324,14 +245,17 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         );
     }
 
-    private function convergeFirewall(Node $gateway, BootstrapGatewayData $data): void
+    private function installAgent(Node $gateway): void
     {
         try {
             $this->agents->install($gateway);
         } catch (\Throwable $exception) {
             throw new NodeProvisioningException('agent-install', 'agent.install_failed', 'The Gateway command agent could not be installed.', previous: $exception);
         }
+    }
 
+    private function convergeFirewall(Node $gateway, BootstrapGatewayData $data): void
+    {
         try {
             $this->agents->run($gateway, 'firewall.gateway-vpn', [
                 'desired' => array_map(static fn (UfwRuleShape $shape): array => $shape->toAgentInput(), $this->firewallRules($data)),
@@ -435,74 +359,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         }
 
         return trim($key);
-    }
-
-    private function backupLiveConfig(): void
-    {
-        $this->run(
-            step: 'wireguard-server-install',
-            errorCode: 'vpn.server_config_install_failed',
-            arguments: ['sudo', 'bash', '-seu'],
-            input: <<<'BASH'
-                live=/etc/wireguard/orbit.conf
-                backup=/etc/wireguard/.orbit.conf.rollback
-                rm -f -- "$backup"
-                if [ -f "$live" ]; then
-                    cp --preserve=mode,ownership -- "$live" "$backup"
-                fi
-                BASH,
-        );
-    }
-
-    private function activateServerConfig(): void
-    {
-        $this->run(
-            step: 'wireguard-server-restart',
-            errorCode: 'vpn.server_start_failed',
-            arguments: ['sudo', 'bash', '-seu'],
-            input: <<<'BASH'
-                live=/etc/wireguard/orbit.conf
-                backup=/etc/wireguard/.orbit.conf.rollback
-                restore_previous() {
-                    if [ -f "$backup" ]; then
-                        mv -fT -- "$backup" "$live"
-                        systemctl restart wg-quick@orbit || true
-                    else
-                        rm -f -- "$live"
-                        systemctl stop wg-quick@orbit || true
-                    fi
-                }
-                if ! systemctl enable wg-quick@orbit; then
-                    restore_previous
-                    exit 1
-                fi
-                if ! systemctl restart wg-quick@orbit; then
-                    restore_previous
-                    exit 1
-                fi
-                rm -f -- "$backup"
-                BASH,
-        );
-    }
-
-    private function cleanupCandidate(bool $includeBackup = false): void
-    {
-        $paths = [
-            self::CANDIDATE_CONFIG,
-            self::FORWARDING_CANDIDATE,
-        ];
-
-        if ($includeBackup) {
-            $paths[] = self::BACKUP_CONFIG;
-        }
-
-        $this->processes->run(new ProcessInvocation([
-            'sudo',
-            'rm',
-            '-f',
-            '--',
-            ...$paths,
-        ]));
     }
 
     /** @param non-empty-list<string> $arguments */

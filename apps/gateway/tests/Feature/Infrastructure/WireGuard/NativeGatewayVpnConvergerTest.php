@@ -35,17 +35,18 @@ it('activates the gateway WireGuard address through a validated atomic server co
             ->all();
 
         assert_gateway_generated_files(processes: $processes, orbitHome: $orbitHome);
+        expect($agents->calls[0]['input']['config'])->toBe(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'));
         assert_gateway_publication_commands(
             processes: $processes,
             arguments: $arguments,
             orbitHome: $orbitHome,
         );
         expect($agents->installs)->toBe(['gateway']);
-        expect($agents->commands())->toBe(['firewall.gateway-vpn']);
-        expect($arguments[10])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
-            ->and($processes->calls[10]->input)
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'firewall.gateway-vpn']);
+        expect($arguments[2])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[2]->input)
             ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
-            ->and($arguments)->toHaveCount(11);
+            ->and($arguments)->toHaveCount(3);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -56,7 +57,7 @@ it('rejects invalid subnet inputs before host mutation', function (
     string $address,
     string $message,
 ): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
+    [$converger, $processes, $orbitHome, $agents] = gateway_vpn_converger();
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
@@ -75,6 +76,7 @@ it('rejects invalid subnet inputs before host mutation', function (
                     ->toBe($message);
             });
 
+        expect($agents->calls)->toBeEmpty()->and($agents->installs)->toBeEmpty();
         expect($processes->calls)
             ->toBe([])
             ->and(is_file($orbitHome.'/generated/wireguard/orbit.conf'))
@@ -105,8 +107,6 @@ function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, 
         )
         ->not->toContain('[Peer]');
 
-    expect(file_get_contents($orbitHome.'/generated/wireguard/90-orbit-forwarding.conf'))
-        ->toBe("net.ipv4.ip_forward=1\n");
     expect($processes->observedProjectionLock)->toBeTrue();
     expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
         ->toBe(gateway_orbit_vpn_dnsmasq_conf())
@@ -119,68 +119,9 @@ function assert_gateway_publication_commands(
     array $arguments,
     string $orbitHome,
 ): void {
-    expect(array_slice(array: $arguments, offset: 0, length: 8))->toBe([
-        [
-            'sudo',
-            'install',
-            '-D',
-            '-o',
-            'root',
-            '-g',
-            'root',
-            '-m',
-            '0600',
-            '--',
-            $orbitHome.'/generated/wireguard/orbit.conf',
-            '/etc/wireguard/orbit-candidate.conf',
-        ],
-        ['sudo', 'wg-quick', 'strip', '/etc/wireguard/orbit-candidate.conf'],
-        [
-            'sudo',
-            'install',
-            '-D',
-            '-o',
-            'root',
-            '-g',
-            'root',
-            '-m',
-            '0644',
-            '--',
-            $orbitHome.'/generated/wireguard/90-orbit-forwarding.conf',
-            '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-        ],
-        ['sudo', 'sysctl', '-p', '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate'],
-        ['sudo', 'bash', '-seu'],
-        [
-            'sudo',
-            'mv',
-            '-f',
-            '--',
-            '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-            '/etc/sysctl.d/90-orbit-wireguard-forwarding.conf',
-        ],
-        [
-            'sudo',
-            'mv',
-            '-f',
-            '--',
-            '/etc/wireguard/orbit-candidate.conf',
-            '/etc/wireguard/orbit.conf',
-        ],
-        ['sudo', 'bash', '-seu'],
-    ]);
-
-    expect($processes->calls[4]->input)
-        ->toContain('cp --preserve=mode,ownership -- "$live" "$backup"');
-    expect($processes->calls[7]->input)
-        ->toContain(
-            'if ! systemctl restart wg-quick@orbit; then',
-            'mv -fT -- "$backup" "$live"',
-            'systemctl restart wg-quick@orbit || true',
-        );
-    expect($arguments[8])
+    expect($arguments[0])
         ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system']);
-    expect($processes->calls[8]->input)
+    expect($processes->calls[0]->input)
         ->toContain(
             'managed=$directory/orbit-vpn.conf',
             'if [ ! -e "$managed" ]; then',
@@ -190,8 +131,8 @@ function assert_gateway_publication_commands(
             'systemctl restart "$service"',
         )
         ->not->toContain('After=wg-quick@orbit.service');
-    expect($arguments[9])->toBe(['sudo', 'bash', '-seu']);
-    expect($processes->calls[9]->input)
+    expect($arguments[1])->toBe(['sudo', 'bash', '-seu']);
+    expect($processes->calls[1]->input)
         ->toContain(
             'exec 9>/run/lock/orbit-dnsmasq.lock',
             'flock -w 30 9',
@@ -203,7 +144,7 @@ function assert_gateway_publication_commands(
             'systemctl restart dnsmasq || true',
         );
     expect(base64_decode(
-        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[9]->input ?? ''),
+        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[1]->input ?? ''),
         strict: true,
     ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
@@ -216,9 +157,9 @@ it('sends Gateway VPN and recovery intent after installation, including private 
     });
     try {
         $converger->converge($node, gateway_bootstrap_data(privateInterface: 'eth3'));
-        $input = $agents->calls[0]['input'];
+        $input = $agents->calls[1]['input'];
         expect($agents->installs)->toBe(['gateway']);
-        expect($agents->commands())->toBe(['firewall.gateway-vpn']);
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub', 'firewall.gateway-vpn']);
         expect($input['recovery'])->toBe([
             'comment' => 'orbit:public-ssh-recovery', 'action' => 'allow', 'direction' => 'in',
             'source' => 'any', 'destination' => 'any', 'port' => '2222', 'protocol' => 'tcp',
@@ -336,7 +277,7 @@ it('reports the bounded dnsmasq journal tail when the managed restart fails', fu
 
     try {
         $converger->converge($node, gateway_bootstrap_data());
-        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[9]->input ?? '');
+        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[1]->input ?? '');
 
         expect($exitCode)
             ->toBe(1)
@@ -415,139 +356,34 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
                 'rm -f -- "$managed"',
                 'systemctl restart dnsmasq || true',
             )
-            ->and($agents->calls)->toBeEmpty()
-            ->and($agents->installs)->toBeEmpty();
+            ->and($agents->commands())->toBe(['wireguard.bootstrap-hub'])
+            ->and($agents->installs)->toBe(['gateway']);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
 });
 
-it('does not replace or start the gateway WireGuard service when validation fails', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(failValidation: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
+it('maps native WireGuard bootstrap refusals and starts no later step', function (string $refusal, string $code, string $step): void {
+    [$converger, $processes, $home, $agents] = gateway_vpn_converger();
+    $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']);
+    $agents->refuse('wireguard.bootstrap-hub', $refusal);
     try {
         expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('wireguard-server-validate')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.server_config_invalid');
+            ->toThrow(function (NodeProvisioningException $exception) use ($code, $step): void {
+                expect($exception->errorCode)->toBe($code)->and($exception->step)->toBe($step);
             });
-        $commands = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-
-        expect($commands->contains(
-            static fn (array $arguments): bool => end($arguments) === '/etc/wireguard/orbit.conf',
-        ))
-            ->toBeFalse()
-            ->and($commands->contains(['sudo', 'systemctl', 'restart', 'wg-quick@orbit']))
-            ->toBeFalse()
-            ->and($commands->contains([
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-                '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-            ]))
-            ->toBeTrue();
+        expect($agents->commands())->toBe(['wireguard.bootstrap-hub']);
+        expect($processes->calls)->toBeEmpty();
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        new Filesystem()->deleteDirectory($home);
     }
-});
-
-it('keeps live VPN and forwarding configs untouched when forwarding validation fails', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(failForwarding: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('wireguard-forwarding-apply')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.forwarding_config_invalid');
-            });
-        $commands = Collection::make($processes->calls)
-            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
-
-        expect($commands->contains([
-            'sudo',
-            'mv',
-            '-f',
-            '--',
-            '/etc/wireguard/orbit-candidate.conf',
-            '/etc/wireguard/orbit.conf',
-        ]))
-            ->toBeFalse()
-            ->and($commands->contains([
-                'sudo',
-                'mv',
-                '-f',
-                '--',
-                '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-                '/etc/sysctl.d/90-orbit-wireguard-forwarding.conf',
-            ]))
-            ->toBeFalse()
-            ->and($commands->contains(['sudo', 'systemctl', 'restart', 'wg-quick@orbit']))
-            ->toBeFalse()
-            ->and($commands->contains([
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/etc/wireguard/orbit-candidate.conf',
-                '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-            ]))
-            ->toBeTrue();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('restores and restarts the previous gateway WireGuard config when activation fails', function (): void {
-    [$converger, $processes, $orbitHome] = gateway_vpn_converger(failServerRestart: true);
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'public_ssh_host' => '85.9.218.89',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-
-    try {
-        expect(fn () => $converger->converge($node, gateway_bootstrap_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('wireguard-server-restart')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.server_start_failed')
-                    ->and($exception->result?->stderr)
-                    ->toBe('new WireGuard config failed');
-            });
-        $scripts = Collection::make($processes->calls)
-            ->filter(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'bash', '-seu'])
-            ->pluck('input')
-            ->filter(static fn (mixed $input): bool => is_string($input))
-            ->implode("\n");
-
-        expect($scripts)
-            ->toContain(
-                'cp --preserve=mode,ownership -- "$live" "$backup"',
-                'mv -fT -- "$backup" "$live"',
-                'systemctl restart wg-quick@orbit || true',
-            );
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
+})->with([
+    ['wireguard.hub_install_failed', 'vpn.server_config_install_failed', 'wireguard-server-install'],
+    ['wireguard.hub_config_invalid', 'vpn.server_config_invalid', 'wireguard-server-validate'],
+    ['wireguard.forwarding_install_failed', 'vpn.forwarding_config_install_failed', 'wireguard-forwarding-install'],
+    ['wireguard.forwarding_config_invalid', 'vpn.forwarding_config_invalid', 'wireguard-forwarding-apply'],
+    ['wireguard.hub_start_failed', 'vpn.server_start_failed', 'wireguard-server-restart'],
+]);
 
 /**
  * Run the rendered dnsmasq restart helper with a failing `systemctl` shim and
@@ -605,12 +441,8 @@ function gateway_write_host_file(string $orbitHome, string $relative, string $co
 
 /** @return array{NativeGatewayVpnConverger, GatewayVpnFakeProcessRunner, string, FakeAgentCommandRunner} */
 function gateway_vpn_converger(
-    bool $failValidation = false,
-    bool $failForwarding = false,
 
     bool $failDns = false,
-
-    bool $failServerRestart = false,
 
 ): array {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-vpn-'.Str::uuid();
@@ -619,17 +451,21 @@ function gateway_vpn_converger(
     file_put_contents(filename: $orbitHome.'/wireguard/private.key', data: 'SERVER_PRIVATE');
     file_put_contents(filename: $orbitHome.'/wireguard/public.key', data: 'SERVER_PUBLIC');
     $processes = new GatewayVpnFakeProcessRunner(
-        failValidation: $failValidation,
-        failForwarding: $failForwarding,
 
         failDns: $failDns,
-
-        failServerRestart: $failServerRestart,
 
         orbitHome: $orbitHome,
     );
 
     $agents = new FakeAgentCommandRunner()->answer('firewall.gateway-vpn', ['matches' => true]);
+    $agents->answer('wireguard.bootstrap-hub', static function () use ($orbitHome, $processes): array {
+        $lock = fopen($orbitHome.'/locks/wireguard-server.lock', 'c+');
+        $acquired = flock($lock, LOCK_EX | LOCK_NB);
+        $processes->observedProjectionLock = ! $acquired;
+        fclose($lock);
+
+        return [];
+    });
 
     return [
         new NativeGatewayVpnConverger(
@@ -667,19 +503,13 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
     /** @var list<ProcessInvocation> */
     public array $calls = [];
 
-    private int $serverRestartCalls = 0;
-
     public bool $observedProjectionLock = false;
 
     public bool $failResolver = false;
 
     public function __construct(
-        private readonly bool $failValidation,
-        private readonly bool $failForwarding,
 
         private readonly bool $failDns,
-
-        private readonly bool $failServerRestart,
 
         private readonly string $orbitHome,
     ) {}
@@ -687,7 +517,6 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $this->calls[] = $invocation;
-        $this->observeProjectionLock();
 
         $failure = $this->configuredFailure($invocation);
 
@@ -698,51 +527,10 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
         return new CommandResult(0, '', '', 2, false);
     }
 
-    private function observeProjectionLock(): void
-    {
-        if (count($this->calls) !== 1) {
-            return;
-        }
-
-        $lock = fopen($this->orbitHome.'/locks/wireguard-server.lock', mode: 'c+');
-
-        if ($lock === false) {
-            throw new RuntimeException('Could not inspect the WireGuard projection lock.');
-        }
-
-        $acquired = flock($lock, LOCK_EX | LOCK_NB);
-        $this->observedProjectionLock = ! $acquired;
-
-        if ($acquired) {
-            flock($lock, LOCK_UN);
-        }
-
-        fclose($lock);
-    }
-
     private function configuredFailure(ProcessInvocation $invocation): ?CommandResult
     {
         if ($this->failResolver && ($invocation->arguments[4] ?? null) === GatewayPrivateDnsResolver::DROP_IN) {
             return new CommandResult(1, '', 'Failed to set DNS configuration', 2, false);
-        }
-
-        if (
-            $this->failValidation
-            && $invocation->arguments === ['sudo', 'wg-quick', 'strip', '/etc/wireguard/orbit-candidate.conf']
-        ) {
-            return new CommandResult(1, '', 'invalid WireGuard config', 2, false);
-        }
-
-        if (
-            $this->failForwarding
-            && $invocation->arguments === [
-                'sudo',
-                'sysctl',
-                '-p',
-                '/etc/sysctl.d/.90-orbit-wireguard-forwarding.conf.candidate',
-            ]
-        ) {
-            return new CommandResult(1, '', 'invalid forwarding config', 2, false);
         }
 
         if (
@@ -759,20 +547,6 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
             );
         }
 
-        if (
-            $this->failServerRestart
-            && ($invocation->arguments === ['sudo', 'systemctl', 'restart', 'wg-quick@orbit']
-            || $invocation->arguments === ['sudo', 'bash', '-seu']
-            && str_contains($invocation->input ?? '', 'systemctl restart wg-quick@orbit')
-            && ! str_contains($invocation->input ?? '', 'managed=/etc/dnsmasq.d/orbit-vpn.conf'))
-        ) {
-            $this->serverRestartCalls++;
-
-            if ($this->serverRestartCalls === 1) {
-                return new CommandResult(1, '', 'new WireGuard config failed', 2, false);
-            }
-        }
-
         return null;
     }
 }
@@ -780,5 +554,5 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 it('keeps Gateway firewall execution behind its typed agent command', function (): void {
     $source = file_get_contents(app_path('Infrastructure/WireGuard/NativeGatewayVpnConverger.php'));
     expect($source)->toContain("'firewall.gateway-vpn'")
-        ->not->toContain('UfwStatusParser', 'UfwStoredRule', "'ufw'", 'ruleNumbers');
+        ->not->toContain('UfwStatusParser', 'UfwStoredRule', "'ufw'", 'ruleNumbers', 'wg-quick', 'sysctl', 'backupLiveConfig');
 });
