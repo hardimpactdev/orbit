@@ -13,7 +13,7 @@ use JsonException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
-final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner
+final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner
 {
     public const string VersionMismatch = 'agent.version_mismatch';
 
@@ -40,6 +40,18 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     }
 
     #[\Override]
+    public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        return $this->runWith($this->transports->guest($guest), $guest, $command, $input, $deadlineSeconds);
+    }
+
+    #[\Override]
+    public function installGuest(AgentGuest $guest): bool
+    {
+        return $this->installPin($guest, $this->transports->guest($guest), $this->delivery->pin($guest), null);
+    }
+
+    #[\Override]
     public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         return $this->runWith($this->transports->over($node, $connection), $node, $command, $input, $deadlineSeconds);
@@ -55,7 +67,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node $node, string $command, array $input, ?float $deadlineSeconds): array
+    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds): array
     {
         $spec = $this->contract->command($command);
         if ($spec->privilege($transport->platform()) === null) {
@@ -63,7 +75,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         $pin = $this->delivery->pin($node);
-        if ($node->agent_failed_pin === $pin) {
+        if ($node instanceof Node && $node->agent_failed_pin === $pin) {
             throw new AgentCommandRefused($command, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}]; run node:converge to repair it.", ['pin' => $pin]);
         }
 
@@ -96,7 +108,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     }
 
     /** Installs the pinned binary from a staged candidate, which runs the installer itself. */
-    private function installPin(Node $node, AgentTransport $transport, string $pin, ?float $deadline): bool
+    private function installPin(Node|AgentGuest $node, AgentTransport $transport, string $pin, ?float $deadline): bool
     {
         $remaining = $deadline === null ? self::InstallWaitSeconds : max(1.0, min(self::InstallWaitSeconds, $deadline - microtime(true)));
         $spec = $this->contract->command(self::Install);
@@ -116,12 +128,14 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             if ($outcome['error']['code'] === 'agent.update_busy') {
                 throw new AgentCommandRefused(self::Install, 'agent.update_busy', $outcome['error']['message'], $outcome['error']['details']);
             }
-            $this->recordFailedPin($node, $pin);
+            if ($node instanceof Node) {
+                $this->recordFailedPin($node, $pin);
+            }
 
             throw new AgentCommandRefused(self::Install, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}].", ['pin' => $pin, 'cause' => $outcome['error']['code'], ...$outcome['error']['details']]);
         }
 
-        if ($node->agent_failed_pin !== null) {
+        if ($node instanceof Node && $node->agent_failed_pin !== null) {
             $node->forceFill(['agent_failed_pin' => null])->save();
         }
 

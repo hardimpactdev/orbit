@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -19,6 +20,11 @@ final readonly class UpCloudGuestShell implements TaskVmGuestShell
         private string $address,
         private string $hostKey,
     ) {}
+
+    public function agentTarget(): AgentGuest
+    {
+        return AgentGuest::ssh($this->address, 'x86_64', $this->guest->connection($this->address, $this->hostKey));
+    }
 
     public function asUser(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0, ?string $cwd = null): CommandResult
     {

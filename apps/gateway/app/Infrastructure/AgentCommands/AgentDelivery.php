@@ -31,7 +31,7 @@ final class AgentDelivery
     ) {}
 
     /** The artifact key of a Node, such as `linux-x86_64`. */
-    public static function key(Node $node): string
+    public static function key(Node|AgentGuest $node): string
     {
         $architecture = match ($node->architecture) {
             'arm64', 'aarch64' => 'aarch64',
@@ -75,13 +75,13 @@ final class AgentDelivery
     }
 
     /** The pinned SHA-256 for a Node. */
-    public function pin(Node $node): string
+    public function pin(Node|AgentGuest $node): string
     {
         return $this->artifact(self::key($node))['sha256'];
     }
 
     /** A verified local copy of the pinned binary for a Node. */
-    public function localFile(Node $node): string
+    public function localFile(Node|AgentGuest $node): string
     {
         $key = self::key($node);
         $artifact = $this->artifact($key);

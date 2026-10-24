@@ -26,6 +26,7 @@ pub mod firewall;
 pub mod health;
 pub mod hibernation;
 pub mod horizon_queue;
+mod image_identity;
 mod incus;
 pub mod instances;
 pub mod laravel;
@@ -99,6 +100,9 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::setup::PrepareHost>(),
         entry::<incus::volumes::ReadVolumes>(),
         entry::<incus::volumes::ChangeVolume>(),
+        entry::<incus::vm::ReadVm>(),
+        entry::<incus::vm::ChangeVm>(),
+        entry::<image_identity::CleanImage>(),
         entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),

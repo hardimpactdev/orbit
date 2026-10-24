@@ -40,6 +40,15 @@ class AgentTransports
         return new SshAgentTransport($node, $this->ssh, $this->keys, $this->knownHosts);
     }
 
+    public function guest(AgentGuest $guest): AgentTransport
+    {
+        if ($guest->host !== null) {
+            return new IncusAgentTransport($this->for($guest->host), (string) $guest->project, $guest->name);
+        }
+
+        return new SshAgentTransport($guest, $this->ssh, $this->keys, $this->knownHosts, $guest->connection);
+    }
+
     /** The transport over a given connection, such as the bootstrap connection of a Node that is being admitted. */
     public function over(Node $node, SshConnection $connection): AgentTransport
     {

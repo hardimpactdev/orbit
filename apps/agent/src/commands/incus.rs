@@ -12,9 +12,12 @@ use std::{
 
 command_errors! {
     pub enum Error {
-        Invalid {} => "incus.input_invalid", "The Incus observation request is invalid.";
+        Invalid {} => "incus.input_invalid", "The Incus request is invalid.";
         Output { operation: String, reason: String } => "task_vm.invalid_host_output", "Incus returned invalid host output.";
         Failed { operation: String, exit_code: i32, stderr: String } => "task_vm.host_command_failed", "The Incus host command failed.";
+        VmMissing {} => "task_vm.vm_missing", "The task VM is gone from its host.";
+        ImageMismatch {} => "task_vm.image_mismatch", "The task VM did not launch its claimed recipe image.";
+        BaseMissing {} => "task_vm.base_image_missing", "The Incus project has no base image. Build it with task-vms:build-image.";
         SeedMissing {} => "task_vm.topology_seed_missing", "The host has no topology seed for the VM's base image. Build the image again with task-vms:build-image.";
     }
 }
@@ -27,12 +30,12 @@ pub(super) struct Output {
     pub(super) truncated: bool,
 }
 trait Host {
-    fn run(&mut self, args: &[&str]) -> Output;
+    fn run(&mut self, args: &[&str], input: Option<&str>) -> Output;
 }
 struct Native<'a>(&'a Context);
 impl Host for Native<'_> {
-    fn run(&mut self, args: &[&str]) -> Output {
-        bounded(self.0, "/usr/bin/incus", args, None)
+    fn run(&mut self, args: &[&str], input: Option<&str>) -> Output {
+        bounded(self.0, "/usr/bin/incus", args, input)
     }
 }
 pub(super) fn bounded(
@@ -119,7 +122,15 @@ fn invalid_output(operation: &str, reason: &str) -> Error {
     }
 }
 fn read(host: &mut impl Host, operation: &str, args: &[&str]) -> Result<String, Error> {
-    let output = host.run(args);
+    read_input(host, operation, args, None)
+}
+fn read_input(
+    host: &mut impl Host,
+    operation: &str,
+    args: &[&str],
+    input: Option<&str>,
+) -> Result<String, Error> {
+    let output = host.run(args, input);
     if output.code != 0 {
         let lines: Vec<_> = output.stderr.trim().lines().collect();
         return Err(Error::Failed {
@@ -403,3 +414,5 @@ mod tests;
 
 pub(super) mod setup;
 pub(super) mod volumes;
+
+pub mod vm;

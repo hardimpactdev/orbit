@@ -110,7 +110,7 @@ final readonly class UpCloudTaskVmImageBuilder
             $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
             $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
-            $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
+            $this->stage($progress, 'clean', fn () => $this->clean($shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
             $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
@@ -239,12 +239,9 @@ final readonly class UpCloudTaskVmImageBuilder
         }
     }
 
-    private function clean(string $name, UpCloudGuestShell $shell): void
+    private function clean(UpCloudGuestShell $shell): void
     {
-        $result = $this->checked($name, $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript()));
-        if (trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
-            throw new TaskVmException('task_vm.image_build_failed', "base-image-clean.sh did not confirm on [{$name}].", 502);
-        }
+        $this->recipe->clean($shell->agentTarget());
     }
 
     /** Stops the builder cleanly and turns its disk into a template. */

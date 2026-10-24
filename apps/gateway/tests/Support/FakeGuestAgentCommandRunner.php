@@ -1,0 +1,36 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Support;
+
+use App\Infrastructure\AgentCommands\AgentGuest;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
+use Closure;
+
+/** Fakes guest command results while keeping image build intent observable. */
+final class FakeGuestAgentCommandRunner implements GuestAgentCommandRunner
+{
+    /** @var list<array{guest: AgentGuest, command: string, input: array<string, mixed>}> */
+    public array $calls = [];
+
+    /** @var list<AgentGuest> */
+    public array $installs = [];
+
+    /** @var (Closure(AgentGuest, string, array<string,mixed>): array<string,mixed>)|null */
+    public ?Closure $answer = null;
+
+    public function runGuest(AgentGuest $guest, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        $this->calls[] = ['guest' => $guest, 'command' => $command, 'input' => $input];
+
+        return $this->answer === null ? ['ready' => true] : ($this->answer)($guest, $command, $input);
+    }
+
+    public function installGuest(AgentGuest $guest): bool
+    {
+        $this->installs[] = $guest;
+
+        return true;
+    }
+}

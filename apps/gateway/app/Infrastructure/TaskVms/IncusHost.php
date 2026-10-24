@@ -7,6 +7,7 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
@@ -81,6 +82,47 @@ final readonly class IncusHost
         }
 
         return $name;
+    }
+
+    public function vmState(TaskVmHost $host, Node $node, string $name): ?VmObservation
+    {
+        $result = $this->observe($node, 'incus.vm-state', ['project' => $host->project, 'name' => $name, 'cidr' => $host->cidr], "task VM [{$name}]");
+        if (! array_key_exists('observation', $result)) {
+            throw self::invalid("task VM [{$name}]", 'the agent observation is missing');
+        }
+        $state = $result['observation'];
+        if ($state === null) {
+            return null;
+        }
+        if (! is_array($state) || ! is_bool($state['running'] ?? null)
+            || ! array_key_exists('address', $state) || (! is_null($state['address']) && ! is_string($state['address']))
+            || ! array_key_exists('image_fingerprint', $state) || (! is_null($state['image_fingerprint']) && ! is_string($state['image_fingerprint']))) {
+            throw self::invalid("task VM [{$name}]", 'the agent observation is invalid');
+        }
+
+        return new VmObservation($state['running'], $state['address'], $state['image_fingerprint']);
+    }
+
+    /** @param array<string, mixed> $operation */
+    public function changeVm(TaskVmHost $host, Node $node, string $name, array $operation): void
+    {
+        try {
+            $result = $this->observe($node, 'incus.vm', [
+                'vm' => ['project' => $host->project, 'name' => $name, 'cidr' => $host->cidr],
+                'operation' => $operation,
+            ], "task VM [{$name}]");
+        } catch (AgentCommandRefused $error) {
+            throw match ($error->errorCode) {
+                'task_vm.vm_missing' => new TaskVmException($error->errorCode, "Task VM [{$name}] is gone from its host.", 502),
+                'task_vm.image_mismatch' => new TaskVmException($error->errorCode, 'The task VM did not launch its claimed recipe image.'),
+                'task_vm.topology_seed_missing' => new TaskVmException($error->errorCode, "The host of task VM [{$name}] has no topology seed for its base image. Build it with task-vms:build-image."),
+                'task_vm.base_image_missing' => new TaskVmException($error->errorCode, "The Incus project [{$host->project}] on the host of task VM [{$name}] has no base image [{$host->imageAlias}]. Build it with task-vms:build-image."),
+                default => $error,
+            };
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw self::invalid("task VM [{$name}]", 'the agent did not confirm the change');
+        }
     }
 
     /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */

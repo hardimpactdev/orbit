@@ -11,7 +11,7 @@ struct Fake {
     invalid: bool,
 }
 impl Host for Fake {
-    fn run(&mut self, args: &[&str]) -> Output {
+    fn run(&mut self, args: &[&str], _input: Option<&str>) -> Output {
         self.calls.push(args.iter().map(|s| (*s).into()).collect());
         if args[4] == "list" {
             return Output {

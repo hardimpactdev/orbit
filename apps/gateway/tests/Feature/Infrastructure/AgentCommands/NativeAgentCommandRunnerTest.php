@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\AgentTransport;
 use App\Infrastructure\AgentCommands\AgentTransports;
@@ -76,6 +77,11 @@ function agentRunner(ScriptedAgentTransport $transport): NativeAgentCommandRunne
         public function __construct(private readonly AgentTransport $transport) {}
 
         public function for(Node $node): AgentTransport
+        {
+            return $this->transport;
+        }
+
+        public function guest(AgentGuest $guest): AgentTransport
         {
             return $this->transport;
         }
@@ -317,4 +323,32 @@ it('keeps a whole agent result above the default process output limit', function
 
     expect($ssh->command?->maxOutputBytes)->toBe(AgentTransport::ResultBytes)
         ->and(AgentTransport::ResultBytes)->toBeGreaterThan(6 * 131_072);
+});
+
+it('installs a guest on mismatch and resends once through the same runner', function (): void {
+    $host = agentRunnerNode();
+    $host->forceFill(['agent_failed_pin' => app(AgentDelivery::class)->pin($host)])->save();
+    $guest = AgentGuest::incus($host, 'orbit-tasks', 'tvm-image-1');
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), agentResult(['ok' => true, 'data' => ['replaced' => true]]), agentResult(['ok' => true, 'data' => ['ready' => true]])]);
+    $count = Node::query()->count();
+
+    expect(agentRunner($transport)->runGuest($guest, 'agent.status'))->toBe(['ready' => true]);
+    expect(array_column($transport->calls, 'arguments'))->toBe([
+        ['/usr/local/bin/orbit-agent', 'command', 'agent.status'],
+        ['sudo', '-n', '/var/tmp/orbit-agent-candidate-1', 'command', 'agent.install'],
+        ['/usr/local/bin/orbit-agent', 'command', 'agent.status'],
+    ]);
+    expect($host->fresh()->agent_failed_pin)->toBe(app(AgentDelivery::class)->pin($host));
+    expect(Node::query()->count())->toBe($count);
+});
+
+it('fails an unenrolled guest installation without changing host pin state or adding a Node', function (): void {
+    $host = agentRunnerNode();
+    $guest = AgentGuest::incus($host, 'orbit-tasks', 'tvm-image-1');
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.health_failed')]);
+    $count = Node::query()->count();
+
+    expect(fn () => agentRunner($transport)->installGuest($guest))->toThrow(fn (AgentCommandRefused $error) => expect($error->errorCode)->toBe('agent.install_failed'));
+    expect($host->fresh()->agent_failed_pin)->toBeNull();
+    expect(Node::query()->count())->toBe($count);
 });

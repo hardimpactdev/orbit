@@ -5,11 +5,13 @@ declare(strict_types=1);
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\IncusGuestCall;
 use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
@@ -118,6 +120,16 @@ final class FakeIncusImageHost implements SshExecutor
 
     public function bindAgentInventory(): void
     {
+        $guests = new FakeGuestAgentCommandRunner;
+        $guests->answer = function (): array {
+            $this->events[] = 'image.clean';
+            if ($this->fail === 'clean') {
+                throw new AgentCommandRefused('image.clean', 'task_vm.image_clean_failed', 'An SSH host key remains.');
+            }
+
+            return ['ready' => true];
+        };
+        app()->instance(GuestAgentCommandRunner::class, $guests);
         $agents = new FakeAgentCommandRunner;
         $agents->answer('incus.images', function (): array {
             if ($this->fail === 'image list') {
@@ -254,12 +266,10 @@ final class FakeIncusImageHost implements SshExecutor
             'test' => $this->answer('authorized key'),
             'sh' => $this->answer('orbit user'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
-            'bash' => $command[1] === '-s'
-                ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
-                : $this->answer(match ($call->script) {
-                    'image-check.sh' => 'lean boot',
-                    default => 'exec',
-                }),
+            'bash' => $this->answer(match ($call->script) {
+                'image-check.sh' => 'lean boot',
+                default => 'exec',
+            }),
             default => $this->answer('exec'),
         };
     }

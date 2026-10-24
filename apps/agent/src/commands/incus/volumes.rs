@@ -7,14 +7,14 @@ use std::time::Duration;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pool {
-    project: String,
-    pool: String,
+    pub(super) project: String,
+    pub(super) pool: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
-    location: Pool,
-    operation: Operation,
+    pub(super) location: Pool,
+    pub(super) operation: Operation,
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -36,7 +36,7 @@ pub struct Volumes {
 }
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Changed {
-    name: String,
+    pub(super) name: String,
 }
 
 fn name(value: &str) -> bool {
@@ -47,7 +47,7 @@ fn name(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
-fn digest(value: &str) -> bool {
+pub(super) fn digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
@@ -94,7 +94,7 @@ fn names(host: &mut impl Host, input: &Pool) -> Result<Vec<String>, Error> {
 fn seed(fingerprint: &str) -> String {
     format!("orbit-topology-seed-{}", &fingerprint[..12])
 }
-fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
+pub(super) fn change(host: &mut impl Host, input: &Input) -> Result<Changed, Error> {
     validate(&input.location)?;
     let target = match &input.operation {
         Operation::CloneSeed { vm, fingerprint } => {

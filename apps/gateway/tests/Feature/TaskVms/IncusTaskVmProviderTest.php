@@ -28,23 +28,9 @@ use Tests\Support\TaskVmSettingsBuilder;
 
 const INCUS_PREFIX = ['sudo', '-n', 'incus', '--project', 'orbit-tasks'];
 
-/** @param  list<array{address: string, family?: string}>  $addresses */
-function incusInstance(string $name = 'tvm-1', string $status = 'Running', array $addresses = [['address' => '10.251.77.20']], string $type = 'virtual-machine'): array
-{
-    return ['name' => $name, 'type' => $type, 'status' => $status, 'state' => ['network' => [
-        'enp5s0' => ['addresses' => array_map(static fn (array $address): array => ['family' => 'inet', 'scope' => 'global', ...$address], $addresses)],
-        'lo' => ['addresses' => [['family' => 'inet', 'address' => '127.0.0.1', 'scope' => 'local']]],
-    ]]];
-}
-
 function incusResult(string $stdout = '', int $exitCode = 0, string $stderr = '', bool $truncated = false): CommandResult
 {
     return new CommandResult($exitCode, $stdout, $stderr, 5, $truncated);
-}
-
-function incusList(array ...$instances): CommandResult
-{
-    return incusResult(json_encode($instances, JSON_THROW_ON_ERROR));
 }
 
 beforeEach(function (): void {
@@ -98,7 +84,7 @@ beforeEach(function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     }, app(AgentCommandRunner::class));
     $this->volumes = new TaskVmVolumes($incus);
-    $this->provider = new IncusTaskVmProvider($incus, $settings, $this->volumes);
+    $this->provider = new IncusTaskVmProvider($incus, $settings);
     $this->host = $host;
     $this->hostSettings = $settings->host($host->id);
     $this->guest = new TaskVmGuest($this->provider);
@@ -108,181 +94,81 @@ beforeEach(function (): void {
     $this->argv = fn (): array => array_map(static fn (array $call): array => $call[1]->arguments, $this->ssh->calls);
 });
 
-it('launches an absent VM on the configured bridge with the user-data on stdin', function (): void {
-    ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
-
-    $this->provider->create($this->vm, "#cloud-config\nshell: /bin/bash\n");
-
-    [$connection, $launch] = $this->ssh->calls[1];
-    expect(($this->argv)())->toBe([
-        [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
-        [...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=20GiB',
-            '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'orbit-task-base', 'tvm-1'],
-    ])
-        ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\nshell: /bin/bash\n"}}')
-        ->and([$connection->host, $connection->user, $connection->port, $connection->identityFile, $connection->knownHostsFile])
-        ->toBe(['10.44.0.7', 'orbit', 22, '/keys/id_ed25519', '/keys/known_hosts']);
-});
-
-it('launches a VM whose size runs a topology with its own size, free page reporting, and a clone of the topology seed', function (TaskVmSize $size, array $limits): void {
+it('sends creation intent with the claimed image and resolved size', function (TaskVmSize $size, int $cpus, string $memory, string $disk, bool $topology): void {
     $fingerprint = str_repeat('c', 64);
     $this->vm->update(['size' => $size, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => $fingerprint]);
-    ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
-    $this->agents->answer('incus.volume', ['name' => 'tvm-1-topology-seed']);
+    $this->agents->answer('incus.vm', ['ready' => true]);
 
-    $this->provider->create($this->vm, "#cloud-config\n");
+    $this->provider->create($this->vm, 'ssh-ed25519 AAAA gateway');
 
-    expect($this->agents->calls[0]['input'])->toBe(['location' => ['project' => 'orbit-tasks', 'pool' => 'tank'], 'operation' => ['kind' => 'clone_seed', 'vm' => 'tvm-1', 'fingerprint' => $fingerprint]]);
-    expect(array_slice(($this->argv)(), 1))->toBe([
-        [...INCUS_PREFIX, 'launch', '--vm', ...$limits, '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', $fingerprint, 'tvm-1'],
-    ])
-        ->and(json_decode($this->ssh->calls[1][1]->input ?? '', true))->toBe([
-            'config' => [
-                'cloud-init.user-data' => "#cloud-config\n",
-                'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
-            ],
-            'devices' => ['topology-seed' => ['type' => 'disk', 'pool' => 'tank', 'source' => 'tvm-1-topology-seed']],
-        ]);
+    expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.vm', 'input' => [
+        'vm' => ['project' => 'orbit-tasks', 'name' => 'tvm-1', 'cidr' => '10.251.77.0/24'],
+        'operation' => [
+            'kind' => 'create', 'image' => $fingerprint, 'expected_fingerprint' => $fingerprint,
+            'base_alias' => 'orbit-task-base', 'gateway_public_key' => 'ssh-ed25519 AAAA gateway',
+            'cpus' => $cpus, 'memory' => $memory, 'disk' => $disk, 'network' => 'orbittask0', 'pool' => 'tank', 'topology' => $topology,
+        ],
+    ]]]);
+    expect($this->ssh->calls)->toBe([]);
 })->with([
-    'medium' => [TaskVmSize::Medium, ['--config', 'limits.cpu=4', '--config', 'limits.memory=8GiB', '--device', 'root,size=40GiB']],
-    'large' => [TaskVmSize::Large, ['--config', 'limits.cpu=6', '--config', 'limits.memory=12GiB', '--device', 'root,size=60GiB']],
+    [TaskVmSize::Normal, 2, '4GiB', '20GiB', false],
+    [TaskVmSize::Medium, 4, '8GiB', '40GiB', true],
+    [TaskVmSize::Large, 6, '12GiB', '60GiB', true],
 ]);
 
-it('refuses to launch a VM whose size runs a topology when the host has no topology seed for its base image', function (): void {
-    $this->vm->update(['size' => TaskVmSize::Medium, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => str_repeat('c', 64)]);
-    ($this->answer)(incusList());
-    $this->agents->refuse('incus.volume', 'task_vm.topology_seed_missing');
+it('selects the configured alias only when the row has no recorded image', function (): void {
+    $this->agents->answer('incus.vm', ['ready' => true]);
 
-    expect(fn () => $this->provider->create($this->vm, "#cloud-config\n"))
-        ->toThrow(TaskVmException::class, 'The host of task VM [tvm-1] has no topology seed for its base image.');
-    expect($this->ssh->calls)->toHaveCount(1);
+    $this->provider->create($this->vm, 'ssh-ed25519 AAAA gateway');
+
+    expect($this->agents->calls[0]['input']['operation']['image'])->toBe('orbit-task-base');
+    expect($this->agents->calls[0]['input']['operation']['expected_fingerprint'])->toBeNull();
 });
 
-it('launches the recorded fingerprint even when the host alias changes', function (): void {
-    $fingerprint = str_repeat('c', 64);
-    $this->vm->update(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => $fingerprint]);
-    ($this->answer)(incusList(), incusResult());
+it('returns the typed native observation', function (?array $state, ?VmObservation $expected): void {
+    $this->agents->answer('incus.vm-state', ['observation' => $state]);
 
-    $this->provider->create($this->vm, "#cloud-config\n");
-
-    expect(($this->argv)()[1])->toContain($fingerprint)->not->toContain('orbit-task-base');
-});
-
-it('rejects an existing VM that booted a different fingerprint than its claim', function (): void {
-    $this->vm->update(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => str_repeat('c', 64)]);
-    $instance = incusInstance('tvm-1');
-    $instance['config'] = ['volatile.base_image' => str_repeat('b', 64)];
-    ($this->answer)(incusList($instance));
-
-    expect(fn () => $this->provider->create($this->vm, ''))->toThrow(TaskVmException::class, 'did not launch its claimed recipe image');
-});
-
-it('observes the image the VM actually booted rather than the current base alias', function (): void {
-    $instance = incusInstance();
-    $instance['config'] = ['volatile.base_image' => str_repeat('b', 64)];
-    ($this->answer)(incusList($instance));
-
-    expect($this->provider->observe($this->vm)?->imageFingerprint)->toBe(str_repeat('b', 64));
-});
-
-it('rejects an invalid observed image fingerprint', function (mixed $fingerprint): void {
-    $instance = incusInstance();
-    $instance['config'] = ['volatile.base_image' => $fingerprint];
-    ($this->answer)(incusList($instance));
-
-    expect(fn () => $this->provider->observe($this->vm))->toThrow(TaskVmException::class, 'base image fingerprint');
-})->with(['not-a-digest', 42, ['nested']]);
-
-it('does not launch a VM that runs', function (): void {
-    ($this->answer)(incusList(incusInstance()));
-
-    $this->provider->create($this->vm, '#cloud-config');
-
-    expect($this->ssh->calls)->toHaveCount(1);
-});
-
-it('starts a VM that exists but is stopped', function (): void {
-    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult());
-    $this->provider->create($this->vm, '#cloud-config');
-    expect(($this->argv)()[1])->toBe([...INCUS_PREFIX, 'start', '--', 'tvm-1']);
-
-    // A guest reboot: start fails, but the VM runs again.
-    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(exitCode: 1, stderr: 'Error: The instance is already running'), incusList(incusInstance()));
-    $this->provider->create($this->vm, '#cloud-config');
-
-    $stderr = "Error: Failed to run: qemu exit status 1\n".str_repeat('x', 3000);
-    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(exitCode: 1, stderr: $stderr), incusList(incusInstance(status: 'Stopped')));
-    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
-        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, mb_strlen($e->getMessage()) < 2100, str_starts_with($e->getMessage(), "`incus start` for task VM [tvm-1] failed with exit code [1].\nError: Failed to run: qemu exit status 1")])
-            ->toBe(['task_vm.host_command_failed', true, true]));
-});
-
-it('accepts a failed launch only when the VM runs afterwards', function (): void {
-    $this->agents->answer('incus.images', ['images' => [str_repeat('a', 64) => ['orbit-task-base']]]);
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: 'Error: connection lost'), incusList(incusInstance()));
-    $this->provider->create($this->vm, '#cloud-config');
-
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Invalid devices\n"), incusList());
-    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
-        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Invalid devices"]));
-
-    // The launch created the VM but could not start it: the launch error is the answer.
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Failed to run: qemu exit status 1\n"), incusList(incusInstance(status: 'Stopped')));
-    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
-        ->toThrow(TaskVmException::class, "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Failed to run: qemu exit status 1");
-});
-
-it('names a missing base image instead of the launch error, and never launches the stock image', function (): void {
-    $this->agents->answer('incus.images', ['images' => [str_repeat('a', 64) => ['ubuntu-26.04-vm'], str_repeat('b', 64) => ['orbit-task-base-20261010030000']]]);
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Image not found\n"), incusList());
-
-    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
-        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe([
-            'task_vm.base_image_missing',
-            'The Incus project [orbit-tasks] on the host of task VM [tvm-1] has no base image [orbit-task-base]. Build it with task-vms:build-image.',
-        ]));
-    expect(($this->argv)()[1])->toContain('orbit-task-base')->not->toContain('ubuntu-26.04-vm')
-        ->and($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.images', 'input' => ['project' => 'orbit-tasks']]]);
-});
-
-it('observes the VM by its exact name', function (): void {
-    ($this->answer)(incusList(incusInstance('tvm-12'), incusInstance()));
-    expect($this->provider->observe($this->vm))->toEqual(new VmObservation(true, '10.251.77.20'));
-
-    ($this->answer)(incusList(incusInstance('tvm-12')));
-    expect($this->provider->observe($this->vm))->toBeNull();
-
-    $stopped = incusInstance(status: 'Stopped');
-    $stopped['state']['network'] = null;
-    ($this->answer)(incusList($stopped));
-    expect($this->provider->observe($this->vm))->toEqual(new VmObservation(false, null));
-
-    ($this->answer)(incusList(incusInstance(addresses: [['address' => '10.44.0.130'], ['address' => 'fe80::1', 'family' => 'inet6']])));
-    expect($this->provider->observe($this->vm))->toEqual(new VmObservation(true, null));
-});
-
-it('refuses invalid instance output', function (CommandResult $result): void {
-    ($this->answer)($result);
-
-    expect(fn () => $this->provider->observe($this->vm))
-        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->status])->toBe(['task_vm.invalid_host_output', 502]));
+    expect($this->provider->observe($this->vm))->toEqual($expected);
+    expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.vm-state', 'input' => ['project' => 'orbit-tasks', 'name' => 'tvm-1', 'cidr' => '10.251.77.0/24']]]);
+    expect($this->ssh->calls)->toBe([]);
 })->with([
-    'not JSON' => [incusResult('Error')],
-    'truncated' => [incusResult('[]', truncated: true)],
-    'not a list' => [incusResult('{"name":"tvm-1"}')],
-    'a container' => [incusList(incusInstance(type: 'container'))],
-    'frozen' => [incusList(incusInstance(status: 'Frozen'))],
-    'listed twice' => [incusList(incusInstance(), incusInstance())],
-    'the bridge address' => [incusList(incusInstance(addresses: [['address' => '10.251.77.1']]))],
-    'the broadcast address' => [incusList(incusInstance(addresses: [['address' => '10.251.77.255']]))],
-    'two bridge addresses' => [incusList(incusInstance(addresses: [['address' => '10.251.77.20'], ['address' => '10.251.77.21']]))],
+    [null, null],
+    [['running' => true, 'address' => '10.251.77.20', 'image_fingerprint' => str_repeat('c', 64)], new VmObservation(true, '10.251.77.20', str_repeat('c', 64))],
+    [['running' => false, 'address' => null, 'image_fingerprint' => null], new VmObservation(false, null)],
 ]);
 
-it('fails when incus list fails', function (): void {
-    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: not authorized'));
+it('rejects incomplete native observations', function (array $output): void {
+    $this->agents->answer('incus.vm-state', $output);
 
-    expect(fn () => $this->provider->observe($this->vm))->toThrow(TaskVmException::class, '`incus list` for task VM [tvm-1] failed with exit code [1].');
-});
+    expect(fn () => $this->provider->observe($this->vm))->toThrow(TaskVmException::class);
+})->with([[[]], [['observation' => []]], [['observation' => ['running' => true, 'address' => null, 'image_fingerprint' => 42]]]]);
+
+it('maps VM lifecycle refusals without a second host execution path', function (string $code, array $details, string $message): void {
+    $this->agents->refuse('incus.vm', $code, $details);
+
+    expect(fn () => $this->provider->create($this->vm, 'ssh-ed25519 AAAA gateway'))
+        ->toThrow(fn (TaskVmException $error) => expect([$error->errorCode, $error->getMessage()])->toBe([$code, $message]));
+    expect($this->ssh->calls)->toBe([]);
+    expect($this->agents->calls)->toHaveCount(1);
+})->with([
+    ['task_vm.vm_missing', [], 'Task VM [tvm-1] is gone from its host.'],
+    ['task_vm.image_mismatch', [], 'The task VM did not launch its claimed recipe image.'],
+    ['task_vm.topology_seed_missing', [], 'The host of task VM [tvm-1] has no topology seed for its base image. Build it with task-vms:build-image.'],
+    ['task_vm.base_image_missing', [], 'The Incus project [orbit-tasks] on the host of task VM [tvm-1] has no base image [orbit-task-base]. Build it with task-vms:build-image.'],
+    ['task_vm.invalid_host_output', ['reason' => 'invalid observation'], 'Incus returned invalid output for task VM [tvm-1]: invalid observation.'],
+    ['task_vm.host_command_failed', ['operation' => 'launch', 'exit_code' => 1], '`incus launch` for task VM [tvm-1] failed with exit code [1].'],
+]);
+
+it('sends start stop and delete intent to the native lifecycle command', function (string $method, array $operation): void {
+    $this->agents->answer('incus.vm', ['ready' => true]);
+
+    $this->provider->{$method}($this->vm);
+
+    expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.vm', 'input' => [
+        'vm' => ['project' => 'orbit-tasks', 'name' => 'tvm-1', 'cidr' => '10.251.77.0/24'], 'operation' => $operation,
+    ]]]);
+    expect($this->ssh->calls)->toBe([]);
+})->with([['start', ['kind' => 'start']], ['stop', ['kind' => 'stop']], ['destroy', ['kind' => 'delete', 'pool' => 'tank']]]);
 
 it('reads the cloud-init status', function (CommandResult $result, bool $ready): void {
     ($this->answer)($result);
@@ -327,79 +213,6 @@ it('refuses an invalid fingerprint', function (CommandResult $result, string $co
     'two lines' => [incusResult(str_repeat('256 SHA256:'.str_repeat('a', 43)." root@tvm-1 (ED25519)\n", 2)), 'task_vm.invalid_host_output'],
     'no key' => [incusResult(exitCode: 1, stderr: 'No such file'), 'task_vm.host_command_failed'],
 ]);
-
-it('deletes the VM, then its topology seed clone, and accepts an absent one', function (): void {
-    ($this->answer)(incusResult());
-    $this->agents->answer('incus.volume', ['name' => 'tvm-1-topology-seed']);
-    $this->provider->destroy($this->vm);
-    expect(($this->argv)())->toBe([
-        [...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1'],
-    ]);
-
-    $this->ssh->calls = [];
-    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList());
-    $this->provider->destroy($this->vm);
-    expect($this->ssh->calls)->toHaveCount(2);
-    expect($this->agents->calls[0]['input']['operation'])->toBe(['kind' => 'remove', 'name' => 'tvm-1-topology-seed']);
-
-    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: busy'), incusList(incusInstance()));
-    expect(fn () => $this->provider->destroy($this->vm))->toThrow(TaskVmException::class, '`incus delete` for task VM [tvm-1] failed with exit code [1].');
-});
-
-describe('park and resume', function (): void {
-    it('stops a running VM with a clean shutdown and keeps it', function (): void {
-        ($this->answer)(incusList(incusInstance()), incusResult());
-
-        $this->provider->stop($this->vm);
-
-        expect(($this->argv)())->toBe([
-            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
-            [...INCUS_PREFIX, 'stop', '--timeout', '120', '--', 'tvm-1'],
-        ]);
-    });
-
-    it('stops with force when the guest does not shut down in time', function (): void {
-        ($this->answer)(incusList(incusInstance()), incusResult(exitCode: 1, stderr: 'timed out'), incusList(incusInstance()), incusResult());
-
-        $this->provider->stop($this->vm);
-
-        expect(($this->argv)()[3])->toBe([...INCUS_PREFIX, 'stop', '--force', '--', 'tvm-1']);
-    });
-
-    it('fails when the VM still runs after a forced stop', function (): void {
-        ($this->answer)(incusList(incusInstance()), incusResult(exitCode: 1), incusList(incusInstance()), incusResult(exitCode: 1, stderr: 'busy'), incusList(incusInstance()));
-
-        expect(fn () => $this->provider->stop($this->vm))->toThrow(TaskVmException::class, '`incus stop` for task VM [tvm-1] failed');
-    });
-
-    it('counts a stopped or absent VM as stopped', function (): void {
-        ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusList());
-
-        $this->provider->stop($this->vm);
-        $this->provider->stop($this->vm);
-
-        expect($this->ssh->calls)->toHaveCount(2);
-    });
-
-    it('starts a stopped VM and leaves a running one alone', function (): void {
-        ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(), incusList(incusInstance()));
-
-        $this->provider->start($this->vm);
-        $this->provider->start($this->vm);
-
-        expect(($this->argv)())->toBe([
-            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
-            [...INCUS_PREFIX, 'start', '--', 'tvm-1'],
-            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
-        ]);
-    });
-
-    it('refuses to start a VM that is gone', function (): void {
-        ($this->answer)(incusList());
-
-        expect(fn () => $this->provider->start($this->vm))->toThrow(TaskVmException::class, 'Task VM [tvm-1] is gone from its host.');
-    });
-});
 
 it('sweeps only the clones of VMs without live rows, and keeps topology seeds', function (): void {
     $this->vm->update(['state' => TaskVmState::Parked]);

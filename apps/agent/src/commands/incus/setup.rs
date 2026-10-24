@@ -425,8 +425,8 @@ fn prepare(input: &Input, host: &mut impl Host) -> Result<Prepared, Error> {
 }
 struct IncusRead<'a, H>(&'a mut H);
 impl<H: Host> super::Host for IncusRead<'_, H> {
-    fn run(&mut self, args: &[&str]) -> Output {
-        self.0.run(Tool::Incus, args, None)
+    fn run(&mut self, args: &[&str], input: Option<&str>) -> Output {
+        self.0.run(Tool::Incus, args, input)
     }
 }
 pub struct PrepareHost;

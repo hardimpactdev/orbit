@@ -217,6 +217,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentTransports;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -589,6 +590,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             Config::string('orbit.home'),
         ));
         $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(GuestAgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->bind(AdmissionAgentRunner::class, NativeAgentCommandRunner::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);

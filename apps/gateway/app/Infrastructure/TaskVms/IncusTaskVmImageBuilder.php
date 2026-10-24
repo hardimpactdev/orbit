@@ -69,10 +69,7 @@ final readonly class IncusTaskVmImageBuilder
 
     public function clean(IncusGuestShell $shell): void
     {
-        $result = $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript());
-        if (! $result->succeeded() || trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
-            throw IncusHost::failed("the base image build VM [{$shell->vm}]", 'exec base-image-clean.sh', $result);
-        }
+        $this->recipe->clean($shell->agentTarget());
     }
 
     /** Stops the builder and publishes its disk under `$alias`. Returns the new fingerprint. */

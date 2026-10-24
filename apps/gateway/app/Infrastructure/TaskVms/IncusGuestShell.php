@@ -6,6 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
@@ -24,6 +25,11 @@ final readonly class IncusGuestShell implements TaskVmGuestShell
         public string $vm,
         private ?string $recipeLog = null,
     ) {}
+
+    public function agentTarget(): AgentGuest
+    {
+        return AgentGuest::incus($this->node, $this->host->project, $this->vm);
+    }
 
     public function forRecipePhase(string $profile, string $phase): self
     {

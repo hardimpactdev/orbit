@@ -452,7 +452,7 @@ describe(ProvisionTaskVm::class, function (): void {
         app()->call([new ProvisionTaskVm($vm->id), 'handle']);
 
         expect($this->provider->calls)->toBe(['create'])
-            ->and($this->provider->userData)->toStartWith("#cloud-config\n")->toContain('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
+            ->and($this->provider->gatewayPublicKey)->toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
         Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
     });
 

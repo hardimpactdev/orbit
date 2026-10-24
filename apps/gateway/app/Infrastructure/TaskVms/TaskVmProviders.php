@@ -19,9 +19,9 @@ final readonly class TaskVmProviders implements TaskVmProvider
         private UpCloudTaskVmProvider $upcloud,
     ) {}
 
-    public function create(TaskVm $vm, string $userData): void
+    public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
-        $this->for($vm)->create($vm, $userData);
+        $this->for($vm)->create($vm, $gatewayPublicKey);
     }
 
     public function observe(TaskVm $vm): ?VmObservation

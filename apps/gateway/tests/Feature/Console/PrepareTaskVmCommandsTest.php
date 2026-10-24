@@ -11,8 +11,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Symfony\Component\Process\ExecutableFinder;
-use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 
@@ -202,33 +200,6 @@ describe('task-vms:prepare-hub', function (): void {
             '[task_vm.fleet_unavailable] Expected exactly one active [websocket] Node, found [2].',
         ],
     ]);
-});
-
-describe('task VM setup scripts', function (): void {
-    it('are valid bash', function (string $script): void {
-        $syntax = new Process(['bash', '-n', resource_path('task-vms/'.$script)]);
-        $syntax->run();
-
-        expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput());
-    })->with(['base-image-clean.sh']);
-
-    it('pass shellcheck when it is installed', function (): void {
-        $finder = new ExecutableFinder;
-        $shellcheck = $finder->find('shellcheck');
-
-        if ($shellcheck === null) {
-            $this->markTestSkipped('shellcheck is not installed.');
-        }
-
-        $check = new Process([
-            $shellcheck,
-            resource_path('task-vms/base-image-clean.sh'),
-        ]);
-        $check->run();
-
-        expect($check->getExitCode())->toBe(0, $check->getOutput());
-    });
-
 });
 
 /** @param list<RoleName> $roles */

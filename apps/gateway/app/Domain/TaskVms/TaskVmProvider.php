@@ -14,8 +14,8 @@ use App\Models\TaskVm;
  */
 interface TaskVmProvider
 {
-    /** Create the VM with this cloud-init user-data. An existing VM with the name counts as created. */
-    public function create(TaskVm $vm, string $userData): void;
+    /** Create the VM with access for this Gateway public key. An existing VM with the name counts as created. */
+    public function create(TaskVm $vm, string $gatewayPublicKey): void;
 
     /** Returns null when the VM is absent. */
     public function observe(TaskVm $vm): ?VmObservation;

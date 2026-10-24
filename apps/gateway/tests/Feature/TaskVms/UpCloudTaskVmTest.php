@@ -16,6 +16,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -56,6 +57,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
+use Tests\Support\FakeGuestAgentCommandRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\RecipeImageUnitGuest;
@@ -339,6 +341,7 @@ function tvm_up_vm(TaskVmState $state = TaskVmState::Provisioning, ?string $host
 }
 
 beforeEach(function (): void {
+    app()->instance(GuestAgentCommandRunner::class, new FakeGuestAgentCommandRunner);
     $this->project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
     $this->host = Node::query()->create([
         'name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
@@ -557,7 +560,7 @@ describe('placement', function (): void {
         $this->upcloud->template('orbit-task-base-20261012000000-unverified');
         $vm = tvm_up_vm();
 
-        app(UpCloudTaskVmProvider::class)->create($vm, "#cloud-config\n{\"users\":[]}\n");
+        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
         $vm->refresh();
 
         $request = $this->upcloud->created[0];
@@ -570,7 +573,7 @@ describe('placement', function (): void {
             ->and($request['storage_devices']['storage_device'][0])->toMatchArray(['action' => 'clone', 'storage' => $current, 'size' => 30, 'tier' => 'standard'])
             ->and($request)->toMatchArray(['zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'metadata' => 'yes', 'remote_access_enabled' => 'no'])
             ->and($request['login_user'])->toBe(['username' => 'root', 'ssh_keys' => ['ssh_key' => [TVM_UP_GATEWAY_KEY]]])
-            ->and($userData['users'])->toBe([])
+            ->and($userData['users'][0]['ssh_authorized_keys'])->toBe(['ssh-ed25519 AAAA gateway'])
             ->and($userData['disable_root'])->toBeTrue()
             ->and($userData['ssh_keys']['ed25519_public'])->toBe($vm->ssh_host_key)
             ->and($userData['ssh_keys']['ed25519_private'])->toContain('BEGIN OPENSSH PRIVATE KEY')
@@ -592,7 +595,7 @@ describe('placement', function (): void {
         $vm->update(['recipe_identity' => $identity, 'image_fingerprint' => $template]);
         $this->upcloud->template('orbit-task-base-20261012000000', $identity);
 
-        app(UpCloudTaskVmProvider::class)->create($vm, "#cloud-config\n{}\n");
+        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
 
         expect($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($vm->refresh()->recipe_identity)->toBe($identity);
@@ -603,7 +606,7 @@ describe('placement', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $uuid = $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]], 'stopped');
 
-        app(UpCloudTaskVmProvider::class)->create($vm, "#cloud-config\n{}\n");
+        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
 
         expect($this->upcloud->created)->toBe([])
             ->and($vm->refresh()->provider_id)->toBe($uuid)
@@ -617,7 +620,7 @@ describe('placement', function (): void {
         $this->upcloud->server('tvm-902', [['key' => 'orbit-task-vm', 'value' => '902']]);
         $this->upcloud->server('web', [['key' => 'other', 'value' => 'x']]);
 
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n"))
+        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))
             ->toThrow(TaskVmException::class, 'UpCloud already runs 2 task VM servers, the limit of 2.')
             ->and($this->upcloud->created)->toBe([]);
     });
@@ -625,12 +628,12 @@ describe('placement', function (): void {
     it('gives the disk the storage tier of the plan, none for a plan without storage, and refuses an unknown plan', function (): void {
         $this->upcloud->template('orbit-task-base-20261011000000', app(RecipeImageBuilds::class)->currentRecipe()->identity);
         tvm_up_settings(['plan' => 'CLOUDNATIVE-2xCPU-4GB']);
-        app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n");
+        app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway');
 
         expect($this->upcloud->created[0]['storage_devices']['storage_device'][0])->not->toHaveKey('tier');
 
         tvm_up_settings(['plan' => '2xCPU-4GB']);
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n"))->toThrow(TaskVmException::class, 'UpCloud lists no such plan')
+        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))->toThrow(TaskVmException::class, 'UpCloud lists no such plan')
             ->and($this->upcloud->created)->toHaveCount(1);
     });
 
@@ -638,7 +641,7 @@ describe('placement', function (): void {
         $this->upcloud->storages = [];
         $this->upcloud->template('orbit-task-base-20261012000000-unverified');
 
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n"))
+        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))
             ->toThrow(TaskVmException::class, 'task-vms:build-upcloud-image')
             ->and($this->upcloud->created)->toBe([]);
     });
@@ -781,6 +784,15 @@ describe('sweep', function (): void {
 
 describe('image build', function (): void {
     it('builds the template with the shared recipe, smoke-boots it, promotes it, and keeps two', function (): void {
+        $cleanupAfterFirewall = false;
+        $guestAgents = new FakeGuestAgentCommandRunner;
+        $guestAgents->answer = function () use (&$cleanupAfterFirewall): array {
+            $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
+            $cleanupAfterFirewall = in_array('sudo -n ufw status', $commands, true);
+
+            return ['ready' => true];
+        };
+        app()->instance(GuestAgentCommandRunner::class, $guestAgents);
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
         $stages = [];
@@ -805,7 +817,7 @@ describe('image build', function (): void {
             ->and($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe('01000000-0000-4000-8000-000030260200')
             ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
-            ->and($commands)->toContain('sudo -n dpkg --print-architecture', 'sudo -n sh -c '.TaskVmImageRecipe::Masks, 'sudo -n bash -s')
+            ->and($commands)->toContain('sudo -n dpkg --print-architecture', 'sudo -n sh -c '.TaskVmImageRecipe::Masks)
             // ufw is on before the identity goes, with only the public SSH rule that enrollment opens and closes.
             ->and(array_slice($commands, (int) array_search('sudo -n ufw default deny incoming', $commands, true), 4))->toBe([
                 'sudo -n ufw default deny incoming',
@@ -813,7 +825,8 @@ describe('image build', function (): void {
                 'sudo -n ufw --force enable',
                 'sudo -n ufw status',
             ])
-            ->and(array_search('sudo -n ufw --force enable', $commands, true))->toBeLessThan(array_search('sudo -n bash -s', $commands, true))
+            ->and($cleanupAfterFirewall)->toBeTrue()
+            ->and(array_column($guestAgents->calls, 'command'))->toBe(['image.clean'])
             ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
             ->and(end($commands))->toEndWith(' -- orbit 1000:1000 --ufw')
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()

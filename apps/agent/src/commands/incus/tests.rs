@@ -8,7 +8,7 @@ struct Fake {
     calls: Vec<Vec<String>>,
 }
 impl Host for Fake {
-    fn run(&mut self, args: &[&str]) -> Output {
+    fn run(&mut self, args: &[&str], _input: Option<&str>) -> Output {
         self.calls.push(args.iter().map(|s| (*s).into()).collect());
         self.answers.pop_front().expect("unexpected Incus call")
     }
@@ -256,5 +256,5 @@ fn native_capture_bounds_memory_rejects_invalid_utf8_and_stops_at_deadline() {
     .unwrap();
     assert_eq!(bounded.code, 124);
     let context = Context::new(Platform::Linux, std::time::Instant::now());
-    assert_eq!(Native(&context).run(&["query"]).code, -1);
+    assert_eq!(Native(&context).run(&["query"], None).code, -1);
 }

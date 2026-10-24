@@ -26,7 +26,7 @@ final readonly class SshAgentTransport implements AgentTransport
     public const string MacosBinary = '.orbit/bin/orbit-agent';
 
     public function __construct(
-        private Node $node,
+        private Node|AgentGuest $node,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
@@ -85,6 +85,9 @@ final readonly class SshAgentTransport implements AgentTransport
             );
         }
 
+        if (! $this->node instanceof Node) {
+            throw new RuntimeException('A guest requires its pinned SSH connection.');
+        }
         $host = $this->node->wireguard_ip;
         if (! is_string($host) || $host === '') {
             throw new RuntimeException("Node [{$this->node->name}] has no WireGuard address.");

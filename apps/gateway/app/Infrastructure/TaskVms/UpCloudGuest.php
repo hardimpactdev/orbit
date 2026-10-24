@@ -67,18 +67,23 @@ final readonly class UpCloudGuest
     /** Runs `$command` as {@see TaskVmCloudInit::User} on the server at `$address`, which must present `$publicKey`. */
     public function run(string $address, string $publicKey, RemoteCommand $command, int $connectTimeout = 10): CommandResult
     {
+        return $this->ssh->execute($this->connection($address, $publicKey, $command->timeout ?? 900.0, $connectTimeout), $command);
+    }
+
+    public function connection(string $address, string $publicKey, float $timeout = 900.0, int $connectTimeout = 10): SshConnection
+    {
         preg_match(self::PublicKeyPattern, trim($publicKey), $match);
         $this->knownHosts->put($address, 22, new HostKey('ssh-ed25519', $match[1] ?? '', self::fingerprint($publicKey)));
 
-        return $this->ssh->execute(new SshConnection(
+        return new SshConnection(
             host: $address,
             user: TaskVmCloudInit::User,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
             connectTimeout: $connectTimeout,
-            commandTimeout: $command->timeout ?? 900.0,
+            commandTimeout: $timeout,
             shareConnection: false,
-        ), $command);
+        );
     }
 }

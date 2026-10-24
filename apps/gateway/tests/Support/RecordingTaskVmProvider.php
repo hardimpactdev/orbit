@@ -38,7 +38,7 @@ final class RecordingTaskVmProvider implements TaskVmProvider
     /** What `cloud-init status` prints, in place of the answer of `$ready`. */
     public ?string $cloudInitOutput = null;
 
-    public ?string $userData = null;
+    public ?string $gatewayPublicKey = null;
 
     public ?Throwable $startError = null;
 
@@ -53,10 +53,10 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         $this->observation = new VmObservation(true, '10.251.77.20');
     }
 
-    public function create(TaskVm $vm, string $userData): void
+    public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
         $this->record('create', $vm);
-        $this->userData = $userData;
+        $this->gatewayPublicKey = $gatewayPublicKey;
         if ($this->onCreate instanceof Closure) {
             ($this->onCreate)($vm);
         }

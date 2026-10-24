@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
@@ -74,7 +75,7 @@ it('keeps migrated Incus inventory methods behind the typed agent boundary', fun
         }
     }
     $lines = file(app_path('Infrastructure/TaskVms/IncusHost.php'));
-    foreach (['images', 'instanceNames', 'inventory', 'observe', 'volumeNames', 'volume', 'prepare'] as $name) {
+    foreach (['images', 'instanceNames', 'inventory', 'observe', 'volumeNames', 'volume', 'prepare', 'vmState', 'changeVm'] as $name) {
         $method = new ReflectionMethod(IncusHost::class, $name);
         $source = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
         foreach (['RemoteCommand', '$this->execute(', '$this->run(', 'json_decode', 'parse_url', 'parse_str'] as $forbidden) {
@@ -101,4 +102,15 @@ it('finishes and removes only the topology volumes selected by the Gateway', fun
         ['project' => $host->project, 'pool' => $host->pool],
         ['location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => ['kind' => 'remove', 'name' => 'orbit-topology-seed-aaaaaaaaaaaa']],
     ]);
+});
+
+it('keeps VM lifecycle decisions behind the native command boundary', function (): void {
+    $lines = file(app_path('Infrastructure/TaskVms/IncusTaskVmProvider.php'));
+    foreach (['create', 'observe', 'start', 'stop', 'destroy', 'change'] as $name) {
+        $method = new ReflectionMethod(IncusTaskVmProvider::class, $name);
+        $source = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+        foreach (['RemoteCommand', '$this->incus(', 'json_decode', '$this->observe(', '$this->incus->run(', '$this->incus->launch('] as $forbidden) {
+            expect($source)->not->toContain($forbidden);
+        }
+    }
 });

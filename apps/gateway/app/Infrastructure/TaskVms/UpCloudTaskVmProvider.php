@@ -33,7 +33,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
         private SshKeyProvider $keys,
     ) {}
 
-    public function create(TaskVm $vm, string $userData): void
+    public function create(TaskVm $vm, string $gatewayPublicKey): void
     {
         $server = $this->server($vm);
         if ($server === null) {
@@ -47,7 +47,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
             $hostKey = $this->guest->generateHostKey($vm->name);
             // The key is stored before the request, so a server whose answer is lost still has its pinned key.
             $vm->update(['image_fingerprint' => $template, 'ssh_host_key' => $hostKey['public'], 'provider_id' => null]);
-            $uuid = $this->servers->create($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $template, TaskVmCloudInit::withHostKey($userData, $hostKey), $this->keys->publicKey());
+            $uuid = $this->servers->create($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $template, TaskVmCloudInit::withHostKey(new TaskVmCloudInit()->render($gatewayPublicKey), $hostKey), $this->keys->publicKey());
             $vm->update(['provider_id' => $uuid]);
             $server = $this->servers->await($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $uuid, 'started', self::StartSeconds);
         }
