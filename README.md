@@ -5,6 +5,13 @@ hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
 upgrades as the test case. Nothing here changes Orbit code, the live Gateway,
 or Orbit task records.
 
+Next serial slice: the proposed [pre-implementation repository-analysis contract](docs/repository-analysis-contract.md)
+and [first native Gateway brief](docs/gateway-repository-analysis-brief.md).
+Deterministic analysis runs on the typed plan in the owned task VM; existing
+turns keep planning, prose and review. Native prerequisites come before Swamp
+docs-workflow adoption/proof and later dependency updates. This is docs only;
+external review-and-merge/topology guards and live service state stay unchanged.
+
 ## Setup on Beast
 
 - `swamp` lives in `~/.local/bin`. `~/.config/swamp/env.sh` sets

@@ -3,6 +3,14 @@
 Status: design proposal for independent parent review, updated 2026-10-24. This document
 supersedes the earlier B1/B2 options. It authorizes no implementation or rollout.
 
+Current serial priority: the [repository-analysis execution/evidence contract](repository-analysis-contract.md)
+and [smallest native implementation brief](gateway-repository-analysis-brief.md)
+precede Swamp docs-workflow adoption/proof, then dependency updates. Orbit
+ORB2064/PR1503 delivered hosted handoff CI at `2187129c471c20a34b6c91d5e1cb6c34878b8742`;
+the earlier handoff-CI brief below is historical. Later review/merge, topology,
+interruption proof and retirement remain separate. The new contract records
+current source drift and the limits of the parent's delivery evidence.
+
 ## Current contract
 
 Nick chose Swamp as the lifecycle owner. The Gateway owns effects and exactly-once
