@@ -956,7 +956,9 @@
         "firewall.reconcile_failed",
         "firewall.verify_failed",
         "firewall.remove_failed",
-        "firewall.remove_verify_failed"
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
       ]
     },
     {
@@ -977,7 +979,55 @@
         "firewall.reconcile_failed",
         "firewall.verify_failed",
         "firewall.remove_failed",
-        "firewall.remove_verify_failed"
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.rules",
+      "summary": "Converge exact managed role rules and retire owned rules under one lock.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.router-lan",
+      "summary": "Expand or prune owned Router LAN rules and restore the preceding inventory on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
       ]
     },
     {

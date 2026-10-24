@@ -21,6 +21,8 @@ command_errors! {
         Verify {} => "firewall.verify_failed", "The firewall rule did not match after activation.";
         Remove {} => "firewall.remove_failed", "The firewall rule could not be removed.";
         RemoveVerify {} => "firewall.remove_verify_failed", "The firewall rule remained after removal.";
+        Convergence {} => "node.firewall_convergence_failed", "The managed firewall rules could not be reconciled while preserving SSH access.";
+        Recovery {} => "router.lan_ingress_recovery_failed", "The preceding Router LAN firewall rules could not be restored.";
     }
 }
 
@@ -369,3 +371,6 @@ impl Command for Rule {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[path = "rules.rs"]
+pub mod rules;

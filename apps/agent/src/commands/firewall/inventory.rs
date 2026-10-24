@@ -46,6 +46,13 @@ impl Shape {
                 .family
                 .as_deref()
                 .is_none_or(|f| ["v4", "v6"].contains(&f))
+            && (self.direction != "in" || self.out_interface.is_none())
+            && (self.direction != "out" || self.in_interface.is_none())
+            && [&self.source, &self.destination].iter().all(|endpoint| {
+                endpoint.as_str() == "any"
+                    || self.family.as_deref()
+                        == Some(if endpoint.contains(':') { "v6" } else { "v4" })
+            })
     }
 }
 

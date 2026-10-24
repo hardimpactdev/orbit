@@ -63,7 +63,7 @@ it('refuses unsupported or unreachable targets before an agent call', function (
 })->with([['macos', '10.44.0.3'], ['linux', null]]);
 
 it('keeps named firewall management and observation behind typed agent commands', function (): void {
-    foreach (['Firewall/NativeUfwFirewallManager', 'Firewall/NativeUfwFirewallInspector', 'Firewall/NativeLiveUfwReader', 'Doctor/UfwManagedRulesCheck'] as $file) {
+    foreach (['Firewall/NativeUfwFirewallManager', 'Firewall/NativeUfwFirewallInspector', 'Firewall/NativeLiveUfwReader', 'Doctor/UfwManagedRulesCheck', 'Nodes/Roles/NativeNodeRoleFirewallManager'] as $file) {
         $source = file_get_contents(app_path('Infrastructure/'.$file.'.php'));
         foreach (['SshExecutor', 'RemoteCommand', 'UfwStatusParser', "'firewall.status'", "'firewall.ufw'", '<<<'] as $forbidden) {
             expect($source)->not->toContain($forbidden);
