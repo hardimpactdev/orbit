@@ -41,8 +41,12 @@ final class TaskAnalysisAdapterFixture
             new Process(['git', ...$arguments], $this->checkout)->mustRun();
         }
         if ($mode === 'overflow') {
-            for ($index = 0; $index < 700; $index++) {
-                file_put_contents($this->checkout.'/'.sprintf('%04d', $index).str_repeat('x', 96).'.txt', 'x');
+            // 140 valid 489-byte paths exceed 64 KiB in the real report's path list alone.
+            // Longer paths avoid hundreds of unnecessary per-path base-source Git lookups.
+            $directory = $this->checkout.'/'.str_repeat('d', 240);
+            File::ensureDirectoryExists($directory);
+            for ($index = 0; $index < 140; $index++) {
+                file_put_contents($directory.'/'.sprintf('%04d', $index).str_repeat('x', 240).'.txt', 'x');
             }
         }
         if ($mode === 'missing-tooling') {

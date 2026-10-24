@@ -251,6 +251,9 @@ it('retains typed real adapter failures only after terminal proof and never stor
         $failure = json_decode($runner->bytes, true, flags: JSON_THROW_ON_ERROR)['error'];
         expect($completion['report_bytes'])->toBeGreaterThan(0)->toBeLessThanOrEqual(65536)
             ->and($failure['code'])->toBe($code);
+        if ($code === 'tasks.analysis_report_too_large') {
+            expect($failure['required_bytes'])->toBeInt()->toBeGreaterThan(65536);
+        }
         expect($operation->state['analysis_terminal']['error']['message'])->toContain((string) ($failure['required_bytes'] ?? 'tooling'));
         expect($fixture->capture())->toBe(['head' => $runner->head, 'tree' => $runner->tree]);
         $this->postJson('/api/v1/task-groups/'.$operation->target_id.'/analyze', $operation->input, ['Idempotency-Key' => 'real-adapter'])
