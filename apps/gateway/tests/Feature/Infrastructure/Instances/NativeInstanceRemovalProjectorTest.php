@@ -55,6 +55,7 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\PhpBuildAnswers;
+use Tests\Support\SharedPhpPoolAnswers;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -280,8 +281,10 @@ it('finishes development runtime cleanup when PHP-FPM skips another site whose d
     $brokenRoute->targets()->create(['instance_id' => $broken->id, 'position' => 0]);
     $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $broken->update(['status' => InstanceState::Active]);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "missing-directory\t{$broken->checkout_path}\n";
+    [$projector, $ssh, , $agents] = orb181_removal_projector($this);
+    $agents->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => [
+        ['pool' => 'orbit-app-instance-'.$broken->id, 'version' => '8.5', 'directory' => $broken->checkout_path, 'installed' => false],
+    ]]);
 
     $projector->cleanupRuntime($member);
 
@@ -306,18 +309,11 @@ it('withdraws the pool of a member whose Route is cleared and keeps the other po
     $neighbourRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $neighbour->update(['status' => InstanceState::Active]);
     $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
-        "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$neighbour->id}]",
-        "chdir = {$neighbour->checkout_path}",
-        '',
-    ]))."\n";
+    [$projector, $ssh, , $agents] = orb181_removal_projector($this);
 
     $projector->withdrawPhpPool($member);
 
-    $published = orb181_published_php_pools($ssh->commands);
+    $published = array_values((array) collect($agents->calls)->firstWhere('command', 'php.converge-shared-pools')['input']['configurations']);
     expect($published)->toHaveCount(1)
         ->and($published[0])
         ->toContain("[orbit-app-instance-{$neighbour->id}]")
@@ -336,18 +332,16 @@ it('withdraws the pool even when PHP-FPM skips another site whose directory is m
     $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $broken->update(['status' => InstanceState::Active]);
     $instance = Instance::query()->findOrFail($member->instance_id);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
-        "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$broken->id}]",
-        "chdir = {$broken->checkout_path}",
-        '',
-    ]))."\nmissing-directory\t{$broken->checkout_path}\n";
+    [$projector, $ssh, , $agents] = orb181_removal_projector($this);
+    $agents->answer('php.converge-shared-pools', ['changed' => true, 'missing_pools' => [
+        ['pool' => 'orbit-app-instance-'.$broken->id, 'version' => '8.5', 'directory' => $broken->checkout_path, 'installed' => false],
+    ]]);
 
     $projector->withdrawPhpPool($member);
 
-    expect(orb181_published_php_pools($ssh->commands))->toBe(['']);
+    expect($agents->commands())->toContain('php.converge-shared-pools');
+    $desired = (array) collect($agents->calls)->firstWhere('command', 'php.converge-shared-pools')['input']['configurations'];
+    expect(implode('', $desired))->not->toContain('[orbit-app-instance-'.$instance->id.']');
 });
 
 it('leaves the dedicated runtime of a production member to runtime cleanup', function (): void {
@@ -639,7 +633,7 @@ function orb181_removal_projector(
             new RemoteAppDevPhpFpmManager(
                 $sites,
                 new DevelopmentPhpFpmConfigRenderer,
-                $executor,
+                SharedPhpPoolAnswers::register($agents),
                 $accounts,
                 new RemotePhpPackageManager,
             ),
@@ -799,27 +793,6 @@ function orb181_projector_member(Instance $instance, Route $route): InstanceRemo
     return $member->refresh();
 }
 
-/**
- * The shared PHP-FPM pool files that each publication installs.
- *
- * @param  list<RemoteCommand>  $commands
- * @return list<string>
- */
-function orb181_published_php_pools(array $commands): array
-{
-    $pools = [];
-
-    foreach ($commands as $command) {
-        $input = $command->input ?? '';
-
-        if (str_contains($input, 'orbit-scopes.conf') && preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $input, $match) === 1) {
-            $pools[] = (string) base64_decode($match[1], true);
-        }
-    }
-
-    return $pools;
-}
-
 /** @param list<RemoteCommand> $commands @return list<string> */
 function orb181_caddy_configurations(array $commands): array
 {
@@ -862,8 +835,6 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
     public bool $certificatePresent = true;
 
-    public ?string $phpDiscovery = null;
-
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->connections[] = $connection;
@@ -871,14 +842,6 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
         if ($this->failCall === count($this->commands)) {
             return new CommandResult(1, '', 'injected failure', 1, false);
-        }
-
-        if (
-            is_string($this->phpDiscovery)
-            && is_string($command->input)
-            && str_contains($command->input, 'base64 --wrap=0 -- "$path"')
-        ) {
-            return new CommandResult(0, $this->phpDiscovery, '', 1, false);
         }
 
         if (is_string($command->input) && str_contains($command->input, "printf 'PRESENT\\n'")) {

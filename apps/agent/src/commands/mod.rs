@@ -53,6 +53,7 @@ pub mod peer_dns;
 pub mod php_build;
 mod php_profile;
 pub mod php_runtime;
+mod php_shared;
 pub mod pi_artifact;
 pub mod pi_runtime;
 pub mod processes;
@@ -353,6 +354,8 @@ pub fn all() -> Vec<Entry> {
         entry::<production_home::RemoveHome>(),
         entry::<production_home::WriteDirectoryUrl>(),
         entry::<production_home::RefreshConfigCache>(),
+        entry::<php_shared::Inspect>(),
+        entry::<php_shared::Converge>(),
         entry::<php_runtime::ConvergeRuntime>(),
         entry::<php_runtime::RemoveRuntime>(),
         entry::<php_runtime::InspectPool>(),

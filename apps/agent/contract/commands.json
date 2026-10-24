@@ -4099,6 +4099,38 @@
       ]
     },
     {
+      "name": "php.inspect-shared-pools",
+      "summary": "Inspect shared PHP pool working directories and required versions.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.shared_pool_invalid",
+        "php.shared_pool_unsafe",
+        "php.shared_pool_failed",
+        "php.shared_pool_recovery_failed"
+      ]
+    },
+    {
+      "name": "php.converge-shared-pools",
+      "summary": "Publish shared PHP pools with ordered version changes and recovery.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "php.shared_pool_invalid",
+        "php.shared_pool_unsafe",
+        "php.shared_pool_failed",
+        "php.shared_pool_recovery_failed"
+      ]
+    },
+    {
       "name": "php.converge-production-runtime",
       "summary": "Publish a production Instance's dedicated PHP-FPM service, or only a monitoring change of its pool.",
       "mutates": true,

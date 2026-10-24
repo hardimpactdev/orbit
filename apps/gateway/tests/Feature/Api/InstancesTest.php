@@ -91,6 +91,7 @@ use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\LifecycleAgent;
+use Tests\Support\SharedPhpPoolAnswers;
 use Tests\Support\SshCommandAgents;
 use Tests\TestCase;
 
@@ -2510,7 +2511,8 @@ it('rejects repository execution and unsupported transport keys', function (): v
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
     // The creation request resolves singletons used by the native removal projector.
     app()->instance(SshExecutor::class, $ssh = new AppDevFakeSshExecutor);
-    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, new FakeAgentCommandRunner()->answer('firewall.route-lan', [])));
+    $poolAgents = SharedPhpPoolAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', []));
+    app()->instance(AgentCommandRunner::class, new SshCommandAgents($ssh, $poolAgents));
     $processes = Mockery::mock(ProcessRunner::class);
     $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
     app()->instance(ProcessRunner::class, $processes);
@@ -2565,6 +2567,7 @@ it('completes Instance removal while another Node service metrics snapshot fails
     expect(app(ExporterDegradationRepository::class)->get($failed->id))->toBe(ExporterDegradationReason::ReconcileFailed);
     expect(app(ExporterDegradationRepository::class)->step($failed->id))->toBe('snapshot');
     expect(app(MetricsReconcileDegradationRepository::class)->errorCode($failed->id))->toBe('metrics.service_convergence_failed');
+    expect($poolAgents->commands())->toContain('php.inspect-shared-pools', 'php.converge-shared-pools');
 });
 
 it('removes an active Instance through every durable checkpoint', function (bool $force): void {

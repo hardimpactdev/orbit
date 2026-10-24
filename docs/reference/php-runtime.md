@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
-  - apps/agent/src/commands/{php_runtime,php_doctor,php_profile}.rs
+  - apps/agent/src/commands/{php_runtime,php_doctor,php_profile,php_shared}.rs
 ---
 
 # PHP runtimes
@@ -73,20 +73,22 @@ Orbit does not recover missing source profiles on older Instances. [Projects: On
 
 ## Development runtime
 
-Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway writes every Orbit pool for a version into one file, `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`, and rewrites it from stored state at each PHP-FPM convergence on the Node. Instance creation, transfer, and removal run that convergence.
+Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway renders desired pools from stored state. The native `php.converge-shared-pools` command publishes each version into `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`. Instance creation, transfer, and removal run that convergence.
+
+The read-only `php.inspect-shared-pools` command reports missing working directories and the versions whose desired pools can run. Doctor uses the same read. The Gateway installs those versions, then calls `php.converge-shared-pools` once with all desired configurations. The mutation holds one Node-wide shared-pool lock while it discovers installed state, retires pools that move between versions, activates their replacements, and recovers failures. It never sends installed configuration back to PHP for parsing.
 
 One PHP-FPM convergence runs these steps:
 
 1. It reads each `orbit-scopes.conf`. As root, it checks the working directory (`chdir`) of every installed pool and of every pool that stored state renders.
 2. It skips a pool whose working directory is missing. [Doctor](#doctor) reports that pool.
-3. It installs the [PHP build](#php-build) and enables `php<version>-fpm`. It does not start the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
-4. For each version, it renders the candidate file, copies the other pool files beside it, and validates the whole set with `php-fpm<version> -t`.
-5. It moves a changed candidate into place and reloads the service. The reload also starts a stopped or failed service.
+3. It installs the [PHP build](#php-build) without starting the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
+4. It stages each version's desired pools with the other pool files and validates every set with `php-fpm<version> -t` before publication.
+5. It moves changed candidates into place, enables the services, and reloads them. The reload also starts a stopped or failed service.
 6. It starts a stopped or failed service whose file is already current.
-7. If the service fails with the new file, it restores the previous file and reloads again. A version that changed earlier in the same convergence also gets its previous file back.
+7. If publication or activation fails, it restores touched versions in reverse order with their prior file modes and service state.
 8. A convergence that skipped a pool fails with `app-dev.php_pool_directory_missing` after it publishes every version. The error names the pool.
 
-Step 3 downloads nothing when every package is already at its recipe version.
+Step 3 downloads nothing when every package is already at its recipe version. A failed restoration reports `php.shared_pool_recovery_failed`; the Gateway maps it to the existing runtime failure.
 
 A restored file leaves out a pool whose working directory is gone, because that file could never pass `php-fpm -t` again. The final error makes Instance creation, deployment, transfer, and a Project root change report the missing directory. Without it, they would succeed and leave a site that answers `502`.
 

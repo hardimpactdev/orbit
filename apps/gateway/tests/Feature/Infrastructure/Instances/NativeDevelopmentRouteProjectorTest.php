@@ -72,6 +72,7 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\PhpBuildAnswers;
+use Tests\Support\SharedPhpPoolAnswers;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -1384,10 +1385,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
     );
     $failure = match ($boundary) {
         'source-access', 'firewall' => null,
-        'runtime' => static fn (RemoteCommand $command): bool => str_contains(
-            $command->input ?? '',
-            'for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf',
-        ),
+        'runtime' => null,
         'certificate' => static fn (RemoteCommand $command): bool => (
             ($command->arguments[3] ?? null) === "app-instance-{$instance->id}"
         ),
@@ -1398,6 +1396,10 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         failDns: $boundary === 'dns',
         failAccess: $boundary === 'source-access' ? static fn (array $input): bool => $input['sites'][0]['checkout'] === $instance->checkout_path : null,
     );
+
+    if ($boundary === 'runtime') {
+        $agents->refuse('php.inspect-shared-pools', 'php.shared_pool_failed');
+    }
 
     if ($boundary === 'firewall') {
         $agents->refuse('firewall.route-lan', 'firewall.apply_failed');
@@ -1752,7 +1754,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         new RemoteAppDevPhpFpmManager(
             $sites,
             new DevelopmentPhpFpmConfigRenderer,
-            $executor,
+            SharedPhpPoolAnswers::register($agents),
             $accounts,
             new RemotePhpPackageManager,
         ),
