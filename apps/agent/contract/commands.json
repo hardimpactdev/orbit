@@ -1599,6 +1599,20 @@
       ]
     },
     {
+      "name": "doctor.inspect-process",
+      "summary": "Inspect an owned Process and gather bounded restart evidence.",
+      "mutates": false,
+      "timeout_seconds": 10,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.process_invalid",
+        "doctor.process_unavailable"
+      ]
+    },
+    {
       "name": "doctor.inspect-schedule",
       "summary": "Inspect a Schedule's artifacts and timer.",
       "mutates": false,

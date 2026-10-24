@@ -22,6 +22,9 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     /** @var list<array{node: string, command: string, input: array<string, mixed>}> */
     public array $calls = [];
 
+    /** @var list<?float> */
+    public array $deadlines = [];
+
     /** @var list<string> */
     public array $installs = [];
 
@@ -89,6 +92,7 @@ final class FakeAgentCommandRunner implements AgentCommandRunner
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         $this->contract->command($command);
+        $this->deadlines[] = $deadlineSeconds;
         $this->calls[] = ['node' => $node->name, 'command' => $command, 'input' => $input];
         $answer = $this->answers[$command] ?? throw new LogicException("No fake answer for agent command [{$command}].");
 

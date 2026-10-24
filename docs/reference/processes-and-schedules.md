@@ -248,7 +248,7 @@ A copy is independent. Changing or removing a copy does not change the definitio
 
 ## Inspect with Doctor
 
-[Doctor](/cli/doctor) compares the desired state of each Instance and Node Process with the systemd or Docker status on the Node. It reports a missing runtime, a state mismatch, a [systemd crash loop](#process-runtime-state), a failed inspection, or an unreachable Node, and changes nothing. A sleeping development Process is not a mismatch; see [hibernation](/reference/app-dev-runtime-hibernation).
+[Doctor](/cli/doctor) compares the desired state of each Instance and Node Process with the systemd or Docker status on the Node. `doctor.inspect-process` verifies the owned runtime and gathers bounded observations in one agent call. For a running systemd Process, Rust takes two samples two seconds apart unless the first already shows an automatic restart; the command’s ten-second bound includes both samples. It reports a missing runtime, a state mismatch, a [systemd crash loop](#process-runtime-state), a failed inspection, or an unreachable Node, and changes nothing. A sleeping development Process is not a mismatch; see [hibernation](/reference/app-dev-runtime-hibernation).
 
 ## Why it works this way
 

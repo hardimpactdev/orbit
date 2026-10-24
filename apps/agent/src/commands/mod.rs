@@ -182,6 +182,7 @@ pub fn all() -> Vec<Entry> {
         entry::<hibernation::InspectCheckout>(),
         entry::<hibernation::PruneCheckout>(),
         entry::<hibernation::RestoreDependencies>(),
+        entry::<processes::doctor::InspectProcess>(),
         entry::<schedules::InspectSchedule>(),
         entry::<schedules::ScheduleOrphans>(),
         entry::<schedules::InstallSchedule>(),
