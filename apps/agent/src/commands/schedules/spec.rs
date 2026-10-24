@@ -110,7 +110,7 @@ pub(super) fn render(input: &InstallInput) -> Result<Artifacts, ScheduleError> {
     );
     let service = format!("[Unit]\nDescription=Orbit Schedule {id}\nX-Orbit-Schedule-ID={id}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nUser={user}\nGroup={group}\nWorkingDirectory={directory}\nEnvironment={home}\nEnvironment={shell}\nExecStart={AGENT} service schedules-run {id}\nExecStopPost=+{AGENT} service schedules-complete {id}\nTimeoutStartSec={timeout}\n",
         id=input.id, user=input.user, group=input.group,
-        directory=directive(&context.working_directory), home=directive(&format!("HOME={}", input.home)),
+        directory=context.working_directory.replace('%', "%%"), home=directive(&format!("HOME={}", input.home)),
         shell=directive(&format!("SHELL={}", input.shell)), timeout=input.timeout_seconds);
     let timer = format!("[Unit]\nDescription=Orbit Schedule timer {id}\nX-Orbit-Schedule-ID={id}\n\n[Timer]\nOnCalendar={calendar}\nPersistent=true\nUnit={service}\n\n[Install]\nWantedBy=timers.target\n",
         id=input.id, calendar=input.calendar.replace('%', "%%"), service=paths.service_unit);

@@ -441,6 +441,32 @@ fn renders_only_project_code_in_the_protected_file_and_quotes_systemd_values() {
 }
 
 #[test]
+fn systemd_accepts_the_rendered_service_and_timer() {
+    let mut fixture = Fixture::new();
+    fixture.input.working_directory = fixture.host.root.join("with spaces");
+    fs::create_dir(&fixture.input.working_directory).unwrap();
+    let rendered = spec::render(&fixture.input).unwrap();
+    let paths = fixture.paths();
+    // The test host need not install the agent globally. Systemd still parses every generated directive.
+    fs::write(
+        &paths.service,
+        rendered.service.replace(spec::AGENT, "/usr/bin/true"),
+    )
+    .unwrap();
+    fs::write(&paths.timer, rendered.timer).unwrap();
+    let output = Process::new("/usr/bin/systemd-analyze")
+        .arg("verify")
+        .args([&paths.service, &paths.timer])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn ownership_read_errors_are_not_treated_as_absence_and_symlinks_are_refused() {
     let fixture = Fixture::new();
     let path = fixture.host.root.join("loop");
