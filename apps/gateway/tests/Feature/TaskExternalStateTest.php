@@ -269,9 +269,11 @@ it('keeps external work active when its leased turn cannot be confirmed stopped'
     $driver->supportsInterruption = true;
     $holder = external_cancel_turn($group, $task, $driver);
     $driver->failNextInterrupt = $outcome === 'interrupt';
-    $driver->duringInterrupt = function () use ($driver, $outcome): void {
+    $key = $driver->observation->turnId;
+    $driver->duringInterrupt = function () use ($driver, $outcome, $key): void {
         $driver->observation = match ($outcome) {
-            'working' => new AgentObservation(AgentThreadState::Working, turnId: 'active'),
+            'working' => new AgentObservation(AgentThreadState::Working, turnId: $key),
+            'idle' => new AgentObservation(AgentThreadState::Idle, turnId: $key),
             'old' => new AgentObservation(AgentThreadState::Done, turnId: 'before'),
             default => new AgentObservation(null),
         };
@@ -282,7 +284,7 @@ it('keeps external work active when its leased turn cannot be confirmed stopped'
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
     expect($holder->fresh()->status)->toBe('held');
-})->with(['interrupt', 'working', 'unknown', 'old']);
+})->with(['interrupt', 'working', 'idle', 'unknown', 'old']);
 
 it('updates external board state through the generated MCP tools', function (string $name, string $to): void {
     [$group, $task] = external_state_group();
@@ -434,10 +436,10 @@ function external_cancel_turn(Task $group, Task $task, FakeAgentDriver $driver, 
     $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 'fake', 'runtime_key' => 'external', 'external_id' => $externalId, 'role' => $role]);
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->turn($group, TaskThreadRole::from($role), 'thread:'.$thread->id, $thread->id);
-    $leases->dispatch($thread, $driver->observation);
-    $driver->observation = new AgentObservation(AgentThreadState::Working, turnId: 'active');
-    $driver->duringInterrupt = function () use ($driver): void {
-        $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'active');
+    $key = $leases->dispatch($thread, $driver->observation);
+    $driver->observation = new AgentObservation(AgentThreadState::Working, turnId: $key);
+    $driver->duringInterrupt = function () use ($driver, $key): void {
+        $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $key);
     };
 
     return $holder;

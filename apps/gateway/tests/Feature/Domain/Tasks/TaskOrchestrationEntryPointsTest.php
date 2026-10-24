@@ -115,22 +115,27 @@ function task_effect_sites(): array
     return $sites;
 }
 
-it('inventories every public Tasks group entry point and proves the effect entry points refuse or skip external groups', function (): void {
-    $normalize = static function (array $map): array {
-        ksort($map);
-        foreach ($map as &$methods) {
-            sort($methods);
-        }
+function task_normalized_entry_points(array $map): array
+{
+    ksort($map);
+    foreach ($map as &$methods) {
+        sort($methods);
+    }
 
-        return $map;
-    };
+    return $map;
+}
+
+it('inventories every Tasks effect site', function (): void {
     $effectCoverage = [];
     foreach ([TaskOrchestrationEntryPoints::EffectProofs, TaskOrchestrationEntryPoints::EffectInfrastructure] as $map) {
         foreach ($map as $class => $methods) {
             $effectCoverage[$class] = [...($effectCoverage[$class] ?? []), ...array_keys($methods)];
         }
     }
-    expect($normalize(task_effect_sites()))->toBe($normalize($effectCoverage));
+    expect(task_normalized_entry_points(task_effect_sites()))->toBe(task_normalized_entry_points($effectCoverage));
+});
+
+it('inventories every public Tasks group entry point', function (): void {
     $classified = [];
     foreach ([TaskOrchestrationEntryPoints::Refuses, TaskOrchestrationEntryPoints::Skips] as $map) {
         foreach ($map as $class => $methods) {
@@ -143,7 +148,7 @@ it('inventories every public Tasks group entry point and proves the effect entry
             expect($reason)->not->toBeEmpty();
         }
     }
-    expect($normalize(task_public_group_methods()))->toBe($normalize($classified));
+    expect(task_normalized_entry_points(task_public_group_methods()))->toBe(task_normalized_entry_points($classified));
 
     // An ID-based wrapper can enter an existing private sender without declaring a Task parameter.
     $unlistedSender = new class
@@ -161,8 +166,10 @@ it('inventories every public Tasks group entry point and proves the effect entry
     $withUnlistedSender = task_public_group_methods();
     $withUnlistedSender[TaskAgentSpawner::class] = [...$withUnlistedSender[TaskAgentSpawner::class], ...task_public_methods(new ReflectionClass($unlistedSender))];
     expect($withUnlistedSender[TaskAgentSpawner::class])->toContain('retryReviewer');
-    expect($normalize($withUnlistedSender))->not->toBe($normalize($classified));
+    expect(task_normalized_entry_points($withUnlistedSender))->not->toBe(task_normalized_entry_points($classified));
+});
 
+it('proves the effect entry points refuse or skip external groups', function (): void {
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'External', 'slug' => 'external', 'repository_url' => 'git@example.test:external.git']);
     $group = Task::topLevel()->create([
