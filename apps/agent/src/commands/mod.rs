@@ -156,6 +156,7 @@ pub fn all() -> Vec<Entry> {
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),
+        entry::<php_runtime::doctor::InspectProduction>(),
         entry::<doctor_role::InspectRole>(),
         entry::<doctor_route::InspectPrivateRoute>(),
         entry::<doctor_route::InspectApplicationUrls>(),

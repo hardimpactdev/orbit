@@ -1063,6 +1063,20 @@
       ]
     },
     {
+      "name": "doctor.inspect-production-instance",
+      "summary": "Observe production release, environment, Caddy, and dedicated PHP-FPM projections.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.production_input_invalid",
+        "doctor.production_inspection_failed"
+      ]
+    },
+    {
       "name": "doctor.inspect-role-runtime",
       "summary": "Inspect role packages, services, and the installed Caddy version without repairs.",
       "mutates": false,

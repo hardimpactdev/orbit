@@ -18,31 +18,18 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FixtureProcessRunner;
-use Tests\Support\UnixSocketDirectory;
 
 it('batches only settled selected-node Project checkouts through the agent', function (): void {
     $project = application_inspector_app();
@@ -202,819 +189,93 @@ it('sanitizes failed and malformed development source observations', function (s
 it('keeps migrated source inspectors behind the agent boundary', function (): void {
     expect(file_get_contents(app_path('Infrastructure/Doctor/NativeProjectStateInspector.php')))
         ->not->toContain('SshExecutor', 'RemoteCommand', 'ProcessRunner', '<<<');
-    $instance = file_get_contents(app_path('Infrastructure/Doctor/NativeInstanceStateInspector.php'));
-    $development = substr($instance, 0, strpos($instance, 'private function inspectProduction'));
-    expect($development)->toContain('doctor.inspect-development-source')->not->toContain('new RemoteCommand', '$this->ssh->execute');
+    expect(file_get_contents(app_path('Infrastructure/Doctor/NativeInstanceStateInspector.php')))
+        ->toContain('doctor.inspect-development-source', 'doctor.inspect-production-instance')
+        ->not->toContain('SshExecutor', 'RemoteCommand', 'ProcessRunner', '<<<');
 });
 
-it('checks the selected release environment in its application directory', function (string $webRoot, string $suffix, string $target): void {
-    $home = sys_get_temp_dir().'/orbit-doctor-release-env-'.bin2hex(random_bytes(8));
-    $release = $home.'/releases/initial';
-    mkdir($release.$suffix, 0700, true);
-    file_put_contents($home.'/.env', "APP_KEY=secret\n");
-    chmod($home.'/.env', 0600);
-    symlink('releases/initial', $home.'/current');
-    symlink($target, $release.$suffix.'/.env');
-    $setup = 'home='.escapeshellarg($home)."\n"
-        .'user='.escapeshellarg(posix_getpwuid(posix_geteuid())['name'])."\n"
-        .'environment='.escapeshellarg(base64_encode("APP_KEY=secret\n"));
-
-    try {
-        $program = application_production_observation_program('environment_matches', $setup, $webRoot);
-        expect(application_run(['bash', '-s'], $program)->stdout)->toBe("1\n");
-        unlink($release.$suffix.'/.env');
-        file_put_contents($release.$suffix.'/.env', "APP_KEY=secret\n");
-        expect(application_run(['bash', '-s'], $program)->stdout)->toBe("0\n");
-        if ($suffix !== '') {
-            symlink('../../.env', $release.'/.env');
-            expect(application_run(['bash', '-s'], $program)->stdout)->toBe("0\n");
-        }
-    } finally {
-        new Filesystem()->deleteDirectory($home);
-    }
-})->with([
-    'root public' => ['public', '', '../../.env'],
-    'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env'],
-]);
-
-it('accepts the initial pool only before selection and rejects the old production-home working directory', function (string $root, string $suffix): void {
-    $home = sys_get_temp_dir().'/orbit-doctor-fpm-app-'.bin2hex(random_bytes(8));
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($home.'/runtime/generated');
-    $files->ensureDirectoryExists($home.'/releases/initial'.$suffix);
-    $files->ensureDirectoryExists($home.'/releases/fresh'.$suffix);
-    $setup = 'runtime_directory='.escapeshellarg($home.'/runtime')."\n"
-        .'generated_directory='.escapeshellarg($home.'/runtime/generated')."\n"
-        .'application='.escapeshellarg($home.'/current'.$suffix)."\n"
-        .'initial_application='.escapeshellarg($home.'/releases/initial'.$suffix)."\n"
-        .'observed_pool="$initial_pool_configuration"'."\n"
-        .'home='.escapeshellarg($home)."\n".<<<'BASH'
-            exact_file() {
-                case "$1" in
-                    */pool.conf)
-                        expected_chdir=$(printf '%s' "$2" | base64 --decode | grep '^chdir = ')
-                        observed_chdir=$(printf '%s' "$observed_pool" | base64 --decode | grep '^chdir = ')
-                        test "$expected_chdir" = "$observed_chdir"
-                        ;;
-                    *) return 0 ;;
-                esac
-            }
-            stat() { printf 'root:root:755\n'; }
-            local_tuning_matches() { return 0; }
-            loaded_service_matches() { return 0; }
-            process_runtime_matches() { return 0; }
-            worker_identity_matches() { return 0; }
-            socket_service_matches() { return 0; }
-            runtime_generation_applied() { return 0; }
-            systemctl() {
-                case "$2" in
-                    --property=ActiveState) printf 'active\n' ;;
-                    --property=User) printf '\n' ;;
-                    --property=MainPID) printf '620\n' ;;
-                    *) return 1 ;;
-                esac
-            }
-            BASH;
-
-    try {
-        $initial = application_production_observation_program('php_fpm_matches', $setup, $root);
-        expect(application_run(['bash'], $initial)->stdout)->toBe("1\n");
-        symlink('releases/fresh', $home.'/current');
-        expect(application_run(['bash'], $initial)->stdout)->toBe("0\n");
-        $selected = application_production_observation_program('php_fpm_matches', $setup."\n".'observed_pool="$pool_configuration"', $root);
-        expect(application_run(['bash'], $selected)->stdout)->toBe("1\n");
-        unlink($home.'/current');
-        symlink('releases/initial', $home.'/current');
-        expect(application_run(['bash'], $selected)->stdout)->toBe("1\n");
-        $oldHome = application_production_observation_program('php_fpm_matches', $setup."\n".<<<'BASH'
-            observed_pool=$(printf '%s' "$pool_configuration" | base64 --decode | sed 's,^chdir = .*current.*,chdir = /home/obsolete,' | base64 --wrap=0)
-            BASH, $root);
-        expect(application_run(['bash'], $oldHome)->stdout)->toBe("0\n");
-    } finally {
-        $files->deleteDirectory($home);
-    }
-})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
-
-it('rejects pending or unacknowledged FPM generations but accepts a master restarted after confirmation', function (string $root, string $suffix, string $state, string $expected): void {
-    $directory = sys_get_temp_dir().'/orbit-doctor-generation-'.bin2hex(random_bytes(8));
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($directory.'/runtime/generated');
-    $files->ensureDirectoryExists($directory.'/home/releases/fresh'.$suffix);
-    $files->ensureDirectoryExists($directory.'/proc/sys/kernel/random');
-    $files->ensureDirectoryExists($directory.'/proc/620');
-    file_put_contents($directory.'/boot', file_get_contents('/proc/sys/kernel/random/boot_id'));
-    file_put_contents($directory.'/proc/620/stat', file_get_contents('/proc/self/stat'));
-    symlink('releases/fresh', $directory.'/home/current');
-    $setup = 'fixture='.escapeshellarg($directory)."\n"
-        .'application='.escapeshellarg($directory.'/home/current'.$suffix)."\n"
-        .'initial_application='.escapeshellarg($directory.'/home/releases/initial'.$suffix)."\n".<<<'BASH'
-            runtime_directory="$fixture/runtime"
-            generated_directory="$runtime_directory/generated"
-            proc_root="$fixture/proc"
-            home="$fixture/home"
-            cp "$fixture/boot" "$proc_root/sys/kernel/random/boot_id"
-            chown() { :; }
-            stat() { printf 'root:root:%s\n' "$(command stat -c %a -- "${!#}")"; }
-            exact_file() { return 0; }
-            local_tuning_matches() { return 0; }
-            loaded_service_matches() { return 0; }
-            process_runtime_matches() { return 0; }
-            worker_identity_matches() { return 0; }
-            socket_service_matches() { return 0; }
-            systemctl() {
-                case "$2" in
-                    --property=ActiveState) printf 'active\n' ;;
-                    --property=User) printf '\n' ;;
-                    --property=MainPID|--property) printf '620\n' ;;
-                    *) return 1 ;;
-                esac
-            }
-            original_pool="$pool_configuration"
-            select_application_pool
-            confirm_runtime_generation
-            case "${1:-}" in
-                pending) begin_runtime_generation ;;
-                missing) rm "$runtime_directory/.runtime-generation.applied" ;;
-                rebooted) printf '00000000-0000-0000-0000-000000000000\n' > "$proc_root/sys/kernel/random/boot_id" ;;
-                restarted) sed -i '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
-                older-master) sed -i '4s/.*/999999999999/' "$runtime_directory/.runtime-generation.applied" ;;
-                malformed) sed -i '4s/.*/soon/' "$runtime_directory/.runtime-generation.applied" ;;
-                other-generation) sed -i '1s/.*/0000/' "$runtime_directory/.runtime-generation.applied" ;;
-                restarted-other-generation) sed -i -e '1s/.*/0000/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
-                malformed-boot) sed -i -e '2s/.*/not-a-boot-id/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
-                recovered) begin_runtime_generation; confirm_runtime_generation ;;
-            esac
-            pool_configuration="$original_pool"
-            BASH;
-
-    try {
-        $program = application_production_observation_program('php_fpm_matches', $setup, $root);
-        expect(application_run(['bash', '-s', '--', $state], $program)->stdout)->toBe($expected."\n", $state);
-    } finally {
-        $files->deleteDirectory($directory);
-    }
-})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']])->with([
-    'applied' => ['applied', '1'],
-    'pending' => ['pending', '0'],
-    'missing' => ['missing', '0'],
-    'rebooted' => ['rebooted', '1'],
-    'restarted' => ['restarted', '1'],
-    'older-master' => ['older-master', '0'],
-    'malformed' => ['malformed', '0'],
-    'other-generation' => ['other-generation', '0'],
-    'restarted-other-generation' => ['restarted-other-generation', '0'],
-    'malformed-boot' => ['malformed-boot', '0'],
-    'recovered' => ['recovered', '1'],
-]);
-
-it('expects the actual production renderer application directory for selected and initial releases', function (string $root, string $suffix): void {
-    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private-production-value');
+it('sends production intent and both rendered application pools through the agent', function (string $root, string $suffix): void {
+    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'doctor-private-secret');
     $instance->update(['root' => $root]);
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-production-instance', production_observations());
 
+    $result = application_instance_inspector($agents)->inspect($instance->refresh());
+
+    expect($result)->toEqual(new InstanceInspectionData(true, true, true, true, true, true, true, true, true, true));
+    $call = $agents->calls[0];
+    expect($call['node'])->toBe($instance->node->name);
+    expect($call['command'])->toBe('doctor.inspect-production-instance');
+    expect($call['input']['environment'])->toBe("APP_KEY=\"doctor-private-secret\"\n");
+    expect($call['input']['application_suffix'])->toBe($suffix);
+    expect($call['input']['runtime']['application'])->toBe($instance->production_home.'/current'.$suffix);
+    expect($call['input']['runtime']['initial_application'])->toBe($instance->production_home.'/releases/initial'.$suffix);
+    expect($call['input']['runtime']['configuration']['pool'])->toContain('chdir = '.$instance->production_home.'/current'.$suffix);
+    expect($call['input']['runtime']['configuration']['initial_pool'])->toContain('chdir = '.$instance->production_home.'/releases/initial'.$suffix);
+    expect($call['input']['caddy_sites'])->toHaveCount(1);
+    expect(app(NodeCaddyfileRenderer::class)->render($instance->node)->content)->toContain($call['input']['caddy_sites'][0]);
+    expect(json_encode($result))->not->toContain('doctor-private-secret');
     $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
+    expect(json_encode($expectation))->not->toContain('doctor-private-secret');
+    expect($expectation->__debugInfo())->toBe(['environment' => '[PROTECTED]']);
+})->with([['public', ''], ['server/web/public', '/server/web']]);
 
-    expect($expectation->runtimeConfiguration?->pool)
-        ->toContain('chdir = '.$instance->production_home.'/current'.$suffix."\n")
-        ->and($expectation->initialRuntimeConfiguration?->pool)
-        ->toContain('chdir = '.$instance->production_home.'/releases/initial'.$suffix."\n");
-})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
-
-it('observes production projections through fixed arguments and protected input', function (): void {
-    $secret = 'doctor-production-secret';
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        $secret,
-    );
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
-
-    $inspection = application_instance_inspector($ssh)->inspect($instance);
-    $command = $ssh->commands[0];
-    $protected = $command->protectedInput;
-    if (! $protected instanceof ProtectedInput) {
-        throw new RuntimeException('Expected protected production inspection input.');
-    }
-    $program = stream_get_contents($protected->stream());
-    if (! is_string($program)) {
-        throw new RuntimeException('Expected readable production inspection input.');
-    }
-    application_run(['bash', '-n'], $program);
-    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
-
-    expect($inspection)
-        ->toEqual(new InstanceInspectionData(
-            true,
-            true,
-            true,
-            true,
-            productionHomeMatches: true,
-            releaseSelectionMatches: true,
-            selectedReleaseRootMatches: true,
-            environmentProjectionMatches: true,
-            phpFpmProjectionMatches: true,
-            caddyProjectionMatches: true,
-        ))
-        ->and($command->arguments)
-        ->toBe(['sudo', 'bash', '-s', '--'])
-        ->and($command->input)
-        ->toBeNull()
-        ->and($command->protectedInput)
-        ->toBeInstanceOf(ProtectedInput::class)
-        ->and($command->maxOutputBytes)
-        ->toBe(128)
-        ->and(json_encode($command, JSON_THROW_ON_ERROR))
-        ->not->toContain($secret, $instance->production_home)
-        ->and($program)
-        ->toContain(
-            base64_encode("APP_KEY=\"{$secret}\"\n"),
-            'emit release_selection_matches',
-            'emit php_fpm_matches',
-            'loaded_service_matches',
-            'systemctl show --property=ExecStart --value',
-            'systemctl show --property=Environment --value',
-            'process_runtime_matches',
-            'proc_root=/proc',
-            '$proc_root/net/unix',
-            '$proc_root/$main_pid/fd/',
-            'worker_identity_matches',
-            '/^Gid:/',
-            '$proc_root/$worker_pid/root',
-            'local_tuning_matches || return 1',
-            'chdir|chroot|env\[home\]',
-        )
-        ->not->toContain(
-            $secret,
-            ' -t ',
-            'cgi-fcgi',
-            'curl ',
-            'kill ',
-            '/proc/$main_pid/cmdline',
-            '/proc/$main_pid/environ',
-            '/var/log/php-fpm.log',
-            'systemctl restart',
-            'systemctl reload',
-            'rm -',
-            'install ',
-            'mv ',
-        )
-        ->and(json_encode($expectation, JSON_THROW_ON_ERROR))
-        ->not->toContain($secret)
-        ->and($expectation->__debugInfo())
-        ->toBe(['environment' => '[PROTECTED]'])
-        ->and($ssh->connections[0]->commandTimeout)
-        ->toBe(30.0);
-});
-
-it('inspects non-PHP production Instances without requiring or probing a PHP-FPM service', function (): void {
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'doctor-static-secret',
-    );
-    $instance->update([
-        'selected_php_version' => null,
-        'production_php_service' => null,
-        'production_php_pool' => null,
-        'production_php_socket' => null,
-    ]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result(implode(PHP_EOL, ['1', '1', '1', '1', '1', '1', '']))]);
-
-    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
-    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
-    $input = $ssh->commands[0]->protectedInput;
-    if (! $input instanceof ProtectedInput) {
-        throw new RuntimeException('Expected protected production inspection input.');
-    }
-    $program = stream_get_contents($input->stream());
-    if (! is_string($program)) {
-        throw new RuntimeException('Expected readable production inspection input.');
-    }
-
-    expect($inspection->phpFpmProjectionMatches)->toBeTrue()
-        ->and($inspection->caddyProjectionMatches)->toBeTrue()
-        ->and($expectation->associationMatches)->toBeTrue()
-        ->and($expectation->runtime)->toBeNull()
-        ->and($expectation->runtimeConfiguration)->toBeNull()
-        ->and($program)->toContain("runtime_expected='0'");
-});
-
-it('inspects a Laravel package with selected PHP but no PHP-FPM identity as having no runtime', function (): void {
+it('sends no runtime intent for static sites and Laravel packages', function (bool $package): void {
     $project = application_inspector_app();
-    $project->update(['type' => ProjectType::LaravelPackage]);
-    $instance = application_production_app_instance(
-        $project,
-        application_inspector_node(),
-        'doctor-package-secret',
-    );
+    if ($package) {
+        $project->update(['type' => ProjectType::LaravelPackage]);
+    }
+    $instance = application_production_app_instance($project, application_inspector_node(), 'private');
     $instance->update([
-        'production_php_service' => null,
-        'production_php_pool' => null,
-        'production_php_socket' => null,
+        'selected_php_version' => $package ? '8.5' : null,
+        'production_php_service' => null, 'production_php_pool' => null, 'production_php_socket' => null,
     ]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result(implode(PHP_EOL, ['1', '1', '1', '1', '1', '1', '']))]);
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-production-instance', production_observations());
 
-    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
-    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
-    $input = $ssh->commands[0]->protectedInput;
-    if (! $input instanceof ProtectedInput) {
-        throw new RuntimeException('Expected readable production inspection input.');
-    }
-    $program = stream_get_contents($input->stream());
-    if (! is_string($program)) {
-        throw new RuntimeException('Expected readable production inspection input.');
-    }
+    expect(application_instance_inspector($agents)->inspect($instance->refresh())->phpFpmProjectionMatches)->toBeTrue();
+    expect($agents->calls[0]['input']['runtime'])->toBeNull();
+    expect($agents->calls[0]['input']['association'])->toBeTrue();
+})->with([false, true]);
 
-    expect($inspection->phpFpmProjectionMatches)->toBeTrue()
-        ->and($expectation->associationMatches)->toBeTrue()
-        ->and($expectation->runtime)->toBeNull()
-        ->and($expectation->runtimeConfiguration)->toBeNull()
-        ->and($program)->toContain("runtime_expected='0'");
+it('refuses incomplete production runtime intent before a command', function (): void {
+    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private');
+    $instance->update(['production_php_service' => null, 'production_php_pool' => null, 'production_php_socket' => null]);
+    $agents = new FakeAgentCommandRunner;
+
+    expect(fn () => application_instance_inspector($agents)->inspect($instance->refresh()))->toThrow(DoctorInspectionException::class);
+    expect($agents->calls)->toBe([]);
 });
 
-it('refuses PHP production inspection when its dedicated service is missing', function (): void {
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'doctor-php-secret',
-    );
-    $instance->update([
-        'production_php_service' => null,
-        'production_php_pool' => null,
-        'production_php_socket' => null,
-    ]);
+it('maps production drift separately from unavailable observations', function (string $field, string $property, ?bool $value): void {
+    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private');
+    $values = production_observations();
+    $values[$field] = $value;
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-production-instance', $values);
 
-    expect(fn () => app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh()))
-        ->toThrow(InvalidArgumentException::class, 'The production PHP Instance requires a dedicated PHP-FPM service and PHP version.');
-});
-
-it('executes loaded service association outcomes from the production program', function (
-    string $systemctl,
-    string $expected,
-): void {
-    $program = application_production_observation_program('loaded_service_matches', $systemctl);
-    $result = application_run(['bash'], $program);
-
-    expect($result->stdout)->toBe("{$expected}\n");
+    expect(application_instance_inspector($agents)->inspect($instance)->{$property})->toBe($value);
 })->with([
-    'loaded command and environment match' => [
-        <<<'BASH'
-            systemctl() {
-                case "$2" in
-                    --property=ExecStart)
-                        printf '{ path=%s ; argv[]=%s --nodaemonize --fpm-config %s/php-fpm.conf ; }\n' "$executable" "$executable" "$generated_directory"
-                        ;;
-                    --property=Environment) printf '%s\n' "$expected_environment" ;;
-                    *) return 1 ;;
-                esac
-            }
-            BASH,
-        '1',
-    ],
-    'recognizable loaded command mismatches' => [
-        <<<'BASH'
-            systemctl() {
-                case "$2" in
-                    --property=ExecStart) printf '{ path=/usr/sbin/php-fpm8.4 ; argv[]=/usr/sbin/php-fpm8.4 ; }\n' ;;
-                    --property=Environment) printf '%s\n' "$expected_environment" ;;
-                    *) return 1 ;;
-                esac
-            }
-            BASH,
-        '0',
-    ],
-    'unreadable loaded command is unavailable' => [
-        <<<'BASH'
-            systemctl() { return 1; }
-            BASH,
-        '2',
-    ],
+    ['home', 'productionHomeMatches', false], ['selection', 'releaseSelectionMatches', false],
+    ['root', 'selectedReleaseRootMatches', false], ['environment', 'environmentProjectionMatches', false],
+    ['php', 'phpFpmProjectionMatches', false], ['php', 'phpFpmProjectionMatches', null],
+    ['caddy', 'caddyProjectionMatches', false], ['caddy', 'caddyProjectionMatches', null],
 ]);
 
-it('executes active service and main PID outcomes from the production program', function (
-    string $condition,
-    string $expected,
-): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-service-'.Str::uuid();
-    $runtime = "{$sandbox}/runtime";
-    $generated = "{$runtime}/generated";
-    $counter = "{$sandbox}/main-pid-count";
-    $files = new Filesystem;
-    $files->makeDirectory($generated, 0o755, true);
-    file_put_contents($counter, '0');
-    $activeState = $condition === 'inactive' ? 'inactive' : 'active';
-    $mainPid = $condition === 'malformed PID' ? 'private-invalid' : '620';
-    $activeResult = $condition === 'unreadable state' ? 'return 1' : "printf '%s\\n' '{$activeState}'";
-    $pidResult = $condition === 'changed PID'
-        ? <<<'BASH'
-            count=$(cat "$counter")
-            count=$((count + 1))
-            printf '%s' "$count" > "$counter"
-            if test "$count" -eq 1; then printf '620\n'; else printf '621\n'; fi
-            BASH
-        : "printf '%s\\n' '{$mainPid}'";
-    $setup = <<<BASH
-        runtime_directory={$runtime}
-        generated_directory={$generated}
-        counter={$counter}
-        exact_file() { return 0; }
-        select_application_pool() { return 0; }
-        local_tuning_matches() { return 0; }
-        loaded_service_matches() { return 0; }
-        process_runtime_matches() { return 0; }
-        worker_identity_matches() { return 0; }
-        socket_service_matches() { return 0; }
-        runtime_generation_applied() { return 0; }
-        stat() { printf 'root:root:755\n'; }
-        systemctl() {
-            case "\$2" in
-                --property=ActiveState) {$activeResult} ;;
-                --property=User) printf '\n' ;;
-                --property=MainPID) {$pidResult} ;;
-                *) return 1 ;;
-            esac
-        }
-        BASH;
-
-    try {
-        $program = application_production_observation_program('php_fpm_matches', $setup);
-        $result = application_run(['bash'], $program);
-
-        expect($result->stdout)->toBe("{$expected}\n");
-    } finally {
-        $files->deleteDirectory($sandbox);
-    }
-})->with([
-    'active service with stable main PID' => ['matches', '1'],
-    'inactive service is drift' => ['inactive', '0'],
-    'unreadable active state is unavailable' => ['unreadable state', '2'],
-    'malformed main PID is unavailable' => ['malformed PID', '2'],
-    'changed main PID is unavailable' => ['changed PID', '2'],
-]);
-
-it('executes stable master process outcomes from the production program', function (
-    string $condition,
-    string $expected,
-): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-master-'.Str::uuid();
-    $procRoot = "{$sandbox}/proc";
-    $mainPid = 610;
-    $counter = "{$sandbox}/start-count";
-    $files = new Filesystem;
-    $files->makeDirectory("{$procRoot}/{$mainPid}", 0o755, true);
-    file_put_contents("{$procRoot}/{$mainPid}/stat", application_process_stat($mainPid, 1, 8001));
-    file_put_contents("{$procRoot}/{$mainPid}/status", "Uid:\t0\t0\t0\t0\n");
-    symlink($condition === 'executable mismatch' ? '/usr/bin/bash' : '/usr/sbin/php-fpm8.5', "{$procRoot}/{$mainPid}/exe");
-    if ($condition === 'missing status') {
-        unlink("{$procRoot}/{$mainPid}/status");
-    }
-    $stability = '';
-    if ($condition === 'changed start time') {
-        file_put_contents($counter, '0');
-        $stability = <<<BASH
-            counter={$counter}
-            process_start_time() {
-                count=\$(cat "\$counter")
-                count=\$((count + 1))
-                printf '%s' "\$count" > "\$counter"
-                if test "\$count" -eq 1; then printf '8001\n'; else printf '8002\n'; fi
-            }
-            BASH;
-    }
-
-    try {
-        $setup = "proc_root={$procRoot}\nmain_pid={$mainPid}\n{$stability}";
-        $program = application_production_observation_program('process_runtime_matches', $setup);
-        $result = application_run(['bash'], $program);
-
-        expect($result->stdout)->toBe("{$expected}\n");
-    } finally {
-        $files->deleteDirectory($sandbox);
-    }
-})->with([
-    'expected executable root identity and stable start time' => ['matches', '1'],
-    'executable mismatch' => ['executable mismatch', '0'],
-    'missing status is unavailable' => ['missing status', '2'],
-    'changed start time is unavailable' => ['changed start time', '2'],
-]);
-
-it('executes current worker identity outcomes from the production program', function (
-    string $condition,
-    string $expected,
-): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-workers-'.Str::uuid();
-    $procRoot = "{$sandbox}/proc";
-    $mainPid = 410;
-    $workerPid = 411;
-    $identity = posix_getpwuid(posix_geteuid());
-    $groupIdentity = posix_getgrgid(posix_getegid());
-    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
-        ? $groupIdentity['name']
-        : $user;
-    $files = new Filesystem;
-    $files->makeDirectory("{$procRoot}/{$mainPid}/task/{$mainPid}", 0o755, true);
-    $children = match ($condition) {
-        'idle' => '',
-        'exited before a UID mismatch' => "{$workerPid} ".($workerPid + 1)."\n",
-        default => "{$workerPid}\n",
-    };
-    file_put_contents("{$procRoot}/{$mainPid}/task/{$mainPid}/children", $children);
-    $writeWorker = static function (int $pid, int $uid, string $state = 'S', int $flags = 0) use ($files, $procRoot, $mainPid, $sandbox, $condition): void {
-        $gid = $condition === 'gid mismatch' ? posix_getegid() + 1 : posix_getegid();
-        $parent = $condition === 'reparented' ? $mainPid + 1 : $mainPid;
-        $files->makeDirectory("{$procRoot}/{$pid}", 0o755, true);
-        $status = "State:\t{$state}\nPPid:\t{$parent}\nUid:\t{$uid}\t{$uid}\t{$uid}\t{$uid}\nGid:\t{$gid}\t{$gid}\t{$gid}\t{$gid}\n";
-        file_put_contents("{$procRoot}/{$pid}/status", $status);
-        file_put_contents("{$procRoot}/{$pid}/stat", application_process_stat($pid, $parent, 9001, $flags));
-        if ($state !== 'Z' && $flags === 0) {
-            symlink($condition === 'root mismatch' ? $sandbox : '/', "{$procRoot}/{$pid}/root");
-        }
+it('sanitizes failed or malformed production command responses', function (string $failure): void {
+    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private-secret');
+    $agents = new FakeAgentCommandRunner;
+    match ($failure) {
+        'refusal' => $agents->refuse('doctor.inspect-production-instance', 'doctor.production_inspection_failed'),
+        'transport' => $agents->answer('doctor.inspect-production-instance', static fn (): array => throw new RuntimeException('private-secret')),
+        'missing' => $agents->answer('doctor.inspect-production-instance', []),
+        'malformed' => $agents->answer('doctor.inspect-production-instance', [...production_observations(), 'php' => 'private-secret']),
     };
 
-    match ($condition) {
-        'idle', 'exited' => null,
-        'exited before a UID mismatch' => $writeWorker($workerPid + 1, posix_geteuid() + 1),
-        'zombie' => $writeWorker($workerPid, posix_geteuid(), 'Z'),
-        'exiting' => $writeWorker($workerPid, posix_geteuid(), 'S', 0x4),
-        default => $writeWorker($workerPid, $condition === 'uid mismatch' ? posix_geteuid() + 1 : posix_geteuid()),
-    };
+    application_assert_sanitized(application_capture_exception(fn () => application_instance_inspector($agents)->inspect($instance)), 'private-secret');
+})->with(['refusal', 'transport', 'missing', 'malformed']);
 
-    if ($condition === 'missing status') {
-        unlink("{$procRoot}/{$workerPid}/status");
-    }
-
-    try {
-        $setup = sprintf(
-            "proc_root=%s\nmain_pid=%d\nuser=%s",
-            escapeshellarg($procRoot),
-            $mainPid,
-            escapeshellarg($user),
-        );
-        $program = application_production_observation_program('worker_identity_matches', $setup);
-        $result = application_run(['bash'], $program);
-
-        expect($result->stdout)->toBe("{$expected}\n")
-            ->and($group)->not->toBeEmpty();
-    } finally {
-        $files->deleteDirectory($sandbox);
-    }
-})->with([
-    'idle ondemand pool' => ['idle', '1'],
-    'matching UID GID and root' => ['matches', '1'],
-    'UID mismatch' => ['uid mismatch', '0'],
-    'GID mismatch' => ['gid mismatch', '0'],
-    'process root mismatch' => ['root mismatch', '0'],
-    'unreadable status of a running worker' => ['missing status', '2'],
-    'reparented worker' => ['reparented', '2'],
-    'worker that exited after the children list' => ['exited', '1'],
-    'worker that is exiting as a zombie' => ['zombie', '1'],
-    'worker the kernel marks exiting' => ['exiting', '1'],
-    'exited worker before a live UID mismatch' => ['exited before a UID mismatch', '0'],
-]);
-
-it('executes socket and service association outcomes from the production program', function (
-    string $condition,
-    string $expected,
-): void {
-    $sandbox = UnixSocketDirectory::create();
-    $procRoot = "{$sandbox}/proc";
-    $mainPid = 510;
-    $socket = "{$sandbox}/php.sock";
-    $files = new Filesystem;
-    $files->makeDirectory("{$procRoot}/net", 0o755, true);
-    $files->makeDirectory("{$procRoot}/{$mainPid}/fd", 0o755, true);
-    $listener = stream_socket_server("unix://{$socket}", $errorCode, $errorMessage);
-    if ($listener === false) {
-        throw new RuntimeException("Could not create Unix socket: {$errorCode} {$errorMessage}");
-    }
-    chmod($socket, 0o660);
-    $metadata = stat($socket);
-    if (! is_array($metadata)) {
-        throw new RuntimeException('Could not inspect Unix socket fixture.');
-    }
-    $inode = (string) $metadata['ino'];
-    $table = "Num       RefCount Protocol Flags    Type St Inode Path\n"
-        ."0000000000000000: 00000002 00000000 00010000 0001 01 {$inode} {$socket}\n";
-    if ($condition === 'connections in flight') {
-        // Each accepted connection repeats the path with its own inode and the connected state.
-        $table .= '0000000000000001: 00000003 00000000 00000000 0001 03 '.($inode + 1)." {$socket}\n"
-            .'0000000000000002: 00000003 00000000 00000000 0001 03 '.($inode + 2)." {$socket}\n";
-    }
-    if ($condition === 'two listeners') {
-        $table .= '0000000000000003: 00000002 00000000 00010000 0001 01 '.($inode + 3)." {$socket}\n";
-    }
-    file_put_contents("{$procRoot}/net/unix", $table);
-    if ($condition === 'closed descriptor') {
-        // readlink fails on an entry that is no longer a descriptor link, as when the master closes it mid-scan.
-        file_put_contents("{$procRoot}/{$mainPid}/fd/7", '');
-    }
-    symlink(
-        $condition === 'mismatch' ? 'socket:[999999]' : "socket:[{$inode}]",
-        "{$procRoot}/{$mainPid}/fd/8",
-    );
-    if ($condition === 'unavailable') {
-        unlink("{$procRoot}/net/unix");
-    }
-    if ($condition === 'master exited') {
-        // The master exits after systemd reported its PID, so its /proc entry is gone before the descriptor scan.
-        $files->deleteDirectory("{$procRoot}/{$mainPid}");
-    }
-    $identity = posix_getpwuid(posix_geteuid());
-    $groupIdentity = posix_getgrgid(posix_getegid());
-    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
-        ? $groupIdentity['name']
-        : $user;
-
-    try {
-        $setup = sprintf(
-            "proc_root=%s\nmain_pid=%d\nsocket=%s\nuser=%s",
-            escapeshellarg($procRoot),
-            $mainPid,
-            escapeshellarg($socket),
-            escapeshellarg($user),
-        );
-        $program = application_production_observation_program('socket_service_matches', $setup);
-        $program = str_replace(
-            'test "$socket_metadata" = "$user:caddy:660"',
-            'test "$socket_metadata" = "$user:'.addslashes($group).':660"',
-            $program,
-        );
-        $result = application_run(['bash'], $program);
-
-        expect($result->stdout)->toBe("{$expected}\n");
-    } finally {
-        fclose($listener);
-        $files->deleteDirectory($sandbox);
-    }
-})->with([
-    'master owns expected socket inode' => ['matches', '1'],
-    'master owns another socket' => ['mismatch', '0'],
-    'socket table disappears' => ['unavailable', '2'],
-    'accepted connections in flight' => ['connections in flight', '1'],
-    'two listening entries' => ['two listeners', '2'],
-    'descriptor closed during the scan' => ['closed descriptor', '1'],
-    'master that exited during the scan' => ['master exited', '2'],
-]);
-
-it('maps each production projection without retaining protected diagnostics', function (
-    string $remote,
-    string $field,
-): void {
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'private-production-value',
-    );
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote)]);
-
-    $inspection = application_instance_inspector($ssh)->inspect($instance);
-
-    expect($inspection->{$field})
-        ->toBeFalse()
-        ->and(json_encode($inspection, JSON_THROW_ON_ERROR))
-        ->not->toContain('private-production-value');
-})->with([
-    'production home' => ["0\n1\n1\n1\n1\n1\n", 'productionHomeMatches'],
-    'release selection' => ["1\n0\n1\n1\n1\n1\n", 'releaseSelectionMatches'],
-    'selected release root' => ["1\n1\n0\n1\n1\n1\n", 'selectedReleaseRootMatches'],
-    'environment' => ["1\n1\n1\n0\n1\n1\n", 'environmentProjectionMatches'],
-    'PHP-FPM' => ["1\n1\n1\n1\n0\n1\n", 'phpFpmProjectionMatches'],
-    'Caddy' => ["1\n1\n1\n1\n1\n0\n", 'caddyProjectionMatches'],
-]);
-
-it('finds each of the Instance site blocks unchanged in the one live Caddyfile', function (string $layout, string $expected): void {
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-caddy-'.bin2hex(random_bytes(6));
-    $live = $layout === 'fragment' ? "{$sandbox}/v1/Caddyfile" : "{$sandbox}/v2/Caddyfile";
-    $program = application_production_observation_program('caddy_matches', "readlink() { printf '%s\\n' '{$live}'; }");
-    $instance = Instance::query()->latest('id')->firstOrFail();
-    $sites = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddySites;
-    $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
-    $files = new Filesystem;
-    $files->ensureDirectoryExists("{$sandbox}/v1/fragments");
-    $files->ensureDirectoryExists("{$sandbox}/v2");
-
-    try {
-        expect($sites)->toHaveCount(1)
-            ->and($sites[0])->toStartWith("# orbit: app-prod app-instance-{$instance->id}\n")
-            ->and($render)->toContain($sites[0]);
-
-        file_put_contents($live, match ($layout) {
-            'build' => $render,
-            'edit inside' => str_replace($sites[0], str_replace("\n}\n", "\n    respond hand-edit\n}\n", $sites[0]), $render),
-            'edit elsewhere' => $render."\nhand.example.test {\n    respond hi\n}\n",
-            'fragment' => "import {$sandbox}/v1/fragments/*.caddy\n",
-        });
-        file_put_contents("{$sandbox}/v1/fragments/app-dev.caddy", $sites[0]);
-
-        expect(application_run(['bash'], $program)->stdout)->toBe("{$expected}\n");
-    } finally {
-        $files->deleteDirectory($sandbox);
-    }
-})->with([
-    'a Node Caddy build that matches a fresh render' => ['build', '1'],
-    'a hand edit inside the Instance site' => ['edit inside', '0'],
-    'a hand edit elsewhere in the file, which role.caddy_build_drift reports' => ['edit elsewhere', '1'],
-    'the fragment layout of an earlier release, which Doctor no longer reads' => ['fragment', '0'],
-]);
-
-it('keeps an unavailable production runtime observation distinct from drift', function (): void {
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'private-production-value',
-    );
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n1\n1\n1\n2\n1\n")]);
-
-    $inspection = application_instance_inspector($ssh)->inspect($instance);
-
-    expect($inspection->productionHomeMatches)
-        ->toBeFalse()
-        ->and($inspection->phpFpmProjectionMatches)
-        ->toBeNull()
-        ->and(json_encode($inspection, JSON_THROW_ON_ERROR))
-        ->not->toContain('private-production-value');
-});
-
-it('fails production inspection closed for malformed, failed, truncated, and diagnostic output', function (
-    CommandResult $result,
-): void {
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'private-production-value',
-    );
-
-    $exception = application_capture_exception(
-        fn (): InstanceInspectionData => application_instance_inspector(
-            new AppDevFakeSshExecutor([$result]),
-        )->inspect($instance),
-    );
-
-    application_assert_sanitized($exception, 'private-production-value');
-})->with([
-    'failure' => [app_inspector_result('', exitCode: 1, stderr: 'private-production-value')],
-    'malformed' => [app_inspector_result('private-production-value')],
-    'truncated' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", truncated: true)],
-    'stderr' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", stderr: 'private-production-value')],
-]);
-
-/** @param non-empty-list<string> $arguments */
-function application_run(array $arguments, ?string $input = null): CommandResult
+/** @return array<string, bool> */
+function production_observations(): array
 {
-    $result = new FixtureProcessRunner()->run(new ProcessInvocation($arguments, input: $input));
-    expect($result->succeeded())->toBeTrue($result->stderr);
-
-    return $result;
-}
-
-function application_production_observation_program(string $observation, string $setup, string $webRoot = 'public'): string
-{
-    $instance = application_production_app_instance(
-        application_inspector_app(),
-        application_inspector_node(),
-        'private-production-value',
-    );
-    $instance->update(['root' => $webRoot]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
-    application_instance_inspector($ssh)->inspect($instance);
-    $protected = $ssh->commands[0]->protectedInput;
-    if (! $protected instanceof ProtectedInput) {
-        throw new RuntimeException('Expected protected production inspection input.');
-    }
-    $program = stream_get_contents($protected->stream());
-    if (! is_string($program)) {
-        throw new RuntimeException('Expected readable production inspection input.');
-    }
-    $emissions = <<<'BASH'
-        emit home_matches
-        emit release_selection_matches
-        emit selected_root_matches
-        emit environment_matches
-        emit php_fpm_matches
-        emit caddy_matches
-        BASH;
-    $replacement = trim($setup)."\nemit {$observation}";
-    $program = str_replace($emissions, $replacement, $program, $count);
-    if ($count !== 1) {
-        throw new RuntimeException('Could not isolate the production observation.');
-    }
-
-    return $program;
-}
-
-function application_process_stat(int $pid, int $parentPid, int $startTime, int $flags = 0): string
-{
-    return implode(' ', [
-        (string) $pid,
-        '(php-fpm worker)',
-        'S',
-        (string) $parentPid,
-        ...array_fill(0, 4, '0'),
-        (string) $flags,
-        ...array_fill(0, 12, '0'),
-        (string) $startTime,
-    ])."\n";
+    return ['home' => true, 'selection' => true, 'root' => true, 'environment' => true, 'php' => true, 'caddy' => true];
 }
 
 function application_capture_exception(Closure $operation): DoctorInspectionException
@@ -1112,14 +373,9 @@ function application_app_inspector(FakeAgentCommandRunner $agents): NativeProjec
     );
 }
 
-function application_instance_inspector(
-    SshExecutor|FakeAgentCommandRunner $runner,
-): NativeInstanceStateInspector {
-    $ssh = $runner instanceof SshExecutor ? $runner : new AppDevFakeSshExecutor;
-    $agents = $runner instanceof FakeAgentCommandRunner ? $runner : new FakeAgentCommandRunner;
-
+function application_instance_inspector(FakeAgentCommandRunner $agents): NativeInstanceStateInspector
+{
     return new NativeInstanceStateInspector(
-        new DevelopmentSshExecutor($ssh, application_inspector_keys(), application_inspector_hosts()),
         new CommandDeadline,
         application_inspector_accounts(),
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
@@ -1179,42 +435,4 @@ function application_inspector_accounts(): ManagedUserAccountResolver
             return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
         }
     };
-}
-
-function application_inspector_keys(): SshKeyProvider
-{
-    return new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/doctor-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-}
-
-function application_inspector_hosts(): KnownHostsStore
-{
-    return new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/doctor-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
-}
-
-function app_inspector_result(
-    string $stdout,
-    int $exitCode = 0,
-    string $stderr = '',
-    bool $truncated = false,
-): CommandResult {
-    return new CommandResult($exitCode, $stdout, $stderr, 1, $truncated);
 }

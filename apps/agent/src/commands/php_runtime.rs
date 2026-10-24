@@ -4,6 +4,9 @@
 //! runs as root and checks the marker first. These replace the Bash that `RemoteProductionPhpRuntimeManager` sent,
 //! check for check, and keep its file formats, so a Node converged by the Bash converges here unchanged.
 
+#[path = "php_doctor.rs"]
+pub(super) mod doctor;
+
 use super::production::valid_name;
 use super::source::{
     exists, is_real_directory, is_regular_file, is_symlink, realpath, starts_inside,
@@ -750,6 +753,7 @@ fn local_tuning_allowed(local: &str, pool_name: &str, monitoring: bool) -> bool 
         "listen.group",
         "listen.mode",
         "chdir",
+        "chroot",
         "env[home]",
         "env[user]",
     ];

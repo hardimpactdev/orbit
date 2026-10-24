@@ -50,11 +50,11 @@ while IFS= read -r line; do
 done < "$ini"
 "#;
 
-struct Fixture {
-    base: PathBuf,
-    host: Host,
-    user: String,
-    home: PathBuf,
+pub(super) struct Fixture {
+    pub(super) base: PathBuf,
+    pub(super) host: Host,
+    pub(super) user: String,
+    pub(super) home: PathBuf,
 }
 
 fn executable(path: &Path, content: &str) {
@@ -63,7 +63,7 @@ fn executable(path: &Path, content: &str) {
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let base = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!("orbit-php-runtime-{:016x}", rand::random::<u64>()));
@@ -148,7 +148,7 @@ impl Fixture {
         )
     }
 
-    fn input(&self, mode: Mode, monitoring: bool) -> ConvergeInput {
+    pub(super) fn input(&self, mode: Mode, monitoring: bool) -> ConvergeInput {
         ConvergeInput {
             mode,
             user: self.user.clone(),
@@ -373,23 +373,25 @@ fn refuses_local_tuning_that_names_the_pool_identity_before_any_change() {
         fs::Permissions::from_mode(0o644),
     )
     .unwrap();
-    fs::write(
-        runtime.join("local.conf"),
-        format!("[orbit-{}]\nlisten = /tmp/other.sock\n", fixture.user),
-    )
-    .unwrap();
-    fs::set_permissions(
-        runtime.join("local.conf"),
-        fs::Permissions::from_mode(0o644),
-    )
-    .unwrap();
+    for directive in ["listen = /tmp/other.sock", "chroot = /tmp/jail"] {
+        fs::write(
+            runtime.join("local.conf"),
+            format!("[orbit-{}]\n{directive}\n", fixture.user),
+        )
+        .unwrap();
+        fs::set_permissions(
+            runtime.join("local.conf"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
 
-    assert_eq!(
-        converge(&fixture.input(Mode::Converge, false), &fixture.host),
-        Err(invalid("local.conf only tunes the pool"))
-    );
-    assert!(!runtime.join("generated").exists());
-    assert!(fixture.calls().is_empty());
+        assert_eq!(
+            converge(&fixture.input(Mode::Converge, false), &fixture.host),
+            Err(invalid("local.conf only tunes the pool"))
+        );
+        assert!(!runtime.join("generated").exists());
+        assert!(fixture.calls().is_empty());
+    }
 }
 
 #[test]

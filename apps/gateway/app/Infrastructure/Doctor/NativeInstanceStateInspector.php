@@ -11,20 +11,14 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
-use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Throwable;
 
 final readonly class NativeInstanceStateInspector implements InstanceStateInspector
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
@@ -74,21 +68,37 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
     {
         try {
             $expectation = $this->productionExpectations->make($instance);
-            $result = $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: ['sudo', 'bash', '-s', '--'],
-                    protectedInput: ProtectedInput::fromString($this->productionProgram($expectation)),
-                    maxOutputBytes: 128,
-                ),
-                step: 'doctor-instance',
-                errorCode: 'instance.inspection_failed',
-                commandTimeout: $this->deadline->cap(30.0),
-            );
-            if ($result->stderr !== '') {
-                throw new DoctorInspectionException;
+            $runtime = $expectation->runtime;
+            $configuration = $expectation->runtimeConfiguration;
+            $initial = $expectation->initialRuntimeConfiguration;
+            $values = $this->agents->run($instance->node, 'doctor.inspect-production-instance', [
+                'user' => $expectation->user,
+                'home' => $expectation->home,
+                'root' => $expectation->root,
+                'application_suffix' => ProductionApplicationPaths::suffix($expectation->root),
+                'environment' => $expectation->environment(),
+                'caddy_sites' => $expectation->caddySites,
+                'association' => $expectation->associationMatches,
+                'runtime' => $runtime !== null && $configuration !== null && $initial !== null ? [
+                    'version' => $runtime->version,
+                    'marker' => $runtime->marker(),
+                    'application' => $runtime->applicationDirectory(),
+                    'initial_application' => $runtime->applicationDirectory(initialRelease: true),
+                    'configuration' => [
+                        'main' => $configuration->main,
+                        'pool' => $configuration->pool,
+                        'initial_pool' => $initial->pool,
+                        'local_defaults' => $configuration->localDefaults,
+                        'master_ini' => $configuration->masterIni,
+                        'unit' => $configuration->unit,
+                    ],
+                ] : null,
+            ], $this->deadline->cap(30.0));
+            foreach (['home', 'selection', 'root', 'environment', 'php', 'caddy'] as $field) {
+                if (! array_key_exists($field, $values) || ($values[$field] !== null && ! is_bool($values[$field]))) {
+                    throw new DoctorInspectionException;
+                }
             }
-            $values = $this->parse($result, 6, allowUnavailable: true);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
@@ -98,352 +108,12 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             repositoryLayoutMatches: true,
             originMatches: true,
             sourceIdentityMatches: true,
-            productionHomeMatches: $values[0],
-            releaseSelectionMatches: $values[1],
-            selectedReleaseRootMatches: $values[2],
-            environmentProjectionMatches: $values[3],
-            phpFpmProjectionMatches: $values[4],
-            caddyProjectionMatches: $values[5],
+            productionHomeMatches: $values['home'],
+            releaseSelectionMatches: $values['selection'],
+            selectedReleaseRootMatches: $values['root'],
+            environmentProjectionMatches: $values['environment'],
+            phpFpmProjectionMatches: $values['php'],
+            caddyProjectionMatches: $values['caddy'],
         );
-    }
-
-    /** @return list<?bool> */
-    private function parse(CommandResult $result, int $count, bool $allowUnavailable): array
-    {
-        $values = explode("\n", $result->stdout);
-        $terminator = array_pop($values);
-
-        if (
-            ! $result->succeeded()
-            || $result->truncated
-            || $terminator !== ''
-            || count($values) !== $count
-            || array_diff($values, $allowUnavailable ? ['0', '1', '2'] : ['0', '1']) !== []
-        ) {
-            throw new DoctorInspectionException;
-        }
-
-        return array_map(static fn (string $value): ?bool => match ($value) {
-            '0' => false,
-            '1' => true,
-            '2' => null,
-            default => throw new DoctorInspectionException,
-        }, $values);
-    }
-
-    private function productionProgram(ProductionInstanceInspectionExpectation $expectation): string
-    {
-        $runtime = $expectation->runtime;
-        $configuration = $expectation->runtimeConfiguration;
-        $initialConfiguration = $expectation->initialRuntimeConfiguration;
-        $runtimeExpected = $runtime !== null && $configuration !== null && $initialConfiguration !== null;
-        $runtimeValues = [
-            'version' => '',
-            'service' => '',
-            'pool' => '',
-            'socket' => '',
-            'runtime_directory' => '',
-            'generated_directory' => '',
-            'local_tuning' => '',
-            'unit_path' => '',
-            'marker_path' => '',
-            'main' => '',
-            'pool_configuration' => '',
-            'initial_pool_configuration' => '',
-            'application' => '',
-            'initial_application' => '',
-            'master_ini' => '',
-            'unit' => '',
-            'marker' => '',
-        ];
-        if ($runtimeExpected) {
-            $runtimeValues = [
-                'version' => $runtime->version,
-                'service' => $runtime->service,
-                'pool' => $runtime->pool,
-                'socket' => $runtime->socket,
-                'runtime_directory' => $runtime->runtimeDirectory,
-                'generated_directory' => $runtime->generatedDirectory,
-                'local_tuning' => $runtime->localTuningPath,
-                'unit_path' => $runtime->unitPath,
-                'marker_path' => $runtime->markerPath,
-                'main' => base64_encode($configuration->main),
-                'pool_configuration' => base64_encode($configuration->pool),
-                'initial_pool_configuration' => base64_encode($initialConfiguration->pool),
-                'application' => $runtime->applicationDirectory(),
-                'initial_application' => $runtime->applicationDirectory(initialRelease: true),
-                'master_ini' => base64_encode($configuration->masterIni),
-                'unit' => base64_encode($configuration->unit),
-                'marker' => base64_encode($runtime->marker()),
-            ];
-        }
-        $values = [
-            'user' => $expectation->user,
-            'home' => $expectation->home,
-            'root' => $expectation->root,
-            'environment' => base64_encode($expectation->environment()),
-            'caddy_sites' => implode(' ', array_map(base64_encode(...), $expectation->caddySites)),
-            'association' => $expectation->associationMatches ? '1' : '0',
-            'runtime_expected' => $runtimeExpected ? '1' : '0',
-            ...$runtimeValues,
-        ];
-
-        $assignments = collect($values)
-            ->map(static fn (string $value, string $key): string => $key.'='.escapeshellarg($value))
-            ->implode("\n");
-
-        $applicationPoolSelection = ProductionRuntimeGenerationProgram::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions();
-
-        return ProductionApplicationPaths::render(<<<BASH
-            set -u
-            {$assignments}
-            proc_root=/proc
-            {$applicationPoolSelection}
-
-            emit() {
-                "\$@"
-                status=\$?
-                case "\$status" in
-                    0) printf '1\n' ;;
-                    1) printf '0\n' ;;
-                    *) printf '2\n' ;;
-                esac
-            }
-            exact_file() {
-                path=\$1
-                encoded=\$2
-                owner=\$3
-                mode=\$4
-                test -f "\$path" && test ! -L "\$path" || return 1
-                test "\$(stat -c '%U:%G:%a' -- "\$path" 2>/dev/null)" = "\$owner:\$mode" || return 1
-                printf '%s' "\$encoded" | base64 --decode | cmp -s -- "\$path" -
-            }
-            home_matches() {
-                test "\$home" = "/home/\$user" || return 1
-                test -d "\$home" && test ! -L "\$home" || return 1
-                test "\$(realpath -e -- "\$home" 2>/dev/null)" = "\$home" || return 1
-                test "\$(stat -c '%U:%G' -- "\$home" 2>/dev/null)" = "\$user:\$user"
-            }
-            selected_release() {
-                current="\$home/current"
-                test -L "\$current" || return 1
-                target=\$(readlink -- "\$current") || return 1
-                printf '%s' "\$target" | grep -Eq '^releases/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\$' || return 1
-                selected=\$(realpath -e -- "\$current" 2>/dev/null) || return 1
-                case "\$selected" in "\$home/releases/"*) ;; *) return 1 ;; esac
-                test -d "\$selected" && test ! -L "\$selected" || return 1
-                test "\$(stat -c '%U:%G' -- "\$current" 2>/dev/null)" = "\$user:\$user" || return 1
-                test "\$(stat -c '%U:%G' -- "\$selected" 2>/dev/null)" = "\$user:\$user"
-            }
-            release_selection_matches() {
-                current="\$home/current"
-                if test ! -e "\$current" && test ! -L "\$current"; then return 0; fi
-                selected_release
-            }
-            selected_root_matches() {
-                current="\$home/current"
-                if test ! -e "\$current" && test ! -L "\$current"; then return 0; fi
-                selected_release || return 1
-                case "\$root" in ''|/*|..|../*|*/../*|*/..) return 1 ;; esac
-                selected=\$(realpath -e -- "\$current" 2>/dev/null) || return 1
-                selected_root=\$(realpath -e -- "\$selected/\$root" 2>/dev/null) || return 1
-                case "\$selected_root" in "\$selected"|"\$selected/"*) ;; *) return 1 ;; esac
-                test -d "\$selected_root"
-            }
-            environment_matches() {
-                exact_file "\$home/.env" "\$environment" "\$user:\$user" 600 || return 1
-                current="\$home/current"
-                if test ! -e "\$current" && test ! -L "\$current"; then return 0; fi
-                selected_release || return 1
-                test -L "\$selected__APPLICATION_SUFFIX__/.env" || return 1
-                test "\$(realpath -e -- "\$selected__APPLICATION_SUFFIX__/.env" 2>/dev/null)" = "\$home/.env"
-            }
-            local_tuning_matches() {
-                test -f "\$local_tuning" && test ! -L "\$local_tuning" || return 1
-                test "\$(stat -c '%U:%G:%a' -- "\$local_tuning" 2>/dev/null)" = root:root:644 || return 1
-                awk -v expected_pool="[\$pool]" '
-                    /^[[:space:]]*($|;|#)/ { next }
-                    /^[[:space:]]*\[/ {
-                        line=$0
-                        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                        if (line != expected_pool) exit 1
-                        next
-                    }
-                    {
-                        line=tolower($0)
-                        sub(/^[[:space:]]+/, "", line)
-                        if (line ~ /^include[[:space:]]*=/) exit 1
-                        if (line ~ /^(pid|user|group|listen|listen[.]owner|listen[.]group|listen[.]mode|chdir|chroot|env\[home\]|env\[user\])[[:space:]]*=/) exit 1
-                    }
-                ' "\$local_tuning"
-            }
-            loaded_service_matches() {
-                executable="/usr/sbin/php-fpm\$version"
-                main_configuration="\$generated_directory/php-fpm.conf"
-                expected_environment="PHP_INI_SCAN_DIR=/etc/php/\$version/fpm/conf.d:\$generated_directory"
-                expected_exec_prefix="{ path=\$executable ; argv[]=\$executable --nodaemonize --fpm-config \$main_configuration ; "
-
-                loaded_exec=\$(systemctl show --property=ExecStart --value "\$service" 2>/dev/null) || return 2
-                loaded_environment=\$(systemctl show --property=Environment --value "\$service" 2>/dev/null) || return 2
-
-                if test "\${loaded_exec#"\$expected_exec_prefix"}" = "\$loaded_exec"; then
-                    case "\$loaded_exec" in
-                        "{ path="*" ; argv[]="*) return 1 ;;
-                        *) return 2 ;;
-                    esac
-                fi
-
-                test "\$loaded_environment" = "\$expected_environment"
-            }
-            process_start_time() {
-                sed 's/^[^)]*) //' "\$proc_root/\$1/stat" 2>/dev/null | awk '{ print $20 }'
-            }
-            process_runtime_matches() {
-                executable="/usr/sbin/php-fpm\$version"
-                start_before=\$(process_start_time "\$main_pid") || return 2
-                case "\$start_before" in ''|*[!0-9]*) return 2 ;; esac
-
-                observed_executable=\$(readlink -f -- "\$proc_root/\$main_pid/exe" 2>/dev/null) || return 2
-                test "\$observed_executable" = "\$executable" || return 1
-
-                main_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$main_pid/status" 2>/dev/null) || return 2
-                printf '%s\n' "\$main_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
-                test "\$main_uids" = 0:0:0:0 || return 1
-
-                start_after=\$(process_start_time "\$main_pid") || return 2
-                case "\$start_after" in ''|*[!0-9]*) return 2 ;; esac
-                test "\$start_after" = "\$start_before" || return 2
-            }
-            # A worker has exited when its /proc entry is gone, it is a zombie, or the kernel marks it
-            # exiting (PF_EXITING, 0x4, in the flags field 9 of /proc/PID/stat).
-            worker_exited() {
-                test -d "\$proc_root/\$1" || return 0
-                worker_state=\$(awk '/^State:/ { print $2; exit }' "\$proc_root/\$1/status" 2>/dev/null)
-                case "\$worker_state" in Z|X) return 0 ;; esac
-                worker_flags=\$(sed 's/^[^)]*) //' "\$proc_root/\$1/stat" 2>/dev/null | awk '{ print $7 }')
-                case "\$worker_flags" in
-                    ''|*[!0-9]*) test -d "\$proc_root/\$1" && return 1 || return 0 ;;
-                esac
-                test \$((worker_flags & 4)) -ne 0
-            }
-            worker_matches() {
-                worker_pid=\$1
-                worker_start_before=\$(process_start_time "\$worker_pid") || return 2
-                case "\$worker_start_before" in ''|*[!0-9]*) return 2 ;; esac
-                worker_parent=\$(awk '/^PPid:/ { print $2 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                worker_uids=\$(awk '/^Uid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                worker_gids=\$(awk '/^Gid:/ { print $2 ":" $3 ":" $4 ":" $5 }' "\$proc_root/\$worker_pid/status" 2>/dev/null) || return 2
-                case "\$worker_parent" in ''|*[!0-9]*) return 2 ;; esac
-                printf '%s\n' "\$worker_uids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
-                printf '%s\n' "\$worker_gids" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+\$' || return 2
-                test "\$worker_parent" = "\$main_pid" || return 2
-                test "\$worker_uids" = "\$expected_uid:\$expected_uid:\$expected_uid:\$expected_uid" || return 1
-                test "\$worker_gids" = "\$expected_gid:\$expected_gid:\$expected_gid:\$expected_gid" || return 1
-                worker_root=\$(readlink -f -- "\$proc_root/\$worker_pid/root" 2>/dev/null) || return 2
-                test "\$worker_root" = / || return 1
-                worker_start_after=\$(process_start_time "\$worker_pid") || return 2
-                case "\$worker_start_after" in ''|*[!0-9]*) return 2 ;; esac
-                test "\$worker_start_after" = "\$worker_start_before" || return 2
-            }
-            # An ondemand pool ends idle workers at any time. A worker that exits while it is checked
-            # no longer exists during the inspection, so its unreadable or partial evidence is skipped.
-            worker_identity_matches() {
-                expected_uid=\$(id -u -- "\$user" 2>/dev/null) || return 1
-                expected_gid=\$(id -g -- "\$user" 2>/dev/null) || return 1
-                case "\$expected_uid" in ''|*[!0-9]*) return 2 ;; esac
-                case "\$expected_gid" in ''|*[!0-9]*) return 2 ;; esac
-                children=\$(cat "\$proc_root/\$main_pid/task/\$main_pid/children" 2>/dev/null) || return 2
-                if test -n "\$children" && ! printf '%s\n' "\$children" | grep -Eq '^[0-9]+( [0-9]+)* ?\$'; then
-                    return 2
-                fi
-
-                for child_pid in \$children; do
-                    worker_matches "\$child_pid"
-                    worker_status=\$?
-                    if test "\$worker_status" -ne 0 && worker_exited "\$child_pid"; then
-                        continue
-                    fi
-                    test "\$worker_status" -eq 0 || return "\$worker_status"
-                done
-            }
-            socket_service_matches() {
-                test -S "\$socket" || return 1
-                socket_metadata=\$(stat -c '%U:%G:%a' -- "\$socket" 2>/dev/null) || return 2
-                test "\$socket_metadata" = "\$user:caddy:660" || return 1
-
-                # Every accepted connection repeats the socket path in /proc/net/unix. Only the listening
-                # entry (flag __SO_ACCEPTCON, state SS_UNCONNECTED) identifies the socket the master owns.
-                socket_inodes=\$(awk -v expected="\$socket" '$8 == expected && $4 == "00010000" && $6 == "01" { print $7 }' "\$proc_root/net/unix" 2>/dev/null) || return 2
-                test -n "\$socket_inodes" || return 1
-                socket_count=\$(printf '%s\n' "\$socket_inodes" | wc -l) || return 2
-                test "\$socket_count" -eq 1 || return 2
-                case "\$socket_inodes" in *[!0-9]*) return 2 ;; esac
-
-                for descriptor in "\$proc_root/\$main_pid/fd/"*; do
-                    # A descriptor the master closes during the scan is not the listening socket it holds.
-                    target=\$(readlink -- "\$descriptor" 2>/dev/null) || continue
-                    if test "\$target" = "socket:[\$socket_inodes]"; then
-                        return 0
-                    fi
-                done
-
-                # A master that exited during the scan held no descriptors to read, which proves nothing.
-                test -d "\$proc_root/\$main_pid" || return 2
-                return 1
-            }
-            php_fpm_matches() {
-                test "\$association" = 1 || return 1
-                if test "\$runtime_expected" = 0; then return 0; fi
-                test -d "\$runtime_directory" && test ! -L "\$runtime_directory" || return 1
-                test "\$(stat -c '%U:%G:%a' -- "\$runtime_directory" 2>/dev/null)" = root:root:755 || return 1
-                test -d "\$generated_directory" && test ! -L "\$generated_directory" || return 1
-                test "\$(stat -c '%U:%G:%a' -- "\$generated_directory" 2>/dev/null)" = root:root:755 || return 1
-                exact_file "\$generated_directory/php-fpm.conf" "\$main" root:root 644 || return 1
-                select_application_pool || return 1
-                exact_file "\$generated_directory/pool.conf" "\$pool_configuration" root:root 644 || return 1
-                exact_file "\$generated_directory/master.ini" "\$master_ini" root:root 644 || return 1
-                exact_file "\$unit_path" "\$unit" root:root 644 || return 1
-                exact_file "\$marker_path" "\$marker" root:root 644 || return 1
-                local_tuning_matches || return 1
-                active_state=\$(systemctl show --property=ActiveState --value "\$service" 2>/dev/null) || return 2
-                case "\$active_state" in
-                    active) ;;
-                    inactive|failed|activating|deactivating|reloading) return 1 ;;
-                    *) return 2 ;;
-                esac
-                service_user=\$(systemctl show --property=User --value "\$service" 2>/dev/null) || return 2
-                test -z "\$service_user" || return 1
-                main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 2
-                case "\$main_pid" in ''|*[!0-9]*) return 2 ;; esac
-                test "\$main_pid" -gt 1 || return 2
-                loaded_service_matches || return \$?
-                process_runtime_matches || return \$?
-                worker_identity_matches || return \$?
-                socket_service_matches || return \$?
-                current_main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 2
-                test "\$current_main_pid" = "\$main_pid" || return 2
-                runtime_generation_applied
-            }
-            caddy_matches() {
-                source=\$(readlink -f -- /etc/caddy/Caddyfile 2>/dev/null) || return 1
-                test -f "\$source" || return 1
-                # The Node Caddy build keeps every site in the live file; each of this Instance's blocks must be there unchanged.
-                live_caddyfile=\$(cat -- "\$source") || return 2
-                for encoded_site in \$caddy_sites; do
-                    site=\$(printf '%s' "\$encoded_site" | base64 --decode) || return 2
-                    case "\$live_caddyfile" in
-                        *"\$site"*) ;;
-                        *) return 1 ;;
-                    esac
-                done
-            }
-
-            emit home_matches
-            emit release_selection_matches
-            emit selected_root_matches
-            emit environment_matches
-            emit php_fpm_matches
-            emit caddy_matches
-            BASH, $expectation->root);
     }
 }

@@ -135,6 +135,8 @@ The `project` family also compares the stored repository identity with the ident
 
 The `project` family sends the settled checkout intents for one Project and Node to `doctor.inspect-project` in one call. Rust checks each checkout independently and returns a match or an unavailable observation; one failed checkout does not hide the others. Git runs as the recorded owner with hooks and filesystem monitoring disabled.
 
+Production Instance observations use `doctor.inspect-production-instance`. Rust compares the home, selected release, environment link and content, live Caddy sites, and dedicated PHP-FPM runtime. The PHP checks share pool selection, generation receipts, and local tuning rules with runtime convergence. Unreadable process evidence stays distinct from drift.
+
 Development Instance source observations use `doctor.inspect-development-source`. It checks the recorded checkout, owner, Git administration, origin, and starting history without changing the checkout.
 
 The `project` and `instance` families read the `remote.origin.url` value stored in each checkout. They ignore `insteadOf` rewrites from the Node's Git configuration, so a Node that rewrites HTTPS URLs to SSH still matches. The `project` family compares that value by [repository identity](/reference/projects#repository-identity), so an SSH origin and an HTTPS Project URL for the same host and path match. A fork or another host still reports `project.repository_origin_mismatch`. The `instance` family compares the stored URL exactly. The `project` family looks for a development checkout under the Node's [apps root](/reference/node-settings#derive-the-effective-root).
