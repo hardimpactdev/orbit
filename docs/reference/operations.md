@@ -72,6 +72,7 @@ Use the kind and target type to start or find the work of a command.
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
+| `tasks:analyze` (docs-first addition) | `tasks.analyze` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 
@@ -80,6 +81,16 @@ Every task operation holds the group, so different kinds cannot overlap on it. A
 A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, ci }` under the [hosted handoff CI contract](/reference/tasks#check-an-external-group). This prerequisite does not open external review-and-merge admission. The input remains `{ subtask, phase }` with the existing optional key.
 
 `head` is the pre-commit check snapshot; `commit` is the candidate HEAD. Baseline/no-policy has `ci: null`. A required-CI handoff adds persisted handoff-push and hosted-CI-read steps after the existing commit step. Before push, state pins the branch and required check name; it retains CI evidence while waiting, so recovery cannot reinterpret a later Project edit. The terminal result carries that evidence. A failed code/workflow check ends `succeeded` with `outcome: failed`, not an operation failure. Consumers need `outcome: passed` and the shared checked-candidate eligibility rule, not just `status: succeeded` or a locally passed check.
+
+### Fixed repository analysis evidence
+
+The agreed docs-first contract for [Tasks analysis](/reference/tasks#analyze-an-external-groups-repository) adds keyed `tasks.analyze` with `workspace_ready`, `analysis`, and `report` steps, using existing task ownership and detached supervision. Its key is required, unlike the optional keys on ordinary operation starts. Same-key replay runs before mutable eligibility checks, never dispatches a second scanner, and keeps the original bounded artifact even after VM destruction. This addition does not change baseline/check inputs, ordinary turns, or closed external review-and-merge/topology admission.
+
+The terminal result is `{outcome, artifact, provenance}`. `artifact: {sha256, bytes, content}` preserves exact complete UTF-8 stdout, at most 64 KiB/depth 24, not the step's 8 KiB diagnostic tail. The digest and length apply to decoded content bytes, not reserialized JSON. Size the typed transport for JSON escaping of the entire bounded result; never truncate it. Gateway-owned provenance binds the complete plan and candidate to repository, branch, owned workspace, run, lease, entrypoint digest, before/after snapshots, duration, exit code, and zero mechanical LLM calls. Tasks owns the detailed field list; repository code owns report semantics and docs mappings.
+
+Operation `succeeded` does not mean docs approval: usable outcomes are `ready` or `action_required`; valid `blocked` and `changed` evidence saved for inspection cannot authorize a turn. Invalid or missing reports fail only after terminal local proof. Reserve the run before dispatch; missing-start recovery tombstones its identity. Dispatched work with no retained report is not rerun under its key. Cancellation or unknown descendants retain the group and workspace fence until termination is proven, while releasing the worker during waits. Existing operation reads and cancellation apply; add no arbitrary VM file reader or artifact table.
+
+An optional analysis reference on `tasks.turn` consumes the full plan/report/provenance only after fresh identity comparison under the turn lease before its first send. Persist the complete combined prompt within 100,000 characters before dispatch. Same-key recovery after dispatch uses that original prompt and send key, not a fresh send after revalidating an intentionally edited checkout. See [Analysis-bound turn evidence](/reference/tasks#analysis-bound-turn-evidence). Analysis supplies neither a `TaskCheck` candidate nor semantic approval, and never replaces handoff CI or the actual-file docs gate.
 
 ## Start an operation
 

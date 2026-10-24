@@ -20,6 +20,8 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 When removing a command, remove its response fixtures and CLI replay tests together. `bin/cli-contract --changed` accepts that retirement. A remaining fixture without a replay still fails; a replay that uses a deleted fixture still runs and fails.
 
+The docs-first addition for [fixed repository analysis](/cli/tasks#orbit-tasksanalyze) uses existing operation following, cancellation, and failure rendering, not a new progress mechanism. Runtime verification must keep complete bounded report/provenance bytes in JSON while making the human outcome (`ready`, `action_required`, `blocked`, or `changed`) distinct from operation status and scanner exit. A valid blocked report is not a generic green success, and following cancellation is not proof that descendants have stopped. Its native request/refusal contract stays in Tasks; exact help, human renderings, and terminal verification belong to runtime delivery.
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.

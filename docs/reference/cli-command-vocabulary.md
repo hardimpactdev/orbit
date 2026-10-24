@@ -19,6 +19,8 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `database:create --locale` selects a builtin locale on a PostgreSQL server. `instance:database:add --network` selects the connection network. These options keep the existing command names; see [Database commands](/cli/database).
 
+The docs-first contract for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) agrees one additive `tasks` family action, `analyze`, named `tasks:analyze` with operation kind `tasks.analyze`. It is not a generic `run` verb or shell command. Runtime delivery must register it and update `CommandVocabulary`, its command-surface tests, and the family-actions table together. Until that implementation, the table below describes the current registered vocabulary; documentation alone does not expose the action.
+
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 
 `gateway:release:rollback` switches Gateway code to a retained release. It leaves the database in place; [Gateway recovery](/reference/gateway-recovery#roll-back) describes database restoration.

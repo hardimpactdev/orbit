@@ -4,11 +4,11 @@ description: "How the optional Gateway Tasks extension runs tasks. It covers the
 covers:
   - "apps/gateway/app/{Data/Tasks,Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
-  - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
+  - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
   - "apps/gateway/database/migrations/2026_12_{03_000000_allow_cold_recipe_image_rebuilds,31_000000_add_task_vm_publish_error_code}.php"
 ---
 
@@ -159,6 +159,121 @@ A direct `operation:cancel` stops a waiting local check as `tasks:check:cancel` 
 
 For hosted handoff CI, cancel stops a queued push under the existing publish stop rules; a started push must be reconciled before ownership ends. Once only hosted CI waits, cancel ends observation, not GitHub workflows. It does not erase the already pushed branch or check evidence. A cancelled observation cannot supply an eligible candidate even if its local `TaskCheck` remains passed.
 
+#### Analyze an external group's repository
+
+This is the agreed docs-first contract for the fixed analysis addition in [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#fixed-repository-analysis). Runtime implementation and its independent review follow this documentation child. It does not establish live interruption or docs-workflow proof, and it does not open external review-and-merge or topology admission.
+
+`POST /api/v1/task-groups/{group}/analyze` starts `tasks.analyze`, served by the Gateway with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller command, argument list, environment, executable, working directory, report path, model, or analyzer selector. API, SDK, CLI `tasks:analyze`, and generated MCP metadata share the native request contract; clients do not define competing schemas or aliases.
+
+The usual access, current-open-child, group target hold, parked-VM resume, and workspace rules apply. Tick groups, ended groups, missing workspaces, foreign or noncurrent children, and busy groups keep their existing refusals. The start returns HTTP 202 with `{data: OperationData, meta: {request_id}}`. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation). The result is null until terminal. Analysis changes no board or child state, starts no Pi turn, creates no `TaskCheck` candidate, commits or pushes nothing, and advances no workflow stage. Baseline and handoff checks keep their existing inputs and purpose.
+
+##### Complete typed plan
+
+The planning owner asserts the complete cumulative inventory before feature runtime edits. Include source, tests, docs, generated outputs, and new files that do not exist yet. The initial docs child plans the whole feature, not just its own edits. Later revisions retain the group's earlier paths. Shape validation cannot prove completeness of future work; the reviewer compares the inventory with the brief and deliverables.
+
+| Manifest field | Contract |
+| --- | --- |
+| `id` | Stable identifier, 1–64 characters from `A-Z a-z 0-9 _ -` |
+| `revision` | Positive integer; increases for every change |
+| `source` | `{brief_id, revision_sha256}` identifying the source brief; the digest hashes its exact bytes before prompt formatting |
+| `asserted_by` | Nonempty planning actor identifier, at most 128 characters |
+| `complete` | Must be `true`; a partial plan is refused |
+| `paths` | Nonempty list of `{change: add\|modify\|delete, path}` or `{change: rename, from, path}`; rename contributes both endpoints to analysis |
+
+Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist; delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
+
+Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
+
+`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with `origin/main`, fixed across children. Analysis performs no fetch, merge, or base adoption. An authorized base update keeps old evidence and requires a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
+
+Gateway verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots under the lease before dispatch and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, lease, execution identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
+
+##### Fixed execution and complete report
+
+Persist steps `workspace_ready`, `analysis`, and `report` on the existing operation. Reserve one run identity before dispatch. Existing detached check supervision runs only tracked regular executable `bin/task-analyze`, at the pinned digest, with no arguments and validated JSON on stdin containing the plan, base, candidate, and Gateway-issued execution identity. It runs as the workspace owner without model or GitHub credentials or approval authority. Missing entrypoint or tooling is unavailable; there is no shell, host-checkout, or agent fallback. This narrow read-only profile amends [ADR 0225](/decisions/0225-make-node-changes-through-agent-commands#fixed-read-only-task-analysis); it adds no Gateway Node script or script-ratchet exception.
+
+Orbit's repository adapter calls the existing `DocsImpact::report(base, paths)` with the complete flattened inventory once. The scanner still unions planned paths, actual tracked changes, and untracked files, retaining deletions and both rename endpoints and inspecting current and base surfaces. Keep its mappings and payload validation in the repository, not Gateway policy. Validate all existing report fields: `base`, `paths`, `impacted_pages` with every reason, `surfaces` with ownership and generator status, `surfaces_handled_by_generator`, `errors`, and `verdict`. Reuse the existing report unchanged, not a second scanner or replacement docs report model. Validate its base and path union against input and actual workspace. Generator checks run in check mode only, never write mode.
+
+Stdout is exactly one strict UTF-8 JSON envelope:
+
+```json
+{
+  "schema": 1,
+  "execution_id": "gateway-reserved-run",
+  "plan_sha256": "<lowercase SHA-256>",
+  "base": "<full Git object ID>",
+  "head": "<full Git object ID>",
+  "tree": "<full Git object ID>",
+  "status": "ready",
+  "diagnostics": [],
+  "report": {"schema": "orbit.docs-impact.v1", "data": {"...": "complete existing DocsImpact report"}}
+}
+```
+
+The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
+
+Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Stderr is only a separate bounded, redacted diagnostic tail. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Gateway validates the generic envelope and bounds, cross-checks identities against stored execution, and pins its own snapshots. The repository validates payload semantics. Repository evidence is never privileged instructions.
+
+| Valid repository report | Analysis status |
+| --- | --- |
+| `no_docs_change`, empty errors, all required generator checks passed | `ready` |
+| `docs_required`, no unresolved errors and no missing, stale, or failed generators | `action_required`: provide to the docs author; not permission to start feature runtime edits before docs review |
+| Errors, contradictory verdicts, unresolved or unowned surfaces, unavailable or failed generators | `blocked`, even if the scanner process exits 0 |
+
+A valid completion stores `{outcome, artifact, provenance}` in the keyed operation result. `outcome` is `ready`, `action_required`, `blocked`, or `changed`. A valid blocked report may finish with operation status `succeeded`; that status alone never authorizes a turn. Movement of the checkout produces unusable `changed` evidence and preserves any complete report for inspection only. A nonzero exit, invalid or missing report, overflow, or unknown execution outcome cannot produce ready or action-required evidence.
+
+`artifact` is `{sha256, bytes, content}`. Hash and byte length describe the exact UTF-8 stdout bytes; `content` holds those bytes as a JSON string. Verify and parse the complete content, not reserialized JSON or a log tail. Retain the full bounded bytes beside existing operation state, with a response budget large enough for JSON encoding and all bounded fields. Keyed operation and artifact retention survive VM destruction. Existing access checks govern reads; the VM reader addresses only this operation's run record, not arbitrary files. Add no artifact service, durable table, or approval ledger.
+
+Gateway-owned provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `lease_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC and duration uses a monotonic clock. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
+
+##### Replay, stop, and fencing
+
+Read-only analysis takes the same exclusive group holder and workspace lease as author and check work. No author, check, publish, or write-mode generator may overlap it. An existing lease waits without dispatch. Release the operations worker during waits, not the group target or workspace fence; other targets can still run. Out-of-band edits invalidate the result. Temporary analysis or cache work outside candidate paths must also terminate before release.
+
+After access checks, same key, target, and input replay the stored operation before mutable eligibility checks. Changed input conflicts. Lost start replies, worker restarts, or lost result replies adopt the reserved run and its retained exact report bytes without another scanner invocation. When recovering a missing start, supervision atomically tombstones that reserved identity before concluding that it never ran. The tombstone ends that attempt without dispatch; a new attempt requires a new key.
+
+Once dispatched, a missing retained report fails for inspection only after local terminal proof. Never rerun it under the same key, including after artifact or Gateway persistence loss. Terminal replay stays terminal and starts nothing.
+
+Cancellation before dispatch prevents execution. After dispatch, request stop and reconcile the exact process or unit and its descendants. A timeout, missing PID, elapsed budget, or transport loss is not terminal proof. Unknown or unreachable work remains waiting and fenced until termination is proven, including during cancellation. Malformed transport likewise ends `failed` only after local terminal proof, preserving the failure code and safe diagnostics. Reuse existing stop and journal recovery; add no worker or supervision framework. Cancellation never turns saved evidence into approval or bypasses the existing unreachable-workspace cleanup rule.
+
+Changing plan revision or digest, source brief, base, repository, entrypoint content, HEAD, whole tree, or owning workspace invalidates use for a new turn. Keep prior evidence immutable and authorize a new operation and key. A changed in-flight plan must stop progression and reconcile the existing owner before a new request; do not overwrite its input. Gateway checks the supplied evidence identity, not the caller's latest intentions. The latest authorized plan and actual-versus-planned progression belong to later Swamp adoption, not a new Gateway ledger.
+
+##### Analysis-bound turn evidence
+
+Existing `tasks.turn` gains optional `analysis: {operation, plan_sha256}`: a positive operation ID and lowercase SHA-256. Omission preserves ordinary turns. Resolve a terminal successful `tasks.analyze` for the same group and current child. Verify the reference digest, complete artifact and usable outcome; only `ready` or `action_required` can supply evidence. A blocked or changed report, foreign child, or nonterminal operation cannot.
+
+Immediately before the first Pi send, compare fresh candidate, base, repository, workspace, and entrypoint identity under the existing turn lease. Stale evidence refuses without a send. Reviewer admission still requires its ordinary eligible handoff check, including required hosted CI; the check's commit and tree must also match the fresh analysis. Analysis is not a checked candidate or a substitute for that eligibility rule.
+
+Add the full manifest, validated envelope, and Gateway provenance to the caller's semantic prompt, labelled as repository evidence. Enforce the existing 100,000-character bound on the combined prompt, including fixed instructions and evidence, before sending. Overflow refuses with no send; no summary, shortened tail, truncation, or host-file mount substitutes for the report. A smaller task or plan, or a separately reviewed transport design, is required.
+
+Persist the exact assembled prompt, reference, and hash in turn state before dispatch. After dispatch, same-key recovery retains the original Pi/Durable send identity and persisted prompt. It recovers the original turn rather than revalidating the intentionally edited checkout and starting a second send. Freshness checks govern the first send, not recovery of a dispatched turn.
+
+The initial report is input to its author turn. Author edits intentionally invalidate its candidate identity. After the normal handoff commit and check, analyze the current checked candidate again before an evidence-bound reviewer turn. Preserve initial and current operation IDs in caller evidence. Rework or entry to the next child needs fresh evidence when the plan or candidate changes; never rerun baseline for this purpose.
+
+##### Analysis failures and delivery limits
+
+| Condition | Response or terminal evidence |
+| --- | --- |
+| Missing key, invalid shape, digest, path, unknown fields, or oversized request | HTTP 422 `validation.failed`; no dispatch |
+| Missing or nonancestor base, mismatched HEAD or tree | HTTP 409 `tasks.analysis_stale`; no dispatch |
+| Missing entrypoint or tooling | HTTP 422 `tasks.analysis_unavailable` before dispatch, or failed operation with that code when discovered later |
+| Invalid, missing, truncated, or wrong-identity report | `tasks.analysis_report_invalid`; unusable |
+| Envelope overflow | `tasks.analysis_report_too_large`; size/failure diagnostics, no partial artifact |
+| Exit 0 with report errors, unresolved surface, or missing/failed/stale generator | Valid `outcome: blocked`, with all diagnostics |
+| Nonzero exit or checkout mutation | `tasks.analysis_failed`, or valid `outcome: changed` saved for inspection; no green fallback |
+| Lost transport or unknown termination | Waiting with the same owner and run; retain fencing |
+| Foreign, nonterminal, or unusable analysis on a turn | HTTP 422 `tasks.analysis_not_usable`; no send |
+| Stale evidence at first-send preparation | HTTP 409 `tasks.analysis_stale`; no send |
+| Combined prompt overflow | HTTP 422 `tasks.analysis_prompt_too_large`; no send |
+
+An admission defect discovered after admission fails the operation with the same code only once safe to release. Existing access and task errors remain unchanged. Tests use real checker output in isolated Git fixtures, covering new and untracked files, deleted and renamed sources, unresolved ownership, generator failures, invalid plans and complete-report transport, changed identities, competing leases, cancellation and unknown descendants. Fault injection covers reservation, dispatch, terminal artifact persistence, Gateway result persistence, and turn preparation/send. Prove same-run/report and same-send recovery, not just a green mocked verdict. Ordinary baseline/no-policy checks and turns without analysis retain their request, result, and recovery behavior.
+
+At handoff, the existing [docs-impact gate](/contributor-guide#2-write-the-documentation) is authoritative. It checks actual files and retains accepted `exceptions` evidence. Review still judges meaning, ownership, completeness, and branch-local page-specific waivers. Machine no-docs is neither semantic approval nor a waiver; required generator checks remain required. Later Swamp adoption compares actual files, including deletes and both rename endpoints, with the full authorized plan: an omission blocks progression until revised, reviewed, and reanalyzed. This native slice supplies evidence, not that lifecycle gate.
+
+No Swamp client change, write-mode generator lane, generic shell API, second scanner, agent role, or approval ledger is authorized here. A needed write generator parks the future deterministic docs workflow until its mutation lane is separately demonstrated and reviewed; it must not fall back to an unowned host checkout or a mechanical agent turn. External review-and-merge/topology admission, live docs-workflow and interruption proof, incoming-PR orchestration, and tick retirement remain separate work. This slice does not rerun ORB2064/PR1503.
+
+Before rollback, stop new analysis requests and reconcile active analysis and evidence-bound turn owners. Restore a compatible release only after added steps are terminal. Preserve keyed operations, reports, provenance, and original turn identities; an older binary must not replay unknown new step plans. No live mode change, database rollback, or tick ownership transfer is needed.
+
 #### Run an external turn
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
@@ -170,6 +285,7 @@ The shared task-operation rules apply. A missing workspace returns HTTP 409 `tas
 | `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |
 | `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
 | `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
+| `analysis` (docs-first addition) | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
 
 The operation holds the group and sends one turn through Pi. The send key is its `Idempotency-Key`, or `operation-{id}`. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
 
