@@ -5,12 +5,13 @@ hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
 upgrades as the test case. Nothing here changes Orbit code, the live Gateway,
 or Orbit task records.
 
-Next serial slice: the proposed [pre-implementation repository-analysis contract](docs/repository-analysis-contract.md)
-and [first native Gateway brief](docs/gateway-repository-analysis-brief.md).
-Deterministic analysis runs on the typed plan in the owned task VM; existing
-turns keep planning, prose and review. Native prerequisites come before Swamp
-docs-workflow adoption/proof and later dependency updates. This is docs only;
-external review-and-merge/topology guards and live service state stay unchanged.
+The current slice adopts native `tasks.analyze` in the official factory.
+See [repository-analysis adoption and isolated proof](docs/repository-analysis-adoption.md).
+The [execution/evidence contract](docs/repository-analysis-contract.md) and
+[first native brief](docs/gateway-repository-analysis-brief.md) record the earlier
+design; ORB2068 delivered the native prerequisite. Dependency adoption follows
+independent acceptance. External review-and-merge/topology admission stays closed.
+Live Swamp has not been updated by this change.
 
 ## Setup on Beast
 
@@ -147,12 +148,13 @@ decides the next step. Swamp never merges.
 
 - Factory: `models/@swamp/software-factory/orbit-groups.yaml`. One work item
   is one task group, `tg-<group id>`:
-  `provision → baseline → implement → handoff → review → (implement | publish)
-  → published → completed`. Review returns to implement on changes, or for the
-  next subtask; the approval of the last subtask goes to publish.
+  `provision → baseline → plan → analyze → implement → handoff → analyze → review
+  → (analyze | publish) → published → completed`. Rework and next-child paths
+  require fresh analysis. The plan stage records the complete cumulative typed
+  inventory and requires explicit authorization; see the adoption contract.
 - Stage work: `@nckrtl/orbit-gateway.stage` (`extensions/behaviors/orbit_gateway.ts`,
   logic in `_lib/gateway_stage.ts`). Each call starts or reads one operation
-  (`tasks.provision`, `tasks.check`, `tasks.turn`, `tasks.publish`) with
+  (`tasks.provision`, `tasks.check`, `tasks.analyze`, `tasks.turn`, `tasks.publish`) with
   `Idempotency-Key: tg-<id>.<stage>.s<subtask>.c<cycle>`, stores the request and
   the operation id in `job-<key>`, and returns at once. A replay sends the
   stored request, so the Gateway returns the same operation.

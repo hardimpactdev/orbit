@@ -1,4 +1,5 @@
 import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
+import { type AuthorizedPlan, briefSource, type Candidate, validateAnalysis, validatePlan } from "./repository_analysis.ts";
 
 // The stage work of an externally orchestrated Orbit task group (ADR 0229).
 // Each call has ensure semantics for one driver key `<workItem>.<stage>.c<cycle>`:
@@ -12,7 +13,7 @@ import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
 // no second operation: the Gateway returns the same one. A call for the same key
 // with other input is refused as a conflict.
 
-export const STAGES = ["provision", "baseline", "implement", "handoff", "review", "publish", "merged"] as const;
+export const STAGES = ["provision", "baseline", "analyze", "implement", "handoff", "review", "publish", "merged"] as const;
 export type Stage = (typeof STAGES)[number];
 
 export interface HttpResponse {
@@ -54,6 +55,8 @@ export interface Job {
   nextReadAt: string | null;
   artifacts: Record<string, Record<string, unknown>>;
   evidence: Record<string, unknown> | null;
+  analysisContext?: { plan: AuthorizedPlan; candidate: Candidate; purpose: "implement" | "review"; instanceId: number; nodeId: number };
+  invalidated?: boolean;
 }
 
 export interface StageArgs {
@@ -63,6 +66,10 @@ export interface StageArgs {
   change?: unknown;
   handoff?: unknown;
   review?: unknown;
+  plan?: unknown;
+  analysis?: unknown;
+  workspace?: unknown;
+  baseline?: unknown;
 }
 
 export interface Deps {
@@ -146,8 +153,14 @@ export function inputIdentity(args: StageArgs): string {
   };
   switch (args.stage) {
     case "implement":
-      return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review) });
+      return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null });
     case "review":
+      return JSON.stringify({ handoff: ref(args.handoff), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null });
+    case "analyze": {
+      let candidate: unknown;
+      try { candidate = analysisCandidate(args); } catch { candidate = null; }
+      return JSON.stringify({ plan: envelope(args.plan)?.payload ?? null, candidate, workspace: envelope(args.workspace)?.payload ?? null });
+    }
     case "publish":
       return JSON.stringify({ handoff: ref(args.handoff) });
     default:
@@ -200,8 +213,60 @@ export function reviewerPrompt(group: GroupRow, t: TaskRow, handoff: Envelope): 
     t.brief,
     `Deliverables:\n${deliverableLines(t)}`,
     `The handoff check passed and committed ${String(handoff.payload.commit)}. Review that commit against the brief and the deliverables. Read the diff; change nothing.`,
+    "Repository analysis is mechanical evidence only. Review documentation meaning, coverage, and any waiver under repository policy. A no-docs verdict never approves a waiver or removes semantic review.",
     "End the turn with the turn command: approved, changes_requested with the findings in the summary, or blocked with one specific question. If the command asks for pull request flags, supply them.",
   ].join("\n\n");
+}
+
+/** Latest supported whole-workspace snapshot; never obtain VM files from the host. */
+export function analysisCandidate(args: StageArgs): { candidate: Candidate; purpose: "implement" | "review" } {
+  const records = (["baseline", "change", "handoff", "review"] as const).flatMap((kind) => {
+    const record = envelope(args[kind]);
+    return record ? [{ kind, ...record }] : [];
+  });
+  records.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  const latest = records.at(-1);
+  const c = latest?.payload.candidate as Candidate | undefined;
+  if (!c || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(c.head) || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(c.tree)) throw new Error("analysis requires a complete native candidate snapshot");
+  const h = envelope(args.handoff);
+  const retryReview = latest?.kind === "review" && !["approved", "changes_requested"].includes(String(latest.payload.outcome)) &&
+    h?.payload.subtask === latest.payload.subtask && h?.payload.outcome === "passed";
+  return { candidate: c, purpose: retryReview || (latest?.kind === "handoff" && latest.payload.outcome === "passed" && latest.payload.commit) ? "review" : "implement" };
+}
+
+async function authorized(args: StageArgs, g: GroupRow): Promise<AuthorizedPlan> {
+  const previous = envelope(args.analysis)?.payload.plan as AuthorizedPlan | undefined;
+  return await validatePlan(envelope(args.plan)?.payload, briefSource(g), args.workItem, previous);
+}
+
+async function turnAnalysis(args: StageArgs, g: GroupRow, t: TaskRow, http: Http): Promise<{ operation: number; plan_sha256: string }> {
+  const plan = await authorized(args, g);
+  const a = envelope(args.analysis)?.payload;
+  if (!a || a.subtask !== t.id || a.plan_sha256 !== plan.plan_sha256 || !["ready", "action_required"].includes(String(a.outcome)) || a.purpose !== (args.stage === "review" ? "review" : "implement")) throw new Error("turn requires usable current-plan analysis for this child and role");
+  if ([args.baseline, args.change, args.handoff, args.review].some((r) => envelope(r) !== null)) {
+    const latest = analysisCandidate(args).candidate;
+    const analyzed = a.candidate as Candidate | undefined;
+    if (analyzed?.head !== latest.head || analyzed?.tree !== latest.tree) throw new Error("turn analysis does not cover the latest native candidate; obtain fresh analysis before retry");
+  }
+  // Revalidate complete stored evidence, not a green summary or an arbitrary operation reference.
+  const checked = await validateAnalysis(a.result, { operation: Number(a.operationId), group: g.id, subtask: t.id, plan, candidate: a.candidate as Candidate,
+    instanceId: Number(envelope(args.workspace)?.payload.instanceId), nodeId: Number(envelope(args.workspace)?.payload.nodeId) });
+  if (checked.outcome !== a.outcome || !["ready", "action_required"].includes(checked.outcome)) throw new Error("analysis summary does not identify usable complete evidence");
+  const docs = g.tasks.find((x) => x.id === plan.docsSubtask);
+  const reviewed = envelope(args.review)?.payload.docsReview as { plan_sha256?: string; subtask?: number; operationId?: number } | undefined;
+  if (!docs || docs.position > t.position || (t.id !== docs.id && (docs.status !== "completed" || reviewed?.subtask !== docs.id || reviewed?.plan_sha256 !== plan.plan_sha256))) throw new Error("feature author requires existing semantic docs review for the current plan; revise the plan/docs child when scope changes");
+  if (t.id !== docs.id) {
+    if (!Number.isSafeInteger(reviewed?.operationId)) throw new Error("missing existing documentation reviewer operation");
+    const response = await http("GET", `/api/v1/operations/${reviewed!.operationId}`);
+    const operation = data(response);
+    const input = operation.input as Record<string, unknown> | undefined;
+    const reference = input?.analysis as Record<string, unknown> | undefined;
+    const receipt = (operation.result as Record<string, unknown> | undefined)?.receipt as Record<string, unknown> | undefined;
+    if (response.status !== 200 || operation.id !== reviewed!.operationId || operation.kind !== "tasks.turn" || operation.status !== "succeeded" ||
+      operation.target_type !== "task_group" || operation.target_id !== g.id || input?.role !== "reviewer" || input.subtask !== docs.id ||
+      reference?.plan_sha256 !== plan.plan_sha256 || receipt?.outcome !== "approved") throw new Error("existing documentation review is unavailable or does not approve this plan");
+  }
+  return { operation: Number(a.operationId), plan_sha256: plan.plan_sha256 };
 }
 
 function errorCode(r: HttpResponse): string {
@@ -227,7 +292,7 @@ async function setSubtaskStatus(http: Http, group: number, t: TaskRow, status: s
 }
 
 /** Plan the operation for a stage. Returns null for `merged`, which starts no operation. */
-async function plan(args: StageArgs, group: number, http: Http): Promise<{ subtask: number | null; request: PlannedRequest | null }> {
+async function plan(args: StageArgs, group: number, http: Http): Promise<{ subtask: number | null; request: PlannedRequest | null; analysisContext?: Job["analysisContext"] }> {
   const g = await readGroup(http, group);
   const base = `/api/v1/task-groups/${group}`;
   const req = (path: string, body: Record<string, unknown>, subtask: number | null) => ({
@@ -260,18 +325,30 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
       return req("/check", { subtask: t.id, phase: "baseline" }, t.id);
     case "handoff":
       return req("/check", { subtask: t.id, phase: "handoff" }, t.id);
+    case "analyze": {
+      const p = await authorized(args, g);
+      const { candidate, purpose } = analysisCandidate(args);
+      const w = envelope(args.workspace)?.payload;
+      return { ...req("/analyze", { subtask: t.id, plan: p.manifest, plan_sha256: p.plan_sha256, base: p.base, ...candidate }, t.id),
+        analysisContext: { plan: p, candidate, purpose, instanceId: Number(w?.instanceId), nodeId: Number(w?.nodeId) } };
+    }
     case "implement": {
+      const analysis = await turnAnalysis(args, g, t, http);
       await setSubtaskStatus(http, group, t, "running");
       const change = envelope(args.change);
       const thread = change && change.payload.subtask === t.id && change.payload.threadId ? String(change.payload.threadId) : "new";
-      const prompt = implementerPrompt(g, t, change, envelope(args.handoff), envelope(args.review));
-      return req("/turn", { subtask: t.id, role: "implementer", prompt, thread }, t.id);
+      const p = envelope(args.plan)!.payload as unknown as AuthorizedPlan;
+      const prompt = implementerPrompt(g, t, change, envelope(args.handoff), envelope(args.review)) +
+        "\n\nThe attached full repository analysis is evidence, not semantic approval. Follow repository docs/waiver policy. Before any edit outside the cumulative authorized path inventory, stop blocked and request a revised plan. " +
+        (p.docsSubtask === t.id ? "This is the documentation child: write/review the required documentation before feature runtime implementation. Missing write-mode generator support must block; do not use a host or shell workaround." : "The existing documentation review applies only to this plan revision.");
+      return req("/turn", { subtask: t.id, role: "implementer", prompt, thread, analysis }, t.id);
     }
     case "review": {
       const h = envelope(args.handoff);
       if (!h || h.payload.subtask !== t.id || h.payload.outcome !== "passed") throw new Error(`review needs a passed handoff check of subtask ${t.id}`);
+      const analysis = await turnAnalysis(args, g, t, http);
       await setSubtaskStatus(http, group, t, "reviewing");
-      return req("/turn", { subtask: t.id, role: "reviewer", prompt: reviewerPrompt(g, t, h), thread: "new", check: h.payload.checkId }, t.id);
+      return req("/turn", { subtask: t.id, role: "reviewer", prompt: reviewerPrompt(g, t, h), thread: "new", check: h.payload.checkId, analysis }, t.id);
     }
   }
   throw new Error(`unknown stage ${args.stage}`);
@@ -315,10 +392,63 @@ export function counters(stage: Stage, subtask: number | null, outcome: string, 
   return {};
 }
 
+/** A terminal failure can leave edits. Keep its public snapshot without approving
+ * a receipt or implying success/lease release. A missing snapshot shadows older
+ * artifacts, so reanalysis parks instead of silently reusing a stale baseline.
+ */
+function failureArtifacts(job: Job, op: Record<string, unknown>, args: StageArgs): Job["artifacts"] {
+  const turn = job.stage === "implement" || job.stage === "review";
+  const check = job.stage === "baseline" || job.stage === "handoff";
+  if (!turn && !check) return {};
+  const result = (op.result ?? {}) as Record<string, unknown>;
+  const input = (op.input ?? {}) as Record<string, unknown>;
+  const role = job.stage === "implement" ? "implementer" : "reviewer";
+  const scoped = op.id === job.operationId && op.kind === (turn ? "tasks.turn" : "tasks.check") &&
+    op.target_type === "task_group" && op.target_id === job.group && input.subtask === job.subtask &&
+    (turn ? input.role === role && input.thread === job.request?.body.thread : input.phase === job.stage);
+  const thread = turn && Number.isSafeInteger(result.thread) && Number(result.thread) > 0 &&
+      (input.thread === "new" || input.thread === String(result.thread)) ? result.thread : null;
+  const raw = turn ? (job.stage === "review" ? result.after_reset : result.after) : { head: result.commit ?? result.head, tree: result.tree };
+  const snapshot = raw as Candidate | null | undefined;
+  const oid = (value: unknown) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
+  const resultIdentity = turn ? thread !== null : Number.isSafeInteger(result.check_id) && Number(result.check_id) > 0;
+  const candidate = scoped && resultIdentity && snapshot && oid(snapshot.head) && oid(snapshot.tree)
+    ? { head: snapshot.head, tree: snapshot.tree } : null;
+  const common = {
+    subtask: job.subtask, group: job.group, operationId: job.operationId, operationStatus: op.status,
+    outcome: "blocked", candidate, snapshotUnavailable: candidate ? null : "no validated scoped terminal snapshot",
+    ...counters(job.stage, job.subtask, "blocked", args),
+  };
+  if (turn) return { [job.stage === "implement" ? "change" : "review"]: {
+    ...common, role, threadId: candidate ? thread : null, threadState: scoped ? result.state ?? null : null,
+    summary: "The native turn ended without success. Retry requires the existing approval and fresh analysis.",
+    docsReview: envelope(args.review)?.payload.docsReview ?? null,
+  } };
+  return { [job.stage]: { ...common, checkId: scoped ? result.check_id ?? null : null, commit: null, deliverables: [], output: "" } };
+}
+
 /** Map a succeeded operation's result to the factory products of its stage. */
 async function products(job: Job, result: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence">> {
   const ev = (extra: Record<string, unknown> = {}) => ({ status: "succeeded", runId: String(job.operationId), operationId: job.operationId, ...extra });
   switch (job.stage) {
+    case "analyze": {
+      const context = job.analysisContext!;
+      const { plan: p, candidate, purpose } = context;
+      let outcome: string;
+      let omitted: string[] = [];
+      let invalid: string | null = null;
+      try {
+        ({ outcome, omitted } = await validateAnalysis(result, { operation: job.operationId!, group: job.group, subtask: job.subtask!, plan: p, candidate,
+          instanceId: context.instanceId, nodeId: context.nodeId }));
+        const current = await authorized(args, await readGroup(http, job.group));
+        if (current.plan_sha256 !== p.plan_sha256 || job.invalidated) outcome = "stale";
+      } catch (e) {
+        outcome = "invalid";
+        invalid = e instanceof Error ? e.message : String(e);
+      }
+      return { artifacts: { analysis: { subtask: job.subtask, outcome, purpose, operationId: job.operationId, plan_sha256: p.plan_sha256, plan: p,
+        candidate, omitted, invalid, result } }, evidence: ev({ outcome }) };
+    }
     case "provision":
       return {
         artifacts: { workspace: { instanceId: result.instance_id, nodeId: result.node_id, startingCommit: result.starting_commit } },
@@ -335,6 +465,7 @@ async function products(job: Job, result: Record<string, unknown>, http: Http, a
             outcome,
             checkId: result.check_id,
             commit: result.commit ?? null,
+            candidate: { head: result.commit ?? result.head, tree: result.tree },
             deliverables: result.deliverables ?? [],
             output: String(result.output ?? "").slice(-4000),
             ...counters(job.stage, job.subtask, outcome, args),
@@ -350,14 +481,19 @@ async function products(job: Job, result: Record<string, unknown>, http: Http, a
       // The Gateway returns the thread as its id (TaskTurnOperation).
       const artifact: Record<string, unknown> = {
         subtask: job.subtask,
-        outcome,
+        outcome: job.invalidated ? "blocked" : outcome,
         summary: receipt ? String(receipt.summary ?? "") : "",
         question: receipt?.question ?? null,
         threadId: typeof result.thread === "number" ? result.thread : null,
         threadState: result.state ?? null,
+        candidate: (job.stage === "review" ? result.after_reset : result.after) ?? null,
+        docsReview: envelope(args.review)?.payload.docsReview ?? null,
+        ...(job.invalidated ? { invalidated: true, originalResult: result, question: "The plan changed during this operation. Reconcile its terminal result and authorize a fresh analysis." } : {}),
         ...counters(job.stage, job.subtask, outcome, args),
       };
-      if (job.stage === "review" && outcome === "approved") {
+      if (job.stage === "review" && outcome === "approved" && !job.invalidated) {
+  const p = envelope(args.plan)?.payload as AuthorizedPlan | undefined;
+        if (p?.docsSubtask === job.subtask) artifact.docsReview = { subtask: job.subtask, plan_sha256: p.plan_sha256, operationId: job.operationId };
         // Approval ends the subtask on the board; the next stage needs to know whether another remains.
         const g = await readGroup(http, job.group);
         const t = g.tasks.find((x) => x.id === job.subtask);
@@ -417,13 +553,15 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const now = clock();
   const identity = inputIdentity(args);
   const prev = await deps.readJob();
-  if (prev && prev.inputIdentity !== null && prev.inputIdentity !== undefined && prev.inputIdentity !== identity) {
+  const changedInput = prev && prev.inputIdentity !== null && prev.inputIdentity !== undefined && prev.inputIdentity !== identity;
+  const recoverBound = prev?.state === "running" && ["analyze", "implement", "review"].includes(args.stage) && prev.request !== null;
+  if (changedInput && !recoverBound) {
     throw new Error(`input conflict: ${args.key} was started for other input; a new input needs a new stage entry`);
   }
   if (prev && prev.state !== "running") return { ...prev, launchedNow: false };
 
   let job: Job = prev
-    ? { ...prev, inputIdentity: identity, launchedNow: false }
+    ? { ...prev, invalidated: prev.invalidated || Boolean(changedInput), launchedNow: false }
     : {
       key: args.key, workItem: args.workItem, stage: args.stage, group, subtask: null, state: "running",
       launches: 0, launchedNow: false, request: null, operationId: null, operationStatus: null,
@@ -439,8 +577,16 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   if (job.operationId === null) {
     if (job.request === null) {
       // Plan once and store the request before starting it, so every replay sends the same input.
-      const p = await plan(args, group, deps.http);
-      job = { ...job, subtask: p.subtask, request: p.request };
+      try {
+        const p = await plan(args, group, deps.http);
+        job = { ...job, subtask: p.subtask, request: p.request, ...(p.analysisContext ? { analysisContext: p.analysisContext } : {}) };
+      } catch (e) {
+        if (!["analyze", "implement", "review"].includes(args.stage)) throw e;
+        const error = e instanceof Error ? e.message : String(e);
+        job = { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: job.key, error, code: "swamp.analysis_input_invalid" } };
+        await deps.writeJob(job);
+        return job;
+      }
       await deps.writeJob(job);
     }
     const req = job.request!;
@@ -455,7 +601,7 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       job = { ...job, lastError: errorCode(r) };
     } else if (r.status >= 400 && r.status < 500) {
       job = await withGroupOutcome(
-        { ...job, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: job.key, error: errorCode(r) } },
+        { ...job, state: "failed", lastError: errorCode(r), evidence: { status: "failed", runId: job.key, error: errorCode(r), response: r.body } },
         deps.http,
       );
     } else {
@@ -466,7 +612,10 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     return job;
   }
 
-  if (job.nextReadAt !== null && job.nextReadAt !== undefined && now < Date.parse(job.nextReadAt)) return job;
+  if (job.nextReadAt !== null && job.nextReadAt !== undefined && now < Date.parse(job.nextReadAt)) {
+    if (changedInput) await deps.writeJob(job);
+    return job;
+  }
 
   const r = await deps.http("GET", `/api/v1/operations/${job.operationId}`);
   if (r.status !== 200) {
@@ -483,7 +632,10 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
     } else {
       const error = `${status}${op.error_code ? ` ${op.error_code}` : ""}${op.failed_step ? ` at ${op.failed_step}` : ""}`;
       job = await withGroupOutcome(
-        { ...job, state: "failed", lastError: error, evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error } },
+        { ...job, state: "failed", lastError: error, artifacts: failureArtifacts(job, op, args), evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error, code: op.error_code ?? null,
+          // Public OperationData does not expose private analysis failure metadata.
+          // Keep the whole supported read. Never reconstruct required_bytes from a tail.
+          operation: op, requiredBytes: null, diagnosticsAvailability: "public operation fields only" } },
         deps.http,
       );
     }
@@ -534,6 +686,7 @@ export function parkedWhy(job: Job | null): string {
   const products = Object.values(job.artifacts)[0] as Record<string, unknown> | undefined;
   if (!products) return "";
   const outcome = String(products.outcome ?? "");
+  if (job.stage === "analyze") return `the repository analysis ended ${outcome}${products.omitted && (products.omitted as unknown[]).length ? `; omitted actual paths: ${JSON.stringify(products.omitted)}` : ""}${products.invalid ? `: ${String(products.invalid)}` : ""}`;
   if (job.stage === "baseline" || job.stage === "handoff") {
     return outcome === "passed" ? "" : `the ${job.stage} check ${String(products.checkId ?? "")} ended ${outcome}`;
   }
