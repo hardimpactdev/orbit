@@ -257,9 +257,6 @@ class FakeUpCloudSsh implements SshExecutor
     /** @var list<array{string, list<string>, ?string}> */
     public array $calls = [];
 
-    /** The smoke disk inherits the builder's recipe marker. */
-    public ?string $recipeMarker = null;
-
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments, $command->input];
@@ -269,19 +266,6 @@ class FakeUpCloudSsh implements SshExecutor
             return $result;
         }
         $line = implode(' ', $command->arguments);
-        if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'packages']) {
-            $this->recipeMarker = null;
-        }
-        if ($command->arguments === ['sudo', '-n', 'install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json']) {
-            $this->recipeMarker = $command->input;
-        }
-        if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'python3', '-', 'verify']) {
-            $payload = RecipeProgramPayload::read($command->input);
-            $marker = json_decode($this->recipeMarker ?? 'null', true, flags: JSON_THROW_ON_ERROR);
-            if ($marker !== ['identity' => $payload['identity'], 'profile' => $payload['profile']]) {
-                return new CommandResult(1, '', 'Missing or incorrect recipe marker.', 1, false);
-            }
-        }
 
         return match (true) {
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
@@ -296,10 +280,6 @@ class FakeUpCloudSsh implements SshExecutor
 
     protected function phaseResult(string $phase, string $source): CommandResult
     {
-        if ($phase === 'packages') {
-            $this->recipeMarker = null;
-        }
-
         return new CommandResult(0, '{"ok":true}', '', 1, false);
     }
 }
@@ -791,6 +771,8 @@ describe('image build', function (): void {
 
         $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
         $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $marker = array_find($guestAgents->calls, static fn (array $call): bool => $call['command'] === 'image.recipe-marker');
+        expect($marker['input'])->toBe(['identity' => $recipe->identity, 'profile' => 'base']);
         $packages = array_values(array_filter($this->ssh->calls, static fn (array $call): bool => array_slice($call[1], 0, 3) === ['sudo', '-n', 'install'] && is_string($call[2]) && str_contains($call[2], 'sys.exit(image_main())')))[0];
         $payload = RecipeProgramPayload::read($packages[2]);
         expect($payload)->toMatchArray(['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'profile' => 'base', 'architecture' => 'amd64'])
@@ -814,7 +796,7 @@ describe('image build', function (): void {
                 'sudo -n ufw status',
             ])
             ->and($cleanupAfterFirewall)->toBeTrue()
-            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.check'])
+            ->and(array_column($guestAgents->calls, 'command'))->toBe(['guest.cloud-init', 'image.owner', 'image.recipe-marker', 'image.boot', 'image.clean', 'guest.cloud-init', 'image.check'])
             ->and(array_last($guestAgents->calls)['input'])->toBe(['lean_boot' => false, 'firewall' => true])
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($commands, static fn (string $command): bool => str_contains($command, 'systemd-run') && str_ends_with($command, ' packages')))->toHaveCount(1)

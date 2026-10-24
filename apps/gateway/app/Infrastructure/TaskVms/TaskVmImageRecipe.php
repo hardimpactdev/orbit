@@ -28,6 +28,16 @@ final readonly class TaskVmImageRecipe
         $this->request($guest, 'image.boot', ['lean' => $lean]);
     }
 
+    public function mark(AgentGuest $guest, string $identity, string $profile): void
+    {
+        $this->request($guest, 'image.recipe-marker', ['identity' => $identity, 'profile' => $profile]);
+    }
+
+    public function log(AgentGuest $guest, string $profile, string $phase, string $text): void
+    {
+        $this->request($guest, 'image.recipe-log', ['profile' => $profile, 'phase' => $phase, 'text' => mb_strcut($text, -65536, encoding: 'UTF-8')]);
+    }
+
     public function check(AgentGuest $guest, bool $leanBoot = false, bool $firewall = false): void
     {
         $this->request($guest, 'image.check', ['lean_boot' => $leanBoot, 'firewall' => $firewall]);
@@ -39,10 +49,11 @@ final readonly class TaskVmImageRecipe
         try {
             $result = $this->agents->runGuest($guest, $command, $input);
         } catch (AgentCommandRefused $error) {
-            if ($error->errorCode !== 'task_vm.image_check_failed') {
+            if (! in_array($error->errorCode, ['task_vm.image_check_failed', 'task_vm.image_build_failed'], true)) {
                 throw $error;
             }
-            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] failed on [{$guest->name}]: ".$error->getMessage(), 502);
+            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
+            throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] failed on [{$guest->name}]: ".$reason, 502);
         }
         if (($result['ready'] ?? null) !== true) {
             throw new TaskVmException('task_vm.image_build_failed', "Image command [{$command}] did not confirm on [{$guest->name}].", 502);

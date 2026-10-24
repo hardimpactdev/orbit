@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -355,10 +356,10 @@ it('ends unknown status retries at the shared bound and redacts the guest-log ob
 
     expect(fn () => new BuildRecipeImageStep($build->id, 'base', 'packages')->handle(app(RecipeImageBuildSteps::class)))
         ->toThrow(TaskVmException::class, 'The guest phase outcome is unknown');
-    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'Gateway observation:'));
+    $logs = array_filter(app(GuestAgentCommandRunner::class)->calls, static fn (array $call): bool => $call['command'] === 'image.recipe-log' && str_contains($call['input']['text'], 'Gateway observation:'));
     expect($logs)->not->toBeEmpty();
     foreach ($logs as $log) {
-        expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this');
+        expect($log['input']['text'])->toContain('[REDACTED]')->not->toContain('do-not-store-this');
     }
 });
 
@@ -843,10 +844,10 @@ it('records a bounded redacted output tail and a real builder log for failed rec
         ->not->toContain('stdout diagnostic', 'line 1'."\n", 'do-not-store-this', 'do-not-store-that');
     expect(mb_strlen($failed['error']))->toBeLessThanOrEqual(4000);
     expect(substr_count($failed['error'], 'apt dependency conflict'))->toBe(1);
-    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'Gateway observation:'));
+    $logs = array_filter(app(GuestAgentCommandRunner::class)->calls, static fn (array $call): bool => $call['command'] === 'image.recipe-log' && str_contains($call['input']['text'], 'Gateway observation:'));
     expect($logs)->not->toBeEmpty();
     foreach ($logs as $log) {
-        expect($log->input)->not->toContain('do-not-store-this', 'do-not-store-that', 'apt dependency conflict');
+        expect($log['input']['text'])->not->toContain('do-not-store-this', 'do-not-store-that', 'apt dependency conflict');
     }
 })->with(['packages', 'javascript', 'rust', 'agent', 'verify']);
 

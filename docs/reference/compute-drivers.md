@@ -1028,6 +1028,8 @@ Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-
 
 Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
+The Gateway records the image recipe identity with `image.recipe-marker`. It appends sanitized observations through `image.recipe-log`, which owns the fixed root-only log directory and validates the profile and phase before writing. Both commands use native file operations; no guest path or executable is supplied by the caller.
+
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt, reusing any published immutable image.
 
 Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses the fixed unit key `upcloud`; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway stages the existing installer with private input, starts the service, and polls its recorded result.

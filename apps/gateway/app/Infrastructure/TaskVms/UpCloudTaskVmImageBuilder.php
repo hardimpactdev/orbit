@@ -104,10 +104,7 @@ final readonly class UpCloudTaskVmImageBuilder
             foreach (RecipeImagePrograms::Phases as $phase) {
                 $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
             }
-            $this->stage($progress, 'recipe-marker', fn () => $this->checked($builder, $shell->asRoot(
-                ['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
-                json_encode(['identity' => $machineRecipe->identity, 'profile' => 'base'], JSON_THROW_ON_ERROR),
-            )));
+            $this->stage($progress, 'recipe-marker', fn () => $this->recipe->mark($shell->agentTarget(), $machineRecipe->identity, 'base'));
             $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
             $this->stage($progress, 'masks', fn () => $this->recipe->boot($shell->agentTarget(), lean: false));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));

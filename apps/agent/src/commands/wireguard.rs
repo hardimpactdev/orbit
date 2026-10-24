@@ -73,12 +73,17 @@ impl Host {
 
     /// Whether a tool exits 0. Its output is discarded.
     pub fn succeeds(&self, name: &str, arguments: &[&str]) -> bool {
-        self.tool(name)
+        let result = self
+            .tool(name)
             .args(arguments)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+            .status();
+        #[cfg(test)]
+        if let Err(error) = &result {
+            eprintln!("Could not start WireGuard fixture tool {name}: {error}");
+        }
+        result.is_ok_and(|status| status.success())
     }
 
     /// A tool's standard output without trailing newlines, as `$(...)` reads it, when it exits 0.

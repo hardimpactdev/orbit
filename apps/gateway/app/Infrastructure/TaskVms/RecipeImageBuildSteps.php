@@ -108,8 +108,7 @@ final readonly class RecipeImageBuildSteps
                     $this->imageRecipe->boot($shell->agentTarget(), lean: true);
                     break;
                 case 'clean':
-                    $this->image->checked($name, 'recipe marker', $shell->asRoot(['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
-                        json_encode(['identity' => $recipe->identity, 'profile' => $profile], JSON_THROW_ON_ERROR)));
+                    $this->imageRecipe->mark($shell->agentTarget(), $recipe->identity, $profile);
                     $this->builder->clean($shell);
                     break;
                 case 'publish':

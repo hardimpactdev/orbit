@@ -67,3 +67,28 @@ it('fails the build on a native smoke refusal', function (): void {
     expect(fn () => app(TaskVmImageRecipe::class)->check($guest))->toThrow(TaskVmException::class, 'Wrong account.');
     expect($agents->calls)->toHaveCount(1);
 });
+
+it('sends recipe identity and bounded observations through fixed guest commands', function (): void {
+    $guest = AgentGuest::incus(new Node(['architecture' => 'x86_64']), 'orbit-tasks', 'builder');
+    $agents = new FakeGuestAgentCommandRunner;
+    $recipe = new TaskVmImageRecipe($agents);
+
+    $recipe->mark($guest, 'sha256:'.str_repeat('a', 64), 'base');
+    $recipe->log($guest, 'base', 'packages', str_repeat('x', 70000).'tail');
+
+    expect($agents->calls[0])->toBe(['guest' => $guest, 'command' => 'image.recipe-marker', 'input' => ['identity' => 'sha256:'.str_repeat('a', 64), 'profile' => 'base']]);
+    expect($agents->calls[1]['command'])->toBe('image.recipe-log')
+        ->and($agents->calls[1]['input']['profile'])->toBe('base')
+        ->and($agents->calls[1]['input']['phase'])->toBe('packages')
+        ->and(strlen($agents->calls[1]['input']['text']))->toBe(65536)
+        ->and($agents->calls[1]['input']['text'])->toEndWith('tail');
+});
+
+it('fails recipe record writes on native refusal or missing confirmation', function (bool $refused): void {
+    $guest = AgentGuest::incus(new Node(['architecture' => 'x86_64']), 'orbit-tasks', 'builder');
+    $agents = new FakeGuestAgentCommandRunner;
+    $agents->answer = static fn (): array => $refused ? throw new AgentCommandRefused('image.recipe-marker', 'task_vm.image_build_failed', 'Foreign marker.') : [];
+
+    expect(fn () => (new TaskVmImageRecipe($agents))->mark($guest, 'sha256:'.str_repeat('a', 64), 'base'))->toThrow(TaskVmException::class);
+    expect($agents->calls)->toHaveCount(1);
+})->with([true, false]);

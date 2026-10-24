@@ -27,6 +27,32 @@
       ]
     },
     {
+      "name": "image.recipe-marker",
+      "summary": "Record the recipe identity of the base image builder.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
+      "name": "image.recipe-log",
+      "summary": "Append a sanitized observation to a fixed private image phase log.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.image_build_failed"
+      ]
+    },
+    {
       "name": "incus.images",
       "summary": "Read the fingerprints and aliases of a project's Incus images.",
       "mutates": false,

@@ -90,8 +90,12 @@ final class FakeIncusImageHost implements SshExecutor
     public function bindAgentInventory(): void
     {
         $guests = new FakeGuestAgentCommandRunner;
-        $guests->answer = function (AgentGuest $guest, string $command): array {
+        $guests->answer = function (AgentGuest $guest, string $command, array $input): array {
             $this->events[] = $command;
+            if ($command === 'image.recipe-log') {
+                $path = '/var/log/orbit/recipe-images/'.$input['profile'].'-'.$input['phase'].'.log';
+                $this->recipeLogs[$path] = ($this->recipeLogs[$path] ?? '').$input['text'];
+            }
             if ($command === 'guest.cloud-init') {
                 if ($this->fail === 'cloud-init') {
                     throw new AgentCommandRefused($command, 'task_vm.bootstrap_failed', 'Cloud-init failed.', ['errors' => '["apt failed"]']);
@@ -234,13 +238,6 @@ final class FakeIncusImageHost implements SshExecutor
         });
         if (($result = $units->run($command, $call->input)) !== null) {
             return $result;
-        }
-
-        if ($command[0] === 'bash' && str_contains($command[2] ?? '', 'cat >> "$1"')) {
-            $path = $command[4];
-            $this->recipeLogs[$path] = ($this->recipeLogs[$path] ?? '').(string) $call->input;
-
-            return new CommandResult(0, '', '', 1, false);
         }
 
         return match ($command[0]) {

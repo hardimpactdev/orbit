@@ -28,6 +28,7 @@ pub mod health;
 pub mod hibernation;
 pub mod horizon_queue;
 mod image_boot;
+mod image_build;
 mod image_identity;
 mod incus;
 pub mod instances;
@@ -97,6 +98,8 @@ macro_rules! command_errors {
 pub fn all() -> Vec<Entry> {
     vec![
         entry::<agent::Status>(),
+        entry::<image_build::WriteMarker>(),
+        entry::<image_build::AppendLog>(),
         entry::<incus::ReadImages>(),
         entry::<incus::ReadInstances>(),
         entry::<incus::ReadInventory>(),
