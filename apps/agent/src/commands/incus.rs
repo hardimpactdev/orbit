@@ -15,15 +15,16 @@ command_errors! {
         Invalid {} => "incus.input_invalid", "The Incus observation request is invalid.";
         Output { operation: String, reason: String } => "task_vm.invalid_host_output", "Incus returned invalid host output.";
         Failed { operation: String, exit_code: i32, stderr: String } => "task_vm.host_command_failed", "The Incus host command failed.";
+        SeedMissing {} => "task_vm.topology_seed_missing", "The host has no topology seed for the VM's base image. Build the image again with task-vms:build-image.";
     }
 }
 
 const MAX_OUTPUT: usize = 1_048_576;
-struct Output {
-    code: i32,
-    stdout: String,
-    stderr: String,
-    truncated: bool,
+pub(super) struct Output {
+    pub(super) code: i32,
+    pub(super) stdout: String,
+    pub(super) stderr: String,
+    pub(super) truncated: bool,
 }
 trait Host {
     fn run(&mut self, args: &[&str]) -> Output;
@@ -34,7 +35,12 @@ impl Host for Native<'_> {
         bounded(self.0, "/usr/bin/incus", args, None)
     }
 }
-fn bounded(context: &Context, program: &str, args: &[&str], input: Option<&str>) -> Output {
+pub(super) fn bounded(
+    context: &Context,
+    program: &str,
+    args: &[&str],
+    input: Option<&str>,
+) -> Output {
     let remaining = context.remaining().as_secs_f64();
     if remaining <= 0.0 {
         return unavailable();
@@ -396,3 +402,4 @@ impl Command for ReadInventory {
 mod tests;
 
 pub(super) mod setup;
+pub(super) mod volumes;

@@ -11,7 +11,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\TaskVms\TaskVmSetupScript;
+use App\Infrastructure\TaskVms\TaskVmHubFilter;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Console\Command;
@@ -37,7 +37,7 @@ final class PrepareTaskVmHubCommand extends Command
     #[\Override]
     protected $description = 'Install the static task VM filter for the reserved WireGuard range on the vpn Node.';
 
-    public function handle(VpnSettings $vpn, TaskVmSetupScript $script): int
+    public function handle(VpnSettings $vpn, TaskVmHubFilter $filter): int
     {
         try {
             $settings = resolve(TaskVmSettings::class);
@@ -46,14 +46,14 @@ final class PrepareTaskVmHubCommand extends Command
             $clusterId = $settings->devClusterId ?? throw $this->invalid('dev_cluster_id is not set.');
             $hub = $this->roleNode(RoleName::Vpn);
             $this->guardRange($range);
-            $script->run($hub, TaskVmSetupScript::HubScript, [
-                $range->value(),
-                $vpn->dnsServer() ?? $this->address($hub),
-                $this->address($this->roleNode(RoleName::Gateway)),
-                (string) Config::integer('orbit.pi.port'),
-                $this->address($this->roleNode(RoleName::WebSocket)).':'.self::ReverbPort,
-                $model,
-                $this->address($this->router($clusterId)),
+            $filter->prepare($hub, [
+                'range' => $range->value(),
+                'dns' => $vpn->dnsServer() ?? $this->address($hub),
+                'gateway' => $this->address($this->roleNode(RoleName::Gateway)),
+                'pi_port' => Config::integer('orbit.pi.port'),
+                'reverb' => $this->address($this->roleNode(RoleName::WebSocket)).':'.self::ReverbPort,
+                'model' => $model,
+                'routers' => [$this->address($this->router($clusterId))],
             ]);
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");

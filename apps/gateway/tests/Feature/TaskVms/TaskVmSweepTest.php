@@ -105,6 +105,7 @@ final class TaskVmSweepIncus implements SshExecutor
 
             return ['instances' => $instances, 'volumes' => $volumes];
         });
+        $agents->answer('incus.volumes', ['names' => []]);
         app()->instance(AgentCommandRunner::class, $agents);
     }
 
@@ -127,9 +128,6 @@ final class TaskVmSweepIncus implements SshExecutor
         $arguments = array_slice($command->arguments, 5);
         if ($arguments === ['list', '--format', 'json']) {
             return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
-        }
-        if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
-            return new CommandResult(0, '[]', '', 1, false);
         }
         if (($arguments[0] ?? null) === 'delete') {
             $name = end($arguments);

@@ -96,6 +96,9 @@ describe('task-vms:prepare-host', function (): void {
 
 describe('task-vms:prepare-hub', function (): void {
     beforeEach(function (): void {
+        $this->agents = new FakeAgentCommandRunner;
+        $this->agents->answer('firewall.task-vm-hub', ['ready' => true]);
+        app()->instance(AgentCommandRunner::class, $this->agents);
         $this->hub = task_vm_fleet_node('vpn', '10.44.0.1', [RoleName::Vpn], user: 'orbit');
         task_vm_fleet_node('gateway', '10.44.0.2', [RoleName::Gateway]);
         task_vm_fleet_node('services', '10.44.0.3', [RoleName::WebSocket, RoleName::AppDev]);
@@ -110,17 +113,16 @@ describe('task-vms:prepare-hub', function (): void {
         config()->set('task_vms.dev_cluster_id', $cluster->id);
     });
 
-    it('runs the hub script on the vpn Node with endpoints derived from the fleet', function (): void {
+    it('sends typed hub endpoints derived from the fleet', function (): void {
         $this->artisan('task-vms:prepare-hub')
             ->expectsOutputToContain('Hub [vpn] filters task VM range [10.44.0.128/25].')
             ->assertSuccessful();
 
-        expect($this->ssh->connections[0]->host)->toBe('10.44.0.1')
-            ->and($this->ssh->connections[0]->user)->toBe('orbit')
-            ->and($this->ssh->commands[0]->arguments)->toBe([
-                'sudo', '-n', 'bash', '-s', '--', '10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7',
-            ])
-            ->and($this->ssh->commands[0]->input)->toBe(file_get_contents(resource_path('task-vms/hub.sh')));
+        expect($this->agents->calls)->toBe([['node' => 'vpn', 'command' => 'firewall.task-vm-hub', 'input' => [
+            'range' => '10.44.0.128/25', 'dns' => '10.44.0.1', 'gateway' => '10.44.0.2',
+            'pi_port' => 3774, 'reverb' => '10.44.0.3:443', 'model' => '10.44.0.3:8317', 'routers' => ['10.44.0.7'],
+        ]]]);
+        expect($this->ssh->commands)->toBe([]);
     });
 
     it('passes the configured VPN DNS address, Pi port, and default origin port', function (): void {
@@ -130,9 +132,22 @@ describe('task-vms:prepare-hub', function (): void {
 
         $this->artisan('task-vms:prepare-hub')->assertSuccessful();
 
-        expect(array_slice($this->ssh->commands[0]->arguments, 5, 6))
-            ->toBe(['10.44.0.128/25', '10.44.0.53', '10.44.0.2', '4774', '10.44.0.3:443', '10.44.0.3:443']);
+        expect($this->agents->calls[0]['input'])->toBe([
+            'range' => '10.44.0.128/25', 'dns' => '10.44.0.53', 'gateway' => '10.44.0.2',
+            'pi_port' => 4774, 'reverb' => '10.44.0.3:443', 'model' => '10.44.0.3:443', 'routers' => ['10.44.0.7'],
+        ]);
     });
+
+    it('reports native setup and readiness failures', function (bool $refused): void {
+        if ($refused) {
+            $this->agents->refuse('firewall.task-vm-hub', 'task_vm.setup_failed', ['stage' => 'validate', 'reason' => 'The rules are invalid.']);
+        } else {
+            $this->agents->answer('firewall.task-vm-hub', ['ready' => false]);
+        }
+
+        $this->artisan('task-vms:prepare-hub')->expectsOutputToContain('[task_vm.setup_failed]')->assertFailed();
+        expect($this->ssh->commands)->toBe([]);
+    })->with([true, false]);
 
     it('allows task VM Nodes inside the range', function (): void {
         task_vm_fleet_node('tvm-12', '10.44.0.130', [RoleName::AppDev]);
@@ -147,6 +162,7 @@ describe('task-vms:prepare-hub', function (): void {
             ->expectsOutputToContain($message)
             ->assertFailed();
 
+        expect($this->agents->calls)->toBe([]);
         expect($this->ssh->commands)->toBe([]);
     })->with([
         'range outside the WireGuard subnet' => [
@@ -194,7 +210,7 @@ describe('task VM setup scripts', function (): void {
         $syntax->run();
 
         expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput());
-    })->with(['hub.sh', 'base-image-clean.sh']);
+    })->with(['base-image-clean.sh']);
 
     it('pass shellcheck when it is installed', function (): void {
         $finder = new ExecutableFinder;
@@ -206,7 +222,6 @@ describe('task VM setup scripts', function (): void {
 
         $check = new Process([
             $shellcheck,
-            resource_path('task-vms/hub.sh'),
             resource_path('task-vms/base-image-clean.sh'),
         ]);
         $check->run();
@@ -214,24 +229,6 @@ describe('task VM setup scripts', function (): void {
         expect($check->getExitCode())->toBe(0, $check->getOutput());
     });
 
-    it('reject invalid arguments before they change anything', function (string $script, array $arguments, string $message): void {
-        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-        $process = new Process([$bash, '-s', '--', ...$arguments]);
-        $process->setInput(file_get_contents(resource_path('task-vms/'.$script)));
-        $process->setEnv(['PATH' => '/nonexistent']);
-        $process->run();
-
-        expect($process->getExitCode())->toBe(1)
-            ->and($process->getOutput())->toBe('')
-            ->and($process->getErrorOutput())->toContain($message);
-    })->with([
-        'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
-        'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
-        'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],
-        'hub without router' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317'], 'usage: hub.sh'],
-        'hub DNS address with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1 accept', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'invalid DNS address'],
-        'hub Pi port not a number' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '22 }', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'invalid Pi port'],
-    ]);
 });
 
 /** @param list<RoleName> $roles */

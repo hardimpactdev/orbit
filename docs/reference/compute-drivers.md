@@ -362,6 +362,8 @@ The host's image, instance-name, and host-wide resource inventories use the type
 
 `task-vms:prepare-host` sends the configured project, bridge, subnet, pool, and optional ZFS dataset to `incus.prepare-host`. The command validates existing storage, project network scope, and bridge address before changing them. It refuses to create a pool on a dataset that already exists. Rust owns the ACL, isolated profile NIC, project restrictions, stock image copy, and UFW forwarding rule. Repeated calls converge the same resources under the host and firewall locks. A setup failure returns `task_vm.setup_failed`; it does not claim to undo a partly completed setup.
 
+`incus.volumes` reads the custom volumes in the configured project and pool. `incus.volume` clones a base image's topology seed for a VM, gives a completed seed its final name, or removes an explicitly selected volume. The agent derives seed names from the image fingerprint and clone names from the VM name. It preserves existing clones, refuses a missing source seed, and treats an absent removal target as removed. Volume changes share a host lock; the Gateway keeps the decision about which records and images still own each volume.
+
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
 ### From claim to workspace
@@ -1137,7 +1139,9 @@ To remove a host, lower its capacity to stop new placements, wait until all its 
 
 This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
-Run `task-vms:prepare-hub` once, and again when one of the values below changes. It runs `resources/task-vms/hub.sh` on the `vpn` Node. The script installs the nft table `inet orbit_task_vms` and the oneshot unit `orbit-task-vms-hub.service`. The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The script checks that the table is loaded, is idempotent, and prints `{"ok":true}`.
+Run `task-vms:prepare-hub` once, and again when one of the values below changes. The Gateway sends typed endpoints and the reserved range to `firewall.task-vm-hub` on the `vpn` Node. The agent renders and validates the nft table `inet orbit_task_vms`, atomically publishes `/etc/orbit/task-vms/hub.nft` and the oneshot unit `orbit-task-vms-hub.service`, and verifies activation. It refuses foreign files or an unowned table before changes. A failed activation restores the previous files, service state, and live table; a failed restoration reports `task_vm.setup_failed` with the `recovery` stage.
+
+The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. Repeated preparation converges the same filter under the shared firewall lock.
 
 The command takes every value from Gateway records and settings:
 

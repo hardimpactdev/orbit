@@ -124,25 +124,19 @@ it('launches an absent VM on the configured bridge with the user-data on stdin',
         ->toBe(['10.44.0.7', 'orbit', 22, '/keys/id_ed25519', '/keys/known_hosts']);
 });
 
-/** @param  list<string>  $names  custom volumes of the host's pool */
-function incusVolumes(string ...$names): CommandResult
-{
-    return incusResult(json_encode(array_map(static fn (string $name): array => ['name' => $name, 'type' => 'custom'], $names), JSON_THROW_ON_ERROR));
-}
-
 it('launches a VM whose size runs a topology with its own size, free page reporting, and a clone of the topology seed', function (TaskVmSize $size, array $limits): void {
     $fingerprint = str_repeat('c', 64);
     $this->vm->update(['size' => $size, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => $fingerprint]);
-    ($this->answer)(incusList(incusInstance('tvm-12')), incusVolumes('orbit-topology-seed-cccccccccccc'), incusResult(), incusResult());
+    ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
+    $this->agents->answer('incus.volume', ['name' => 'tvm-1-topology-seed']);
 
     $this->provider->create($this->vm, "#cloud-config\n");
 
+    expect($this->agents->calls[0]['input'])->toBe(['location' => ['project' => 'orbit-tasks', 'pool' => 'tank'], 'operation' => ['kind' => 'clone_seed', 'vm' => 'tvm-1', 'fingerprint' => $fingerprint]]);
     expect(array_slice(($this->argv)(), 1))->toBe([
-        [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'copy', '--', 'tank/orbit-topology-seed-cccccccccccc', 'tank/tvm-1-topology-seed'],
         [...INCUS_PREFIX, 'launch', '--vm', ...$limits, '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', $fingerprint, 'tvm-1'],
     ])
-        ->and(json_decode($this->ssh->calls[3][1]->input ?? '', true))->toBe([
+        ->and(json_decode($this->ssh->calls[1][1]->input ?? '', true))->toBe([
             'config' => [
                 'cloud-init.user-data' => "#cloud-config\n",
                 'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
@@ -154,22 +148,14 @@ it('launches a VM whose size runs a topology with its own size, free page report
     'large' => [TaskVmSize::Large, ['--config', 'limits.cpu=6', '--config', 'limits.memory=12GiB', '--device', 'root,size=60GiB']],
 ]);
 
-it('keeps the clone of a retried launch instead of copying the topology seed again', function (): void {
-    $this->vm->update(['size' => TaskVmSize::Medium, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => str_repeat('c', 64)]);
-    ($this->answer)(incusList(), incusVolumes('orbit-topology-seed-cccccccccccc', 'tvm-1-topology-seed'), incusResult());
-
-    $this->provider->create($this->vm, "#cloud-config\n");
-
-    expect(array_column(($this->argv)(), 5))->toBe(['list', 'storage', 'launch']);
-});
-
 it('refuses to launch a VM whose size runs a topology when the host has no topology seed for its base image', function (): void {
     $this->vm->update(['size' => TaskVmSize::Medium, 'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => str_repeat('c', 64)]);
-    ($this->answer)(incusList(), incusVolumes('orbit-topology-seed-dddddddddddd'));
+    ($this->answer)(incusList());
+    $this->agents->refuse('incus.volume', 'task_vm.topology_seed_missing');
 
     expect(fn () => $this->provider->create($this->vm, "#cloud-config\n"))
         ->toThrow(TaskVmException::class, 'The host of task VM [tvm-1] has no topology seed for its base image.');
-    expect($this->ssh->calls)->toHaveCount(2);
+    expect($this->ssh->calls)->toHaveCount(1);
 });
 
 it('launches the recorded fingerprint even when the host alias changes', function (): void {
@@ -343,18 +329,18 @@ it('refuses an invalid fingerprint', function (CommandResult $result, string $co
 ]);
 
 it('deletes the VM, then its topology seed clone, and accepts an absent one', function (): void {
-    ($this->answer)(incusResult(), incusVolumes('tvm-1-topology-seed', 'tvm-2-topology-seed'), incusResult());
+    ($this->answer)(incusResult());
+    $this->agents->answer('incus.volume', ['name' => 'tvm-1-topology-seed']);
     $this->provider->destroy($this->vm);
     expect(($this->argv)())->toBe([
         [...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-1-topology-seed'],
     ]);
 
     $this->ssh->calls = [];
-    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList(), incusVolumes());
+    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList());
     $this->provider->destroy($this->vm);
-    expect($this->ssh->calls)->toHaveCount(3);
+    expect($this->ssh->calls)->toHaveCount(2);
+    expect($this->agents->calls[0]['input']['operation'])->toBe(['kind' => 'remove', 'name' => 'tvm-1-topology-seed']);
 
     ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: busy'), incusList(incusInstance()));
     expect(fn () => $this->provider->destroy($this->vm))->toThrow(TaskVmException::class, '`incus delete` for task VM [tvm-1] failed with exit code [1].');
@@ -417,12 +403,13 @@ describe('park and resume', function (): void {
 
 it('sweeps only the clones of VMs without live rows, and keeps topology seeds', function (): void {
     $this->vm->update(['state' => TaskVmState::Parked]);
-    ($this->answer)(incusVolumes('tvm-1-topology-seed', 'tvm-999-topology-seed', 'orbit-topology-seed-cccccccccccc', 'tvm-template-1-20261011040000', 'operator-data'), incusResult());
+    $this->agents->answer('incus.volumes', ['names' => ['tvm-1-topology-seed', 'tvm-999-topology-seed', 'orbit-topology-seed-cccccccccccc', 'tvm-template-1-20261011040000', 'operator-data']]);
+    $this->agents->answer('incus.volume', ['name' => 'tvm-999-topology-seed']);
 
     expect($this->volumes->sweepClones($this->hostSettings, $this->host))->toBe(['tvm-999-topology-seed']);
-    expect(($this->argv)())->toBe([
-        [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
-        [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-999-topology-seed'],
+    expect($this->agents->calls)->toBe([
+        ['node' => 'beast', 'command' => 'incus.volumes', 'input' => ['project' => 'orbit-tasks', 'pool' => 'tank']],
+        ['node' => 'beast', 'command' => 'incus.volume', 'input' => ['location' => ['project' => 'orbit-tasks', 'pool' => 'tank'], 'operation' => ['kind' => 'remove', 'name' => 'tvm-999-topology-seed']]],
     ]);
 });
 
@@ -440,7 +427,7 @@ it('owns the clones of VMs and only the topology seeds of images the host keeps'
 });
 
 it('keeps a clone when Incus refuses its deletion and reports the failure', function (): void {
-    ($this->answer)(incusVolumes('tvm-1-topology-seed'), incusResult(exitCode: 1), incusVolumes('tvm-1-topology-seed'));
+    $this->agents->refuse('incus.volume', 'task_vm.host_command_failed', ['operation' => 'storage volume delete', 'exit_code' => 1]);
 
     expect(fn () => $this->volumes->release($this->hostSettings, $this->host, $this->vm))->toThrow(TaskVmException::class);
 });

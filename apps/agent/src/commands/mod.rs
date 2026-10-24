@@ -48,6 +48,7 @@ pub mod source;
 pub mod sqlite_copy;
 pub mod sqlite_seed;
 pub mod storage_root;
+mod task_vm_hub;
 pub mod tls_check;
 pub mod tmpfiles;
 pub mod transfer_source;
@@ -96,6 +97,9 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::ReadInstances>(),
         entry::<incus::ReadInventory>(),
         entry::<incus::setup::PrepareHost>(),
+        entry::<incus::volumes::ReadVolumes>(),
+        entry::<incus::volumes::ChangeVolume>(),
+        entry::<task_vm_hub::PrepareHub>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),

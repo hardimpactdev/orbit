@@ -37,7 +37,8 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed"
+        "task_vm.host_command_failed",
+        "task_vm.topology_seed_missing"
       ]
     },
     {
@@ -52,7 +53,8 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed"
+        "task_vm.host_command_failed",
+        "task_vm.topology_seed_missing"
       ]
     },
     {
@@ -67,7 +69,8 @@
       "errors": [
         "incus.input_invalid",
         "task_vm.invalid_host_output",
-        "task_vm.host_command_failed"
+        "task_vm.host_command_failed",
+        "task_vm.topology_seed_missing"
       ]
     },
     {
@@ -75,6 +78,51 @@
       "summary": "Converge a task VM host's ZFS pool, isolated bridge, project, profile, and stock image.",
       "mutates": true,
       "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.setup_failed"
+      ]
+    },
+    {
+      "name": "incus.volumes",
+      "summary": "Read custom volume names in one Incus project and pool.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "incus.volume",
+      "summary": "Clone, finish, or remove an explicitly selected task VM topology volume.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed",
+        "task_vm.topology_seed_missing"
+      ]
+    },
+    {
+      "name": "firewall.task-vm-hub",
+      "summary": "Converge the reserved task VM range filter on the WireGuard hub.",
+      "mutates": true,
+      "timeout_seconds": 120,
       "privilege": {
         "linux": "root",
         "macos": null

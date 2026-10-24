@@ -67,6 +67,9 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    /** @var list<string> */
+    public array $events = [];
+
     /** @var list<SshConnection> */
     public array $connections = [];
 
@@ -124,6 +127,23 @@ final class FakeIncusImageHost implements SshExecutor
             return ['images' => $this->images];
         });
         $agents->answer('incus.instances', fn (): array => ['names' => array_keys($this->instances)]);
+        $agents->answer('incus.volumes', fn (): array => ['names' => $this->volumes]);
+        $agents->answer('incus.volume', function (array $input): array {
+            $operation = $input['operation'];
+            $this->events[] = 'incus.volume.'.$operation['kind'];
+            $name = $operation['kind'] === 'finish_seed' ? 'orbit-topology-seed-'.substr($operation['fingerprint'], 0, 12) : $operation['name'];
+            $failure = $operation['kind'] === 'finish_seed' ? 'volume rename' : 'volume delete '.$name;
+            if ($this->fail === $failure) {
+                throw new AgentCommandRefused('incus.volume', 'task_vm.host_command_failed', 'Volume change failed.', ['operation' => $failure, 'exit_code' => 1]);
+            }
+            if ($operation['kind'] === 'finish_seed') {
+                $this->volumes = [...array_values(array_diff($this->volumes, [$name.'-new', $name])), $name];
+            } else {
+                $this->volumes = array_values(array_diff($this->volumes, [$name]));
+            }
+
+            return ['name' => $name];
+        });
         app()->instance(AgentCommandRunner::class, $agents);
     }
 
@@ -146,6 +166,7 @@ final class FakeIncusImageHost implements SshExecutor
             return $this->answer('query', fn () => $this->retarget(json_decode($argv[7], true)['target']));
         }
         $operation = array_slice($argv, 5);
+        $this->events[] = implode(' ', array_slice($operation, 0, 4));
 
         return match (true) {
             $operation[0] === 'list' => $this->answer('list', fn () => json_encode(array_map(
@@ -188,25 +209,7 @@ final class FakeIncusImageHost implements SshExecutor
 
                 return "{\"outcome\":\"built\",\"data\":{\"seconds\":{}}}\n";
             }),
-            $operation[0] === 'storage' => $this->volume(array_slice($operation, 2)),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
-        };
-    }
-
-    /** @param  list<string>  $operation  the arguments after `incus storage volume` */
-    private function volume(array $operation): CommandResult
-    {
-        $names = array_slice($operation, array_search('--', $operation, true) + 1);
-
-        return match ($operation[0]) {
-            'list' => $this->answer('volume list', fn (): string => json_encode(array_map(static fn (string $name): array => ['name' => $name, 'type' => 'custom'], $this->volumes), JSON_THROW_ON_ERROR)),
-            'rename' => in_array($names[1], $this->volumes, true) ? $this->answer('volume rename', function () use ($names): void {
-                $this->volumes = [...array_values(array_diff($this->volumes, [$names[1]])), $names[2]];
-            }) : new CommandResult(1, '', "Error: Storage volume not found\n", 1, false),
-            'delete' => in_array($names[1], $this->volumes, true) ? $this->answer('volume delete '.$names[1], function () use ($names): void {
-                $this->volumes = array_values(array_diff($this->volumes, [$names[1]]));
-            }) : new CommandResult(1, '', "Error: Storage volume not found\n", 1, false),
-            default => throw new RuntimeException('Unexpected incus storage volume command: '.implode(' ', $operation)),
         };
     }
 

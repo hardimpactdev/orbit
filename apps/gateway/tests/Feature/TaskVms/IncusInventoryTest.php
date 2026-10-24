@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -66,12 +67,38 @@ it('rejects malformed typed inventory results', function (string $method, string
 ]);
 
 it('keeps migrated Incus inventory methods behind the typed agent boundary', function (): void {
+    foreach (['Infrastructure/TaskVms/TaskVmVolumes.php', 'Infrastructure/TaskVms/TaskVmHubFilter.php', 'Console/Commands/PrepareTaskVmHubCommand.php'] as $path) {
+        $source = file_get_contents(app_path($path));
+        foreach (['SshExecutor', 'RemoteCommand', 'TaskVmScripts', 'Process::', 'shell_exec', 'bash'] as $forbidden) {
+            expect($source)->not->toContain($forbidden);
+        }
+    }
     $lines = file(app_path('Infrastructure/TaskVms/IncusHost.php'));
-    foreach (['images', 'instanceNames', 'inventory', 'observe'] as $name) {
+    foreach (['images', 'instanceNames', 'inventory', 'observe', 'volumeNames', 'volume', 'prepare'] as $name) {
         $method = new ReflectionMethod(IncusHost::class, $name);
         $source = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
         foreach (['RemoteCommand', '$this->execute(', '$this->run(', 'json_decode', 'parse_url', 'parse_str'] as $forbidden) {
             expect($source)->not->toContain($forbidden);
         }
     }
+});
+
+it('finishes and removes only the topology volumes selected by the Gateway', function (): void {
+    $node = new Node(['id' => 123, 'name' => 'host']);
+    $host = TaskVmSettingsBuilder::host(123);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('incus.volume', ['name' => 'orbit-topology-seed-aaaaaaaaaaaa']);
+    $agents->answer('incus.volumes', ['names' => ['orbit-topology-seed-aaaaaaaaaaaa']]);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $volumes = app(TaskVmVolumes::class);
+
+    $volumes->finishSeed($host, $node, str_repeat('a', 64));
+    expect($volumes->exists($host, $node, 'orbit-topology-seed-aaaaaaaaaaaa'))->toBeTrue();
+    $volumes->delete($host, $node, 'orbit-topology-seed-aaaaaaaaaaaa');
+
+    expect(array_column($agents->calls, 'input'))->toBe([
+        ['location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => ['kind' => 'finish_seed', 'fingerprint' => str_repeat('a', 64)]],
+        ['project' => $host->project, 'pool' => $host->pool],
+        ['location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => ['kind' => 'remove', 'name' => 'orbit-topology-seed-aaaaaaaaaaaa']],
+    ]);
 });

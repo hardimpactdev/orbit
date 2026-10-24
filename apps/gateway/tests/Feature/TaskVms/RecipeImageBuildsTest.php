@@ -879,10 +879,10 @@ it('builds the topology seed in the smoke VM, then deletes the VM and gives the 
         ->and($incus->instances)->not->toHaveKey('tvm-image-1-smoke');
     $program = array_values(array_filter($incus->commands, static fn ($command): bool => in_array('task-vms.build-topology-seed', $command->arguments, true)));
     expect(array_slice($program[0]->arguments, 0, 6))->toBe(['sudo', '-n', '-u', 'root', '-H', 'python3']);
-    $order = array_map(static fn ($command): string => implode(' ', array_slice($command->arguments, 5, 4)), $incus->commands);
+    $order = $incus->events;
     $built = array_search('python3 -I -c '.$program[0]->arguments[8], $order, true);
     $deleted = min(array_filter(array_keys($order, 'delete --force -- tvm-image-1-smoke', true), static fn (int $index): bool => $index > $built));
-    $renamed = array_find_key($order, static fn (string $line): bool => str_starts_with($line, 'storage volume rename'));
+    $renamed = array_find_key($incus->events, static fn (string $line): bool => $line === 'incus.volume.finish_seed');
     expect($built)->toBeLessThan($deleted)->and($deleted)->toBeLessThan($renamed);
     expect(array_find($build->steps, static fn (array $step): bool => $step['program'] === 'base:topology-seed')['error'])->toBeNull()
         ->and($build->promoted_at)->not->toBeNull();

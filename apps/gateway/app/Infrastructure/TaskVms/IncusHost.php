@@ -61,6 +61,28 @@ final readonly class IncusHost
         }
     }
 
+    /** @return list<string> */
+    public function volumeNames(TaskVmHost $host, Node $node): array
+    {
+        $result = $this->observe($node, 'incus.volumes', ['project' => $host->project, 'pool' => $host->pool], "the storage volumes of Node [{$node->name}]");
+
+        return self::strings($result['names'] ?? null);
+    }
+
+    /** @param array<string, mixed> $operation */
+    public function volume(TaskVmHost $host, Node $node, array $operation): string
+    {
+        $result = $this->observe($node, 'incus.volume', [
+            'location' => ['project' => $host->project, 'pool' => $host->pool], 'operation' => $operation,
+        ], "the storage volumes of Node [{$node->name}]");
+        $name = $result['name'] ?? null;
+        if (! is_string($name)) {
+            throw self::invalid('the agent volume result', 'the volume name is missing');
+        }
+
+        return $name;
+    }
+
     /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */
     public function query(TaskVmHost $host, Node $node, string $method, string $path, string $data): CommandResult
     {
