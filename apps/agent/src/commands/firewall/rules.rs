@@ -38,7 +38,7 @@ fn validate_shapes<'a>(shapes: impl Iterator<Item = &'a Shape>) -> Result<(), Er
 }
 
 /// Build UFW argv from the exact shape. Concrete wildcard families must not expand to both.
-fn arguments(shape: &Shape) -> Vec<String> {
+pub(super) fn arguments(shape: &Shape) -> Vec<String> {
     let mut args = if shape.direction == "fwd" {
         vec!["route".into(), shape.action.clone()]
     } else {

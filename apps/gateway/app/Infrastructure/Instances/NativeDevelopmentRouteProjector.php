@@ -21,7 +21,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Firewall\AgentUfw;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -132,7 +131,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         if (! $this->usesCertificate($source, "app-instance-{$sourceInstance->id}")) {
             $this->certificates->removeInstance($sourceInstance);
         }
-        new RemoteAppDevRouteFirewallManager(new AgentUfw($this->agents))->remove($source, $transfer->source_route_id);
+        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $transfer->source_route_id);
         if (! $this->usesCertificate($sourceRouter, "route-{$transfer->source_route_id}-router")) {
             $oldRoute = new Route;
             $oldRoute->id = $transfer->source_route_id;
@@ -158,7 +157,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             $this->certificates->removeRouteLeaf($route, $source);
         }
 
-        new RemoteAppDevRouteFirewallManager(new AgentUfw($this->agents))->remove($source, $routeId);
+        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $routeId);
 
         if (! $this->usesCertificate($sourceRouter, "route-{$routeId}-router")) {
             $this->certificates->removeRouteRouter($route, $sourceRouter);
@@ -425,20 +424,12 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             );
         }
 
-        AgentStep::run($this->agents, $instance->node, 'firewall.ufw', ['arguments' => [
-            'allow',
-            'in',
-            'proto',
-            'tcp',
-            'from',
-            $routerAddress,
-            'to',
-            $workloadAddress,
-            'port',
-            '443',
-            'comment',
-            "orbit:route-{$route->id}-lan",
-        ]], 'route-firewall', 'app-dev.route_firewall_failed', 'App development');
+        AgentStep::run($this->agents, $instance->node, 'firewall.route-lan', [
+            'operation' => 'converge',
+            'route_id' => $route->id,
+            'router' => $routerAddress,
+            'workload' => $workloadAddress,
+        ], 'route-firewall', 'app-dev.route_firewall_failed', 'App development');
     }
 
     private function verifyWorkloadLeaf(Instance $instance, Route $route, Node $router): void

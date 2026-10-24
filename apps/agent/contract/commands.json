@@ -913,32 +913,6 @@
       ]
     },
     {
-      "name": "firewall.status",
-      "summary": "Read the numbered UFW status and, on request, the stored rule tuples.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "firewall.ufw_failed"
-      ]
-    },
-    {
-      "name": "firewall.ufw",
-      "summary": "Run one UFW change.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "firewall.ufw_failed"
-      ]
-    },
-    {
       "name": "firewall.inspect",
       "summary": "Inspect typed firewall shapes and exact managed ownership.",
       "mutates": false,
@@ -1010,6 +984,29 @@
     {
       "name": "firewall.router-lan",
       "summary": "Expand or prune owned Router LAN rules and restore the preceding inventory on failure.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "firewall.input_invalid",
+        "firewall.status_failed",
+        "firewall.status_unrecognized",
+        "firewall.rule_collision",
+        "firewall.apply_failed",
+        "firewall.reconcile_failed",
+        "firewall.verify_failed",
+        "firewall.remove_failed",
+        "firewall.remove_verify_failed",
+        "node.firewall_convergence_failed",
+        "router.lan_ingress_recovery_failed"
+      ]
+    },
+    {
+      "name": "firewall.route-lan",
+      "summary": "Converge a Route LAN allowance or remove all rules owned by its exact comment.",
       "mutates": true,
       "timeout_seconds": 120,
       "privilege": {

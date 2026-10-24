@@ -31,7 +31,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -53,6 +52,7 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\SshCommandAgents;
 use Tests\Support\SshNodeCaddyBuilds;
@@ -65,7 +65,7 @@ afterEach(function (): void {
 
 it('serves the exact transient development 503 without an upstream then deletes the final Route', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+    [$projector, $ssh, $processes, $agents] = orb181_removal_projector($this);
     $ssh->failCall = 1;
 
     expect(fn () => $projector->clearRouteTarget($member))->toThrow(RuntimeConvergenceException::class);
@@ -86,10 +86,10 @@ it('serves the exact transient development 503 without an upstream then deletes 
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
         ->toBeNull()
-        // The Route's LAN rules are looked up on the workload, where none remain.
-        ->and(collect($ssh->commands)
-            ->contains(static fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'ufw', 'status', 'numbered']))
-        ->toBeTrue()
+        ->and($agents->calls)->toContain([
+            'node' => Node::query()->findOrFail($member->node_id)->name, 'command' => 'firewall.route-lan',
+            'input' => ['operation' => 'remove', 'route_id' => $route->id],
+        ])
         ->and(
             collect(orb181_caddy_configurations($ssh->commands))
                 ->filter(
@@ -188,8 +188,8 @@ it('withdraws the second placement of a Route that waits for its placement withd
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {
     [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $ssh->failCall = 4;
+    [$projector, , , $agents] = orb181_removal_projector($this);
+    $agents->refuse('firewall.route-lan', 'firewall.remove_failed');
 
     expect(fn () => $projector->clearRouteTarget($member))
         ->toThrow(RuntimeConvergenceException::class);
@@ -198,6 +198,8 @@ it('keeps the final Route row until every projection cleanup succeeds', function
         ->toBeNull()
         ->and($route->refresh()->targets()->count())
         ->toBe(0);
+
+    $agents->answer('firewall.route-lan', ['matches' => true]);
 
     expect($projector->clearRouteTarget($member))
         ->toBe('deleted')
@@ -561,7 +563,7 @@ function orb183_projector_production_member(bool $shared): array
     return [orb181_projector_member($departing, $route), $route, $departing, $survivor->load('node'), $router];
 }
 
-/** @return array{NativeInstanceRemovalProjector, Orb181RemovalSshExecutor, Orb181RemovalProcessRunner} */
+/** @return array{NativeInstanceRemovalProjector, Orb181RemovalSshExecutor, Orb181RemovalProcessRunner, FakeAgentCommandRunner} */
 function orb181_removal_projector(
     object $test,
     ?ProductionPhpRuntimeManager $productionPhp = null,
@@ -620,6 +622,8 @@ function orb181_removal_projector(
     $test->orb181ProjectorHome = $home;
     config()->set('orbit.home', $home);
 
+    $agents = new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true]);
+
     return [
         new NativeInstanceRemovalProjector(
             new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
@@ -632,12 +636,13 @@ function orb181_removal_projector(
                 new RemotePhpPackageManager,
             ),
             new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
+            new RemoteAppDevRouteFirewallManager($agents),
             $productionPhp,
             $publicEdge,
         ),
         $ssh,
         $processes,
+        $agents,
     ];
 }
 

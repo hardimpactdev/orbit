@@ -44,7 +44,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -267,7 +266,7 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
     $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
     // Route 999 left after cutover; its record still names its source leaves.
     $transfer->update(['web_root_route_ids' => [$docs->id, 999]]);
-    [$projector, $ssh, , $home] = orb127_route_projector();
+    [$projector, $ssh, , $home, $agents] = orb127_route_projector();
 
     try {
         $projector->retireSource($transfer->refresh());
@@ -281,9 +280,11 @@ it('retires the source leaves and firewall rules of every recorded Route with a 
             ['10.44.0.10', 'route-999'],
             ['10.44.0.20', 'route-999-router'],
         ]);
-        // Each recorded Route's LAN rules are looked up and the lookup confirmed on the workload.
-        $firewall = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'ufw', 'status', 'numbered']);
-        expect($firewall->map(fn (RemoteCommand $command, int $index): string => $ssh->hosts[$index])->values()->all())->toBe(array_fill(0, 6, '10.44.0.10'));
+        $firewall = collect($agents->calls)->where('command', 'firewall.route-lan')->values()->all();
+        expect($firewall)->toBe(array_map(static fn (int $id): array => [
+            'node' => $source->name, 'command' => 'firewall.route-lan',
+            'input' => ['operation' => 'remove', 'route_id' => $id],
+        ], [$route->id, $docs->id, 999]));
         expect(new DevelopmentSiteRepository()->forNode($destinationRouter)->map->certificateDirectory()->all())
             ->toBe([
                 "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
@@ -1003,7 +1004,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
         workloadLan: '10.10.0.10',
         routerLan: '10.10.0.20',
     );
-    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    [$projector, $ssh, $processes, $home, $agents] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
@@ -1012,10 +1013,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
             ->flatMap(
                 static fn (RemoteCommand $command): array => $command->arguments,
             );
-        $firewall = collect($ssh->commands)
-            ->first(
-                static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
-            );
+        $firewall = collect($agents->calls)->firstWhere('command', 'firewall.route-lan');
         $leaf = collect($ssh->commands)
             ->first(
                 static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true),
@@ -1024,22 +1022,9 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
 
         expect($arguments)
             ->toContain("app-instance-{$instance->id}", "route-{$route->id}-router")
-            ->and($firewall?->arguments)
-            ->toBe([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'from',
-                '10.10.0.20',
-                'to',
-                '10.10.0.10',
-                'port',
-                '443',
-                'comment',
-                "orbit:route-{$route->id}-lan",
+            ->and($firewall)->toBe([
+                'node' => $workload->name, 'command' => 'firewall.route-lan',
+                'input' => ['operation' => 'converge', 'route_id' => $route->id, 'router' => '10.10.0.20', 'workload' => '10.10.0.10'],
             ])
             ->and($leaf?->arguments)
             ->toBe([
@@ -1390,7 +1375,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         phpVersion: $boundary === 'runtime' ? '8.5' : null,
     );
     $failure = match ($boundary) {
-        'source-access' => null,
+        'source-access', 'firewall' => null,
         'runtime' => static fn (RemoteCommand $command): bool => str_contains(
             $command->input ?? '',
             'for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf',
@@ -1398,14 +1383,17 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         'certificate' => static fn (RemoteCommand $command): bool => (
             ($command->arguments[3] ?? null) === "app-instance-{$instance->id}"
         ),
-        'firewall' => static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
         'dns' => null,
     };
-    [$projector, $ssh, $processes, $home] = orb127_route_projector(
+    [$projector, $ssh, $processes, $home, $agents] = orb127_route_projector(
         $failure,
         failDns: $boundary === 'dns',
         failAccess: $boundary === 'source-access' ? static fn (array $input): bool => $input['sites'][0]['checkout'] === $instance->checkout_path : null,
     );
+
+    if ($boundary === 'firewall') {
+        $agents->refuse('firewall.route-lan', 'firewall.apply_failed');
+    }
 
     try {
         expect(fn () => $projector->converge($instance, $route))
@@ -1697,6 +1685,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
 
         return ['unreadable' => []];
     });
+    $agents->answer('firewall.route-lan', ['matches' => true]);
     $keys = new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
@@ -1771,7 +1760,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false,
         new NativeClusterRouterReplacementProjector(
             $certificates,
             $caddy,
-            new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($ssh))),
+            new RemoteAppDevRouteFirewallManager($agents),
             $dns,
             $executor,
         ),

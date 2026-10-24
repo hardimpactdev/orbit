@@ -7,7 +7,6 @@ namespace Tests\Support;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -15,8 +14,7 @@ use App\Models\Node;
 use LogicException;
 
 /**
- * For route and firewall tests whose SSH fakes model a Node's tools: each UFW, TLS check, and development leaf
- * agent command reaches the fake as one SSH command, such as `sudo ufw status numbered`. A leaf command keeps the
+ * For Route tests whose SSH fakes model TLS checks and development leaves. A leaf command keeps the
  * shape those fakes read: its scope at argument 3, and a marker input for a reuse, a presence check, or a removal.
  * Every other agent command goes to `$others`.
  */
@@ -37,8 +35,6 @@ final readonly class SshCommandAgents implements AdmissionAgentRunner, AgentComm
     public function runOver(Node $node, SshConnection $connection, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         [$arguments, $stdin] = match ($command) {
-            'firewall.status' => [['sudo', 'ufw', 'status', 'numbered'], null],
-            'firewall.ufw' => [['sudo', 'ufw', ...$input['arguments']], null],
             'routes.verify-certificate' => [['timeout', '10', 'openssl', 's_client', '-connect', "{$input['address']}:{$input['port']}", '-servername', $input['domain'], '-verify_return_error'], ''],
             'certificates.request-leaf' => [['bash', '-seu', '--', $input['scope'], $input['domain'], $input['version'], $input['root_hash'], $input['user'], '', $input['home']], "printf 'CURRENT\\n'"],
             'certificates.publish-leaf' => [['bash', '-ceu', 'orbit-certificates/$scope', '--', $input['scope'], $input['domain'], $input['version'], $input['root_hash']], $input['certificate'].$input['root_certificate']],
@@ -53,21 +49,12 @@ final readonly class SshCommandAgents implements AdmissionAgentRunner, AgentComm
         if (! $result->succeeded()) {
             [$code, $details] = match (true) {
                 $command === 'routes.verify-certificate' => ['routes.certificate_invalid', ['stderr' => $result->stderr]],
-                str_starts_with($command, 'certificates.') => ['certificates.leaf_failed', ['step' => $command]],
-                default => ['firewall.ufw_failed', ['exit_code' => $result->exitCode, 'stdout' => $result->stdout, 'stderr' => $result->stderr]],
+                default => ['certificates.leaf_failed', ['step' => $command]],
             };
             throw new AgentCommandRefused($command, $code, 'Failed.', $details);
         }
-        if ($command === 'firewall.status') {
-            $stored = ($input['stored'] ?? false) === true
-                ? $this->ssh->execute($connection, new RemoteCommand(UfwStoredRuleProbe::arguments()))->stdout
-                : '';
-
-            return ['status' => $result->stdout, 'stored' => array_values(array_filter(explode("\n", $stored)))];
-        }
 
         return match ($command) {
-            'firewall.ufw' => ['stdout' => $result->stdout],
             'certificates.request-leaf' => trim($result->stdout) === 'CURRENT' ? ['state' => 'current'] : ['state' => 'request', 'request' => $result->stdout],
             'certificates.inspect-leaf' => ['present' => trim($result->stdout) === 'PRESENT'],
             default => [],

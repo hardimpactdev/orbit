@@ -40,7 +40,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
-use App\Infrastructure\Firewall\AgentUfw;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
@@ -495,7 +494,20 @@ function certificate_order_bind_projectors(
     );
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class)));
 
-    $firewall = new RemoteAppDevRouteFirewallManager(new AgentUfw(new SshCommandAgents($nodes)));
+    $firewall = new RemoteAppDevRouteFirewallManager(new FakeAgentCommandRunner()->answer('firewall.route-lan', static function (array $input, Node $node) use ($nodes): array {
+        $host = $node->wireguard_ip;
+        expect($input['operation'])->toBe('remove');
+        if (in_array($host, $nodes->down, true)) {
+            throw new RuntimeException('The Node is unavailable.');
+        }
+        $comment = "orbit:route-{$input['route_id']}-lan";
+        if (in_array($comment, $nodes->lanRules[$host] ?? [], true)) {
+            $nodes->firewallRemovals[] = "{$host}:{$comment}";
+            $nodes->lanRules[$host] = array_values(array_diff($nodes->lanRules[$host], [$comment]));
+        }
+
+        return ['matches' => true];
+    }));
     app()->instance(DevelopmentSshExecutor::class, $executor);
     app()->instance(DnsmasqPrivateDnsManager::class, $dns);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
@@ -636,29 +648,6 @@ final class CertificateOrderNodes implements SshExecutor
 
         if (in_array($host, $this->down, true)) {
             return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
-        }
-
-        if ($command->arguments === ['sudo', 'ufw', 'status', 'numbered']) {
-            $this->firewallReads[] = $host;
-
-            $lan = '';
-            foreach (array_values($this->lanRules[$host] ?? []) as $index => $comment) {
-                $number = $index + 2;
-                $lan .= "[ {$number}] {$host} 443/tcp ALLOW IN 10.0.0.1 # {$comment}\n";
-            }
-
-            return new CommandResult(0, "Status: active\n[ 1] {$host} on orbit ALLOW IN Anywhere on orbit # orbit:wireguard-members\n{$lan}", '', 1, false);
-        }
-
-        if (array_slice($command->arguments, 0, 4) === ['sudo', 'ufw', '--force', 'delete']) {
-            $rules = array_values($this->lanRules[$host] ?? []);
-            $comment = $rules[(int) $command->arguments[4] - 2] ?? null;
-            if (is_string($comment)) {
-                $this->firewallRemovals[] = "{$host}:{$comment}";
-                $this->lanRules[$host] = array_values(array_diff($rules, [$comment]));
-            }
-
-            return new CommandResult(0, '', '', 1, false);
         }
 
         $configuration = SshNodeCaddyBuilds::pushed($command);
