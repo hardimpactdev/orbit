@@ -1060,6 +1060,22 @@
       ]
     },
     {
+      "name": "gateway.publish-certificate",
+      "summary": "Validate and publish the Gateway certificate with Caddy activation recovery.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.certificate_invalid",
+        "gateway.certificate_unsafe",
+        "gateway.certificate_failed",
+        "gateway.certificate_recovery_failed"
+      ]
+    },
+    {
       "name": "caddy.order-after-vpn",
       "summary": "Order Caddy after the managed WireGuard interface.",
       "mutates": true,

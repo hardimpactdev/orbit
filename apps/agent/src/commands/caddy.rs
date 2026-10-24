@@ -325,6 +325,31 @@ mod reload_tests {
     use super::*;
 
     #[test]
+    fn lock_is_private_and_refuses_symlinks_and_public_directories() {
+        let work = super::super::recipe::WorkDir::new().unwrap();
+        let path = work.0.join("locks/caddy.lock");
+        let uid = rustix::process::geteuid().as_raw();
+        let gid = rustix::process::getegid().as_raw();
+        let held = lock_at(&path, uid, gid, Duration::ZERO).unwrap();
+        assert_eq!(held.metadata().unwrap().mode() & 0o7777, 0o600);
+        assert_eq!(
+            fs::metadata(path.parent().unwrap()).unwrap().mode() & 0o7777,
+            0o700
+        );
+        drop(held);
+        fs::remove_file(&path).unwrap();
+        let outside = work.0.join("outside");
+        fs::write(&outside, "keep").unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert!(lock_at(&path, uid, gid, Duration::ZERO).is_err());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "keep");
+        fs::remove_file(&path).unwrap();
+        fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(lock_at(&path, uid, gid, Duration::ZERO).is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn reloads_repeatedly_and_refuses_before_execution_when_publication_is_locked() {
         let output = Process::new(std::env::current_exe().unwrap())
             .args([

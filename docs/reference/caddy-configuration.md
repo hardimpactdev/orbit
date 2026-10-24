@@ -3,6 +3,8 @@ title: "Caddy configuration"
 description: "How the Gateway builds each Node's whole Caddyfile from its database and pushes it in one step, and what happens when a build fails."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
+  - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
+  - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Doctor/NativeCaddyBuildInspector.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
@@ -144,6 +146,10 @@ The `websocket` role runs the read-only `caddy.check-addresses` command before i
 A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, Gateway web convergence, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
 
 A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
+
+Gateway web convergence publishes its certificate through `gateway.publish-certificate`. The Gateway sends the leaf, private key, and public CA through the agent's protected input. The agent verifies the CA chain and key match before changing the live certificate. It owns the fixed version directories and current link under `/etc/caddy`, and holds the Caddy publication lock through the switch and reload. Matching bytes leave the current version unchanged. Failed activation restores the prior link and active service; failed recovery is reported explicitly. Previous certificate versions remain available.
+
+Certificate input or staging failures report `gateway.certificate_install_failed`. An invalid certificate, key, or CA reports `gateway.certificate_invalid`. Publication failures report `gateway.certificate_publish_failed`; activation or recovery failures report `gateway.caddy_start_failed`, with the native refusal retained in the operation output.
 
 The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node. A Route certificate removal then fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.
 

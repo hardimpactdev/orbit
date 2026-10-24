@@ -69,7 +69,7 @@ An operation step calls the agent synchronously from its Horizon job. The agent 
 
 Cancellation keeps the operation rule: finish the running step, start no further step, and record cancellation. Losing the API client does not stop the queued job. The runner sends a mutation once and does not retry it. The only exception is the one resend after a [version mismatch](#release-and-fleet-rollout).
 
-Read-only commands take no target or resource lock. Doctor checks, logs, queue reads, and metrics can run during a deploy. A mutating command holds an exclusive OS lock for its canonical target on the Node. It also declares the shared resources it changes. This preserves locks such as `CaddyPublicationLock` at `/run/lock/orbit/caddy.lock`, shared by Instance deploys on that Node.
+Read-only commands take no target or resource lock. Doctor checks, logs, queue reads, and metrics can run during a deploy. A mutating command holds an exclusive OS lock for its canonical target on the Node. It also declares the shared resources it changes. This preserves locks such as the Caddy publication lock at `/run/lock/orbit/caddy.lock`, shared by Instance deploys on that Node.
 
 Locks always follow one order: target, resource names in sorted order, then update. A resumed step uses the same keys. Different targets can run together when they share no resource. Nested actions are Rust calls under the held locks, not another invocation that takes them again.
 

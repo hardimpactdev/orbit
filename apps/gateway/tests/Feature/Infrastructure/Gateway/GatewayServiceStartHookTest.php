@@ -500,6 +500,7 @@ describe('production wiring', function (): void {
         mkdir($home.'/ca/gateway-current', 0o700, true);
         file_put_contents($home.'/ca/gateway-current/gateway.key', 'PRIVATE KEY');
         file_put_contents($home.'/ca/gateway-current/gateway.pem', 'CERTIFICATE');
+        file_put_contents($home.'/ca/root.pem', 'ROOT CERTIFICATE');
         config(['orbit.home' => $home, 'orbit.gateway_checkout' => '/home/orbit/orbit-gateway', 'orbit.gateway_web' => '/home/orbit/web']);
         $this->home = $home;
         $this->runner = start_hook_runner();
@@ -556,12 +557,12 @@ describe('production wiring', function (): void {
     });
 
     it('installs and runs the Documents hook before the reload in Gateway web convergence', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', ['changed' => false])->answer('caddy.install-package', ['changed' => false])->answer('caddy.order-after-vpn', ['changed' => false]);
+        $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', ['changed' => false])->answer('gateway.publish-certificate', ['changed' => false])->answer('caddy.install-package', ['changed' => false])->answer('caddy.order-after-vpn', ['changed' => false]);
         app()->instance(AgentCommandRunner::class, $agents);
         app(GatewayWebConverger::class)->converge($this->gateway, 'gateway.orbit', '10.44.0.2');
 
         expect(start_hook_steps($this->runner->calls))->toBe(['install project-document-cleanup-start', 'run project-document-cleanup-start', 'reload']);
-        expect($agents->commands())->toBe(['caddy.install-package', 'caddy.order-after-vpn', 'gateway.prepare-web-directory']);
+        expect($agents->commands())->toBe(['caddy.install-package', 'caddy.order-after-vpn', 'gateway.prepare-web-directory', 'gateway.publish-certificate']);
     });
 
     it('installs and runs the Documents hook before the reload in the release handoff', function (): void {

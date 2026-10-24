@@ -870,7 +870,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                     webRoot: Config::string('orbit.gateway_web'),
                 ),
                 certificatePublisher: new NativeGatewayCertificatePublisher(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
                 fpm: app(NativeGatewayFpmConverger::class),

@@ -16,7 +16,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyTransport;
-use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
@@ -229,16 +228,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf',
             ],
         );
-        $certificatePublishIndex = $commands->search(
-            static fn (array $arguments): bool => (
-                array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
-                && end($arguments) === '/etc/caddy/orbit-cert-current'
-            ),
-        );
-        $certificateReloadIndex = $calls->search(
-            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === ['sudo', 'bash', '-seu']
-                && str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
-        );
+        $certificatePublishIndex = $commands->search(['orbit-agent', 'command', 'gateway.publish-certificate']);
         $buildIndex = $calls->search(gateway_web_is_build(...));
         $certificatePublish = $commands->get($certificatePublishIndex);
         $pushed = gateway_web_pushed($calls->get($buildIndex));
@@ -300,13 +290,9 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->toBeLessThan($fpmPublishIndex)
             ->and($certificatePublishIndex)
             ->toBeInt()
-            ->toBeLessThan($certificateReloadIndex)
-            ->and($certificateReloadIndex)
             ->toBeLessThan($buildIndex)
             ->and($fpmPublishIndex)
             ->toBeLessThan($buildIndex)
-            ->and($calls->get($certificateReloadIndex)->input)
-            ->toStartWith(CaddyPublicationLock::script(CaddyPublicationLock::Path))
             ->and($calls->filter(gateway_web_is_build(...)))
             ->toHaveCount(1)
             ->and($calls->contains(
@@ -329,13 +315,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->toBeTrue()
             ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-web-directory']))
             ->toBeTrue()
-            ->and($commands->contains(static fn (array $arguments): bool => (
-                ($arguments[1] ?? null) === 'install'
-                && ($arguments[count($arguments) - 2] ?? null) === $orbitHome.'/ca/root.pem'
-                && str_ends_with((string) end($arguments), '/root-ca.pem')
-                && in_array(needle: '0640', haystack: $arguments, strict: true)
-            )))
-            ->toBeTrue()
+            ->and(json_decode($calls->get($certificatePublishIndex)->input, true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['certificate' => 'CERTIFICATE', 'key' => 'PRIVATE KEY', 'root_certificate' => 'ROOT CERTIFICATE'])
             ->and($hibernator->calls)
             ->toBe(1)
             ->and($agentView->calls)
@@ -572,10 +553,7 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
         $firstCaddyGroupIndex = $commands->search(
             static fn (array $arguments): bool => $arguments === ['orbit-agent', 'command', 'gateway.prepare-web-directory'],
         );
-        $reloadIndex = $calls->search(
-            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === ['sudo', 'bash', '-seu']
-                && str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
-        );
+        $reloadIndex = $commands->search(['orbit-agent', 'command', 'gateway.publish-certificate']);
         $validationIndex = $calls->search(gateway_web_is_build(...));
         $install = $calls->get($installIndex);
         $ordering = $calls->get($orderingIndex);
@@ -696,7 +674,7 @@ it('keeps its error codes and names the build stage and Caddy message when the N
     'swap' => ['swap', 'gateway-caddy-publish', 'gateway.caddy_config_install_failed'],
 ]);
 
-it('does not disturb the published Caddy certificate pair when its atomic link switch fails', function (): void {
+it('stops web convergence when the certificate command refuses publication', function (): void {
     [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'certificate-publication');
 
     try {
@@ -711,17 +689,11 @@ it('does not disturb the published Caddy certificate pair when its atomic link s
         $commands = Collection::make($processes->calls)
             ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
 
-        expect($commands->contains(
-            static fn (array $arguments): bool => $arguments[0] === 'sudo'
-            && $arguments[1] === 'rm'
-            && in_array(needle: '/etc/caddy/orbit-cert-current', haystack: $arguments, strict: true),
-        ))
-            ->toBeFalse()
+        expect($commands->contains(['orbit-agent', 'command', 'gateway.publish-certificate']))
+            ->toBeTrue()
             ->and($commands->contains(['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))
             ->toBeFalse()
-            ->and(Collection::make($processes->calls)->contains(
-                static fn (ProcessInvocation $invocation): bool => str_contains($invocation->input ?? '', 'systemctl reload-or-restart caddy'),
-            ))
+            ->and($commands->contains(['orbit-agent', 'command', 'caddy.publish']))
             ->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -897,6 +869,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
     mkdir(directory: $orbitHome.'/ca/gateway-current', permissions: 0o700, recursive: true);
     file_put_contents(filename: $orbitHome.'/ca/gateway-current/gateway.key', data: 'PRIVATE KEY');
     file_put_contents(filename: $orbitHome.'/ca/gateway-current/gateway.pem', data: 'CERTIFICATE');
+    file_put_contents($orbitHome.'/ca/root.pem', 'ROOT CERTIFICATE');
     $issuer = new class($orbitHome) implements GatewayCertificateIssuer
     {
         /** @var list<array{hostname: string, address: string}> */
@@ -959,22 +932,6 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 return new CommandResult(1, '', "Error: aggregate route conflict\norbit-caddy-build-stage={$stage}\n", 2, false);
             }
 
-            if (
-                $this->failure === 'certificate-publication'
-                && array_slice(array: $arguments, offset: 0, length: 4) === ['sudo', 'mv', '-Tf', '--']
-                && end($arguments) === '/etc/caddy/orbit-cert-current'
-            ) {
-                return new CommandResult(1, '', 'atomic link switch failed', 2, false);
-            }
-
-            if (($arguments[1] ?? null) === 'openssl' && in_array(needle: '-pubout', haystack: $arguments, strict: true)) {
-                return new CommandResult(0, "PUBLIC KEY\n", '', 2, false);
-            }
-
-            if (($arguments[1] ?? null) === 'openssl' && in_array(needle: '-pubkey', haystack: $arguments, strict: true)) {
-                return new CommandResult(0, "PUBLIC KEY\n", '', 2, false);
-            }
-
             return new CommandResult(0, '', '', 2, false);
         }
     };
@@ -997,7 +954,17 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
                 }),
                 '/home/orbit/web',
             ),
-            certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
+            certificatePublisher: new NativeGatewayCertificatePublisher(
+                new FakeAgentCommandRunner()->answer('gateway.publish-certificate', static function (array $input) use ($processes, $failure): array {
+                    $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'gateway.publish-certificate'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+                    if ($failure === 'certificate-publication') {
+                        throw new AgentCommandRefused('gateway.publish-certificate', 'gateway.certificate_failed', 'Publication failed.', ['stage' => 'publish']);
+                    }
+
+                    return ['changed' => true];
+                }),
+                $orbitHome,
+            ),
             fpm: new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), [...app()->tagged(GatewayServiceStartHook::class)]),
             builds: new NodeCaddyBuilder(
                 app(NodeCaddyfileRenderer::class),
