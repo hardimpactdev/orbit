@@ -188,7 +188,8 @@ function stageHarness(
     }
     return ok(
       responses.operation ??
-        { id: responses.operationId ?? 899, status: responses.status ?? "succeeded", result: responses.result ?? f.result, error_code: responses.code },
+        { id: responses.operationId ?? 899, kind: "tasks.analyze", target_type: "task_group", target_id: 7,
+          input: calls.find((c) => c.method === "POST")?.body, status: responses.status ?? "succeeded", result: responses.result ?? f.result, error_code: responses.code },
     );
   };
   const deps = {

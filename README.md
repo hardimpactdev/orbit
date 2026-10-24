@@ -9,7 +9,8 @@ The current slice adopts native `tasks.analyze` in the official factory.
 See [repository-analysis adoption and isolated proof](docs/repository-analysis-adoption.md).
 The [execution/evidence contract](docs/repository-analysis-contract.md) and
 [first native brief](docs/gateway-repository-analysis-brief.md) record the earlier
-design; ORB2068 delivered the native prerequisite. Dependency adoption follows
+design; ORB2068 and ORB2074 delivered the native prerequisites. This slice
+adopts the public failure metadata and immutable provision identity. Dependency adoption follows
 independent acceptance. External review-and-merge/topology admission stays closed.
 Live Swamp has not been updated by this change.
 

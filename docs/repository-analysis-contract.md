@@ -4,8 +4,10 @@ Status: independently reviewed PR8 design, followed by native ORB2068/PR1504
 at `8b6fb914c6fbab3abd70459afe832f7307e4d5c6`. The historical baseline table and
 citations below describe the gaps before that implementation. `tasks.analyze`
 and the optional turn reference now exist. The [Swamp adoption](repository-analysis-adoption.md)
-documents the implementation, exact current source, isolated proof and remaining
-native metadata gaps. This document grants no live rollout or exceptional admission.
+documents the implementation, exact current source, isolated proof and
+public metadata adoption after ORB2074/PR1505 at
+`0364765d6d41794f3f89d702e0f72cc54e954b07`. This historical contract grants no
+live rollout or exceptional admission.
 
 Run deterministic repository analysis on the complete typed plan in the group's
 actual task VM before a feature author edits runtime code. Keep its full bounded

@@ -10,6 +10,45 @@ const snapshot = z.strictObject({ head: oid, tree: oid });
 const encoder = new TextEncoder();
 export const REPORT_BYTES = 65536;
 
+// Public immutable pin rules from TaskAnalysisBase/GitRepositoryOrigin/GitBranchName.
+// Validate the recorded identity; never normalize it into another repository/ref.
+function repository(value: string): boolean {
+  if (!value.isWellFormed() || !value || /[\p{Z}\p{C}]/u.test(value)) return false;
+  if (/^git@[^:\s?#]+:[^\s?#]+$/.test(value)) return true;
+  const match = /^(https|ssh):\/\/([^/]+)(\/[^?#]*)$/.exec(value);
+  if (!match) return false;
+  try {
+    const url = new URL(value);
+    const at = match[2].lastIndexOf("@");
+    const user = at < 0 ? "" : match[2].slice(0, at);
+    return Boolean(url.hostname) && (match[1] === "https" ? !match[2].includes("@") : !user.includes(":"));
+  } catch { return false; }
+}
+function branch(value: string): boolean {
+  const control = [...value].some((c) => c.codePointAt(0)! <= 32 || c.codePointAt(0) === 127);
+  return value.isWellFormed() && value.length > 0 && encoder.encode(value).length <= 255 && value !== "HEAD" && !value.startsWith("-") &&
+    !value.includes("..") && !value.includes("@{") && !value.endsWith(".") && !control && !/[~^:?*\[\\]/.test(value) &&
+    value.split("/").every((v) => v.length > 0 && !v.startsWith(".") && !v.endsWith(".lock"));
+}
+const AnalysisBase = z.strictObject({ base: oid, instance_id: positive, repository: text.refine(repository), branch: text.refine(branch) });
+const ProvisionResult = z.object({ instance_id: positive, node_id: positive, starting_commit: oid.nullable(), analysis_base: AnalysisBase });
+export function validateProvisionResult(raw: unknown) {
+  const result = ProvisionResult.parse(raw);
+  if (result.analysis_base.instance_id !== result.instance_id) throw new Error("analysis pin belongs to another provisioned Instance");
+  return result;
+}
+
+const AnalysisFailure = z.strictObject({
+  schema: z.literal(1),
+  error: z.strictObject({ code: z.enum(["tasks.analysis_report_too_large", "tasks.analysis_unavailable"]), required_bytes: positive.nullable() }),
+}).refine((v) => v.error.required_bytes === null || (v.error.code === "tasks.analysis_report_too_large" && v.error.required_bytes > REPORT_BYTES));
+/** Only the public closed result can supply a size, never an error string/tail. */
+export function validateAnalysisFailure(raw: unknown, code: unknown) {
+  const failure = AnalysisFailure.parse(raw);
+  if (failure.error.code !== code) throw new Error("analysis failure code differs from the operation");
+  return failure;
+}
+
 export async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))), (b) => b.toString(16).padStart(2, "0")).join("");
 }

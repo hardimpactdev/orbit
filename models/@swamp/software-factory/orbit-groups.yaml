@@ -45,13 +45,14 @@ globalArguments:
           schema:
             type: object
             additionalProperties: true
-            required: [instanceId, startingCommit]
+            required: [group, operationId, outcome, instanceId, nodeId, startingCommit, analysisBase]
       transitions:
         - name: provisioned
           to: baseline
           gates:
             - { type: evidence-recorded, config: { name: provision-run, requireField: { status: succeeded } } }
             - { type: artifact-exists, config: { artifact: workspace } }
+            - { type: cel, config: { expr: 'artifacts.workspace.outcome == "ready"', message: "public immutable provision analysis identity unavailable" } }
         - name: failed
           to: failed
           gates:

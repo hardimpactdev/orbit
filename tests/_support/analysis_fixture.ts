@@ -8,7 +8,7 @@ import {
 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
 
 export const HEAD = "a".repeat(40), TREE = "b".repeat(40);
-export function bound(payload: unknown, recordedAt = "2026-10-24T10:00:00Z") {
+export function bound<T>(payload: T, recordedAt = "2026-10-24T10:00:00Z") {
   return { payload, recordedAt };
 }
 export async function analysisFixture(group: Parameters<typeof briefSource>[0], entries: Manifest["paths"] = [{ change: "add", path: "new.txt" }]) {
@@ -93,7 +93,8 @@ export async function analysisFixture(group: Parameters<typeof briefSource>[0], 
     analysis,
     inputs: {
       plan: bound(plan),
-      workspace: bound({ instanceId: 1, nodeId: 2 }),
+      workspace: bound({ group: (group as { id?: number }).id ?? 7, operationId: 800, outcome: "ready", instanceId: 1, nodeId: 2, startingCommit: HEAD,
+        analysisBase: { base: plan.base, instance_id: 1, repository: plan.repository, branch: plan.branch } }),
       baseline: bound({ subtask: group.tasks[0].id, outcome: "passed", candidate: { head: HEAD, tree: TREE } }),
     },
   };

@@ -380,6 +380,87 @@ Deno.test({
 });
 
 Deno.test({
+  name: "real factory consumes public immutable provision identity and failed analysis metadata",
+  ignore: !haveSwamp,
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const fixture = async (name: string) => JSON.parse(await Deno.readTextFile(new URL(`./fixtures/repository-analysis-public/${name}.json`, import.meta.url))).body.data.result;
+    const pinned = await fixture("tasks-provision-pinned");
+    const overflow = await fixture("tasks-analyze-failure-overflow");
+    const missing = await fixture("tasks-analyze-failure-unavailable");
+    const fake = startFakeGateway({
+      790: { provisionIdentity: { ...pinned, analysis_base: { ...pinned.analysis_base, repository: "https://example.test/repo.git", branch: "task-790" } } },
+      791: { provisionIdentity: await fixture("tasks-provision-unavailable") },
+      792: { analysisFailure: overflow },
+      793: { analysisFailure: missing },
+      794: { analysisFailure: { schema: 1, error: { code: overflow.error.code, required_bytes: null } } },
+    });
+    const dir = await copyRepo(fake.url);
+    const proof = await Deno.makeTempDir({ prefix: "swamp-public-analysis-factory-" });
+    let passed = false;
+    try {
+      const method = (id: number, name: string, ...inputs: string[]) => swamp(dir, "model", "method", "run", "orbit-groups", name, "--input", `workItem=tg-${id}`, ...inputs.flatMap((v) => ["--input", v]));
+      const query = async (model: string, name: string) => (lastJson(await swamp(dir, "data", "query", `modelName == "${model}" && name == "${name}"`, "--select", "attributes", "--json")).results as Record<string, unknown>[])[0];
+      const ids = [790, 791, 792, 793, 794];
+      for (const id of ids) await method(id, "start");
+      await Deno.writeTextFile(`${dir}/tick-input.json`, JSON.stringify({ maxSteps: 3, workItems: ids.map((id) => `tg-${id}`) }));
+      const tick = () => swamp(dir, "workflow", "run", "groups-driver", "--input-file", `${dir}/tick-input.json`);
+      const planned = new Set<number>();
+      const last = new Map<number, Record<string, unknown>>();
+      for (let n = 0; n < 20; n++) {
+        await tick();
+        for (const id of ids) {
+          await method(id, "status");
+          const s = await query("orbit-groups", `status-tg-${id}`);
+          last.set(id, s);
+          const stage = (s.stage as { id: string }).id;
+          if (stage === "plan" && !planned.has(id)) {
+            const f = await analysisFixture(fake.groups.get(id)!);
+            // In the divergent fixture, starting_commit is aaaa; the pin is bbbb.
+            if (id === 790) f.plan.base = pinned.analysis_base.base;
+            await method(id, "record_artifact", "name=plan", `payload=${JSON.stringify(f.plan)}`);
+            await method(id, "approve", "gateId=plan-authorized", "actor=simulated-owner", `note=${planConsentNote(f.plan)}`);
+            planned.add(id);
+          }
+        }
+        if (fake.startsOf(790, "implement") === 1 && [792, 793, 794].every((id) => (last.get(id)?.stage as { id: string }).id === "analyze" &&
+          (last.get(id)?.transitions as { name: string; gates: { type: string; pass: boolean }[] }[]).some((t) => t.name === "revise" && t.gates.some((g) => g.type === "human-approval" && !g.pass)))) break;
+      }
+      const workspace = (await query("orbit-groups", "artifact-tg-790-workspace")).payload as Record<string, unknown>;
+      assertEquals(workspace.startingCommit, pinned.starting_commit);
+      assertEquals((workspace.analysisBase as { base: string }).base, pinned.analysis_base.base);
+      const request = (await query("orbit-gateway", "job-tg-790.analyze.c1")).request as { body: Record<string, unknown> };
+      assertEquals(request.body.base, pinned.analysis_base.base);
+      assertEquals(fake.startsOf(790, "implement"), 1);
+      const author = (await query("orbit-gateway", "job-tg-790.implement.c1")).request as { body: Record<string, unknown> };
+      assert(author.body.analysis);
+      assertEquals((last.get(791)!.stage as { id: string }).id, "provision");
+      assertEquals(fake.startsOf(791, "baseline"), 0);
+      assertEquals(fake.startsOf(791, "analyze"), 0);
+      for (const [id, bytes] of [[792, 216325], [793, null], [794, null]] as const) {
+        const job = await query("orbit-gateway", `job-tg-${id}.analyze.c1`);
+        assertEquals(job.state, "failed");
+        assertEquals((job.evidence as Record<string, unknown>).requiredBytes, bytes);
+        assertEquals(job.artifacts, {});
+        assertEquals(fake.startsOf(id, "analyze"), 1);
+        assertEquals(fake.startsOf(id, "implement"), 0);
+        assertEquals(fake.startsOf(id, "review"), 0);
+        await Deno.writeTextFile(`${proof}/${id}-failed.json`, JSON.stringify({ job, status: last.get(id) }, null, 2));
+      }
+      assertEquals([...fake.starts].filter(([, n]) => n > 1), []);
+      await Deno.writeTextFile(`${proof}/pins-and-turn.json`, JSON.stringify({ workspace, request, author, unavailable: last.get(791), starts: [...fake.starts] }, null, 2));
+      console.log(`Public DTO real-factory proof (simulated Gateway): ${proof}`);
+      passed = true;
+    } finally {
+      await fake.close();
+      if (passed) await Deno.remove(dir, { recursive: true });
+      else console.log(`Failed public DTO fixture and method/workflow reports retained: ${dir}; proof: ${proof}`);
+    }
+  },
+});
+
+Deno.test({
   name: "real factory parks a failed edited author until retry approval and reanalyzes its terminal candidate",
   ignore: !haveSwamp,
   sanitizeResources: false,

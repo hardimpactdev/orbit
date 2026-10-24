@@ -145,11 +145,14 @@ Deno.test("reads wait for poll_after_seconds", async () => {
 });
 
 Deno.test("provision moves a backlog group to todo, starts once with its key, then maps the result", async () => {
-  const gw = fakeGateway({ operation: { id: 900, status: "succeeded", result: { instance_id: 5, node_id: 6, starting_commit: "abc" } } });
+  const result = { instance_id: 5, node_id: 6, starting_commit: HEAD,
+    analysis_base: { base: TREE, instance_id: 5, repository: fixture.plan.repository, branch: fixture.plan.branch } };
+  const operation = { id: 900, kind: "tasks.provision", target_type: "task_group", target_id: 7, status: "succeeded", result };
+  const gw = fakeGateway({ operation });
   const job = await settle(args("provision"), gw.http);
   assertEquals(job.state, "succeeded");
-  assertEquals(job.artifacts.workspace, { instanceId: 5, nodeId: 6, startingCommit: "abc" });
-  assertEquals(job.evidence, { status: "succeeded", runId: "900", operationId: 900 });
+  assertEquals(job.artifacts.workspace, { group: 7, operationId: 900, outcome: "ready", instanceId: 5, nodeId: 6, startingCommit: HEAD, analysisBase: result.analysis_base });
+  assertEquals(job.evidence, { status: "succeeded", runId: "900", operationId: 900, operation });
   const start = gw.calls.find((c) => c.method === "POST")!;
   assertEquals(start.path, "/api/v1/task-groups/7/provision");
   assertEquals(start.key, "tg-7.provision.c1");
