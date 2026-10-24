@@ -29,19 +29,10 @@ final readonly class FleetServingRelease
     public function supersedes(): bool
     {
         try {
-            $layout = GatewayReleaseLayout::fromConfig();
-
-            if (! is_link($layout->currentPath())) {
-                return false;
-            }
-
-            $serving = realpath($layout->currentPath().'/apps/gateway');
-            $own = realpath($this->ownApplicationPath ?? base_path());
+            return GatewayReleaseLayout::fromConfig()->observe($this->ownApplicationPath ?? base_path())->superseded;
         } catch (Throwable) {
             return false;
         }
-
-        return is_string($serving) && is_string($own) && $serving !== $own;
     }
 
     public const string Adopted = 'adopted';
@@ -54,23 +45,11 @@ final readonly class FleetServingRelease
     public function read(): array
     {
         try {
-            $layout = GatewayReleaseLayout::fromConfig();
-            $current = $layout->currentPath();
+            $inventory = GatewayReleaseLayout::fromConfig()->observe();
 
-            if (! is_link($current)) {
-                return is_dir($current)
-                    ? ['state' => self::InPlace, 'commit' => null]
-                    : ['state' => self::Unreadable, 'commit' => null];
-            }
-
-            $id = $layout->currentReleaseId();
-            $commit = $id === null ? null : $layout->preparedCommit($id);
+            return ['state' => $inventory->state, 'commit' => $inventory->current === null ? null : ($inventory->commits[$inventory->current] ?? null)];
         } catch (Throwable) {
             return ['state' => self::Unreadable, 'commit' => null];
         }
-
-        return $commit === null
-            ? ['state' => self::Unreadable, 'commit' => null]
-            : ['state' => self::Adopted, 'commit' => $commit];
     }
 }

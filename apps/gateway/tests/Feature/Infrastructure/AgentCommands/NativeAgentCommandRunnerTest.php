@@ -126,7 +126,7 @@ it('starts a root command through sudo on Linux', function (): void {
 });
 
 // A task VM never receives a GitHub credential; the guard knows one by the mark on the input.
-it('sends Git read access as its variables on input marked as carrying a credential', function (): void {
+it('sends only a typed GitHub token on input marked as carrying a credential', function (): void {
     $transport = new ScriptedAgentTransport([
         agentResult(['ok' => true, 'data' => ['published' => true]]),
         agentResult(['ok' => true, 'data' => ['published' => true]]),
@@ -137,9 +137,9 @@ it('sends Git read access as its variables on input marked as carrying a credent
     $runner->run(agentRunnerNode(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => $access]);
     $runner->run(Node::query()->firstOrFail(), 'instances.check-publication', ['origin' => 'git@github.com:acme/site.git', 'commit' => str_repeat('a', 40), 'git_read' => GitReadEnvironment::none()]);
 
-    expect($transport->calls[0]['envelope']['input']['git_read'])->toBe($access->variables)
+    expect($transport->calls[0]['envelope']['input']['git_read'])->toBe(['github_token' => 'secret-token'])
         ->and($transport->calls[0]['credential'])->toBeTrue()
-        ->and($transport->calls[1]['envelope']['input']['git_read'])->toBe([])
+        ->and($transport->calls[1]['envelope']['input']['git_read'])->toBe(['github_token' => null])
         ->and($transport->calls[1]['credential'])->toBeFalse();
 });
 

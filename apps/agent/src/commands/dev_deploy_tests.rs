@@ -101,7 +101,7 @@ impl Fixture {
             branch: "main".into(),
             commit: commit.map(String::from),
             protocols: vec!["file".into()],
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         })
     }
 }

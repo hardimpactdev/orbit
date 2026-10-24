@@ -108,13 +108,14 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('paused');
         }
 
-        $current = $this->layout->currentReleaseId();
+        $inventory = $this->layout->observe();
+        $current = $inventory->current;
 
         if ($current === null) {
             return $this->automation->recordTick('not_adopted', errorCode: 'gateway.release_not_adopted', message: 'The Gateway does not run from a release. Adopt it, then deploy the first release by hand.');
         }
 
-        $deployed = $this->layout->preparedCommit($current);
+        $deployed = $inventory->commits[$current] ?? null;
 
         if ($deployed === null) {
             return $this->automation->recordTick('no_deployed_release', errorCode: 'gateway.release_current_incomplete', message: "The current release [{$current}] has no readable REVISION.");
@@ -302,9 +303,10 @@ final readonly class RunAutomaticGatewayReleaseAction
     /** The commit the current release runs, or null outside the release layout. */
     private function deployedCommit(): ?string
     {
-        $current = $this->layout->currentReleaseId();
+        $inventory = $this->layout->observe();
+        $current = $inventory->current;
 
-        return $current === null ? null : $this->layout->preparedCommit($current);
+        return $current === null ? null : ($inventory->commits[$current] ?? null);
     }
 
     /**

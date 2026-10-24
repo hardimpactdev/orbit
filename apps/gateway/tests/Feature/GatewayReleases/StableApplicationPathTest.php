@@ -2,29 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
+use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-
-/** Records the content of every unit file a converger installs with `sudo install`. */
-final class InstalledUnits implements ProcessRunner
-{
-    /** @var list<string> */
-    public array $installed = [];
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        if (array_slice($invocation->arguments, 0, 2) === ['sudo', 'install']) {
-            $this->installed[] = (string) file_get_contents($invocation->arguments[4]);
-        }
-
-        return new CommandResult(0, '', '', 1, false);
-    }
-}
+use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-stable-path-'.bin2hex(random_bytes(4));
@@ -43,23 +29,20 @@ describe('the stable Gateway application path', function (): void {
     });
 
     it('is what the agent-view and hibernator units run in, so a restart after a switch runs the new release', function (): void {
-        $processes = new InstalledUnits;
+        $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'status' => LifecycleStatus::Active]);
+        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $agents = (new FakeAgentCommandRunner)
+            ->answer('gateway.converge-agent-view', ['changed' => true])
+            ->answer('gateway.converge-hibernator', ['changed' => true]);
+        $commands = new GatewayServiceCommands($agents);
+        new NativeAgentViewConverger($commands)->converge();
+        new NativeRuntimeHibernatorConverger($commands)->converge();
 
-        new NativeAgentViewConverger($processes)->converge();
-        $agentView = $processes->installed;
-        $processes->installed = [];
-        new NativeRuntimeHibernatorConverger($processes)->converge();
-        $hibernatorService = array_values(array_filter($processes->installed, static fn (string $unit): bool => str_contains($unit, 'ExecStart=')));
-        $stable = $this->base.'/orbit/apps/gateway';
-
-        expect($agentView)->toHaveCount(1)
-            ->and($hibernatorService)->toHaveCount(1);
-
-        foreach ([$agentView[0], $hibernatorService[0]] as $unit) {
-            expect($unit)->toContain('WorkingDirectory='.$stable)
-                ->and($unit)->toContain($stable.'/artisan')
-                ->and($unit)->not->toContain('releases/0123456789ab');
+        foreach ($agents->calls as $call) {
+            expect($call['input']['application'])->toBe($this->base.'/orbit/apps/gateway')
+                ->and($call['input']['application'])->not->toContain('releases/0123456789ab');
         }
+        expect($agents->commands())->toBe(['gateway.converge-agent-view', 'gateway.converge-hibernator']);
     });
 });
 

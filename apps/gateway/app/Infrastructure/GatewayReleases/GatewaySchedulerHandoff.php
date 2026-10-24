@@ -7,9 +7,10 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Processes\ProcessRuntime;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use App\Models\Process;
 use Closure;
@@ -40,43 +41,20 @@ final readonly class GatewaySchedulerHandoff
     /** The default time the old scheduler gets to finish its running commands. */
     public const int DrainSeconds = 600;
 
-    /** @var Closure(int): void */
-    private Closure $sleep;
-
-    /** @var Closure(): float */
-    private Closure $clock;
-
     /** @var Closure(): void */
     private Closure $clearMutexes;
 
-    /** @var Closure(string): list<string> */
-    private Closure $members;
-
-    /**
-     * @param  (Closure(int): void)|null  $sleep  microseconds
-     * @param  (Closure(): float)|null  $clock  monotonic nanoseconds
-     * @param  (Closure(): void)|null  $clearMutexes  clears the schedule's overlap mutexes
-     * @param  (Closure(string): list<string>)|null  $members  the command lines of the processes in a unit, main process included
-     */
+    /** @param (Closure(): void)|null $clearMutexes clears the schedule's overlap mutexes */
     public function __construct(
-        private ProcessRunner $processes,
+        private AgentCommandRunner $agents,
         private string $applicationPath,
         private int $tickWaitSeconds = 330,
-        private int $startWaitSeconds = 30,
-        ?Closure $sleep = null,
         private int $drainSeconds = self::DrainSeconds,
         ?Closure $clearMutexes = null,
-        ?Closure $members = null,
-        ?Closure $clock = null,
     ) {
-        $this->clock = $clock ?? static fn (): float => hrtime(true);
-        $this->sleep = $sleep ?? static function (int $microseconds): void {
-            usleep($microseconds);
-        };
         $this->clearMutexes = $clearMutexes ?? static function (): void {
             Artisan::call('schedule:clear-cache');
         };
-        $this->members = $members ?? $this->unitMembers(...);
     }
 
     /**
@@ -124,22 +102,23 @@ final readonly class GatewaySchedulerHandoff
 
         try {
             Artisan::call('schedule:interrupt');
-            $command = $process->runtime_config['command'] ?? [];
-            $php = is_array($command) && is_string($command[0] ?? null) ? $command[0] : 'php';
-            $drain = $this->signalsHandled($php) ? $this->drain($unit) : $this->noDrain($unit);
+            $drain = $this->drain($gateway, $process);
 
             if ($drain['outcome'] === 'forced') {
-                $this->forceRestart($unit);
+                $this->forceRestart($gateway, $process);
             } else {
-                $this->systemctl('start', $unit);
-                $this->waitActive($unit);
+                $this->control($gateway, $process, 'gateway.start-scheduler');
             }
 
             $started = true;
         } finally {
             if (! $started) {
                 // Whatever failed, the scheduler must not stay down. On an active unit this changes nothing.
-                $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', 'start', $unit], timeout: 60.0));
+                try {
+                    $this->control($gateway, $process, 'gateway.start-scheduler');
+                } catch (GatewayReleaseException) {
+                    // Keep the failure that caused recovery, even when recovery also fails.
+                }
             }
         }
 
@@ -165,7 +144,7 @@ final readonly class GatewaySchedulerHandoff
             }
 
             $unit = AgentProcessView::unitName($process).'.service';
-            $this->systemctl('try-restart', $unit);
+            $this->control($gateway, $process, 'gateway.restart-release-process');
             $restarted[] = $unit;
         }
 
@@ -183,79 +162,48 @@ final readonly class GatewaySchedulerHandoff
             ->values();
     }
 
-    /**
-     * Laravel's `schedule:work` finishes its running commands on SIGTERM only with the pcntl extension. Without it,
-     * SIGTERM ends it at once, so the handoff must not report a drain it cannot get.
-     */
-    private function signalsHandled(string $php): bool
+    /** @return array{outcome: string, waited_ms: int, running: list<string>, stopped?: list<string>, reason?: string} */
+    private function drain(Node $gateway, Process $process): array
     {
-        $result = $this->processes->run(new ProcessInvocation([$php, '-r', 'echo extension_loaded("pcntl") ? "yes" : "no";'], timeout: 15.0));
-
-        return $result->succeeded() && trim($result->stdout) === 'yes';
-    }
-
-    /**
-     * The forced path, without waiting, for a scheduler that cannot drain.
-     *
-     * @return array{outcome: string, waited_ms: int, running: list<string>, stopped: list<string>, reason: string}
-     */
-    private function noDrain(string $unit): array
-    {
-        $running = $this->others($unit);
-
-        return ['outcome' => 'forced', 'waited_ms' => 0, 'running' => $running, 'stopped' => $running, 'reason' => 'no_pcntl'];
-    }
-
-    /**
-     * Asks the running `schedule:work` to finish and waits for it to exit.
-     *
-     * @return array{outcome: string, waited_ms: int, running: list<string>, stopped?: list<string>}
-     */
-    private function drain(string $unit): array
-    {
-        $startedAt = ($this->clock)();
-        $main = $this->mainPid($unit);
-
-        if ($main === 0) {
-            return ['outcome' => 'not_running', 'waited_ms' => 0, 'running' => []];
+        $result = $this->command($gateway, $process, 'gateway.drain-scheduler', ['drain_seconds' => $this->drainSeconds]);
+        if (! in_array($result['outcome'] ?? null, ['drained', 'forced', 'not_running'], true)
+            || ! is_int($result['waited_ms'] ?? null) || $result['waited_ms'] < 0
+            || (isset($result['reason']) && $result['reason'] !== 'no_pcntl')) {
+            throw $this->failed('The agent returned an invalid scheduler drain result.');
+        }
+        $drain = ['outcome' => $result['outcome'], 'waited_ms' => $result['waited_ms'], 'running' => $this->strings($result['running'] ?? null)];
+        if ($result['outcome'] === 'forced' || array_key_exists('stopped', $result)) {
+            $drain['stopped'] = $this->strings($result['stopped'] ?? null);
+        }
+        if (isset($result['reason'])) {
+            $drain['reason'] = $result['reason'];
         }
 
-        $running = $this->others($unit);
-        $signal = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', 'kill', '--kill-whom=main', '--signal=SIGTERM', $unit], timeout: 30.0));
+        return $drain;
+    }
 
-        if (! $signal->succeeded()) {
-            throw new GatewayReleaseException(
-                step: 'handoff',
-                errorCode: 'gateway.release_scheduler_failed',
-                message: "The scheduler unit [{$unit}] could not be asked to finish.",
-                status: 500,
-                result: $signal,
-            );
+    /** @return list<string> */
+    private function strings(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw $this->failed('The agent returned invalid scheduler members.');
         }
-
-        $deadline = $startedAt + $this->drainSeconds * 1_000_000_000;
-
-        while ($this->mainPid($unit) === $main) {
-            if (($this->clock)() >= $deadline) {
-                return [
-                    'outcome' => 'forced',
-                    'waited_ms' => $this->elapsed($startedAt),
-                    'running' => $running,
-                    'stopped' => $this->others($unit),
-                ];
+        $strings = [];
+        foreach ($value as $text) {
+            if (! is_string($text)) {
+                throw $this->failed('The agent returned invalid scheduler members.');
             }
-
-            ($this->sleep)(500_000);
+            $strings[] = $text;
         }
 
-        return ['outcome' => 'drained', 'waited_ms' => $this->elapsed($startedAt), 'running' => $running];
+        return $strings;
     }
 
     /**
      * The drain outlasted its limit. Stopping the unit ends the commands that still run, so it waits for a running
      * tick first and then clears the overlap mutexes those commands can no longer release.
      */
-    private function forceRestart(string $unit): void
+    private function forceRestart(Node $gateway, Process $process): void
     {
         $lock = Cache::lock(self::TickLock, $this->tickWaitSeconds);
 
@@ -271,100 +219,39 @@ final readonly class GatewaySchedulerHandoff
         }
 
         try {
-            $this->systemctl('stop', $unit);
+            $this->control($gateway, $process, 'gateway.stop-scheduler');
             ($this->clearMutexes)();
-            $this->systemctl('start', $unit);
-            $this->waitActive($unit);
+            $this->control($gateway, $process, 'gateway.start-scheduler');
         } finally {
             $lock->release();
         }
     }
 
-    private function mainPid(string $unit): int
+    private function control(Node $gateway, Process $process, string $command): void
     {
-        $result = $this->processes->run(new ProcessInvocation(['systemctl', 'show', '-p', 'MainPID', '--value', $unit], timeout: 10.0));
-
-        return $result->succeeded() ? (int) trim($result->stdout) : 0;
+        if ($this->command($gateway, $process, $command) !== []) {
+            throw $this->failed('The agent returned an invalid scheduler control result.');
+        }
     }
 
-    /**
-     * The command lines in the unit other than `schedule:work` itself, for the release record.
-     *
-     * @return list<string>
+    /** @param array<string, mixed> $input
+     * @return array<string, mixed>
      */
-    private function others(string $unit): array
+    private function command(Node $gateway, Process $process, string $command, array $input = []): array
     {
-        return array_values(array_filter(
-            ($this->members)($unit),
-            static fn (string $command): bool => ! str_contains($command, 'schedule:work'),
-        ));
-    }
-
-    /**
-     * Reads the unit's control group. Every process `schedule:work` started, and every process those started, is in it.
-     *
-     * @return list<string>
-     */
-    private function unitMembers(string $unit): array
-    {
-        $group = $this->processes->run(new ProcessInvocation(['systemctl', 'show', '-p', 'ControlGroup', '--value', $unit], timeout: 10.0));
-        $path = trim($group->stdout);
-
-        if (! $group->succeeded() || $path === '' || str_contains($path, '..')) {
-            return [];
+        $name = AgentProcessView::unitName($process);
+        if ($name === null) {
+            throw $this->failed('The scheduler Process identity is invalid.');
         }
-
-        $pids = @file('/sys/fs/cgroup'.$path.'/cgroup.procs', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $commands = [];
-
-        foreach ($pids === false ? [] : $pids as $pid) {
-            $command = @file_get_contents('/proc/'.(int) $pid.'/cmdline');
-
-            if (is_string($command) && $command !== '') {
-                $commands[] = mb_substr(trim(str_replace("\0", ' ', $command)), 0, 200);
-            }
-        }
-
-        return array_slice($commands, 0, 20);
-    }
-
-    private function systemctl(string $verb, string $unit): void
-    {
-        $result = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', $verb, $unit], timeout: $verb === 'stop' ? 120.0 : 60.0));
-
-        if (! $result->succeeded()) {
-            throw new GatewayReleaseException(
-                step: 'handoff',
-                errorCode: 'gateway.release_scheduler_failed',
-                message: "The scheduler unit [{$unit}] did not {$verb}.",
-                status: 500,
-                result: $result,
-            );
+        try {
+            return $this->agents->run($gateway, $command, ['process_id' => $process->id, 'name' => $name.'.service', ...$input]);
+        } catch (AgentCommandRefused|AgentRunnerFailure $error) {
+            throw new GatewayReleaseException('handoff', 'gateway.release_scheduler_failed', 'The native scheduler handoff failed: '.$error->getMessage(), 500, previous: $error);
         }
     }
 
-    private function waitActive(string $unit): void
+    private function failed(string $message): GatewayReleaseException
     {
-        $deadline = ($this->clock)() + $this->startWaitSeconds * 1_000_000_000;
-
-        do {
-            if ($this->processes->run(new ProcessInvocation(['systemctl', 'is-active', '--quiet', $unit], timeout: 10.0))->succeeded()) {
-                return;
-            }
-
-            ($this->sleep)(500_000);
-        } while (($this->clock)() < $deadline);
-
-        throw new GatewayReleaseException(
-            step: 'handoff',
-            errorCode: 'gateway.release_scheduler_failed',
-            message: "The scheduler unit [{$unit}] is not active {$this->startWaitSeconds} seconds after its start.",
-            status: 500,
-        );
-    }
-
-    private function elapsed(float $startedAt): int
-    {
-        return (int) ((($this->clock)() - $startedAt) / 1_000_000);
+        return new GatewayReleaseException('handoff', 'gateway.release_scheduler_failed', $message, 500);
     }
 }

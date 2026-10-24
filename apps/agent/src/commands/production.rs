@@ -3,6 +3,7 @@
 //! marker first. It runs as root, and Git and every file it writes in the home run as the production user, so the
 //! release stays the user's alone. These replace the Bash that `RemoteProductionDeployment` sent, check for check.
 
+use super::git_read::GitRead;
 use super::source::{is_real_directory, is_symlink, realpath};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
@@ -112,12 +113,16 @@ pub(super) fn as_user(
     user: &str,
     program: &str,
     arguments: &[&OsStr],
-    environment: &BTreeMap<String, String>,
+    environment: &GitRead,
 ) -> Option<Vec<u8>> {
     let mut command = Process::new(program);
+    if program == "git" {
+        environment.configure(&mut command);
+    } else if environment.authenticated() {
+        return None;
+    }
     command
         .args(arguments)
-        .envs(environment)
         .stdin(Stdio::null())
         .stderr(Stdio::null());
     identity::drop_to(&mut command, user).ok()?;
@@ -157,17 +162,9 @@ pub(super) fn git(
     user: &str,
     release: &Path,
     arguments: &[&str],
-    environment: &BTreeMap<String, String>,
+    environment: &GitRead,
 ) -> Option<String> {
-    let mut all: Vec<&OsStr> = [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "core.fsmonitor=false",
-        "-C",
-    ]
-    .map(OsStr::new)
-    .to_vec();
+    let mut all: Vec<&OsStr> = ["-C"].map(OsStr::new).to_vec();
     all.push(release.as_os_str());
     all.extend(arguments.iter().map(OsStr::new));
     as_user(user, "git", &all, environment).map(|output| {
@@ -177,8 +174,8 @@ pub(super) fn git(
     })
 }
 
-pub(super) fn none() -> BTreeMap<String, String> {
-    BTreeMap::new()
+pub(super) fn none() -> GitRead {
+    GitRead::default()
 }
 
 /// A path relative to a release: no leading slash, no `..`, not empty.
@@ -606,7 +603,7 @@ pub struct PrepareInput {
     #[serde(default)]
     pub shared_paths: Vec<String>,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 pub fn prepare(input: &PrepareInput, layout: &Layout) -> Result<Release, ReleaseError> {
@@ -639,19 +636,9 @@ pub fn prepare(input: &PrepareInput, layout: &Layout) -> Result<Release, Release
         )?;
     }
 
-    let mut clone: Vec<&OsStr> = [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "core.fsmonitor=false",
-        "clone",
-        "--no-checkout",
-        "--origin",
-        "origin",
-        "--",
-    ]
-    .map(OsStr::new)
-    .to_vec();
+    let mut clone: Vec<&OsStr> = ["clone", "--no-checkout", "--origin", "origin", "--"]
+        .map(OsStr::new)
+        .to_vec();
     clone.extend([OsStr::new(&home.repository), release.as_os_str()]);
     as_user(user, "git", &clone, &input.git_read).ok_or_else(|| failed("clone the repository"))?;
     git(

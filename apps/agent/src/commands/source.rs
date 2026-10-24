@@ -2,8 +2,9 @@
 //! its caller names, through [`require`]. Paths are compared as the shell compared them: `stat`, `test`, and
 //! `realpath -e` look at the path itself, and command output loses its trailing newlines.
 
+pub use super::git_read::GitRead;
+
 use std::{
-    collections::BTreeMap,
     ffi::{OsStr, OsString},
     fs,
     io::Write,
@@ -38,18 +39,11 @@ pub fn substitution(output: &[u8]) -> Vec<u8> {
 }
 
 /// Runs Git without hooks, fsmonitor, or optional locks, with standard input closed.
-pub fn git(arguments: &[&OsStr], environment: &BTreeMap<String, String>, quiet: bool) -> Output {
+pub fn git(arguments: &[&OsStr], environment: &GitRead, quiet: bool) -> Output {
     let mut command = Command::new("git");
+    environment.configure(&mut command);
     command
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-        ])
         .args(arguments)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .envs(environment)
         .stdin(Stdio::null())
         .stderr(if quiet {
             Stdio::null()
@@ -80,7 +74,7 @@ macro_rules! git_args {
 pub fn git_in(directory: &Path, arguments: &[&str], quiet: bool) -> Output {
     let mut all: Vec<&OsStr> = vec![OsStr::new("-C"), directory.as_os_str()];
     all.extend(arguments.iter().map(OsStr::new));
-    git(&all, &BTreeMap::new(), quiet)
+    git(&all, &GitRead::default(), quiet)
 }
 
 /// Git's output as a command substitution keeps it, or `None` when Git fails.
@@ -319,19 +313,15 @@ pub fn private_directory(path: &Path) -> std::io::Result<()> {
 
 /// Whether a current branch or tag of the origin contains the commit. The origin's refs go into a temporary
 /// repository outside the checkout, and only the fetch sees the Git read environment. `Err` when a step fails.
-pub fn is_published(
-    origin: &str,
-    commit: &str,
-    git_read: &BTreeMap<String, String>,
-) -> Result<bool, &'static str> {
+pub fn is_published(origin: &str, commit: &str, git_read: &GitRead) -> Result<bool, &'static str> {
     let scratch =
         std::env::temp_dir().join(format!("orbit-publication-{:016x}", rand::random::<u64>()));
     private_directory(&scratch).map_err(|_| "create a scratch directory")?;
     let result = (|| {
         let repository = scratch.join("repository.git");
         let git_dir = join(Path::new("--git-dir="), &repository.display().to_string());
-        let none = BTreeMap::new();
-        let ok = |arguments: &[&OsStr], environment: &BTreeMap<String, String>| {
+        let none = GitRead::default();
+        let ok = |arguments: &[&OsStr], environment: &GitRead| {
             git(arguments, environment, false).status.success()
         };
         if !ok(
@@ -642,7 +632,7 @@ pub fn remove_source_tree(tree: &Path, common_repository: Option<&Path>) -> bool
                     OsStr::new("--force"),
                     tree.as_os_str(),
                 ],
-                &BTreeMap::new(),
+                &GitRead::default(),
                 false,
             )
             .status

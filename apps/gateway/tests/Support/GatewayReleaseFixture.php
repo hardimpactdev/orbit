@@ -4,29 +4,34 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
+use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
-use App\Domain\GitHub\GitHubApi;
-use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Settings\SettingRepository;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
+use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\Node;
 use FilesystemIterator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Mockery;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
 
 /**
  * A real release layout in a temporary directory: an origin repository with a Gateway-shaped tree,
- * the shared bare repository cloned from it, the shared env file, and a stand-in `composer` that
- * writes `vendor/autoload.php`. Git and the filesystem are real. `sudo` commands are recorded and
- * succeed without running.
+ * the shared bare repository and sample release artifacts. The builder uses fake agent results;
+ * filesystem artifacts support the remaining runtime and execution-owner consumers. No dependency
+ * install or native release build runs in this fixture.
  */
 final class GatewayReleaseFixture implements ProcessRunner
 {
@@ -36,8 +41,6 @@ final class GatewayReleaseFixture implements ProcessRunner
     public readonly string $base;
 
     public readonly string $origin;
-
-    public readonly string $composer;
 
     /** Real PHP without host INI startup, for the core-only Artisan stand-in. */
     public readonly string $php;
@@ -60,10 +63,21 @@ final class GatewayReleaseFixture implements ProcessRunner
     {
         $this->base = sys_get_temp_dir().'/orbit-release-'.Str::lower(Str::random(10));
         $this->origin = $this->base.'/origin';
-        $this->composer = $this->base.'/bin/composer';
         $this->php = $this->base.'/bin/php';
         $this->native = new FixtureProcessRunner;
-        $this->layout = new GatewayReleaseLayout($this->base.'/orbit/apps/gateway');
+        $this->layout = new GatewayReleaseLayout($this->base.'/orbit/apps/gateway', new class($this) implements GatewayReleaseObserver
+        {
+            public function __construct(private GatewayReleaseFixture $fixture) {}
+
+            public function inspect(GatewayReleaseLayout $layout, ?string $runningApplication = null): GatewayReleaseInventory
+            {
+                return GatewayReleaseInventory::fromAgent($this->fixture->builderAgents()->run(
+                    new Node(['name' => 'gateway']),
+                    'gateway.inspect-releases',
+                    ['checkout' => $layout->applicationPath, 'running_application' => $runningApplication],
+                ));
+            }
+        });
 
         mkdir($this->base.'/bin', 0700, true);
     }
@@ -72,37 +86,12 @@ final class GatewayReleaseFixture implements ProcessRunner
     {
         file_put_contents($this->php, "#!/bin/sh\nexec ".escapeshellarg(PHP_BINARY)." -n \"\$@\"\n");
         chmod($this->php, 0500);
-        file_put_contents($this->composer, <<<'BASH'
-            #!/usr/bin/env bash
-            set -eu
-            directory=
-            for argument in "$@"; do
-                case "$argument" in --working-dir=*) directory=${argument#--working-dir=} ;; esac
-            done
-            [ ! -e "$directory/composer.fail" ] || { echo 'dependency resolution failed' >&2; exit 1; }
-            case " $* " in
-                *' install '*) mkdir -p "$directory/vendor"; echo '<?php' > "$directory/vendor/autoload.php" ;;
-            esac
-            BASH);
-        chmod($this->composer, 0700);
         $this->git($this->base, 'init', '--quiet', '--initial-branch=main', $this->origin);
         $this->write('.gitignore', "/vendor/\n/REVISION\napps/*/vendor/\napps/gateway/.env\n");
         $this->write('apps/cli/composer.json', '{}');
         $this->write('apps/gateway/composer.json', '{}');
         $this->write('apps/gateway/public/index.php', "<?php\n");
-        $this->write('apps/gateway/artisan', <<<'PHP'
-            <?php
-            // Stands in for `artisan config:cache`: caches the release's REVISION and the shared env file.
-            $root = dirname(__DIR__, 2);
-            if (is_file(__DIR__.'/config.fail')) {
-                fwrite(STDERR, "configuration failed\n");
-                exit(1);
-            }
-            $revision = is_file($root.'/REVISION') ? trim(file_get_contents($root.'/REVISION')) : 'dev';
-            $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
-            $env = is_file(__DIR__.'/.env') ? trim(file_get_contents(__DIR__.'/.env')) : '';
-            file_put_contents($cache, '<?php return '.var_export(['app' => ['version' => $revision], 'env' => $env, 'leaked' => getenv('ORBIT_LEAKED')], true).';');
-            PHP);
+        $this->write('apps/gateway/artisan', "<?php\n");
         $this->write('apps/gateway/storage/logs/.gitignore', "*\n!.gitignore\n");
         $this->write('apps/gateway/storage/framework/cache/.gitignore', "*\n!.gitignore\n");
         $this->write('apps/gateway/bootstrap/cache/.gitignore', "*\n!.gitignore\n");
@@ -132,13 +121,8 @@ final class GatewayReleaseFixture implements ProcessRunner
         self::prepare();
         $seed = self::create();
         $sha = $seed->commit('Adopted release');
-        // This local origin must never ask for credentials. No application is booted in beforeAll.
-        $readAccess = new RepositoryReadAccess(
-            new GitHubAppStore(new SettingRepository),
-            Mockery::mock(GitHubApi::class),
-            Mockery::mock(GitHubCliToken::class),
-        );
-        $seed->builder(readAccess: $readAccess)->prepare($sha);
+        $seed->releaseArtifact($sha);
+        $seed->markPrepared($sha);
         symlink($seed->layout->linkTarget(substr($sha, 0, 12)), $seed->layout->currentPath());
         self::$adoptedSeed = $seed;
     }
@@ -205,23 +189,173 @@ final class GatewayReleaseFixture implements ProcessRunner
         self::$seed = null;
     }
 
-    public function builder(?GatewayReleaseWebBuild $web = null, float $freeBytes = 1e12, int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes, int $reservedBytes = 0, ?string $stepLock = null, ?RepositoryReadAccess $readAccess = null): GatewayReleaseBuilder
+    public function releaseCommands(?AgentCommandRunner $agents = null): GatewayReleaseCommands
+    {
+        $node = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->first();
+        if (! $node instanceof Node) {
+            $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.1']);
+            $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        }
+
+        return new GatewayReleaseCommands($agents ?? $this->builderAgents());
+    }
+
+    private ?FakeAgentCommandRunner $builderAgents = null;
+
+    /** Sample database artifacts for recovery consumers; snapshot behavior is tested in Rust. */
+    public function database(string $home, ?string $connection = null): SqliteGatewayReleaseDatabase
+    {
+        $agents = $this->builderAgents()
+            ->answer('gateway.inspect-release-database', ['bytes' => 0])
+            ->answer('gateway.migrate-release', ['changed' => true])
+            ->answer('gateway.snapshot-release-database', function (array $input) use ($home, $connection): array {
+                $directory = $home.'/backups';
+                if (! is_dir($directory)) {
+                    mkdir($directory, 0700);
+                }
+                $path = $directory.'/pre-'.$input['release'].'-20261025T120000Z-'.bin2hex(random_bytes(8)).'.sqlite';
+                DB::connection($connection)->statement('VACUUM INTO ?', [$path]);
+                chmod($path, 0600);
+
+                return ['path' => $path];
+            });
+
+        return new SqliteGatewayReleaseDatabase($this->releaseCommands($agents), $this->layout, $home,
+            $home.'/gateway-release-step.lock', connection: $connection, minimumFreeBytes: 0);
+    }
+
+    /** Explicit outcomes for preparation tests; native behavior is covered by Rust. */
+    public function builderAgents(): FakeAgentCommandRunner
+    {
+        return $this->builderAgents ??= new FakeAgentCommandRunner()
+            ->answer('gateway.inspect-releases', fn (array $input): array => $this->inventory($input['running_application']))
+            ->answer('gateway.switch-release', function (array $input): array {
+                $previous = $this->inventory()['current'];
+                $current = $this->layout->currentPath();
+                if (is_link($current)) {
+                    unlink($current);
+                }
+                symlink($this->layout->linkTarget($input['release']), $current);
+
+                return ['previous' => $previous];
+            })
+            ->answer('gateway.check-release-forward', function (): array {
+                $inventory = $this->inventory();
+
+                return ['source' => $inventory['current'], 'source_sha' => $inventory['commits'][$inventory['current']] ?? null];
+            })
+            ->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git'])
+            ->answer('gateway.inspect-release-step', ['busy' => false])
+            ->answer('gateway.check-release-migrations', ['complete' => true])
+            ->answer('gateway.inspect-release-preparation', ['sha' => null, 'origin' => $this->origin])
+            ->answer('gateway.prepare-release', function (array $input): array {
+                $sha = trim($this->git($this->origin, 'rev-parse', $input['revision']));
+                $reused = is_file($this->layout->releasePath(substr($sha, 0, 12)).'/REVISION');
+                $this->releaseArtifact($sha);
+
+                return ['sha' => $sha, 'reused' => $reused];
+            })
+            ->answer('gateway.finish-release', function (array $input): array {
+                $this->markPrepared($input['sha']);
+
+                return ['changed' => true];
+            })
+            ->answer('gateway.refresh-release-configuration', ['changed' => true])
+            ->answer('gateway.remove-release', function (array $input): array {
+                $path = $this->layout->releasePath($input['release']);
+                if (is_dir($path)) {
+                    $this->thawDirectories($path);
+                    $this->native->run(new ProcessInvocation(['rm', '-rf', '--', $path]));
+                }
+
+                return ['changed' => true];
+            });
+    }
+
+    public function builder(?GatewayReleaseWebBuild $web = null): GatewayReleaseBuilder
     {
         return new GatewayReleaseBuilder(
             layout: $this->layout,
-            processes: $this,
-            readAccess: $readAccess ?? app(RepositoryReadAccess::class),
+            commands: $this->releaseCommands($this->builderAgents()),
+            readAccess: app(RepositoryReadAccess::class),
             web: $web ?? new NoWebBuild,
-            composer: $this->composer,
-            php: $this->php,
-            freeSpace: static fn (): float => $freeBytes,
             checkoutAccess: function (string $application): void {
                 $this->privileged[] = ['grant-access', $application];
             },
-            minimumFreeBytes: $minimumFreeBytes,
-            reservedBytes: static fn (): int => $reservedBytes,
-            stepLock: $stepLock,
+            stepLock: $this->base.'/home/gateway-release-step.lock',
         );
+    }
+
+    /** Agent responses from sample state. These fakes exercise no native path validation or Git ancestry. */
+    private function inventory(?string $running = null): array
+    {
+        clearstatcache();
+        $link = $this->layout->currentPath();
+        $id = is_link($link) ? basename(readlink($link)) : null;
+        $current = is_string($id) && GatewayReleaseCommit::isId($id) ? $id : null;
+        $commits = $incomplete = $times = [];
+        foreach (glob($this->layout->releasesPath().'/*', GLOB_ONLYDIR) ?: [] as $path) {
+            $id = basename($path);
+            if (! GatewayReleaseCommit::isId($id) || is_link($path)) {
+                continue;
+            }
+            if (! is_file($path.'/REVISION')) {
+                $incomplete[$id] = filemtime($path);
+
+                continue;
+            }
+            $sha = trim(file_get_contents($path.'/REVISION'));
+            if (GatewayReleaseCommit::isSha($sha) && str_starts_with($sha, $id)) {
+                $commits[$id] = $sha;
+                $times[$id] = filemtime($path.'/REVISION');
+            }
+        }
+        uksort($times, static fn ($a, $b): int => [$times[$b], (string) $b] <=> [$times[$a], (string) $a]);
+        ksort($commits);
+        ksort($incomplete);
+
+        return [
+            'current' => $current,
+            'state' => isset($commits[$current]) ? 'adopted' : (is_dir($link) && ! is_link($link) ? 'in_place' : 'unreadable'),
+            'superseded' => $running !== null && is_link($link) && realpath($running) !== false && realpath($link.'/apps/gateway') !== realpath($running),
+            'commits' => $commits, 'incomplete' => $incomplete, 'retained' => array_map(strval(...), array_keys($times)),
+        ];
+    }
+
+    /** Static sample files consumed by runtime tests, not an implementation of preparation. */
+    private function releaseArtifact(string $sha): void
+    {
+        $path = $this->layout->releasePath(substr($sha, 0, 12));
+        if (is_dir($path)) {
+            return;
+        }
+        $this->git($this->layout->repositoryPath(), 'fetch', '--quiet', $this->origin, $sha);
+        $this->git($this->layout->repositoryPath(), 'worktree', 'add', '--quiet', '--detach', $path, $sha);
+        $application = $path.'/apps/gateway';
+        foreach ([$application.'/vendor', $path.'/apps/cli/vendor', $this->layout->storagePath().'/logs', $this->layout->storagePath().'/framework/cache/data'] as $directory) {
+            if (! is_dir($directory)) {
+                mkdir($directory, 0750, true);
+            }
+        }
+        file_put_contents($application.'/vendor/autoload.php', '<?php');
+        file_put_contents($path.'/apps/cli/vendor/autoload.php', '<?php');
+        $this->git($path, 'update-index', '--skip-worktree', 'apps/gateway/storage/logs/.gitignore', 'apps/gateway/storage/framework/cache/.gitignore');
+        $this->native->run(new ProcessInvocation(['rm', '-rf', '--', $application.'/storage']));
+        symlink($this->layout->storagePath(), $application.'/storage');
+        symlink($this->layout->environmentPath(), $application.'/.env');
+        file_put_contents($this->layout->repositoryPath().'/info/exclude', "/apps/gateway/storage\n");
+        chmod($application.'/bootstrap/cache', 0700);
+        file_put_contents($application.'/bootstrap/cache/config.php', '<?php return '.var_export(['app' => ['version' => $sha]], true).';');
+        chmod($application.'/bootstrap/cache/config.php', 0600);
+    }
+
+    private function markPrepared(string $sha): void
+    {
+        $path = $this->layout->releasePath(substr($sha, 0, 12));
+        file_put_contents($path.'/REVISION', $sha."\n");
+        chmod($path, 0555);
+        chmod($path.'/.git', 0444);
+        chmod($path.'/apps/gateway', 0555);
     }
 
     /**

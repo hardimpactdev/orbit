@@ -89,7 +89,4 @@ describe('CLI install on a Node', function (): void {
             ->and($agents->calls[0]['input'])->toBe(['user' => 'orbit']);
     });
 
-    it('runs self-update as root with the Node profile', function (): void {
-        expect(NodeCliFootprint::selfUpdateCommand())->toBe(['sudo', '/usr/local/bin/orbit', 'self-update', '--json']);
-    });
 });

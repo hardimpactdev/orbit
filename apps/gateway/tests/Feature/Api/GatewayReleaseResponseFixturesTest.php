@@ -6,10 +6,14 @@ use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -19,29 +23,11 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use Carbon\CarbonImmutable;
+use Tests\Support\FakeAgentCommandRunner;
 
 const RELEASE_CURRENT = '0123456789ab0123456789ab0123456789ab0123';
 
 const RELEASE_TARGET = 'fedcba9876543210fedcba9876543210fedcba98';
-
-final class RecordingReleaseUnitProcesses implements ProcessRunner
-{
-    /** @var list<list<string>> */
-    public array $ran = [];
-
-    public bool $fail = false;
-
-    public function run(ProcessInvocation $invocation): CommandResult
-    {
-        if (($invocation->arguments[1] ?? null) === 'is-active') {
-            return new CommandResult($this->fail ? 3 : 0, $this->fail ? "inactive\n" : "active\n", '', 1, false);
-        }
-
-        $this->ran[] = $invocation->arguments;
-
-        return $this->fail ? new CommandResult(1, '', 'Unit not found.', 1, false) : new CommandResult(0, '', '', 1, false);
-    }
-}
 
 final class FakeGatewayReleaseDatabase implements GatewayReleaseDatabase
 {
@@ -139,9 +125,9 @@ function gateway_smoke_api(GatewayReleaseLayout $layout, RecordedSmokeProcesses 
 }
 
 /** A release layout with a current release and a retained target, without Git. */
-function gateway_release_api_layout(string $base): GatewayReleaseLayout
+function gateway_release_api_layout(string $base, FakeAgentCommandRunner $agents): GatewayReleaseLayout
 {
-    $layout = new GatewayReleaseLayout($base.'/orbit/apps/gateway');
+    $layout = new GatewayReleaseLayout($base.'/orbit/apps/gateway', new GatewayReleaseCommands($agents));
 
     foreach ([RELEASE_CURRENT, RELEASE_TARGET] as $sha) {
         mkdir($layout->releasePath(substr($sha, 0, 12)), 0755, true);
@@ -276,15 +262,22 @@ beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-release-api-'.bin2hex(random_bytes(4));
     mkdir($this->base.'/home', 0700, true);
     config(['orbit.home' => $this->base.'/home', 'orbit.gateway_checkout' => $this->base.'/orbit/apps/gateway']);
-    $this->layout = gateway_release_api_layout($this->base);
-    $this->processes = new RecordingReleaseUnitProcesses;
+    $this->inventory = [
+        'current' => substr(RELEASE_CURRENT, 0, 12), 'state' => 'adopted', 'superseded' => false,
+        'commits' => [substr(RELEASE_CURRENT, 0, 12) => RELEASE_CURRENT, substr(RELEASE_TARGET, 0, 12) => RELEASE_TARGET],
+        'incomplete' => [], 'retained' => [substr(RELEASE_CURRENT, 0, 12), substr(RELEASE_TARGET, 0, 12)],
+    ];
+    $this->inventoryAgents = new FakeAgentCommandRunner()->answer('gateway.inspect-releases', $this->inventory);
+    $this->layout = gateway_release_api_layout($this->base, $this->inventoryAgents);
+    app()->instance(GatewayReleaseObserver::class, new GatewayReleaseCommands($this->inventoryAgents));
+    $this->unitAgents = new FakeAgentCommandRunner()->answer('gateway.start-release-run', ['changed' => true])->answer('gateway.inspect-release-run', ['state' => 'active']);
     $this->database = new FakeGatewayReleaseDatabase;
-    $this->lock = new GatewayReleaseLock($this->base.'/home/gateway-release.lock');
+    $this->lock = new GatewayReleaseLock($this->base.'/home/gateway-release.lock', new GatewayReleaseCommands(new FakeAgentCommandRunner()->answer('gateway.inspect-release-step', ['busy' => false])));
     app()->instance(GatewayReleaseLayout::class, $this->layout);
     app()->instance(GatewayReleaseLock::class, $this->lock);
     app()->instance(GatewayReleaseDatabase::class, $this->database);
-    app()->instance(GatewayReleaseRecorder::class, new GatewayReleaseRecorder($this->base.'/home'));
-    app()->instance(GatewayReleaseUnitStarter::class, new SystemdGatewayReleaseUnitStarter($this->processes));
+    app()->instance(GatewayReleaseRecorder::class, new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $this->base.'/home'));
+    app()->instance(GatewayReleaseUnitStarter::class, new SystemdGatewayReleaseUnitStarter(new GatewayReleaseCommands($this->unitAgents)));
     app()->bind(DeployGatewayReleaseAction::class, static fn () => throw new LogicException('The API never runs a release in-process.'));
 });
 
@@ -301,7 +294,10 @@ describe('gateway release API', function (): void {
             ->and($response->json('data.outcome'))->toBe('queued')
             ->and($response->json('data.finished'))->toBeFalse()
             ->and($response->json('data.release'))->toBe(substr(RELEASE_TARGET, 0, 12))
-            ->and($this->processes->ran)->toBe([['sudo', '-n', 'systemctl', 'start', '--no-block', 'orbit-gateway-release-run@'.$record->id.'.service']])
+            ->and($this->unitAgents->calls)->toBe([
+                ['node' => 'release-gateway', 'command' => 'gateway.start-release-run', 'input' => ['record' => $record->id]],
+                ['node' => 'release-gateway', 'command' => 'gateway.inspect-release-run', 'input' => ['record' => $record->id]],
+            ])
             ->and($this->layout->currentReleaseId())->toBe(substr(RELEASE_CURRENT, 0, 12));
         record_fixture($response, 'gateway-releases/gateway-release-deploy/queued', 'Orbit\\Sdk\\Requests\\GatewayReleases\\DeployGatewayReleaseRequest', 'POST /api/v1/gateway/releases');
     });
@@ -324,7 +320,7 @@ describe('gateway release API', function (): void {
         $this->postJson('/api/v1/gateway/releases', ['commit' => RELEASE_TARGET])
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'gateway.release_in_progress');
-        expect($this->processes->ran)->toBe([]);
+        expect($this->unitAgents->calls)->toBe([]);
     });
 
     it('refuses a branch name and an unknown body field', function (): void {
@@ -334,7 +330,7 @@ describe('gateway release API', function (): void {
     });
 
     it('ends the record when systemd does not start the unit', function (): void {
-        $this->processes->fail = true;
+        $this->unitAgents->refuse('gateway.start-release-run', 'gateway.release_unit_failed');
 
         $this->postJson('/api/v1/gateway/releases', ['commit' => RELEASE_TARGET])
             ->assertStatus(503)
@@ -347,7 +343,7 @@ describe('gateway release API', function (): void {
     });
 
     it('refuses a deploy before the Gateway runs from a release', function (): void {
-        unlink($this->layout->currentPath());
+        $this->inventoryAgents->answer('gateway.inspect-releases', [...$this->inventory, 'current' => null, 'state' => 'unreadable']);
 
         $this->postJson('/api/v1/gateway/releases', ['commit' => RELEASE_TARGET])
             ->assertStatus(409)
@@ -361,7 +357,7 @@ describe('gateway release API', function (): void {
             ->assertJsonPath('data.force', false)
             ->assertJsonPath('data.sha', RELEASE_TARGET);
 
-        expect($this->processes->ran)->not->toBeEmpty();
+        expect($this->unitAgents->calls)->not->toBeEmpty();
         record_fixture($queued, 'gateway-releases/gateway-release-rollback/queued', 'Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest', 'POST /api/v1/gateway/releases/{release}/rollback');
     });
 
@@ -469,7 +465,7 @@ describe('gateway release API', function (): void {
 
         expect(array_slice($processes->arguments, 4, 5))->toBe([$this->layout->currentPath().'/bin/gateway-smoke', '--sha', RELEASE_CURRENT, '--timeout', '90'])
             ->and(GatewayRelease::query()->count())->toBe(0)
-            ->and($this->processes->ran)->toBe([]);
+            ->and($this->unitAgents->calls)->toBe([]);
 
         $this->postJson('/api/v1/gateway/release-smoke', ['commit' => 'fedcba9', 'since' => '2026-10-07T06:00:00Z'])->assertOk()
             ->assertJsonPath('data.sha', 'fedcba9');

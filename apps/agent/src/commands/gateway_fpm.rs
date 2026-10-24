@@ -5,11 +5,10 @@ use super::{
     recipe::{self, Files, Host, Invocation, Native},
 };
 use crate::{
-    command::{registry, Command, Context, Outcome, Platform, Privilege},
+    command::{registry, Command, CommandError, Context, Platform, Privilege},
     command_errors,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::{
     collections::BTreeSet,
     fs,
@@ -228,18 +227,19 @@ impl Command for Converge {
         Some("gateway-fpm".into())
     }
     fn run(input: Input, context: &Context) -> Result<Output, Error> {
-        converge(
-            &Files::system(),
-            &mut Native(context),
-            &input,
-            |run| match (registry::entry::<gateway_start_hooks::Converge>().run)(
-                json!({"hooks":input.hooks,"run":run}),
+        converge(&Files::system(), &mut Native(context), &input, |run| {
+            gateway_start_hooks::before_activation(
+                gateway_start_hooks::Input {
+                    hooks: input.hooks.clone(),
+                    run,
+                },
                 context,
-            ) {
-                Outcome::Ok(data) => Ok(data["changed"].as_bool().expect("typed hook output")),
-                Outcome::Refused { code, .. } => Err(Error::HookFailed { cause: code }),
-            },
-        )
+            )
+            .map(|result| result.changed)
+            .map_err(|error| Error::HookFailed {
+                cause: error.code().into(),
+            })
+        })
     }
 }
 #[derive(Deserialize)]

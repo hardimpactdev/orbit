@@ -35,6 +35,8 @@ final readonly class GatewayReleaseRecorder
     public const int QueuedStartSeconds = 120;
 
     public function __construct(
+        private GatewayReleaseRecovery $recovery,
+        private GatewayReleaseRestore $restore,
         private ?string $orbitHome = null,
         private ?GatewayReleaseAlerts $alerts = null,
         private ?GatewayReleaseAutomation $automation = null,
@@ -216,7 +218,7 @@ final readonly class GatewayReleaseRecorder
         }
         $record->snapshot_path = $snapshot;
 
-        return (new GatewayReleaseRecovery)->protect($record);
+        return $this->recovery->protect($record);
     }
 
     /** @param array<string, mixed> $phases */
@@ -228,7 +230,7 @@ final readonly class GatewayReleaseRecorder
         $record->forceFill(['sha' => $sha, 'release_id' => GatewayReleaseCommit::id($sha), 'snapshot_path' => $snapshot,
             'previous_release_id' => data_get($phases, 'hold.source'), 'phases' => $phases])->saveOrFail();
         $record->refresh();
-        new GatewayReleaseRestore(new GatewayReleaseRecovery)->remember($record);
+        $this->restore->remember($record);
         $this->writeMarker(['staged_record' => $record->id, 'release' => GatewayReleaseCommit::id($sha), 'sha' => $sha,
             'error_code' => 'gateway.release_held', 'snapshot' => $snapshot], strict: true);
     }
@@ -237,7 +239,7 @@ final readonly class GatewayReleaseRecorder
     {
         if ($release->outcome === 'verified') {
             if (data_get($release->phases, 'hold.outcome') === 'held' && $record instanceof GatewayRelease) {
-                (new GatewayReleaseRecovery)->verify($record);
+                $this->recovery->verify($record);
             } else {
                 GatewayReleaseHold::assertNone();
             }

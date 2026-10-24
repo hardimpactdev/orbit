@@ -110,7 +110,7 @@ impl Fixture {
                 branch: "main".into(),
                 commit: commit.map(str::to_string),
                 shared_paths: Vec::new(),
-                git_read: BTreeMap::new(),
+                git_read: GitRead::default(),
             },
             &self.layout,
         )
@@ -289,7 +289,7 @@ fn a_shared_path_moves_to_the_home_and_one_that_holds_the_web_root_is_refused() 
         branch: "main".into(),
         commit: None,
         shared_paths: paths.iter().map(|path| path.to_string()).collect(),
-        git_read: BTreeMap::new(),
+        git_read: GitRead::default(),
     };
     let release = fixture.home.release("20260101000000-a1");
     assert_eq!(

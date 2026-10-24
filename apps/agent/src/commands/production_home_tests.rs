@@ -90,7 +90,7 @@ impl Fixture {
         SourceInput {
             home: self.home.clone(),
             allow_existing,
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         }
     }
 
@@ -111,7 +111,7 @@ impl Fixture {
             home: self.release_home(),
             branch: "main".into(),
             clone_target,
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         }
     }
 }

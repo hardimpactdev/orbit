@@ -85,7 +85,7 @@ describe('fleet rollout gate', function (): void {
 
     it('fails closed when the release layout cannot be read', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
-        Config::set('orbit.gateway_checkout', '/nonexistent/orbit/apps/gateway');
+        FleetFixtures::unreadable();
         FleetFixtures::node('dev', [RoleName::AppDev]);
 
         expect(safetyRun()['status'])->toBe('release_layout_unreadable')

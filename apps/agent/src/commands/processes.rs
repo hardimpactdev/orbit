@@ -214,14 +214,18 @@ fn systemd_not_found(output: &Output) -> bool {
 }
 
 /// Whether the unit text has the Process's marker as a whole line.
-fn marked(text: &str, process_id: u64) -> bool {
+pub(super) fn marked(text: &str, process_id: u64) -> bool {
     let marker = format!("X-Orbit-Process-ID={process_id}");
     text.split('\n')
         .any(|line| line.strip_suffix('\r').unwrap_or(line) == marker)
 }
 
 /// The unit or container name must be the Process's own: `orbit-process-<id>-<name>`, with `.service` for a unit.
-fn check_name(runtime: Runtime, process_id: u64, name: &str) -> Result<(), ProcessError> {
+pub(super) fn check_name(
+    runtime: Runtime,
+    process_id: u64,
+    name: &str,
+) -> Result<(), ProcessError> {
     let valid = match runtime {
         Runtime::Systemd => {
             valid_journal_unit(name)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Fleet\ConvergeNodeRecipeAction;
 use App\Actions\Fleet\MigrateDockerAction;
+use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
@@ -24,4 +25,8 @@ arch('Shared PHP pools use the typed agent boundary')
 
 arch('Node admission uses the typed agent boundary')
     ->expect(NativeNodeConverger::class)
+    ->not->toUse([NodeShell::class, SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);
+
+arch('Fleet self-update uses the typed agent boundary')
+    ->expect(FleetNodeConverger::class)
     ->not->toUse([NodeShell::class, SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);

@@ -12,22 +12,30 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
-use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAdoptionFiles;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use App\Models\Node;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
+use Tests\Support\LocalAgentBinary;
 use Tests\Support\ReleaseTestOwner;
 use Tests\Support\WebArtifactFixture;
 
@@ -38,6 +46,8 @@ beforeEach(function (): void {
     $this->id = substr($this->sha, 0, 12);
     $this->steps = new AdoptionSteps;
     config(['orbit.home' => $this->fixture->base.'/home']);
+    $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.1']);
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 });
 
 afterEach(function (): void {
@@ -45,6 +55,21 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:adopt', function (): void {
+    it('records the original refusal and the failed environment recovery when the agent cannot restore it', function (): void {
+        $agents = new FakeAgentCommandRunner;
+        $agents->answer('gateway.check-release-adoption', ['sha' => $this->sha])
+            ->refuse('gateway.adopt-release-repository', 'gateway.release_adopt_repository_failed')
+            ->refuse('gateway.restore-adoption-environment', 'gateway.release_adopt_env_failed');
+
+        $exception = release_failure(fn () => adoption($this->fixture, $this->steps, agents: $agents)->execute());
+
+        expect($exception->errorCode)->toBe('gateway.release_adopt_repository_failed');
+        expect(Activity::query()->value('error_code'))->toBe('gateway.release_adopt_repository_failed');
+        expect(array_column($agents->calls, 'command'))->toBe(['gateway.check-release-adoption', 'gateway.adopt-release-repository', 'gateway.restore-adoption-environment']);
+        expect(GatewayRelease::query()->sole()->phases['environment'])->toBe(['outcome' => 'failed', 'error_code' => 'gateway.release_adopt_env_failed']);
+        expect($this->steps->steps)->toBe([]);
+    });
+
     it('converts the in-place checkout into a release of its own commit, swaps it in one step, then deploys it', function (): void {
         $result = adoption($this->fixture, $this->steps)->execute();
         $layout = $this->fixture->layout;
@@ -168,8 +193,8 @@ describe('gateway:release:adopt', function (): void {
 
         expect($result['release'])->toBe($targetId)
             ->and($result['deploy']['phases']['web'])->toBe(['outcome' => 'published'])
-            ->and(readlink($web->web.'/current'))->toBe('releases/'.$targetId)
-            ->and(is_file($web->web.'/releases/'.$targetId.'/index.html'))->toBeTrue()
+            ->and($web->agents->commands())->toContain('gateway.install-web-build', 'gateway.publish-web-build')
+            ->and(collect($web->agents->calls)->firstWhere('command', 'gateway.publish-web-build')['input'])->toBe(['web_root' => $web->web, 'release' => $targetId])
             ->and($passed[array_search('--sha', $passed, true) + 1])->toBe($target)
             ->and($passed)->toContain('--since')
             ->and($record->outcome)->toBe('verified')
@@ -269,23 +294,6 @@ describe('gateway:release:adopt', function (): void {
             ->and(GatewayRelease::query()->where('release_id', substr($target, 0, 12))->value('outcome'))->toBe('verified');
     });
 
-    it('finishes a storage move that stopped between its two exchanges', function (): void {
-        $storage = $this->current.'/apps/gateway/storage';
-        $shared = $this->fixture->layout->storagePath();
-        mkdir($this->fixture->layout->sharedPath(), 0750, true);
-        // The state after the first exchange: storage links through shared to the real directory beside it.
-        rename($storage, $storage.'.adopt-link');
-        symlink($storage.'.adopt-link', $shared);
-        symlink($shared, $storage);
-        $this->fixture->git($this->current, 'update-index', '--skip-worktree', '--', 'apps/gateway/storage/logs/.gitignore', 'apps/gateway/storage/framework/cache/.gitignore');
-
-        $result = adoption($this->fixture, $this->steps)->execute();
-
-        expect($result['shared'])->toMatchArray(['storage' => 'moved', 'storage_method' => 'exchange'])
-            ->and(is_dir($shared) && ! is_link($shared))->toBeTrue()
-            ->and(file_get_contents($shared.'/framework/cache/data/aa/lock'))->toBe('held');
-    });
-
     it('keeps a phase-2 pause when adopt runs again, and does not resume a release that is not phase 1\'s', function (): void {
         $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
         $target = $this->fixture->commit('Migrates, then fails verify');
@@ -311,7 +319,7 @@ describe('gateway:release:adopt', function (): void {
     it('keeps the pause marker for a resumed adoption and clears it only for a verified release', function (): void {
         $marker = $this->fixture->base.'/home/gateway-release.paused';
         @mkdir(dirname($marker), 0700, true);
-        $recorder = new GatewayReleaseRecorder($this->fixture->base.'/home');
+        $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $this->fixture->base.'/home');
         $release = static fn (string $outcome): DeployedGatewayRelease => new DeployedGatewayRelease(
             id: '0123456789ab', sha: str_repeat('a', 40), outcome: $outcome, trigger: 'adopt', migrationsRan: false,
             previousId: null, snapshotPath: null, cleanupPaused: false, retryable: false, durationMs: 1, phases: [],
@@ -324,16 +332,6 @@ describe('gateway:release:adopt', function (): void {
 
         expect($keptAfterResume)->toBeTrue()
             ->and(is_file($marker))->toBeFalse();
-    });
-
-    it('falls back to two renames where an atomic swap is not available', function (): void {
-        $result = adoption($this->fixture, $this->steps, python: '/nonexistent/python3')->execute();
-
-        expect($result['switch']['method'])->toBe('rename')
-            ->and($result['switch']['gap_us'])->toBeInt()
-            ->and($result['shared']['storage_method'])->toBe('rename')
-            ->and(readlink($this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z/apps/gateway/storage'))->toBe($this->fixture->layout->storagePath())
-            ->and($this->fixture->layout->currentReleaseId())->toBe($this->id);
     });
 
     it('refuses when the shared env file differs from the checkout', function (): void {
@@ -363,10 +361,10 @@ describe('gateway:release:adopt', function (): void {
 function adoption(
     GatewayReleaseFixture $fixture,
     AdoptionSteps $steps,
-    string $python = 'python3',
     ?GatewayReleaseWebBuild $web = null,
     ?GatewayReleaseSmoke $smoke = null,
     ?FleetConvergeUnits $fleet = null,
+    ?AgentCommandRunner $agents = null,
 ): AdoptGatewayReleaseAction {
     $web ??= new AdoptionWebBuild($steps);
     $database = new AdoptionDatabase($steps, $fixture);
@@ -374,14 +372,14 @@ function adoption(
     $verifier = new AdoptionVerifier($steps);
     $smoke ??= new AdoptionSmoke($steps);
     $builder = $fixture->builder($web);
-    $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
-    $guard = new GatewayReleaseGuard($fixture->layout, $fixture);
-    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock');
+    $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
+    $guard = new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands());
+    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands($fixture->builderAgents()));
     $deploy = new DeployGatewayReleaseAction(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep'), fleet: $fleet),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep'), fleet: $fleet),
         $recorder,
         $guard,
         new GatewayReleaseRetry,
@@ -393,9 +391,8 @@ function adoption(
         $lock,
         new GatewayReleaseAdopter(
             layout: $fixture->layout,
-            processes: $fixture,
             builder: $builder,
-            exchange: new GatewayReleaseExchange($fixture, $python),
+            files: new GatewayReleaseAdoptionFiles($agents ?? LocalAgentBinary::localRunner($fixture->base, ['GIT_CONFIG_GLOBAL' => '/dev/null', 'GIT_CONFIG_NOSYSTEM' => '1'])),
             runtime: $runtime,
             verifier: $verifier,
             recorder: $recorder,

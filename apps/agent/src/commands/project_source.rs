@@ -3,12 +3,12 @@
 //! changes each origin, or restores it. A default branch change fetches and checks the branch, switches to it, or
 //! restores the previous one. Git never runs hooks or fsmonitor.
 
-use super::dev_source::fetch_options;
+use super::git_read::GitRead;
 use super::source::git;
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ffi::OsStr, path::Path, path::PathBuf, time::Duration};
+use std::{ffi::OsStr, path::Path, path::PathBuf, time::Duration};
 
 command_errors! {
     pub enum ProjectSourceError {
@@ -28,7 +28,7 @@ pub enum ProjectSourceInput {
         path: PathBuf,
         current: String,
         proposed: String,
-        git_read: Option<BTreeMap<String, String>>,
+        git_read: Option<GitRead>,
     },
     SetOrigin {
         path: PathBuf,
@@ -44,7 +44,7 @@ pub enum ProjectSourceInput {
         branch: String,
         repository: String,
         protocols: Vec<String>,
-        git_read: BTreeMap<String, String>,
+        git_read: GitRead,
     },
     SwitchBranch {
         path: PathBuf,
@@ -63,7 +63,7 @@ pub struct Done {}
 fn git_in(path: &Path, arguments: &[&str]) -> Option<String> {
     let mut all: Vec<&OsStr> = vec!["-C".as_ref(), path.as_os_str()];
     all.extend(arguments.iter().map(OsStr::new));
-    let output = git(&all, &BTreeMap::new(), true);
+    let output = git(&all, &GitRead::default(), true);
     output.status.success().then(|| {
         String::from_utf8_lossy(&output.stdout)
             .trim_end()
@@ -151,7 +151,7 @@ pub fn update(input: &ProjectSourceInput) -> Result<Done, ProjectSourceError> {
                 git_in(path, &["rev-parse", "--is-inside-work-tree"]).is_some(),
                 step,
             )?;
-            let options = fetch_options(protocols);
+            let options = git_read.fetch_options(protocols);
             let mut arguments: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
             arguments.extend(["-C".as_ref(), path.as_os_str()]);
             arguments.extend(
@@ -332,7 +332,7 @@ mod tests {
             branch: branch.into(),
             repository: repository.clone(),
             protocols: vec!["file".into()],
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         };
 
         assert_eq!(update(&preflight("release")), Ok(Done {}));

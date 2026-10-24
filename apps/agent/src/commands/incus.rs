@@ -81,7 +81,7 @@ fn stream(mut reader: impl Read) -> io::Result<Vec<u8>> {
 fn capture(command: &mut Process) -> io::Result<Output> {
     capture_input(command, None)
 }
-fn capture_input(command: &mut Process, input: Option<&str>) -> io::Result<Output> {
+pub(super) fn capture_input(command: &mut Process, input: Option<&str>) -> io::Result<Output> {
     let mut child = command
         .stdin(if input.is_some() {
             Stdio::piped()

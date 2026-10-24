@@ -166,7 +166,9 @@ Each command declares one privilege per platform. The runner reads it from the c
 
 A read runs in the started process and takes no lock. On Linux, a mutation runs in its own transient service, `orbit-command-<name>-<random>`, with `KillMode=control-group` and `RuntimeMaxSec` set to its bound. Its control group holds every child, so a daemon or `setsid` child stops with the command. The supervised process checks its own executable again. It takes an exclusive `flock` on its target, then on each shared resource in sorted order, then on the update lock when it needs it. Lock files are close-on-exec, so project code never inherits one.
 
-Target and resource locks live in `/run/orbit-agent/locks/<uid>`, one directory per account. The root process that starts the mutation creates it, owned by the account with mode 0700, and passes it to the service in `ORBIT_AGENT_LOCK_DIR`. The supervised process refuses with `agent.lock_unavailable` unless it owns that directory and no one else can enter it. It opens lock files without following links. Only root writes `/run`, so no other account can create, hold, or replace these locks. A root command and an account command on the same target do not exclude each other; today only account commands take targets.
+Each lock records the transient service's control group before the command starts its work. A successor first takes the file lock, then waits for that previous control group to become empty or disappear. This keeps surviving children protected while systemd stops them, including after the command process crashes. The wait uses the command's remaining deadline. An unreadable or invalid control-group record refuses with `agent.lock_unavailable`; a group that stays populated until the deadline refuses with `agent.target_busy`.
+
+Target and resource locks live in `/run/orbit-agent/locks/<uid>`, one directory per account. The root process that starts the mutation creates it, owned by the account with mode 0700, and passes it to the service in `ORBIT_AGENT_LOCK_DIR`. The supervised process refuses with `agent.lock_unavailable` unless it owns that directory and no one else can enter it. It opens lock files without following links. Only root writes `/run`, so no other account can create, hold, or replace these locks. A root command and an account command on the same target do not exclude each other. Commands that must serialize a shared mutation use the same privilege and lock key.
 
 ### The contract
 
@@ -214,7 +216,9 @@ A Gateway release is the only step that updates agents. When a command answers `
 2. runs that candidate's own `agent.install`, which waits up to 120 seconds for the update lock;
 3. sends the command once more, with the deadline that is left.
 
-The lock wait always leaves 30 seconds of the call's deadline for the swap and the health check. A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. A lost connection, a timeout, or a failed copy records nothing either, so the next command tries again. Only a refusal from `agent.install` itself, such as `agent.replace_failed` or `agent.health_check_failed`, records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node.
+The lock wait always leaves 30 seconds of the call's deadline for the swap and the health check. A second mismatch after a passing installation is a runner failure. A busy update lock refuses with `agent.update_busy` and records nothing. A lost connection, a timeout, or a failed copy records nothing either, so the next command tries again.
+
+Only a refusal from `agent.install` itself, such as `agent.replace_failed` or `agent.health_check_failed`, records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node. A recorded failed pin makes that converge re-apply the agent artifact even when its footprint digest already matches; the other artifacts keep their normal digest checks.
 
 `agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
 
@@ -297,7 +301,7 @@ The Gateway keeps the latest state that each agent reports, so it can skip repea
 
 ### Subscriber
 
-The subscriber runs next to PHP-FPM on the Gateway machine.
+The subscriber runs next to PHP-FPM on the Gateway machine. `gateway.converge-agent-view` renders and installs its fixed unit, enables it and restarts it under a root command. PHP supplies the stable Gateway path, Orbit home and account; the service runs Gateway PHP as that account.
 
 | Item | Value |
 | --- | --- |

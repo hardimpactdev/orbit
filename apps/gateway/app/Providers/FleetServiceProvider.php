@@ -39,9 +39,9 @@ use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
@@ -59,7 +59,7 @@ final class FleetServiceProvider extends ServiceProvider
         $this->app->bind(FleetNodeVerification::class, FleetNodeVerifier::class);
         $this->app->bind(
             FleetConvergeUnits::class,
-            static fn (Application $app): NativeFleetConvergeUnits => new NativeFleetConvergeUnits($app->make(ProcessRunner::class)),
+            static fn (Application $app): NativeFleetConvergeUnits => new NativeFleetConvergeUnits($app->make(GatewayServiceCommands::class)),
         );
         $this->app->bind(
             AgentReportedVersions::class,

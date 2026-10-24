@@ -17,6 +17,8 @@ covers:
 
 ## Desired fleet state
 
+Fleet rollout calls the root `cli.self-update` agent command. It supplies the managed account and, only after an authorized Gateway rollback, an exact CLI version to permit. Rust checks the installed CLI, runs the fixed executable with root's profile, and returns its parsed report and bounded diagnostics. The Gateway decides whether that result converged, needs catch-up, or permits a retry. The command holds its own target lock; each binary installer retains the shared update lock, so a child installer never waits on its parent. An unrecognized or malformed CLI report never counts as a successful update.
+
 The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
 | Field | Contents |

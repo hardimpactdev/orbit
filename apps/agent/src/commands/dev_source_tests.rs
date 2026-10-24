@@ -93,7 +93,7 @@ impl Fixture {
                 allow_existing,
                 seed_commit: None,
                 network,
-                git_read: BTreeMap::new(),
+                git_read: GitRead::default(),
             },
             &context(),
         )
@@ -117,7 +117,7 @@ impl Fixture {
                     .iter()
                     .map(|protocol| protocol.to_string())
                     .collect(),
-                git_read: BTreeMap::new(),
+                git_read: GitRead::default(),
             },
             &context(),
         )
@@ -287,7 +287,7 @@ fn an_idle_read_refuses_while_another_operation_holds_the_checkout() {
 
 #[test]
 fn fetch_options_refuse_every_transport_that_is_not_allowed() {
-    let options = fetch_options(&["https".to_string()]);
+    let options = GitRead::default().fetch_options(&["https".to_string()]);
     assert!(options
         .windows(2)
         .any(|pair| pair == ["-c", "protocol.https.allow=always"]));
@@ -297,5 +297,4 @@ fn fetch_options_refuse_every_transport_that_is_not_allowed() {
             "{refused}"
         );
     }
-    assert!(options.contains(&"credential.helper=".to_string()));
 }

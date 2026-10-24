@@ -2,6 +2,7 @@
 use super::recipe::{self, Files, Host, Invocation};
 use crate::{
     command::{
+        lock,
         registry::{self, HookEntry},
         Command, Context, Outcome, Platform, Privilege,
     },
@@ -46,6 +47,26 @@ pub struct Output {
     pub changed: bool,
 }
 pub struct Converge;
+
+/// FPM activation invokes these fixed, synchronous hooks, then releases their target so
+/// ExecStartPre can acquire it while the enclosing FPM convergence service is still running.
+pub(super) fn before_activation(input: Input, context: &Context) -> Result<Output, Error> {
+    let directory = lock::lock_directory().map_err(|_| failed("lock-directory"))?;
+    let held = lock::acquire_all(
+        &directory,
+        orbit_agent_contract::START_HOOK_TARGET,
+        &[],
+        context.deadline(),
+    )
+    .map_err(|_| failed("lock"))?;
+    let result = Converge::run(input, context)?;
+    for lock in held {
+        lock.release_after_children()
+            .map_err(|_| failed("lock-release"))?;
+    }
+    Ok(result)
+}
+
 impl Command for Converge {
     const NAME: &'static str = "gateway.converge-start-hooks";
     const SUMMARY: &'static str =

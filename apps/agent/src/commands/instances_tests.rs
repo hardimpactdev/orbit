@@ -1,6 +1,5 @@
 //! The development source commands, run directly against temporary checkouts. Every refusal leaves the source in
-//! place. The fixture origin is a local bare repository; fetches reach it through `git_read`, as Gateway credentials
-//! would, so no test changes the process environment.
+//! place. The publication observation reads the local bare fixture repository. No test changes the process environment.
 
 use super::*;
 use crate::command::{CommandError, Context, Platform};
@@ -108,18 +107,6 @@ impl Sandbox {
         }
     }
 
-    /// Git read variables that send the Project origin to the local copy.
-    fn git_read(&self) -> BTreeMap<String, String> {
-        BTreeMap::from([
-            ("GIT_CONFIG_COUNT".into(), "1".into()),
-            (
-                format!("GIT_CONFIG_KEY_{}", 0),
-                format!("url.{}.insteadOf", self.origin.display()),
-            ),
-            ("GIT_CONFIG_VALUE_0".into(), ORIGIN.into()),
-        ])
-    }
-
     fn checkout(&self, name: &str) -> PathBuf {
         let path = self.project.join(name);
         sh_git(
@@ -158,6 +145,35 @@ fn decode(value: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(value)
         .unwrap()
+}
+
+fn publication_at(
+    root: &Path,
+    origin: &str,
+    commit: &str,
+    _: &GitRead,
+) -> Result<bool, &'static str> {
+    assert_eq!(origin, ORIGIN);
+    is_published(
+        root.parent().unwrap().join("origin.git").to_str().unwrap(),
+        commit,
+        &GitRead::default(),
+    )
+}
+fn remove_source(input: RemoveSourceInput, _: &Context) -> Result<Empty, SourceError> {
+    let root = input.root.clone();
+    RemoveSource::run_with(input, &|origin, commit, read| {
+        publication_at(&root, origin, commit, read)
+    })
+}
+fn finalize_removal(
+    input: FinalizeRemovalInput,
+    _: &Context,
+) -> Result<FinalizeRemovalOutput, SourceError> {
+    let root = input.root.clone();
+    FinalizeRemoval::run_with(input, &|origin, commit, read| {
+        publication_at(&root, origin, commit, read)
+    })
 }
 
 // ---- inspect ----------------------------------------------------------------------------------------------------
@@ -311,7 +327,7 @@ fn remove_input(sandbox: &Sandbox, checkout: &Path, branch: &str) -> RemoveSourc
         repository_identity: IDENTITY.into(),
         force: false,
         own_units: vec![],
-        git_read: sandbox.git_read(),
+        git_read: GitRead::default(),
     }
 }
 
@@ -320,7 +336,7 @@ fn removal_deletes_a_clean_published_checkout_and_its_empty_parent() {
     let sandbox = Sandbox::new();
     let checkout = sandbox.checkout("dev");
     assert_eq!(
-        RemoveSource::run(remove_input(&sandbox, &checkout, "dev"), &context()),
+        remove_source(remove_input(&sandbox, &checkout, "dev"), &context()),
         Ok(Empty {})
     );
     assert!(!exists(&checkout));
@@ -332,7 +348,7 @@ fn removal_keeps_a_parent_that_holds_another_checkout() {
     let sandbox = Sandbox::new();
     let checkout = sandbox.checkout("dev");
     sandbox.checkout("other");
-    assert!(RemoveSource::run(remove_input(&sandbox, &checkout, "dev"), &context()).is_ok());
+    assert!(remove_source(remove_input(&sandbox, &checkout, "dev"), &context()).is_ok());
     assert!(sandbox.project.join("other/.git").is_dir());
 }
 
@@ -347,14 +363,14 @@ fn removal_refuses_dirty_or_unpublished_source_unless_forced() {
         &["commit", "--quiet", "--allow-empty", "-m", "Local only"],
     );
     assert_eq!(
-        code(RemoveSource::run(
+        code(remove_source(
             remove_input(&sandbox, &dirty, "dev"),
             &context()
         )),
         "instances.unsafe_content"
     );
     assert_eq!(
-        code(RemoveSource::run(
+        code(remove_source(
             remove_input(&sandbox, &unpublished, "unpublished"),
             &context()
         )),
@@ -364,7 +380,7 @@ fn removal_refuses_dirty_or_unpublished_source_unless_forced() {
     assert!(unpublished.join(".git").is_dir());
     let mut forced = remove_input(&sandbox, &unpublished, "unpublished");
     forced.force = true;
-    assert!(RemoveSource::run(forced, &context()).is_ok());
+    assert!(remove_source(forced, &context()).is_ok());
     assert!(!exists(&unpublished));
 }
 
@@ -381,14 +397,14 @@ fn removal_refuses_a_source_that_changed_after_inspection() {
     input.commit = inspected;
     input.force = true;
     assert_eq!(
-        code(RemoveSource::run(input, &context())),
+        code(remove_source(input, &context())),
         "instances.source_changed"
     );
     let mut input = remove_input(&sandbox, &checkout, "dev");
     input.source_identity = "1:1".into();
     input.force = true;
     assert_eq!(
-        code(RemoveSource::run(input, &context())),
+        code(remove_source(input, &context())),
         "instances.source_changed"
     );
     assert!(checkout.join(".git").is_dir());
@@ -402,7 +418,7 @@ fn removal_refuses_each_identity_mismatch_even_when_forced() {
         let mut input = remove_input(&sandbox, &checkout, "dev");
         input.force = true;
         change(&mut input);
-        code(RemoveSource::run(input, &context()))
+        code(remove_source(input, &context()))
     };
     assert_eq!(
         forced(&|input| input.grouping_directory = sandbox.root.clone()),
@@ -452,7 +468,7 @@ fn removal_refuses_a_live_linked_worktree_and_ignores_a_prunable_one() {
     let forced = || {
         let mut input = remove_input(&sandbox, &checkout, "dev");
         input.force = true;
-        code(RemoveSource::run(input, &context()))
+        code(remove_source(input, &context()))
     };
     assert_eq!(forced(), "instances.worktrees_mismatch");
     fs::remove_dir_all(&linked).unwrap();
@@ -479,7 +495,7 @@ fn removal_refuses_shared_git_administration_as_a_layout_mismatch() {
     let mut input = remove_input(&sandbox, &checkout, "dev");
     input.force = true;
     assert_eq!(
-        code(RemoveSource::run(input, &context())),
+        code(remove_source(input, &context())),
         "instances.layout_mismatch"
     );
     assert!(shared.is_dir());
@@ -583,7 +599,7 @@ impl<'a> Recorded<'a> {
             unresolved: false,
             independent_worktree: false,
             own_units: vec![],
-            git_read: self.sandbox.git_read(),
+            git_read: GitRead::default(),
         }
     }
 
@@ -638,7 +654,7 @@ fn finalization_moves_a_checkout_through_quarantine_and_writes_its_receipt() {
     let recorded = Recorded::new(&sandbox, checkout.clone(), "checkout", None);
     recorded.prepare(DIGEST).unwrap();
     assert_eq!(recorded.state(), "present");
-    let output = FinalizeRemoval::run(recorded.finalization(), &context()).unwrap();
+    let output = finalize_removal(recorded.finalization(), &context()).unwrap();
     assert_eq!(
         output,
         FinalizeRemovalOutput {
@@ -660,14 +676,14 @@ fn finalization_refuses_dirty_source_or_a_replaced_directory_before_moving_it() 
     recorded.prepare(DIGEST).unwrap();
     fs::write(checkout.join("new.txt"), "work\n").unwrap();
     assert_eq!(
-        code(FinalizeRemoval::run(recorded.finalization(), &context())),
+        code(finalize_removal(recorded.finalization(), &context())),
         "instances.removal_refused"
     );
     fs::remove_file(checkout.join("new.txt")).unwrap();
     let mut replaced = recorded.finalization();
     replaced.source_identity = "1:1".into();
     assert_eq!(
-        code(FinalizeRemoval::run(replaced, &context())),
+        code(finalize_removal(replaced, &context())),
         "instances.removal_refused"
     );
     assert!(checkout.join(".git").is_dir());
@@ -758,7 +774,7 @@ fn finalization_of_a_quarantined_worktree_keeps_its_branch_and_repository() {
     let commit = sh_git(&repository, &["rev-parse", "feature"]);
     input.commit = commit.clone();
     assert_eq!(
-        FinalizeRemoval::run(input, &context()).unwrap().state,
+        finalize_removal(input, &context()).unwrap().state,
         "finalized"
     );
     assert!(!exists(&worktree));
@@ -792,9 +808,9 @@ fn publication_finds_a_commit_on_a_branch_of_the_origin_and_not_a_local_one() {
     let check = |commit: String| {
         CheckPublication::run(
             CheckPublicationInput {
-                origin: ORIGIN.into(),
+                origin: sandbox.origin.to_str().unwrap().into(),
                 commit,
-                git_read: sandbox.git_read(),
+                git_read: GitRead::default(),
             },
             &context(),
         )
@@ -808,7 +824,7 @@ fn publication_finds_a_commit_on_a_branch_of_the_origin_and_not_a_local_one() {
         CheckPublicationInput {
             origin: ORIGIN.into(),
             commit: "0".repeat(40),
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         },
         &context(),
     );

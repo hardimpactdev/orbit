@@ -14,21 +14,23 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
@@ -224,6 +226,7 @@ describe('gateway:release:deploy', function (): void {
         $builder->prepare($sha);
 
         $builder->remove(substr($sha, 0, 12));
+        $this->fixture->builderAgents()->refuse('gateway.remove-release', 'gateway.release_current');
 
         expect($order->steps)->toBe(['web:remove:'.substr($sha, 0, 12)])
             ->and(release_failure(fn () => $builder->remove($first))->errorCode)->toBe('gateway.release_current');
@@ -256,19 +259,7 @@ describe('gateway:release:deploy', function (): void {
     it('leaves the current release in place when the switch is interrupted', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Interrupted');
-        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new readonly class($this->fixture) implements ProcessRunner
-        {
-            public function __construct(private GatewayReleaseFixture $fixture) {}
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                if (($invocation->arguments[0] ?? '') === 'mv') {
-                    return new CommandResult(1, '', 'mv failed', 1, false);
-                }
-
-                return $this->fixture->run($invocation);
-            }
-        });
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands(new FakeAgentCommandRunner()->refuse('gateway.switch-release', 'gateway.release_switch_failed')));
         $order = new ReleaseSteps;
         $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), $switcher);
 
@@ -280,8 +271,8 @@ describe('gateway:release:deploy', function (): void {
 
     it('marks a commit failed when prepare fails and does not move the current release', function (): void {
         $first = adopt_release($this->fixture);
-        $this->fixture->write('apps/gateway/composer.fail', 'fail');
         $sha = $this->fixture->commit('Broken dependencies');
+        $this->fixture->builderAgents()->refuse('gateway.prepare-release', 'gateway.release_dependencies_failed', ['sha' => $sha]);
 
         $order = new ReleaseSteps;
         $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha));
@@ -334,7 +325,7 @@ describe('gateway:release:deploy', function (): void {
 
     it('refuses a second release step while one holds the lock', function (): void {
         $sha = $this->fixture->commit('Locked');
-        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
+        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock', $this->fixture->releaseCommands($this->fixture->builderAgents()));
         $order = new ReleaseSteps;
         $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), lock: $lock);
 
@@ -557,17 +548,7 @@ describe('gateway:release:deploy', function (): void {
     it('pauses when the switch fails after migrations ran, because the old code serves the new schema', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Migrated, then the switch fails');
-        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new readonly class($this->fixture) implements ProcessRunner
-        {
-            public function __construct(private GatewayReleaseFixture $fixture) {}
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                return ($invocation->arguments[0] ?? '') === 'mv'
-                    ? new CommandResult(1, '', 'mv failed', 1, false)
-                    : $this->fixture->run($invocation);
-            }
-        });
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands(new FakeAgentCommandRunner()->refuse('gateway.switch-release', 'gateway.release_switch_failed')));
         $database = new OpenReleaseDatabase;
         $order = new ReleaseSteps;
         $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order), $switcher);
@@ -615,26 +596,31 @@ describe('gateway:release:deploy', function (): void {
             ->and(Activity::query()->value('error_code'))->toBe('gateway.release_not_prepared');
     });
 
-    it('caches the target release again from the shared env file before it goes current', function (): void {
+    it('requests target configuration refresh before rollback switches the current release', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Second release');
         $order = new ReleaseSteps;
         release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
-        file_put_contents($this->fixture->layout->environmentPath(), "APP_ENV=production\nORBIT_CHANGED=1\n");
+        $this->fixture->builderAgents()->calls = [];
+        $this->fixture->builderAgents()->answer('gateway.refresh-release-configuration', function (array $input) use ($first, $sha): array {
+            expect($input['release'])->toBe($first);
+            expect($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12));
+
+            return ['changed' => true];
+        });
         $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
 
         $rollback->execute($first);
-        $cache = $this->fixture->layout->releaseApplicationPath($first).'/bootstrap/cache';
-
-        expect((require $cache.'/config.php')['env'])->toContain('ORBIT_CHANGED=1')
-            ->and(glob($cache.'/config.next-*'))->toBe([]);
+        $mutations = array_values(array_filter($this->fixture->builderAgents()->commands(),
+            static fn (string $command): bool => ! str_starts_with($command, 'gateway.inspect-')));
+        expect($mutations)->toBe(['gateway.refresh-release-configuration', 'gateway.switch-release']);
     });
 
     it('refreshes the current release configuration for an env change', function (): void {
         $first = adopt_release($this->fixture);
-        file_put_contents($this->fixture->layout->environmentPath(), "APP_ENV=production\nORBIT_CHANGED=2\n");
+        $this->fixture->builderAgents()->calls = [];
         $this->app->instance(ConfigureGatewayReleaseAction::class, new ConfigureGatewayReleaseAction(
-            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock'),
+            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock', $this->fixture->releaseCommands($this->fixture->builderAgents())),
             $this->fixture->layout,
             $this->fixture->builder(),
         ));
@@ -643,7 +629,10 @@ describe('gateway:release:deploy', function (): void {
             ->expectsOutputToContain('"release":"'.$first.'"')
             ->assertExitCode(0);
 
-        expect((require $this->fixture->layout->releaseApplicationPath($first).'/bootstrap/cache/config.php')['env'])->toContain('ORBIT_CHANGED=2');
+        $mutations = array_values(array_filter($this->fixture->builderAgents()->calls,
+            static fn (array $call): bool => ! str_starts_with($call['command'], 'gateway.inspect-')));
+        expect(array_column($mutations, 'command'))->toBe(['gateway.refresh-release-configuration']);
+        expect($mutations[0]['input']['release'])->toBe($first);
     });
 
     it('lists a release whose id contains only digits as a string', function (): void {
@@ -695,10 +684,17 @@ describe('gateway:release:deploy', function (): void {
             ->assertExitCode(1);
     });
 
-    it('refuses a commit that does not descend from the current release unless forced', function (): void {
+    it('records a native downgrade refusal and passes explicit force intent on retry', function (): void {
         $older = $this->fixture->commit('Older');
         $this->fixture->builder()->prepare($older);
         $current = adopt_release($this->fixture);
+        $this->fixture->builderAgents()->answer('gateway.check-release-forward', function (array $input) use ($current): array {
+            if ($input['sha'] !== null && ! $input['force']) {
+                throw new AgentCommandRefused('gateway.check-release-forward', 'gateway.release_downgrade', 'Not a forward commit.');
+            }
+
+            return ['source' => $current, 'source_sha' => $this->fixture->layout->preparedCommit($current)];
+        });
         $order = new ReleaseSteps;
         $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
 
@@ -718,9 +714,7 @@ describe('gateway:release:deploy', function (): void {
         $current = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Has a migration');
         $this->fixture->builder()->prepare($sha);
-        $application = $this->fixture->layout->releaseApplicationPath(substr($sha, 0, 12));
-        chmod($application, 0755);
-        file_put_contents($application.'/config.fail', 'fail');
+        $this->fixture->builderAgents()->refuse('gateway.refresh-release-configuration', 'gateway.release_configuration_failed', ['sha' => $sha]);
         $database = new OpenReleaseDatabase;
         $order = new ReleaseSteps;
 
@@ -790,21 +784,16 @@ describe('gateway:release:deploy', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Fails verify, and the way back fails');
         $this->fixture->builder()->prepare($sha);
-        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new class($this->fixture) implements ProcessRunner
-        {
-            private int $moves = 0;
-
-            public function __construct(private readonly GatewayReleaseFixture $fixture) {}
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                if (($invocation->arguments[0] ?? '') === 'mv' && ++$this->moves > 1) {
-                    return new CommandResult(1, '', 'mv failed', 1, false);
-                }
-
-                return $this->fixture->run($invocation);
+        $moves = 0;
+        $selection = $this->fixture->builderAgents();
+        $agents = new FakeAgentCommandRunner()->answer('gateway.switch-release', function (array $input, Node $node) use (&$moves, $selection): array {
+            if (++$moves > 1) {
+                throw new AgentCommandRefused('gateway.switch-release', 'gateway.release_switch_failed', 'The release switch failed.', []);
             }
+
+            return $selection->run($node, 'gateway.switch-release', $input);
         });
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands($agents));
         $order = new ReleaseSteps;
         $verifier = passing_verifier($order);
         $verifier->failSha = $sha;
@@ -820,14 +809,15 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->layout->currentReleaseId())->not->toBe($first);
     });
 
-    it('refuses to switch when the current path links to something other than a release', function (): void {
+    it('preserves the native not-adopted refusal without changing the fixture current path', function (): void {
         $sha = $this->fixture->commit('Release');
         $this->fixture->builder()->prepare($sha);
         exec('rm -rf '.escapeshellarg($this->live));
         mkdir($this->fixture->base.'/elsewhere', 0755);
         symlink($this->fixture->base.'/elsewhere', $this->live);
+        $this->fixture->builderAgents()->refuse('gateway.switch-release', 'gateway.release_not_adopted');
 
-        $exception = release_failure(fn () => new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture)->switchTo(substr($sha, 0, 12)));
+        $exception = release_failure(fn () => new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands())->switchTo(substr($sha, 0, 12)));
 
         expect($exception->errorCode)->toBe('gateway.release_not_adopted')
             ->and(readlink($this->live))->toBe($this->fixture->base.'/elsewhere');
@@ -1007,15 +997,15 @@ function release_deployer(
     ?FleetConvergeUnits $fleet = null,
 ): DeployGatewayReleaseAction {
     $builder = $fixture->builder($web);
-    $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
+    $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
 
     return new DeployGatewayReleaseAction(
-        $lock ?? new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
+        $lock ?? new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands($fixture->builderAgents())),
         $builder,
         $database,
         new GatewayReleasePromoter(
             $fixture->layout,
-            $switcher ?? new GatewayReleaseSwitcher($fixture->layout, $fixture),
+            $switcher ?? new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()),
             $runtime,
             $verifier,
             $web,
@@ -1026,7 +1016,7 @@ function release_deployer(
             fleet: $fleet,
         ),
         $recorder,
-        new GatewayReleaseGuard($fixture->layout, $fixture),
+        new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands()),
         new GatewayReleaseRetry,
         GatewayReleasePipeline::newestGreen(),
         new ReleaseTestOwner,
@@ -1043,14 +1033,14 @@ function release_rollback(
     ?GatewayReleaseSwitcher $switcher = null,
 ): RollbackGatewayReleaseAction {
     $builder = $fixture->builder($web);
-    $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
+    $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
 
     return new RollbackGatewayReleaseAction(
-        new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
+        new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands($fixture->builderAgents())),
         $fixture->layout,
         new GatewayReleasePromoter(
             $fixture->layout,
-            $switcher ?? new GatewayReleaseSwitcher($fixture->layout, $fixture),
+            $switcher ?? new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()),
             $runtime,
             $verifier,
             $web,

@@ -285,6 +285,7 @@ use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
@@ -698,7 +699,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         $this->app->bind(
             RuntimeHibernatorConverger::class,
             static fn ($app): NativeRuntimeHibernatorConverger => new NativeRuntimeHibernatorConverger(
-                processes: $app->make(ProcessRunner::class),
+                commands: $app->make(GatewayServiceCommands::class),
                 sweepSeconds: Config::integer('orbit.hibernation.sweep_seconds'),
             ),
         );

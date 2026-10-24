@@ -14,41 +14,19 @@ use PDOStatement;
 /** Durable staged identity and complete SQLite restore verification; never restores a database. */
 final readonly class GatewayReleaseRestore
 {
-    public function __construct(private GatewayReleaseRecovery $recovery) {}
+    public function __construct(private GatewayReleaseRecovery $recovery, private GatewayReleaseCommands $commands) {}
 
     public function remember(GatewayRelease $record): void
     {
-        $path = $this->path((string) $record->sha, $record->id);
-        $mask = umask(0077);
-        try {
-            $file = fopen($path, 'xb');
-        } finally {
-            umask($mask);
+        if (! is_string($record->sha)) {
+            $this->refuse('The staged target SHA is missing.');
         }
-        if ($file === false) {
-            $this->refuse('The staged recovery receipt could not be created.');
-        }
-        try {
-            $body = json_encode($record->getAttributes(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-            if (fwrite($file, $body) !== strlen($body) || ! fflush($file) || ! fsync($file)) {
-                $this->refuse('The staged recovery receipt could not be persisted.');
-            }
-        } finally {
-            fclose($file);
-        }
+        $this->commands->writeReceipt(rtrim(Config::string('orbit.home'), '/'), $record->id, $record->sha, $record->getAttributes());
     }
 
     public function read(string $sha, int $id): GatewayRelease
     {
-        $path = $this->path($sha, $id);
-        clearstatcache(true, $path);
-        if (is_link($path) || ! is_file($path) || fileowner($path) !== posix_geteuid() || (fileperms($path) & 0777) !== 0600) {
-            $this->refuse('The original private staged receipt is missing or unsafe.');
-        }
-        $values = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($values)) {
-            $this->refuse('The staged receipt is unreadable.');
-        }
+        $values = $this->commands->readReceipt(rtrim(Config::string('orbit.home'), '/'), $id, $sha);
         $record = new GatewayRelease;
         $record->setRawAttributes($values);
         if ($record->id !== $id || $record->sha !== $sha || data_get($record->phases, 'hold.record') !== $id
@@ -232,11 +210,6 @@ final readonly class GatewayReleaseRestore
         }
 
         return $statement;
-    }
-
-    private function path(string $sha, int $id): string
-    {
-        return rtrim(Config::string('orbit.home'), '/').'/recovery/stage-'.$id.'-'.$sha.'.json';
     }
 
     private function refuse(string $message): never

@@ -6,7 +6,6 @@ use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -299,7 +298,7 @@ pub struct RemoveSourceInput {
     pub repository_identity: String,
     pub force: bool,
     pub own_units: Vec<String>,
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -359,6 +358,15 @@ impl Command for RemoveSource {
     }
 
     fn run(input: RemoveSourceInput, _: &Context) -> Result<Empty, SourceError> {
+        Self::run_with(input, &is_published)
+    }
+}
+
+impl RemoveSource {
+    fn run_with(
+        input: RemoveSourceInput,
+        publication: &impl Fn(&str, &str, &GitRead) -> Result<bool, &'static str>,
+    ) -> Result<Empty, SourceError> {
         let checkout = &input.checkout;
         let grouping = &input.grouping_directory;
         let account = account(&input.user, &input.group);
@@ -462,7 +470,7 @@ impl Command for RemoveSource {
                 || SourceError::UnsafeContent {},
                 "the source is clean",
             )?;
-            let published = is_published(&origin, &input.commit, &input.git_read)
+            let published = publication(&origin, &input.commit, &input.git_read)
                 .map_err(|step| SourceError::Failed { step: step.into() })?;
             require(
                 published,
@@ -661,7 +669,7 @@ pub struct FinalizeRemovalInput {
     pub unresolved: bool,
     pub independent_worktree: bool,
     pub own_units: Vec<String>,
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -690,6 +698,15 @@ impl Command for FinalizeRemoval {
     }
 
     fn run(input: FinalizeRemovalInput, _: &Context) -> Result<FinalizeRemovalOutput, SourceError> {
+        Self::run_with(input, &is_published)
+    }
+}
+
+impl FinalizeRemoval {
+    fn run_with(
+        input: FinalizeRemovalInput,
+        publication: &impl Fn(&str, &str, &GitRead) -> Result<bool, &'static str>,
+    ) -> Result<FinalizeRemovalOutput, SourceError> {
         let checkout = &input.checkout;
         let root = &input.root;
         let common_repository = &input.common_repository;
@@ -918,7 +935,7 @@ impl Command for FinalizeRemoval {
                 REFUSED,
                 "the source is clean",
             )?;
-            let published = is_published(&input.origin, &input.commit, &input.git_read)
+            let published = publication(&input.origin, &input.commit, &input.git_read)
                 .map_err(|_| SourceError::Refused {})?;
             require(published, REFUSED, "the HEAD is published")?;
         }
@@ -962,7 +979,7 @@ impl Command for FinalizeRemoval {
                         checkout.as_os_str(),
                         paths.quarantine.as_os_str(),
                     ],
-                    &BTreeMap::new(),
+                    &GitRead::default(),
                     false,
                 )
                 .status
@@ -1723,7 +1740,7 @@ pub struct CheckPublication;
 pub struct CheckPublicationInput {
     pub origin: String,
     pub commit: String,
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]

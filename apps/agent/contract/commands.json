@@ -43,6 +43,998 @@
       ]
     },
     {
+      "name": "gateway.check-release-adoption",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-repository",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-adoption-origin",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.resolve-adoption-target",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-environment",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-adoption-environment",
+      "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_unsupported",
+        "gateway.release_adopt_not_checkout",
+        "gateway.release_adopt_local_changes",
+        "gateway.release_adopt_repository_conflict",
+        "gateway.release_adopt_repository_failed",
+        "gateway.release_adopt_env_missing",
+        "gateway.release_adopt_env_conflict",
+        "gateway.release_adopt_env_failed"
+      ]
+    },
+    {
+      "name": "gateway.switch-release",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.check-release-forward",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-source",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-releases",
+      "summary": "Select a prepared Gateway release or inspect its Git identity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_path_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_not_adopted",
+        "gateway.release_switch_failed",
+        "gateway.release_downgrade",
+        "gateway.release_source_unknown"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-preparation",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.prepare-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 2400,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.finish-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.refresh-release-configuration",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.remove-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-step",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.migrate-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 960,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.check-release-migrations",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 180,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.handoff-release",
+      "summary": "Prepare, complete, or remove an account-owned Gateway release.",
+      "mutates": true,
+      "timeout_seconds": 4860,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_commit_invalid",
+        "gateway.release_layout_missing",
+        "gateway.release_path_conflict",
+        "gateway.release_disk_low",
+        "gateway.release_fetch_failed",
+        "gateway.release_commit_unknown",
+        "gateway.release_conflict",
+        "gateway.release_current_incomplete",
+        "gateway.release_worktree_failed",
+        "gateway.release_link_failed",
+        "gateway.release_dependencies_failed",
+        "gateway.release_access_failed",
+        "gateway.release_revision_failed",
+        "gateway.release_configuration_failed",
+        "gateway.release_migrate_failed",
+        "gateway.release_schema_pending",
+        "gateway.release_handoff_failed",
+        "gateway.release_current",
+        "gateway.release_not_prepared",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-hold",
+      "summary": "Verify the operator's release hold against Node writer and process observations.",
+      "mutates": false,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_not_drained"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-process",
+      "summary": "Observe the exact native identity of a declared unrelated Gateway Node Process.",
+      "mutates": false,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_not_drained"
+      ]
+    },
+    {
+      "name": "gateway.protect-release-recovery",
+      "summary": "Preserve and verify a private standalone staged SQLite recovery copy.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.verify-release-recovery",
+      "summary": "Verify the recorded private staged recovery copy without changing it.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.write-release-receipt",
+      "summary": "Publish one private staged record receipt without overwriting another identity.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.read-release-receipt",
+      "summary": "Read the private receipt for one staged record and exact target SHA.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_recovery_invalid",
+        "gateway.release_recovery_foreign_keys",
+        "gateway.release_restore_required"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-owner",
+      "summary": "Verify the Gateway execution account and private release state without changing it.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_owner_invalid"
+      ]
+    },
+    {
+      "name": "gateway.inspect-web-build",
+      "summary": "Inspect one web build and the artifact download limit.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.install-web-build",
+      "summary": "Validate and install a downloaded web artifact with Caddy access.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.publish-web-build",
+      "summary": "Publish one installed web build and retain the exact previous target.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-web-build",
+      "summary": "Restore the exact web target preceding a failed activation.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.remove-web-build",
+      "summary": "Remove one retired web build while preserving the current build.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.prune-web-builds",
+      "summary": "Remove unretained web builds while preserving the current build.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_web_directory_missing",
+        "gateway.release_web_build_invalid",
+        "gateway.release_web_install_failed",
+        "gateway.release_web_build_missing",
+        "gateway.release_web_publish_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-release-units",
+      "summary": "Converge fixed release units and host retention without restarting release services.",
+      "mutates": true,
+      "timeout_seconds": 1500,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-fleet-units",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-agent-view",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.converge-hibernator",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-fleet-run",
+      "summary": "Manage one fixed Gateway control-plane service.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.service_units_invalid",
+        "gateway.fleet_units_install_failed",
+        "gateway.agent_view_install_failed",
+        "gateway.hibernator_install_failed",
+        "gateway.fleet_start_failed"
+      ]
+    },
+    {
+      "name": "gateway.drain-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 3660,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.stop-scheduler",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 150,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.restart-release-process",
+      "summary": "Apply one fixed Gateway scheduler handoff step to an owned Process unit.",
+      "mutates": true,
+      "timeout_seconds": 90,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_scheduler_invalid",
+        "gateway.release_scheduler_failed"
+      ]
+    },
+    {
+      "name": "gateway.start-release-run",
+      "summary": "Request the fixed release unit for one queued record.",
+      "mutates": true,
+      "timeout_seconds": 45,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-run",
+      "summary": "Read the systemd state of one release record without taking a lock.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_units_invalid",
+        "gateway.release_units_install_failed",
+        "gateway.release_unit_failed"
+      ]
+    },
+    {
+      "name": "gateway.inspect-release-database",
+      "summary": "Inspect the configured release database and WAL size.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_snapshot_unavailable",
+        "gateway.release_snapshot_failed",
+        "gateway.release_disk_low",
+        "gateway.release_layout_invalid",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.snapshot-release-database",
+      "summary": "Create a private consistent release database snapshot and retain recovery copies.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_snapshot_unavailable",
+        "gateway.release_snapshot_failed",
+        "gateway.release_disk_low",
+        "gateway.release_layout_invalid",
+        "gateway.release_lock_unavailable",
+        "gateway.release_in_progress"
+      ]
+    },
+    {
+      "name": "gateway.adopt-release-storage",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.switch-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.restore-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
+      "name": "gateway.finish-release-adoption",
+      "summary": "Converge a Gateway release adoption transition without a missing serving path.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "gateway.release_layout_invalid",
+        "gateway.release_adopt_conflict",
+        "gateway.release_adopt_storage_missing",
+        "gateway.release_adopt_storage_conflict",
+        "gateway.release_not_prepared",
+        "gateway.release_adoption_failed"
+      ]
+    },
+    {
       "name": "gateway.converge-fpm",
       "summary": "Validate and activate the Gateway pool and startup hooks, preserving unchanged requests.",
       "mutates": true,
@@ -1944,6 +2936,21 @@
         "cli.checksum_mismatch",
         "cli.candidate_invalid",
         "cli.install_failed"
+      ]
+    },
+    {
+      "name": "cli.self-update",
+      "summary": "Run the trusted CLI self-update with root's managed Node profile.",
+      "mutates": true,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "cli.self_update_invalid",
+        "cli.self_update_unavailable",
+        "cli.self_update_failed"
       ]
     },
     {

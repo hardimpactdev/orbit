@@ -2,154 +2,87 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\GatewayReleases\ReleaseArtisan;
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use Illuminate\Support\Facades\DB;
-use Tests\Support\RecordingProcessRunner;
+use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
-    $this->scratch = sys_get_temp_dir().'/orbit-release-db-'.bin2hex(random_bytes(4));
-    mkdir($this->scratch.'/release/apps/gateway/database/migrations', 0755, true);
-    mkdir($this->scratch.'/home', 0700, true);
+    $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => '/home/orbit/.orbit/gateway.sqlite']]);
+    $this->agents = new FakeAgentCommandRunner;
+    $commands = new GatewayReleaseCommands($this->agents);
+    $this->layout = new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway', $commands);
+    $this->database = new SqliteGatewayReleaseDatabase($commands, $this->layout, '/home/orbit/.orbit', '/home/orbit/.orbit/gateway-release-step.lock', connection: 'release_snapshot', keptSnapshots: 2, minimumFreeBytes: 1024);
 });
 
-afterEach(function (): void {
-    exec('rm -rf '.escapeshellarg($this->scratch));
+it('sends the configured database and retention intent and returns the native size and snapshot', function (): void {
+    $path = '/home/orbit/.orbit/backups/pre-0123456789ab-20261025T120000Z-0123456789abcdef.sqlite';
+    $this->agents->answer('gateway.inspect-release-database', ['bytes' => 12345])
+        ->answer('gateway.snapshot-release-database', ['path' => $path]);
+
+    expect($this->database->snapshotBytes())->toBe(12345);
+    expect($this->database->snapshot('0123456789ab'))->toBe($path);
+    expect($this->agents->calls)->toBe([
+        ['node' => 'gateway', 'command' => 'gateway.inspect-release-database', 'input' => ['database' => '/home/orbit/.orbit/gateway.sqlite']],
+        ['node' => 'gateway', 'command' => 'gateway.snapshot-release-database', 'input' => [
+            'database' => '/home/orbit/.orbit/gateway.sqlite', 'orbit_home' => '/home/orbit/.orbit', 'release' => '0123456789ab',
+            'kept_snapshots' => 2, 'minimum_free_bytes' => 1024, 'step_lock' => '/home/orbit/.orbit/gateway-release-step.lock',
+        ]],
+    ]);
 });
 
-describe(SqliteGatewayReleaseDatabase::class, function (): void {
-
-    it('writes a private consistent snapshot of the database and keeps the newest three', function (): void {
-        $live = $this->scratch.'/live.sqlite';
-        touch($live);
-        config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
-        DB::connection('release_snapshot')->statement('CREATE TABLE notes (body TEXT)');
-        DB::connection('release_snapshot')->table('notes')->insert(['body' => 'kept']);
-        $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot');
-
-        foreach (['aaaaaaaaaaa1', 'aaaaaaaaaaa2', 'aaaaaaaaaaa3', 'aaaaaaaaaaa4', 'aaaaaaaaaaa5'] as $index => $id) {
-            $path = $this->scratch.'/home/backups/pre-'.$id.'.sqlite';
-            @mkdir(dirname($path), 0700, true);
-            touch($path, time() - 100 + $index);
-        }
-
-        $snapshot = $database->snapshot('0123456789ab');
-        $copy = new PDO('sqlite:'.$snapshot);
-
-        expect($snapshot)->toStartWith($this->scratch.'/home/backups/pre-0123456789ab-')
-            ->and($copy->query('SELECT body FROM notes')->fetchColumn())->toBe('kept')
-            ->and(fileperms($snapshot) & 0o777)->toBe(0o600)
-            ->and(file_exists($snapshot.'.partial'))->toBeFalse()
-            ->and(file_exists($this->scratch.'/home/backups/pre-aaaaaaaaaaa1.sqlite'))->toBeFalse()
-            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toHaveCount(3);
-
-        DB::purge('release_snapshot');
-    });
-
-    it('migrates with the release code and reports a failed migration', function (): void {
-        $processes = new class implements ProcessRunner
-        {
-            /** @var list<ProcessInvocation> */
-            public array $ran = [];
-
-            public int $exit = 0;
-
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                $this->ran[] = $invocation;
-
-                return new CommandResult($this->exit, '', $this->exit === 0 ? '' : 'SQLSTATE failed', 1, false);
-            }
-        };
-        $database = new SqliteGatewayReleaseDatabase($processes, $this->scratch.'/home', php: '/usr/bin/php8.5');
-
-        $database->migrate('/home/orbit/releases/0123456789ab');
-        $processes->exit = 1;
-        $exception = release_failure(fn () => $database->migrate('/home/orbit/releases/0123456789ab'));
-
-        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], ['APP_CONFIG_CACHE' => '/home/orbit/releases/0123456789ab/apps/gateway/bootstrap/cache/config.php']))
-            ->and(array_slice($processes->ran[0]->arguments, 0, 2))->toBe(['env', '-i'])
-            ->and($exception->step)->toBe('migrate')
-            ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
-    });
-
-    it('refuses a snapshot that would leave less than the floor free and keeps the configured count', function (): void {
-        $live = $this->scratch.'/live.sqlite';
-        touch($live);
-        config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
-        DB::connection('release_snapshot')->statement('CREATE TABLE notes (body TEXT)');
-        DB::connection('release_snapshot')->table('notes')->insert(['body' => str_repeat('x', 200_000)]);
-        $size = filesize($live) + (is_file($live.'-wal') ? filesize($live.'-wal') : 0);
-        $short = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', minimumFreeBytes: 1_000, freeSpace: static fn (): float => (float) $size);
-        $roomy = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', keptSnapshots: 2, minimumFreeBytes: 1_000, freeSpace: static fn (): float => 1e12);
-
-        $refused = release_failure(fn () => $short->snapshot('0123456789ab'));
-
-        $made = [];
-
-        foreach (['aaaaaaaaaaa1', 'aaaaaaaaaaa2', 'aaaaaaaaaaa3'] as $index => $id) {
-            touch($made[] = $roomy->snapshot($id), time() - 100 + $index);
-        }
-
-        expect($short->snapshotBytes())->toBe($size)
-            ->and($refused->errorCode)->toBe('gateway.release_disk_low')
-            ->and($refused->step)->toBe('snapshot')
-            ->and(glob($this->scratch.'/home/backups/pre-0123456789ab-*'))->toBe([])
-            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toEqualCanonicalizing([$made[1], $made[2]]);
-
-        DB::purge('release_snapshot');
-    });
-
-    it('never overwrites an earlier snapshot of the same release and keeps the one a paused release names', function (): void {
-        $live = $this->scratch.'/live.sqlite';
-        touch($live);
-        config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
-        $connection = DB::connection('release_snapshot');
-        $connection->statement('PRAGMA journal_mode=WAL');
-        $connection->statement('CREATE TABLE notes (body TEXT)');
-        $connection->table('notes')->insert(['body' => 'clean']);
-        $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', keptSnapshots: 1, minimumFreeBytes: 0);
-
-        $clean = $database->snapshot('0123456789ab');
-        file_put_contents($this->scratch.'/home/gateway-release.paused', json_encode(['release' => '0123456789ab', 'snapshot' => $clean]));
-        touch($clean, time() - 60);
-        // A half-applied migration, then a retry of the same release.
-        $connection->table('notes')->insert(['body' => 'half-migrated']);
-        $writer = new PDO('sqlite:'.$live);
-        $writer->exec("INSERT INTO notes (body) VALUES ('concurrent')");
-        $retry = $database->snapshot('0123456789ab');
-        $read = static fn (string $path): array => new PDO('sqlite:'.$path)->query('SELECT body FROM notes ORDER BY rowid')->fetchAll(PDO::FETCH_COLUMN);
-
-        expect($retry)->not->toBe($clean)
-            ->and($read($clean))->toBe(['clean'])
-            ->and($read($retry))->toBe(['clean', 'half-migrated', 'concurrent'])
-            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toEqualCanonicalizing([$clean, $retry]);
-
-        DB::purge('release_snapshot');
-    });
-
-    it('refuses to snapshot a database that is not SQLite', function (): void {
-        config(['database.connections.release_mysql' => ['driver' => 'mysql', 'host' => '127.0.0.1', 'database' => 'x']]);
-        $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_mysql');
-
-        expect(release_failure(fn () => $database->snapshot('0123456789ab'))->errorCode)->toBe('gateway.release_snapshot_unavailable');
-    });
+it('requests migrations for the prepared release and preserves a failed migration with its SHA', function (): void {
+    $this->agents->answer('gateway.migrate-release', ['changed' => true]);
+    $this->database->migrate('/home/orbit/releases/0123456789ab');
+    expect($this->agents->calls)->toBe([
+        ['node' => 'gateway', 'command' => 'gateway.migrate-release', 'input' => [
+            'checkout' => $this->layout->applicationPath, 'release' => '0123456789ab', 'step_lock' => '/home/orbit/.orbit/gateway-release-step.lock',
+        ]],
+    ]);
+    $sha = '0123456789ab'.str_repeat('c', 28);
+    $this->agents->refuse('gateway.migrate-release', 'gateway.release_migrate_failed', ['sha' => $sha]);
+    $failure = release_failure(fn () => $this->database->migrate('/home/orbit/releases/0123456789ab'));
+    expect($failure->errorCode)->toBe('gateway.release_migrate_failed')
+        ->and($failure->step)->toBe('migrate')->and($failure->sha)->toBe($sha);
 });
 
-it('keeps the snapshot it just returned when an older file has a later timestamp', function (): void {
-    config(['database.connections.snapshot_order' => ['driver' => 'sqlite', 'database' => ':memory:']]);
-    DB::connection('snapshot_order')->statement('CREATE TABLE notes (body TEXT)');
-    $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'snapshot_order', keptSnapshots: 1, minimumFreeBytes: 0);
-    try {
-        $old = $database->snapshot('aaaaaaaaaaaa');
-        touch($old, time() + 60);
-        $new = $database->snapshot('bbbbbbbbbbbb');
-        expect(is_file($new))->toBeTrue()
-            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toBe([$new]);
-    } finally {
-        DB::purge('snapshot_order');
-    }
+it('maps native snapshot refusals without reporting a created snapshot', function (string $code, int $status): void {
+    $this->agents->refuse('gateway.snapshot-release-database', $code);
+    $failure = release_failure(fn () => $this->database->snapshot('0123456789ab'));
+    expect($failure->errorCode)->toBe($code)->and($failure->step)->toBe('snapshot')->and($failure->status)->toBe($status);
+})->with([
+    ['gateway.release_disk_low', 409], ['gateway.release_snapshot_unavailable', 500],
+    ['gateway.release_snapshot_failed', 500], ['gateway.release_in_progress', 409],
+]);
+
+it('refuses non-SQLite or nonpersistent database intent before sending a snapshot command', function (string $driver, string $path): void {
+    config(['database.connections.release_snapshot' => ['driver' => $driver, 'database' => $path]]);
+    expect(release_failure(fn () => $this->database->snapshot('0123456789ab'))->errorCode)->toBe('gateway.release_snapshot_unavailable');
+    expect($this->agents->calls)->toBe([]);
+})->with([['mysql', 'gateway'], ['sqlite', ':memory:'], ['sqlite', '']]);
+
+it('has no file reservation for an in-memory configuration', function (): void {
+    config(['database.connections.release_snapshot.database' => ':memory:']);
+    expect($this->database->snapshotBytes())->toBe(0);
+    expect($this->agents->calls)->toBe([]);
 });
+
+it('refuses malformed native results and migration paths outside the release layout', function (): void {
+    $this->agents->answer('gateway.inspect-release-database', ['bytes' => -1])
+        ->answer('gateway.snapshot-release-database', ['path' => '/outside/pre-0123456789ab.sqlite']);
+    expect(fn () => $this->database->snapshotBytes())->toThrow(GatewayReleaseException::class, 'invalid release command result');
+    expect(fn () => $this->database->snapshot('0123456789ab'))->toThrow(GatewayReleaseException::class, 'invalid release command result');
+    $this->agents->calls = [];
+    expect(release_failure(fn () => $this->database->migrate('/outside/releases/0123456789ab'))->errorCode)->toBe('gateway.release_layout_invalid');
+    expect($this->agents->calls)->toBe([]);
+});
+
+arch('release database work uses the agent boundary')->expect(SqliteGatewayReleaseDatabase::class)
+    ->not->toUse([ProcessRunner::class, 'PDO', 'filesize', 'disk_free_space', 'file_get_contents', 'glob']);

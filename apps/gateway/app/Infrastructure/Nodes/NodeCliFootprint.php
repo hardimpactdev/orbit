@@ -51,15 +51,4 @@ final readonly class NodeCliFootprint
             ],
         ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
-
-    /**
-     * `orbit self-update --json` as root, over SSH from the Gateway. After a Gateway rollback, the rollout
-     * allows a downgrade to exactly the desired CLI version, and to no other.
-     *
-     * @return non-empty-list<string>
-     */
-    public static function selfUpdateCommand(?string $downgradeTo = null): array
-    {
-        return ['sudo', self::LinkPath, 'self-update', '--json', ...($downgradeTo === null ? [] : ['--allow-downgrade-to='.$downgradeTo])];
-    }
 }

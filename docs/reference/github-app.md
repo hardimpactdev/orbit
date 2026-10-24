@@ -53,7 +53,7 @@ The Gateway reads a Project repository with `git ls-remote` to resolve its defau
 
 Each Project has a `source_access` setting. This section describes `github_app`, the default. [Read through the GitHub CLI](#read-through-the-github-cli) describes `gh_cli`.
 
-For each read of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token with `contents: read` for that one repository. The token expires after one hour. The Gateway passes it to `git` through the environment of that one command, as `GIT_CONFIG_*` variables. The token never appears in the origin URL, the command arguments, `.git/config`, or a file on the Node.
+For each read of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token with `contents: read` for that one repository. The token expires after one hour. Native Node commands accept only an optional GitHub token, never a caller-defined environment map. The agent constructs the fixed `GIT_CONFIG_*` authentication settings for that one Git process. The token never appears in the origin URL, the command arguments, `.git/config`, or a file on the Node. The transport marks token-bearing input so it cannot be sent to a task VM. Excluded task-workspace operations retain their existing credential transport until their own migration.
 
 Token-bearing Git on a Node runs as the Node's managed user. [The checkout cannot inherit the token](#the-checkout-cannot-inherit-the-token) explains which checkout programs it turns off.
 

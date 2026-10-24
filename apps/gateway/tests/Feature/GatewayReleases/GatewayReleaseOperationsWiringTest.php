@@ -6,7 +6,6 @@ use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\Releases\ReleaseAlertKind;
-use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -43,13 +42,7 @@ describe('Gateway release wiring', function (): void {
     });
 
     it('records a manual deploy that the API queued and gateway:release:run ran', function (): void {
-        $caller = $this->markAsGateway(Node::query()->create([
-            'name' => 'wiring-gateway',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'public_ssh_host' => '192.0.2.40',
-            'wireguard_ip' => '10.44.0.40',
-        ]));
+        $caller = $this->markAsGateway(Node::query()->where('name', 'gateway')->sole());
         $older = $this->pipeline->fixture->commit('Older');
         $newest = $this->pipeline->green = $this->pipeline->fixture->commit('Newest');
 

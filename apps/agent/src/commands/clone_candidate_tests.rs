@@ -60,13 +60,72 @@ impl Fixture {
             configured_branch: "main".into(),
             target_branch: "main".into(),
             expected_source: expected,
-            git_read: BTreeMap::new(),
+            git_read: GitRead::default(),
         }
     }
 
     fn development(&self) -> CandidateInput {
         let checkout = self.base.join("checkout");
         self.input("development", checkout.clone(), checkout)
+    }
+
+    fn nested(&self) -> (CandidateInput, PathBuf, PathBuf) {
+        let child = self.base.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(child.join("readme"), "child\n").unwrap();
+        sh_git(&child, &["init", "--quiet"]);
+        sh_git(&child, &["add", "."]);
+        sh_git(&child, &["commit", "--quiet", "-m", "child"]);
+        let parent = self.base.join("parent");
+        sh_git(&self.base, &["clone", "--quiet", "child", "parent"]);
+        // These paths must stay data even when Git's output needs quoting for a human reader.
+        let inner = "inner \t;$(touch marker)'\nleaf";
+        let outer = "outer $() space";
+        sh_git(
+            &parent,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--quiet",
+                "--name",
+                "inner",
+                child.to_str().unwrap(),
+                inner,
+            ],
+        );
+        sh_git(&parent, &["commit", "--quiet", "-am", "inner"]);
+        let input = self.development();
+        sh_git(
+            &input.base,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--quiet",
+                parent.to_str().unwrap(),
+                outer,
+            ],
+        );
+        sh_git(
+            &input.base,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "update",
+                "--init",
+                "--recursive",
+                "--quiet",
+            ],
+        );
+        sh_git(&input.base, &["commit", "--quiet", "-am", "outer"]);
+        sh_git(&input.base, &["push", "--quiet", "origin", "main"]);
+        let outer = input.base.join(outer);
+        let inner = outer.join(inner);
+        (input, outer, inner)
     }
 
     /// A production home whose `current` selects a release cloned from the origin.
@@ -223,4 +282,76 @@ fn no_fsmonitor_runs_in_the_checkout_or_its_submodules() {
 
     assert!(inspect(&input).is_ok());
     assert!(!marker.exists());
+}
+
+#[test]
+fn nested_submodules_with_shell_punctuation_and_newlines_are_data_and_repeat_cleanly() {
+    let fixture = Fixture::new();
+    let (input, outer, inner) = fixture.nested();
+    let commit = sh_git(&input.base, &["rev-parse", "HEAD"]);
+    let before = [&input.base, &outer, &inner].map(|path| fs::read(git_index(path)).unwrap());
+
+    for _ in 0..2 {
+        assert_eq!(
+            inspect(&input),
+            Ok(Candidate {
+                source: input.base.clone(),
+                commit: commit.clone()
+            })
+        );
+    }
+
+    let after = [&input.base, &outer, &inner].map(|path| fs::read(git_index(path)).unwrap());
+    assert_eq!(before, after);
+    assert!(!input.base.join("marker").exists());
+    assert!(!outer.join("marker").exists());
+    assert!(!inner.join("marker").exists());
+}
+
+fn git_index(path: &Path) -> PathBuf {
+    PathBuf::from(sh_git(
+        path,
+        &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+    ))
+}
+
+#[test]
+fn nested_untracked_changed_and_missing_submodules_refuse_before_the_repository_fetch() {
+    let fixture = Fixture::new();
+    let (mut input, outer, inner) = fixture.nested();
+    input.repository = fixture.base.join("not-a-repository").display().to_string();
+    // Even a configured ignore rule cannot hide changes from the inspection.
+    sh_git(&outer, &["config", "submodule.inner.ignore", "all"]);
+    fs::write(inner.join("untracked"), "keep me").unwrap();
+    assert_eq!(inspect(&input), Err(CandidateError::Dirty {}));
+    assert_eq!(fs::read(inner.join("untracked")).unwrap(), b"keep me");
+    fs::remove_file(inner.join("untracked")).unwrap();
+    fs::write(inner.join("readme"), "changed\n").unwrap();
+    assert_eq!(inspect(&input), Err(CandidateError::Dirty {}));
+    sh_git(&inner, &["checkout", "--", "readme"]);
+    sh_git(
+        &inner,
+        &[
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "unrecorded commit",
+        ],
+    );
+    assert_eq!(inspect(&input), Err(CandidateError::Dirty {}));
+    sh_git(&inner, &["checkout", "--quiet", "HEAD^"]);
+    fs::remove_dir_all(&inner).unwrap();
+    fs::create_dir(&inner).unwrap();
+    assert_eq!(inspect(&input), Err(CandidateError::Dirty {}));
+    assert!(inner.is_dir());
+}
+
+#[test]
+fn clone_inspection_has_no_submodule_shell_program() {
+    // This architectural rule protects the command boundary even when a shell would give the same result.
+    let source = include_str!("clone_candidate.rs");
+    assert!(!source.contains("\"foreach\""));
+    assert!(!source.contains("\"sh\""));
+    assert!(!source.contains("\"bash\""));
 }

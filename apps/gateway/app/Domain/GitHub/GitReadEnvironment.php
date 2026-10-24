@@ -18,6 +18,8 @@ final readonly class GitReadEnvironment
     private function __construct(
         #[SensitiveParameter]
         public array $variables,
+        #[SensitiveParameter]
+        private ?string $githubToken = null,
     ) {}
 
     public static function none(): self
@@ -40,7 +42,13 @@ final readonly class GitReadEnvironment
             $variables["GIT_CONFIG_VALUE_{$index}"] = $value;
         }
 
-        return new self($variables);
+        return new self($variables, $token);
+    }
+
+    /** The credential sent to a native command; Rust owns its Git configuration. */
+    public function githubToken(): ?string
+    {
+        return $this->githubToken;
     }
 
     public function isEmpty(): bool

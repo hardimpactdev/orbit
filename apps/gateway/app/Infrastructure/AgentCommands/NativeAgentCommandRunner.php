@@ -178,7 +178,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             }
             if ($value instanceof GitReadEnvironment) {
                 $credential = $credential || ! $value->isEmpty();
-                $input[$key] = (object) $value->variables;
+                $input[$key] = ['github_token' => $value->githubToken()];
             }
         }
         $envelope = AgentInvocation::envelope($pin, $budget, $input);

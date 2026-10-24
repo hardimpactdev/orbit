@@ -6,7 +6,7 @@
 use super::deploy_step::{
     run_program, with_live, Chunk, DeployStepError, Program, RunDeployStepOutput, StepCommand,
 };
-use super::dev_source::fetch_options;
+use super::git_read::GitRead;
 use super::source::{
     canonical, exists, git, git_in, git_output, is_real_directory, is_symlink, origin_url,
 };
@@ -140,7 +140,7 @@ pub struct TargetInput {
     /// The transports the fetch may use; every other one is refused.
     pub protocols: Vec<String>,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -154,7 +154,7 @@ pub fn target(input: &TargetInput) -> Result<Target, DevDeployError> {
     checkout.guard()?;
     let tracking = format!("refs/remotes/origin/{}", input.branch);
     let refspec = format!("+refs/heads/{}:{tracking}", input.branch);
-    let options = fetch_options(&input.protocols);
+    let options = input.git_read.fetch_options(&input.protocols);
     let mut arguments: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
     arguments.extend(
         ["--literal-pathspecs", "-C"]

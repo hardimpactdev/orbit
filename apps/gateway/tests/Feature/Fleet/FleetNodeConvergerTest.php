@@ -20,14 +20,14 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\Fleet\FakeCliReleaseCatalog;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Fleet\FleetTestSsh;
-use Tests\Support\Fleet\ScriptedSshExecutor;
 
 final class FleetConvergerProbe implements NodeReachabilityProbe
 {
@@ -106,71 +106,67 @@ function fleetDesiredState(): DesiredFleetStateData
 }
 
 /** @param array<string, mixed> $options */
-function fleetConverger(ScriptedSshExecutor $ssh, array $options = []): FleetNodeConverger
+function fleetConverger(FakeAgentCommandRunner $agents, array $options = []): FleetNodeConverger
 {
     return new FleetNodeConverger(
         $options['probe'] ?? new FleetConvergerProbe,
         new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0),
         $options['cli'] ?? new FleetConvergerCli,
-        FleetTestSsh::shell($ssh),
+        $agents,
         new NodeFootprint(app(AgentDelivery::class), $options['artifacts'] ?? [new FakeFootprintArtifact('caddy', 'c1', changes: false)]),
         $options['verification'] ?? new FleetConvergerVerification,
         app(AgentDelivery::class),
     );
 }
 
-function selfUpdateReport(string $outcome, ?array $error = null): string
+/** @return array<string, mixed> */
+function selfUpdateResult(string $outcome, ?string $errorCode = null): array
 {
-    return json_encode([
-        'gateway' => 'gateway',
-        'commit' => FleetFixtures::Commit,
-        'outcome' => $outcome,
-        'steps' => [
-            ['step' => 'agent', 'outcome' => 'unchanged', 'reason' => null, 'after' => ['version' => '0.3.0', 'sha256' => str_repeat('a', 64)], 'error' => null],
-            ['step' => 'cli', 'outcome' => $error === null ? $outcome : 'failed', 'reason' => null, 'after' => ['version' => '0.4681.0', 'sha256' => str_repeat('c', 64)], 'error' => $error],
-        ],
-        'request_id' => 'r',
-    ], JSON_THROW_ON_ERROR);
+    return [
+        'outcome' => $outcome, 'report' => ['outcome' => $outcome],
+        'cli_version' => '0.4681.0', 'error_code' => $errorCode,
+        'exit_code' => $outcome === 'failed' ? 1 : 0, 'stdout' => '', 'stderr' => '',
+    ];
 }
 
 describe('fleet Node converge', function (): void {
     // cli.install, agent.install, and the agent artifact each take the update lock themselves.
     it('runs the CLI install, self-update, footprint, and verify in that order', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('updated')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('updated'));
         $cli = new FleetConvergerCli;
 
-        $result = fleetConverger($ssh, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Converged)
             ->and($cli->calls)->toBe(1)
-            ->and($ssh->lines())->toBe(['sudo /usr/local/bin/orbit self-update --json'])
+            ->and($agents->calls)->toBe([['node' => 'dev', 'command' => 'cli.self-update', 'input' => ['user' => 'orbit', 'downgrade_to' => null]]])
             ->and($result->cliVersion)->toBe('0.4681.0')
             ->and($result->evidence['footprint']['artifacts'])->toBe(['caddy' => 'unchanged'])
             ->and($result->footprintDigest)->toHaveLength(64);
     });
 
     it('reports unchanged when no step changed anything', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-        expect(fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)->toBe(FleetNodeOutcome::Unchanged);
+        expect(fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)->toBe(FleetNodeOutcome::Unchanged);
     });
 
     it('counts a fresh CLI install as a change', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-        expect(fleetConverger($ssh, ['cli' => new FleetConvergerCli(NodeCliInstallation::Installed)])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)
+        expect(fleetConverger($agents, ['cli' => new FleetConvergerCli(NodeCliInstallation::Installed)])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)
             ->toBe(FleetNodeOutcome::Converged);
     });
 
     it('marks a Node that SSH cannot reach unreachable and runs nothing', function (): void {
-        $ssh = new ScriptedSshExecutor;
+        $agents = new FakeAgentCommandRunner;
         $cli = new FleetConvergerCli;
 
-        $result = fleetConverger($ssh, ['probe' => new FleetConvergerProbe(false), 'cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['probe' => new FleetConvergerProbe(false), 'cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Unreachable)
             ->and($cli->calls)->toBe(0)
-            ->and($ssh->commands)->toBe([]);
+            ->and($agents->calls)->toBe([]);
     });
 
     it('defers a Node whose role lock another operation holds', function (): void {
@@ -178,7 +174,7 @@ describe('fleet Node converge', function (): void {
         $held = app(NodeLocks::class)->lock('node-role:id:'.$node->id, 60);
         $held->get();
 
-        $result = fleetConverger(new ScriptedSshExecutor)->converge($node, fleetDesiredState());
+        $result = fleetConverger(new FakeAgentCommandRunner)->converge($node, fleetDesiredState());
         $held->release();
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Deferred)
@@ -186,10 +182,10 @@ describe('fleet Node converge', function (): void {
     });
 
     it('fails at the self-update step with its exit code and output', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::fail(1, selfUpdateReport('failed', ['code' => 'self_update.checksum_mismatch', 'message' => 'mismatch']), 'bad checksum'));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', [...selfUpdateResult('failed', 'self_update.checksum_mismatch'), 'stderr' => 'bad checksum']);
         $footprint = new FakeFootprintArtifact('caddy', 'c1');
 
-        $result = fleetConverger($ssh, ['artifacts' => [$footprint]])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['artifacts' => [$footprint]])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Failed)
             ->and($result->step)->toBe('self-update')
@@ -200,21 +196,21 @@ describe('fleet Node converge', function (): void {
     });
 
     it('fails at the CLI step and runs nothing after it', function (): void {
-        $ssh = new ScriptedSshExecutor;
+        $agents = new FakeAgentCommandRunner;
 
-        $result = fleetConverger($ssh, ['cli' => new FleetConvergerCli(failure: new ResourceOperationException('cli.checksum_mismatch', 'mismatch', 502))])
+        $result = fleetConverger($agents, ['cli' => new FleetConvergerCli(failure: new ResourceOperationException('cli.checksum_mismatch', 'mismatch', 502))])
             ->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Failed)
             ->and($result->step)->toBe('cli')
             ->and($result->errorCode)->toBe('cli.checksum_mismatch')
-            ->and(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, 'self-update --json')))->toBe([]);
+            ->and($agents->calls)->toBe([]);
     });
 
     it('fails at the footprint step with the artifact', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-        $result = fleetConverger($ssh, ['artifacts' => [new FakeFootprintArtifact('caddy', 'c1', fails: true)]])
+        $result = fleetConverger($agents, ['artifacts' => [new FakeFootprintArtifact('caddy', 'c1', fails: true)]])
             ->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->step)->toBe('footprint')
@@ -222,9 +218,9 @@ describe('fleet Node converge', function (): void {
     });
 
     it('fails when the verify finds a new Doctor issue', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('updated')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('updated'));
 
-        $result = fleetConverger($ssh, ['verification' => new FleetConvergerVerification(false)])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['verification' => new FleetConvergerVerification(false)])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Failed)
             ->and($result->step)->toBe('verify')
@@ -234,10 +230,10 @@ describe('fleet Node converge', function (): void {
 });
 
 it('waits without failing when self-update is pending or incomplete', function (string $outcome, string $code): void {
-    $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport($outcome)));
+    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult($outcome));
     $footprint = new FakeFootprintArtifact('caddy', 'c1');
 
-    $result = fleetConverger($ssh, ['artifacts' => [$footprint]])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+    $result = fleetConverger($agents, ['artifacts' => [$footprint]])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
     expect($result->outcome)->toBe(FleetNodeOutcome::Waiting)
         ->and($result->errorCode)->toBe($code)
@@ -249,39 +245,39 @@ it('waits without failing when self-update is pending or incomplete', function (
 ]);
 
 it('defers a Node whose self-update lock is busy', function (): void {
-    $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::fail(1, json_encode(['status' => 409, 'error' => ['code' => 'self_update.busy', 'message' => 'busy']], JSON_THROW_ON_ERROR)));
+    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('failed', 'self_update.busy'));
 
-    $result = fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+    $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
     expect($result->outcome)->toBe(FleetNodeOutcome::Deferred)
         ->and($result->errorCode)->toBe('self_update.busy');
 });
 
 it('fails with the envelope error code when self-update fails before any step', function (): void {
-    $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::fail(1, json_encode(['status' => 500, 'error' => ['code' => 'self_update.lock_failed', 'message' => 'lock']], JSON_THROW_ON_ERROR)));
+    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('failed', 'self_update.lock_failed'));
 
-    $result = fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+    $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
     expect($result->outcome)->toBe(FleetNodeOutcome::Failed)
         ->and($result->errorCode)->toBe('self_update.lock_failed');
 });
 
 it('defers a Node whose update lock a self-update keeps', function (): void {
-    $ssh = new ScriptedSshExecutor;
+    $agents = new FakeAgentCommandRunner;
     $cli = new FleetConvergerCli(failure: new ResourceOperationException('node.update_busy', 'A self-update held the lock.', 409));
 
-    $result = fleetConverger($ssh, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+    $result = fleetConverger($agents, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
     expect($result->outcome)->toBe(FleetNodeOutcome::Deferred)
         ->and($result->errorCode)->toBe('node.update_busy')
-        ->and(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, 'self-update --json')))->toBe([]);
+        ->and($agents->calls)->toBe([]);
 });
 
 describe('fleet Node converge resilience', function (): void {
     it('marks a Node unreachable when self-update loses SSH and the Node no longer answers', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::fail(255, '', 'Connection closed'));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', static fn (): array => throw new AgentRunnerFailure('cli.self-update', AgentRunnerFailure::Transport, 'Connection closed'));
 
-        $result = fleetConverger($ssh, ['probe' => new FleetConvergerProbe([true, false])])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['probe' => new FleetConvergerProbe([true, false])])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Unreachable)
             ->and($result->step)->toBe('self-update');
@@ -289,11 +285,11 @@ describe('fleet Node converge resilience', function (): void {
 
     it('retries self-update once when it loses SSH and the Node still answers', function (): void {
         $runs = 0;
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', static function () use (&$runs) {
-            return ++$runs === 1 ? ScriptedSshExecutor::fail(255, '', 'Connection closed') : ScriptedSshExecutor::ok(selfUpdateReport('unchanged'));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', static function () use (&$runs) {
+            return ++$runs === 1 ? throw new AgentRunnerFailure('cli.self-update', AgentRunnerFailure::Transport, 'Connection closed') : selfUpdateResult('unchanged');
         });
 
-        $result = fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Unchanged)
             ->and($runs)->toBe(2);
@@ -301,29 +297,29 @@ describe('fleet Node converge resilience', function (): void {
 
     it('does not retry a definite self-update failure', function (): void {
         $runs = 0;
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', static function () use (&$runs) {
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', static function () use (&$runs) {
             $runs++;
 
-            return ScriptedSshExecutor::fail(1, selfUpdateReport('failed', ['code' => 'agent.unhealthy', 'message' => 'down']));
+            return selfUpdateResult('failed', 'agent.unhealthy');
         });
 
-        expect(fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->errorCode)->toBe('agent.unhealthy')
+        expect(fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->errorCode)->toBe('agent.unhealthy')
             ->and($runs)->toBe(1);
     });
 
     it('retries a failed CLI install once', function (): void {
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
         $cli = new FleetConvergerCli(failure: new ResourceOperationException('cli.download_failed', 'reset', 502), failures: 1);
 
-        expect(fleetConverger($ssh, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)->toBe(FleetNodeOutcome::Unchanged)
+        expect(fleetConverger($agents, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState())->outcome)->toBe(FleetNodeOutcome::Unchanged)
             ->and($cli->calls)->toBe(2);
     });
 
     it('defers a Node that a busy lock blocks', function (string $code): void {
-        $ssh = new ScriptedSshExecutor;
+        $agents = new FakeAgentCommandRunner;
         $cli = new FleetConvergerCli(failure: new ResourceOperationException($code, 'busy', 409));
 
-        $result = fleetConverger($ssh, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['cli' => $cli])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Deferred)
             ->and($result->errorCode)->toBe($code)
@@ -334,7 +330,7 @@ describe('fleet Node converge resilience', function (): void {
         $node = FleetFixtures::node('beast', [RoleName::AppDev]);
         $cli = new FleetConvergerCli(failure: new ResourceOperationException('cli.foreign_binary', 'wrapper', 409));
 
-        $result = fleetConverger(new ScriptedSshExecutor, ['cli' => $cli])->converge($node, fleetDesiredState());
+        $result = fleetConverger(new FakeAgentCommandRunner, ['cli' => $cli])->converge($node, fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Skipped)
             ->and($result->errorCode)->toBe('cli.foreign_binary')
@@ -350,23 +346,21 @@ describe('fleet Node converge resilience', function (): void {
         $agent->applied = $caddy->applied = [];
         $verification = new FleetConvergerVerification;
         $verification->baselineIssues = ['node.agent_inactive:node:'.$node->id, 'node.disk_low:node:'.$node->id];
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-        fleetConverger($ssh, ['artifacts' => [$agent, $caddy], 'verification' => $verification])->converge($node, fleetDesiredState());
+        fleetConverger($agents, ['artifacts' => [$agent, $caddy], 'verification' => $verification])->converge($node, fleetDesiredState());
 
         expect($agent->applied)->toBe(['dev'])
             ->and($caddy->applied)->toBe([]);
     });
 
     it('lets a Gateway rollback downgrade the CLI to exactly the desired version', function (bool $allowed, FleetNodeOutcome $outcome): void {
-        $ssh = new ScriptedSshExecutor()
-            ->on('/--allow-downgrade-to=0\.4681\.0$/', ScriptedSshExecutor::ok(selfUpdateReport('updated')))
-            ->on('/self-update --json$/', ScriptedSshExecutor::fail(1, selfUpdateReport('failed', ['code' => 'self_update.downgrade_refused', 'message' => 'older'])));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', static fn (array $input): array => $input['downgrade_to'] === '0.4681.0' ? selfUpdateResult('updated') : selfUpdateResult('failed', 'self_update.downgrade_refused'));
 
-        $result = fleetConverger($ssh)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState(), $allowed);
+        $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState(), $allowed);
 
         expect($result->outcome)->toBe($outcome)
-            ->and(count(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, '--allow-downgrade-to=0.4681.0'))))->toBe($allowed ? 1 : 0);
+            ->and(count(array_filter($agents->calls, static fn (array $call): bool => $call['input']['downgrade_to'] === '0.4681.0')))->toBe($allowed ? 1 : 0);
     })->with([
         'a verified release' => [true, FleetNodeOutcome::Converged],
         'anything else' => [false, FleetNodeOutcome::Failed],
@@ -398,9 +392,9 @@ describe('fleet Node converge resilience', function (): void {
                 throw new FootprintArtifactSkipped($this->reason, 'A site is invalid.');
             }
         };
-        $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+        $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-        $result = fleetConverger($ssh, ['artifacts' => [$caddy], 'verification' => $verification])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+        $result = fleetConverger($agents, ['artifacts' => [$caddy], 'verification' => $verification])->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
 
         expect($result->outcome)->toBe(FleetNodeOutcome::Unchanged)
             ->and($result->evidence['footprint']['artifacts'])->toBe(['caddy' => 'skipped'])
@@ -409,12 +403,12 @@ describe('fleet Node converge resilience', function (): void {
 
         // A refused validation on the first Node of a rollout is more likely Orbit's own template: it fails.
         $caddy->reason = 'caddy_validate_refused';
-        $first = fleetConverger($ssh, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('first', [RoleName::AppDev]), fleetDesiredState(), firstVisit: true);
-        $later = fleetConverger($ssh, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('later', [RoleName::AppDev]), fleetDesiredState(), firstVisit: false);
-        $render = (static function () use ($caddy, $ssh) {
+        $first = fleetConverger($agents, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('first', [RoleName::AppDev]), fleetDesiredState(), firstVisit: true);
+        $later = fleetConverger($agents, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('later', [RoleName::AppDev]), fleetDesiredState(), firstVisit: false);
+        $render = (static function () use ($caddy, $agents) {
             $caddy->reason = 'caddy_render_refused';
 
-            return fleetConverger($ssh, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('render', [RoleName::AppDev]), fleetDesiredState(), firstVisit: true);
+            return fleetConverger($agents, ['artifacts' => [$caddy]])->converge(FleetFixtures::node('render', [RoleName::AppDev]), fleetDesiredState(), firstVisit: true);
         })();
 
         expect($first->outcome)->toBe(FleetNodeOutcome::Failed)
@@ -430,9 +424,9 @@ it('looks at a foreign CLI again only when the Node answers', function (): void 
     $cli = new FleetConvergerCli;
     $cli->inspected = 'missing';
 
-    expect(fleetConverger(new ScriptedSshExecutor, ['cli' => $cli, 'probe' => new FleetConvergerProbe(false)])->recheckCli($node))->toBeFalse()
+    expect(fleetConverger(new FakeAgentCommandRunner, ['cli' => $cli, 'probe' => new FleetConvergerProbe(false)])->recheckCli($node))->toBeFalse()
         ->and(new NodeCliState()->isForeign($node))->toBeTrue()
-        ->and(fleetConverger(new ScriptedSshExecutor, ['cli' => $cli])->recheckCli($node))->toBeTrue()
+        ->and(fleetConverger(new FakeAgentCommandRunner, ['cli' => $cli])->recheckCli($node))->toBeTrue()
         ->and(new NodeCliState()->isForeign($node))->toBeFalse();
 });
 
@@ -468,11 +462,32 @@ it('keeps a refused validation skipped on the first Node when Caddy only repaire
     App\Models\NodeFootprint::query()->create(['node_id' => $node->id, 'digest' => $plan->digest(), 'artifacts' => $plan->artifacts, 'converged_at' => now()]);
     $verification = new FleetConvergerVerification;
     $verification->baselineIssues = ['role.caddy_build_drift:node_role:1'];
-    $ssh = new ScriptedSshExecutor()->on('/self-update --json$/', ScriptedSshExecutor::ok(selfUpdateReport('unchanged')));
+    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', selfUpdateResult('unchanged'));
 
-    $result = fleetConverger($ssh, ['artifacts' => [$caddy], 'verification' => $verification])->converge($node, fleetDesiredState(), firstVisit: true);
+    $result = fleetConverger($agents, ['artifacts' => [$caddy], 'verification' => $verification])->converge($node, fleetDesiredState(), firstVisit: true);
 
     expect($caddy->applied)->toBe(1)
         ->and($result->outcome)->toBe(FleetNodeOutcome::Unchanged)
         ->and($result->evidence['footprint']['skipped']['caddy']['repair'])->toBeTrue();
 });
+
+it('keeps a native CLI admission refusal definite and skips a foreign binary', function (string $state, FleetNodeOutcome $outcome, string $code): void {
+    $agents = (new FakeAgentCommandRunner)->refuse('cli.self-update', 'cli.self_update_unavailable', ['state' => $state]);
+    $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+
+    expect($result->outcome)->toBe($outcome)->and($result->errorCode)->toBe($code)
+        ->and($agents->calls)->toHaveCount(1);
+})->with([
+    ['foreign', FleetNodeOutcome::Skipped, 'cli.foreign_binary'],
+    ['missing', FleetNodeOutcome::Failed, 'fleet.self_update_failed'],
+]);
+
+it('retries a native result without a CLI verdict once and refuses a malformed result', function (bool $malformed): void {
+    $agents = (new FakeAgentCommandRunner)->answer('cli.self-update', $malformed
+        ? ['outcome' => 'unknown']
+        : [...selfUpdateResult('failed', 'fleet.self_update_failed'), 'report' => null]);
+    $result = fleetConverger($agents)->converge(FleetFixtures::node('dev', [RoleName::AppDev]), fleetDesiredState());
+
+    expect($result->outcome)->toBe(FleetNodeOutcome::Failed)->and($result->errorCode)->toBe('fleet.self_update_failed')
+        ->and($agents->calls)->toHaveCount(2);
+})->with([false, true]);

@@ -2,14 +2,15 @@
 //! its configured branch, and that the repository still holds its commit and the target branch. Git runs as the
 //! Instance user without hooks; the repository is fetched into a private scratch directory that the command removes.
 
+use super::git_read::GitRead;
 use super::source::{realpath, substitution};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::{Command as Process, Output, Stdio},
     time::Duration,
@@ -41,8 +42,8 @@ pub struct CandidateInput {
     pub target_branch: String,
     /// The source the Gateway recorded; another one refuses.
     pub expected_source: PathBuf,
-    /// Variables that authenticate the fetch; only the fetch sees them.
-    pub git_read: BTreeMap<String, String>,
+    /// The GitHub credential; only the fetch sees it.
+    pub git_read: GitRead,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -52,17 +53,11 @@ pub struct Candidate {
 }
 
 /// Runs Git as `user` from `/`, without hooks or fsmonitor, with standard input closed.
-fn git(user: &str, arguments: &[&OsStr], environment: &BTreeMap<String, String>) -> Option<Output> {
+fn git(user: &str, arguments: &[&OsStr], environment: &GitRead) -> Option<Output> {
     let mut command = Process::new("git");
+    environment.configure(&mut command);
     command
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-        ])
         .args(arguments)
-        .envs(environment)
         .current_dir("/")
         .stdin(Stdio::null());
     identity::drop_to(&mut command, user).ok()?;
@@ -71,11 +66,16 @@ fn git(user: &str, arguments: &[&OsStr], environment: &BTreeMap<String, String>)
 
 /// Git's output in `directory` when it succeeds.
 fn read(user: &str, directory: &Path, arguments: &[&str]) -> Option<Vec<u8>> {
+    read_raw(user, directory, arguments).map(|bytes| substitution(&bytes))
+}
+
+/// Preserve NUL delimiters and path bytes in Git's machine-readable output.
+fn read_raw(user: &str, directory: &Path, arguments: &[&str]) -> Option<Vec<u8>> {
     let mut all: Vec<&OsStr> = vec!["-C".as_ref(), directory.as_os_str()];
     all.extend(arguments.iter().map(OsStr::new));
-    git(user, &all, &BTreeMap::new())
+    git(user, &all, &GitRead::default())
         .filter(|output| output.status.success())
-        .map(|output| substitution(&output.stdout))
+        .map(|output| output.stdout)
 }
 
 fn source(input: &CandidateInput) -> Result<PathBuf, CandidateError> {
@@ -130,41 +130,73 @@ fn checkout(input: &CandidateInput, source: &Path) -> Result<(PathBuf, String), 
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         })
         .ok_or(CandidateError::SourceInvalid {})?;
-    let status = read(
-        user,
-        source,
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignore-submodules=none",
-        ],
-    )
-    .ok_or(CandidateError::Dirty {})?;
-    if !status.is_empty() {
-        return Err(CandidateError::Dirty {});
-    }
-    let submodules = read(user, source, &["submodule", "status", "--recursive"])
-        .ok_or(CandidateError::Dirty {})?;
-    if submodules
-        .split(|byte| *byte == b'\n')
-        .any(|line| matches!(line.first(), Some(b'+' | b'-' | b'U')))
-    {
-        return Err(CandidateError::Dirty {});
-    }
-    read(
-        user,
-        source,
-        &[
-            "submodule",
-            "foreach",
-            "--recursive",
-            "--quiet",
-            r#"status=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$PWD" status --porcelain=v1 --untracked-files=all --ignore-submodules=none) && test -z "$status""#,
-        ],
-    )
-    .ok_or(CandidateError::Dirty {})?;
+    clean_tree(user, &real)?;
     Ok((real, commit))
+}
+
+/// Walk Git links from each index without invoking a shell or interpreting path bytes as lines.
+fn clean_tree(user: &str, root: &Path) -> Result<(), CandidateError> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let status = read_raw(
+            user,
+            &directory,
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ],
+        )
+        .ok_or(CandidateError::Dirty {})?;
+        if !status.is_empty() {
+            return Err(CandidateError::Dirty {});
+        }
+        let index = read_raw(user, &directory, &["ls-files", "--stage", "-z"])
+            .ok_or(CandidateError::Dirty {})?;
+        for entry in index
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+        {
+            let separator = entry
+                .iter()
+                .position(|byte| *byte == b'\t')
+                .ok_or(CandidateError::Dirty {})?;
+            let (header, path) = (&entry[..separator], &entry[separator + 1..]);
+            let fields: Vec<_> = header.split(|byte| *byte == b' ').collect();
+            if fields.len() != 3 || fields[2] != b"0" {
+                return Err(CandidateError::Dirty {});
+            }
+            if fields[0] != b"160000" {
+                continue;
+            }
+            let relative = PathBuf::from(OsString::from_vec(path.to_vec()));
+            if relative.as_os_str().is_empty()
+                || relative
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                return Err(CandidateError::Dirty {});
+            }
+            let child = directory.join(relative);
+            // A Git link must lead to its own initialized checkout within this source tree.
+            // Reject linked paths rather than traversing another checkout or a cycle.
+            if realpath(&child).as_ref() != Some(&child)
+                || !child.join(".git").exists()
+                || read_raw(user, &child, &["rev-parse", "--show-toplevel"])
+                    .as_deref()
+                    .and_then(|bytes| bytes.strip_suffix(b"\n"))
+                    != Some(child.as_os_str().as_encoded_bytes())
+                || read(user, &child, &["rev-parse", "--verify", "HEAD^{commit}"]).as_deref()
+                    != Some(fields[1])
+            {
+                return Err(CandidateError::Dirty {});
+            }
+            pending.push(child);
+        }
+    }
+    Ok(())
 }
 
 /// Fetches the repository into a private scratch directory and checks it holds the commit and the target branch.
@@ -196,7 +228,7 @@ fn repository(input: &CandidateInput, commit: &str) -> Result<(), CandidateError
                 "--bare".as_ref(),
                 bare.as_os_str(),
             ],
-            &BTreeMap::new(),
+            &GitRead::default(),
         )) {
             return Err(unavailable());
         }
@@ -237,7 +269,7 @@ fn repository(input: &CandidateInput, commit: &str) -> Result<(), CandidateError
                 "-e".as_ref(),
                 object.as_ref(),
             ],
-            &BTreeMap::new(),
+            &GitRead::default(),
         )) {
             return Err(CandidateError::CommitUnavailable {});
         }
@@ -251,7 +283,7 @@ fn repository(input: &CandidateInput, commit: &str) -> Result<(), CandidateError
                 "--quiet".as_ref(),
                 target.as_ref(),
             ],
-            &BTreeMap::new(),
+            &GitRead::default(),
         )) {
             return Err(CandidateError::TargetBranchMissing {});
         }

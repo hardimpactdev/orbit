@@ -8,7 +8,6 @@ use crate::command::{Command, Context, Platform, Privilege};
 use crate::{command_errors, git_args};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     ffi::OsStr,
     fs,
     io::Write,
@@ -19,9 +18,6 @@ use std::{
 
 /// The file in the Git directory that ties a prepared checkout to the attempt that created it.
 const PREPARE_RECEIPT: &str = "orbit-source-prepare";
-/// The transports a fetch names, each allowed or refused on the command line.
-const PROTOCOLS: [&str; 6] = ["https", "http", "ssh", "git", "file", "ext"];
-
 command_errors! {
     pub enum DevSourceError {
         Invalid { check: String } => "instances.source_invalid", "The checkout is not the prepared source.";
@@ -182,11 +178,7 @@ fn create_directory(path: &Path) -> Result<(), DevSourceError> {
         .map_err(|_| git_failed("create the directory"))
 }
 
-fn run_git(
-    arguments: &[&OsStr],
-    environment: &BTreeMap<String, String>,
-    step: &str,
-) -> Result<(), DevSourceError> {
+fn run_git(arguments: &[&OsStr], environment: &GitRead, step: &str) -> Result<(), DevSourceError> {
     git(arguments, environment, false)
         .status
         .success()
@@ -211,7 +203,7 @@ pub struct PrepareInput {
     /// Whether the Node may fetch the origin; a task VM may not.
     pub network: bool,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -252,7 +244,7 @@ impl Command for PrepareDevelopmentSource {
         std::os::unix::fs::DirBuilderExt::mode(&mut fs::DirBuilder::new(), 0o755)
             .create(checkout)
             .map_err(|_| git_failed("create the checkout"))?;
-        let none = BTreeMap::new();
+        let none = GitRead::default();
         match (&source.seed_repository, &input.seed_commit) {
             (Some(seed), Some(commit)) => {
                 check(!is_symlink(seed), "the seed is not a symlink")?;
@@ -428,38 +420,13 @@ pub struct ResolveInput {
     /// The transports the fetch may use; every other one is refused.
     pub protocols: Vec<String>,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct ResolveOutput {
     pub branch: String,
     pub commit: String,
-}
-
-/// The `-c` options of a fetch that planted configuration cannot widen.
-pub(super) fn fetch_options(protocols: &[String]) -> Vec<String> {
-    let mut options: Vec<String> = [
-        "credential.helper=",
-        "core.alternateRefsCommand=true",
-        "protocol.allow=never",
-        "http.followRedirects=false",
-    ]
-    .iter()
-    .map(|option| (*option).to_string())
-    .collect();
-    for protocol in PROTOCOLS {
-        let allowed = if protocols.iter().any(|allowed| allowed == protocol) {
-            "always"
-        } else {
-            "never"
-        };
-        options.push(format!("protocol.{protocol}.allow={allowed}"));
-    }
-    options
-        .into_iter()
-        .flat_map(|option| ["-c".to_string(), option])
-        .collect()
 }
 
 impl Command for ResolveDevelopmentSource {
@@ -485,7 +452,7 @@ impl Command for ResolveDevelopmentSource {
         source.guard_parent_chain()?;
         source.inspect(true)?;
         if input.network {
-            let options = fetch_options(&input.protocols);
+            let options = input.git_read.fetch_options(&input.protocols);
             let mut arguments: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
             arguments.extend(git_args![
                 "-C",
@@ -545,7 +512,7 @@ impl Command for ResolveDevelopmentSource {
                 &branch,
                 &reference
             ],
-            &BTreeMap::new(),
+            &GitRead::default(),
             "check out the branch",
         )?;
         let head = git_output(checkout, &["symbolic-ref", "--short", "HEAD"], true);

@@ -2,12 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\ConvergeNodeFootprintAction;
 use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Instance;
 use App\Models\NodeFootprint as NodeFootprintRecord;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository;
 use Illuminate\Filesystem\Filesystem;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
@@ -176,3 +182,24 @@ it('re-applies artifacts for a new native pin but ignores unrelated manifest cha
         new Filesystem()->deleteDirectory($root);
     }
 });
+
+it('re-applies the agent for a recorded failed pin even when node:converge finds a matching footprint', function (bool $force): void {
+    $node = FleetFixtures::node('dev', [RoleName::AppDev]);
+    $agent = new FakeFootprintArtifact('agent', 'agent-current');
+    $caddy = new FakeFootprintArtifact('caddy', 'caddy-current');
+    $footprint = new NodeFootprint(app(AgentDelivery::class), [$agent, $caddy]);
+    $footprint->converge($node);
+    $agent->applied = $caddy->applied = [];
+    $node->forceFill(['agent_failed_pin' => app(AgentDelivery::class)->pin($node)])->save();
+    $action = new ConvergeNodeFootprintAction(
+        $footprint,
+        new ManagedNodeEligibility,
+        new NodeRoleConvergeLock(new NodeLocks(new Repository(new ArrayStore))),
+    );
+
+    $result = $action->execute($node, $force);
+
+    expect($agent->applied)->toBe(['dev'])
+        ->and($caddy->applied)->toBe($force ? ['dev'] : [])
+        ->and($result->artifacts['agent'])->toBe('applied');
+})->with([false, true]);

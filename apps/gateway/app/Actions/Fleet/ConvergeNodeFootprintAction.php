@@ -30,8 +30,13 @@ final readonly class ConvergeNodeFootprintAction
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node has a Gateway-rendered footprint.', 422);
         }
 
+        $forceArtifacts = $force;
+        if (! $force && $node->agent_failed_pin !== null) {
+            $forceArtifacts = ['agent'];
+        }
+
         try {
-            $result = $this->lock->run($node, fn () => $this->footprint->converge($node, $force), errorCode: 'node.converge_failed', step: 'node-lock');
+            $result = $this->lock->run($node, fn () => $this->footprint->converge($node, $forceArtifacts), errorCode: 'node.converge_failed', step: 'node-lock');
         } catch (NodeRoleOperationException $exception) {
             throw new ResourceOperationException($exception->underlyingErrorCode, $exception->getMessage(), 409, $exception);
         }

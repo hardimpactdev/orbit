@@ -3,6 +3,7 @@
 //! access, the check of the `current` selection, and the home's removal. These replace the Bash that
 //! `RemoteProductionInstanceSourceLifecycle` sent, check for check, and keep its marker formats.
 
+use super::git_read::GitRead;
 use super::laravel::{entries, plain, put};
 use super::production::{
     account, as_user, as_user_with_input, check, failed, git, invalid, none, relative_path,
@@ -15,7 +16,6 @@ use crate::command::{Command, Context, Platform, Privilege};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     ffi::{CStr, CString, OsStr},
     fs,
     io::Write,
@@ -250,7 +250,7 @@ pub struct SourceInput {
     /// A clone that already exists and matches its markers passes.
     pub allow_existing: bool,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 /// Clones the repository into `releases/initial` of an empty home, with an empty `.env`, and records the two
@@ -380,21 +380,11 @@ pub fn prepare_source(input: &SourceInput, layout: &Layout) -> Result<Prepared, 
         &none(),
     )
     .ok_or_else(|| failed("create the stable environment"))?;
-    let clone: Vec<&OsStr> = [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "core.fsmonitor=false",
-        "clone",
-        "--no-checkout",
-        "--origin",
-        "origin",
-        "--",
-    ]
-    .map(OsStr::new)
-    .into_iter()
-    .chain([OsStr::new(&home.repository), release.as_os_str()])
-    .collect();
+    let clone: Vec<&OsStr> = ["clone", "--no-checkout", "--origin", "origin", "--"]
+        .map(OsStr::new)
+        .into_iter()
+        .chain([OsStr::new(&home.repository), release.as_os_str()])
+        .collect();
     as_user(user, "git", &clone, &input.git_read).ok_or_else(|| failed("clone the repository"))?;
     for directory in [&layout.state_root, &state] {
         if !exists(directory) {
@@ -458,7 +448,7 @@ pub struct ResolveInput {
     /// A clone target may replace a tracked, unchanged `.env` with the link.
     pub clone_target: bool,
     #[serde(default)]
-    pub git_read: BTreeMap<String, String>,
+    pub git_read: GitRead,
 }
 
 #[derive(Debug, Serialize, PartialEq)]

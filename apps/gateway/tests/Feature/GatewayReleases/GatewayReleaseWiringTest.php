@@ -17,6 +17,7 @@ use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseCommands;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
@@ -73,9 +74,8 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and(wired(app(RunAutomaticGatewayReleaseAction::class), 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
             ->and(wired(wired($promoter, 'ticks'), 'windowSeconds'))->toBe(240)
             ->and($runtime)->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
-            ->and(wired($runtime, 'fallback'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
+            ->and(wired($runtime, 'commands'))->toBeInstanceOf(GatewayReleaseCommands::class)
             ->and(wired($runtime, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and(wired($runtime, 'timeout'))->toBe(450.0 + 330 + 600 + 300)
             ->and($database)->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
             ->and(wired($database, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
             ->and(wired($database, 'keptSnapshots'))->toBe(3)

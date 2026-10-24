@@ -12,6 +12,9 @@ use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\GatewayReleases\GatewayReleaseInventory;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
@@ -37,12 +40,41 @@ final class FleetFixtures
 
     private static int $taskVms = 0;
 
+    private static ?FakeAgentCommandRunner $releaseAgents = null;
+
+    private static ?string $currentSha = null;
+
+    private static ?string $runningSha = null;
+
+    /** @var array<string, string> */
+    private static array $commits = [];
+
     /** Points the Gateway checkout at a temporary in-place checkout: no release layout, no release records. */
     public static function inPlace(): string
     {
         $base = sys_get_temp_dir().'/orbit-fleet-layout-'.bin2hex(random_bytes(4));
         mkdir($base.'/orbit/apps/gateway', 0755, true);
         Config::set('orbit.gateway_checkout', $base.'/orbit/apps/gateway');
+        self::$currentSha = null;
+        self::$runningSha = null;
+        self::$commits = [];
+        self::$releaseAgents = new FakeAgentCommandRunner()->answer('gateway.inspect-releases', static fn (array $input): array => [
+            'current' => self::$currentSha === null ? null : substr(self::$currentSha, 0, 12),
+            'state' => self::$currentSha === null ? 'in_place' : 'adopted',
+            'superseded' => $input['running_application'] !== null && self::$runningSha !== null && self::$currentSha !== self::$runningSha,
+            'commits' => self::$commits, 'incomplete' => [], 'retained' => array_map(strval(...), array_keys(self::$commits)),
+        ]);
+        app()->instance(GatewayReleaseObserver::class, new class(self::$releaseAgents) implements GatewayReleaseObserver
+        {
+            public function __construct(private FakeAgentCommandRunner $agents) {}
+
+            public function inspect(GatewayReleaseLayout $layout, ?string $runningApplication = null): GatewayReleaseInventory
+            {
+                return GatewayReleaseInventory::fromAgent($this->agents->run(new Node()->forceFill(['name' => 'gateway']), 'gateway.inspect-releases', [
+                    'checkout' => $layout->applicationPath, 'running_application' => $runningApplication,
+                ]));
+            }
+        });
         app()->instance(FleetServingRelease::class, new FleetServingRelease($base.'/orbit/apps/gateway'));
 
         return $base;
@@ -51,6 +83,8 @@ final class FleetFixtures
     /** Turns the temporary checkout into the release layout serving the commit's release. */
     public static function adopt(string $commit): void
     {
+        self::$currentSha = $commit;
+        self::$commits[substr($commit, 0, 12)] = $commit;
         $base = dirname(Config::string('orbit.gateway_checkout'), 3);
         $id = substr($commit, 0, 12);
         @mkdir($base.'/releases/'.$id.'/apps/gateway', 0755, true);
@@ -65,9 +99,15 @@ final class FleetFixtures
         symlink('releases/'.$id, $base.'/orbit');
     }
 
+    public static function unreadable(): void
+    {
+        self::$releaseAgents?->refuse('gateway.inspect-releases', 'gateway.release_layout_invalid');
+    }
+
     /** Runs this process as if from the release of the commit, as the unit does after a release. */
     public static function runFrom(string $commit): void
     {
+        self::$runningSha = $commit;
         $base = dirname(Config::string('orbit.gateway_checkout'), 3);
         app()->instance(FleetServingRelease::class, new FleetServingRelease($base.'/releases/'.substr($commit, 0, 12).'/apps/gateway'));
     }

@@ -27,12 +27,20 @@ final class LocalAgentBinary
 {
     public static function path(): string
     {
-        $path = base_path('../agent/target/release/orbit-agent');
+        $path = dirname(__DIR__, 3).'/agent/target/release/orbit-agent';
         if (! is_executable($path)) {
             throw new RuntimeException("The agent binary [{$path}] is missing. Run `cargo build --release` in apps/agent first.");
         }
 
         return $path;
+    }
+
+    /** The test process uses one completed build; each native invocation still verifies its own bytes. */
+    public static function pin(): string
+    {
+        static $pin = null;
+
+        return $pin ??= hash_file('sha256', self::path());
     }
 
     /** A delivery that pins the built binary for `linux-x86_64` Nodes. */
@@ -46,7 +54,7 @@ final class LocalAgentBinary
         file_put_contents($manifest, json_encode([
             'commit' => str_repeat('0', 40),
             'version' => '0.0.0',
-            'artifacts' => ['linux-x86_64' => ['sha256' => hash_file('sha256', $binary), 'path' => $binary]],
+            'artifacts' => ['linux-x86_64' => ['sha256' => self::pin(), 'path' => $binary]],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         return new AgentDelivery($manifest, $directory.'/artifacts');
