@@ -10,9 +10,12 @@ task's actual base before editing; report material drift to the parent.
 
 When an external group's Project requires hosted handoff CI, a keyed handoff
 operation must not report a usable passed candidate until CI passes on its exact
-committed tree. Reuse `tasks.check`, its target lock, detached check, checked
-commit and VM push record. Add persisted handoff-push/CI-read steps and the `ci`
-evidence field defined in the contract. No new operation kind, table, queue,
+committed tree. Reuse `tasks.check`, its target lock, detached check, commit
+step and VM push record. For each new CI-required handoff operation, that step
+creates one fresh sanitized commit, including an empty commit for an unchanged
+checked tree. Same-operation replay/recovery retains that commit. Add persisted
+handoff-push/CI-read steps and the `ci` evidence field defined in the contract.
+No new operation kind, table, queue,
 daemon, command runner, CLI verb, model or generic effect abstraction is needed.
 
 Keep `tasks.orchestration_unsupported` for review-and-merge create and topology
@@ -34,12 +37,15 @@ the added result. No claim that review-and-merge admission is delivered.
 
 Expected implementation boundary, relative to `apps/gateway`:
 
-- `app/Domain/Tasks/TaskCheckOperation.php`: existing check/commit, persisted
-  handoff push/read steps, waiting result and cancellation reconciliation.
+- `app/Domain/Tasks/TaskCheckOperation.php`: existing check/commit, with
+  `allowEmpty: true` and skip-directive sanitization for each new CI-required
+  handoff operation; persisted handoff push/read steps, waiting result and
+  cancellation reconciliation. Baseline/no-policy commit behavior is unchanged.
 - `app/Domain/Tasks/TaskHandoffCi.php`: extract/reuse push/read/classification
   effects without tick reminders, assistance, retry decisions or commits. Keep
-  the tick path working against the same helpers. Preserve skip-directive
-  sanitization for the operation's existing commit; make no second CI commit.
+  the tick path working against the same helpers. Reuse its sanitized message
+  and fresh/empty-commit policy in the operation's single commit step; make no
+  second CI commit within that operation.
 - Existing `TaskPullRequestMerger`, `TaskPullRequestPublisher` and VM publish
   job/record: reuse as-is where possible. Touch them only for a demonstrated
   contract gap; no duplicate CI reader or push journal.
@@ -60,13 +66,16 @@ Review `Project::handoffCheckName()` at `app/Models/Project.php:130`,
 `TaskHandoffCi::test()` at `app/Domain/Tasks/TaskHandoffCi.php:47`, and the shared
 check snapshot at `app/Infrastructure/Tasks/GitHubTaskPullRequestMerger.php:86`.
 These line numbers refer to the pinned SHA. The contract's permalinks provide
-the source evidence. Do not invoke the tick-guarded test method externally.
+the source evidence. In particular, Tasks reference lines 1065–1069 require a
+sanitized new commit even for unchanged work; `TaskHandoffCi.php:99–100` uses
+`allowEmpty: true` to ensure a new push starts CI. Do not invoke the tick-guarded
+test method externally.
 
 ## Meaningful checks for that implementation
 
 The positive regression must fail on the pinned source: local pass → exactly one
-checked commit → only `task-{group}-handoff` pushed → pending CI keeps the same
-operation waiting → exact named CI pass returns `outcome: passed` with the same
+fresh sanitized checked-tree commit → only `task-{group}-handoff` pushed → pending
+CI keeps the same operation waiting → exact named CI pass returns `outcome: passed` with the same
 check/commit/tree. Assert no PR-head push, PR, agent send, assistance, subtask
 advance or second local check. No-policy and baseline paths must still pass
 without any CI push/read. Run the extracted helper's tick callers' focused tests.
@@ -76,6 +85,14 @@ Negative/recovery coverage must establish:
 - Same key after a lost reply/restart returns the same operation/check/push;
   changed input conflicts. Recovery after push but before its response reconciles
   the existing remote tip, without a second commit/push effect.
+- Commit H's hosted workflow is cancelled by infrastructure; Swamp cancels
+  observation and authorizes a new key without tree changes. The new operation
+  creates H2 != H with the same checked tree and a sanitized message, then pushes
+  H2 to start fresh CI instead of reusing the cancelled run. Same-key replay or
+  recovery retains H2: no H3, second local check, push or CI-start effect.
+- An unchanged tree at an old commit whose message contains a CI-skip directive
+  still gets a new commit with those directives removed. Merely passing a clean
+  message to a signer that returns the old HEAD does not satisfy this case.
 - Tree/HEAD change between local check, commit and handoff push cannot report a
   pass. A second holder is refused while CI waits; the single operations worker
   is free to run another target's work.

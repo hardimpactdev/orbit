@@ -63,12 +63,15 @@ requests, routes and DTOs in the pinned source. No live task tool was invoked.
 | `POST .../{group}/turn`, `tasks:turn`, `tasks_turn` | Keyed `tasks.turn`; reviewer check must belong to the acting child; returns receipt and reset evidence [turn] | Final-review child may use its source handoff check from the same group; preserve ordinary child binding |
 | `GET .../{group}`, `tasks:show`, `tasks_show` | Already exposes child `type`, `fixup_problem`, latest check [child-dto], and `review_and_merge.reviewed_commits` [dto] | Add only source-operation lineage to children; group reads are records, not fresh merge authority |
 | `POST .../{group}/publish`, `tasks:publish`, `tasks_publish` | Keyed `tasks.publish`, passed group handoff check, non-force push and PR lookup/open/update; no final-review ledger gate or brief coverage [publish] | Require recorded final approval for review-and-merge groups and preserve PR coverage policy |
-| Review application | Tick code creates approval comments and `TaskReviewedCommit` [record] | New keyed `tasks.review.record`, CLI `tasks:review:record`, MCP `tasks_review_record` |
+| Review application | Tick code creates approval comments and `TaskReviewedCommit` [record] | New keyed `tasks.review_record`, CLI `tasks:review:record`, MCP `tasks_review_record` |
 | Merge | Tick-only `TaskPublication::mergeWhenReady`; no external API/CLI/MCP merge command [merge] | New keyed `tasks.merge`, CLI `tasks:merge`, MCP `tasks_merge` |
 
 `...` above means `/api/v1/task-groups`. New command/tool names are proposals,
 not commands the current CLI/MCP accepts. SDK requests and generated MCP metadata
 must follow the one native HTTP schema; do not maintain a second client schema.
+The proposed kind `tasks.review_record` follows the shared `<family>.<verb>`
+grammar [operation-kinds], which the public list filter enforces [operation-filter].
+The CLI hierarchy does not change that grammar.
 
 ## Shared wire, ownership and errors
 
@@ -132,10 +135,22 @@ a candidate. The source is its operation ID, check ID, owning child, commit and
 tree, not a caller-supplied SHA. `head` in the existing check result is the
 pre-commit check snapshot; **`commit` is the candidate HEAD**, not `head` [check].
 
-For `Project::handoffCheckName() != null`, add two persisted steps after the
-existing commit: handoff push, then hosted CI read. Today that predicate follows
-`reviewsAndMerges()`; it is not an independent caller option [project]. Reuse
-`TaskHandoffCi`'s push, check classification and output helpers [ci]. Extract
+For a handoff with `Project::handoffCheckName() != null`, the existing commit
+step must create one fresh, sanitized commit per new operation, even when the
+checked tree is unchanged (`allowEmpty: true`). This is the documented handoff
+policy [handoff-policy], already implemented by `TaskHandoffCi` [ci]. Record that
+commit on the check and verify its tree against the
+passed tree. Same-operation replay/recovery retains that commit; it must not
+create another commit after an interrupted reply. A newly authorized operation
+with a new key creates a new commit even if the previous commit's workflow was
+cancelled and the tree is unchanged. Sanitizing only a proposed message while
+reusing an old commit cannot remove inherited CI-skip directives; the new commit
+must carry the sanitized title/summary message.
+
+Add two persisted steps after this commit: handoff push, then hosted CI read.
+Today that predicate follows `reviewsAndMerges()`; it is not an independent
+caller option [project]. Reuse `TaskHandoffCi`'s push, check classification and
+output helpers [ci]. Extract
 them from scheduler callbacks; do not call its tick-guarded `test()` from an
 external operation. Baseline and Projects without this policy retain their path.
 Persist the required check name and branch in operation state before the CI push.
@@ -158,9 +173,10 @@ left by cancelled CI observation, must not pass either consumer. This narrow
 consumer guard belongs to the first task; full final-review publication gating
 comes later. Store no duplicate check-status schema to express that distinction.
 
-- Push the already recorded commit, without force, only to `task-{group}-handoff`.
-  Never open a PR on it, push the task branch, or make a second commit for CI.
-  Preserve CI-skip-directive removal from the handoff commit message. Recover
+- Push the operation's fresh recorded commit, without force, only to
+  `task-{group}-handoff`. Never open a PR on it, push the task branch, or make a
+  second commit within the same operation for CI. Preserve CI-skip-directive
+  removal from the new handoff commit message [handoff-policy]. Recover
   through the existing VM push record and remote tip before repeating a push.
 - Pending/missing/unreadable CI keeps the operation `waiting`, with delayed
   bounded reads and no worker held. Swamp owns its wall-clock budget and cancel.
@@ -274,7 +290,7 @@ a successful reset.
 ## 3. Record the final review without publishing
 
 Proposed `POST /api/v1/task-groups/{group}/review/record`, kind
-`tasks.review.record`. Exact body: `{subtask: <final-review child ID>, turn:
+`tasks.review_record`. Exact body: `{subtask: <final-review child ID>, turn:
 <successful keyed reviewer operation ID>}`. CLI uses `--subtask`, `--turn`,
 `--idempotency-key`; MCP takes those body fields, group and `Idempotency-Key`.
 No SHA, outcome, comment body or approval assertion comes from the caller.
@@ -472,8 +488,11 @@ parity. Topology preparation/stop/evidence, consult/direction parity, async
 completion and engine retirement remain separate. No old tick class is deleted.
 
 Future implementation acceptance must prove: same-key replay and changed-input
-conflict; one source child/comment/ledger entry across lost replies and concurrent
-requests; ordinary cross-child review refused but a source-bound final review
+conflict; cancelled handoff workflow followed by a new-key/no-change handoff
+creates one new sanitized commit with the same checked tree and starts fresh CI,
+while same-operation recovery retains its commit; one source child/comment/ledger
+entry across lost replies and concurrent requests; ordinary cross-child review
+refused but a source-bound final review
 accepted; exact clean candidate before/after reset; full/delta review provenance;
 zero PR-head pushes before final approval; handoff-only CI cannot authorize merge;
 incomplete/untrusted/wrong-head checks/reviews fail closed; moved head between
@@ -511,6 +530,9 @@ remain explicit unfinished work.
 [owner]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/Tasks/TaskOperations.php#L34-L89
 [project]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Models/Project.php#L116-L146
 [ci]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/Tasks/TaskHandoffCi.php#L43-L201
+[handoff-policy]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/docs/reference/tasks.md#L1059-L1076
+[operation-kinds]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/Operations/OperationKinds.php#L16-L23
+[operation-filter]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Http/Requests/Operations/ListOperationsRequest.php#L12-L23
 [ci-wire]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/GitHub/GitHubCheckRun.php#L17-L51
 [suite-wire]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/GitHub/GitHubCheckSuite.php#L48-L52
 [packet]: https://github.com/hardimpactdev/orbit/blob/d6bce77673b00e4b5e60cf9260d5441a746c829a/apps/gateway/app/Domain/Tasks/TaskReviewPacketBuilder.php#L20-L63
