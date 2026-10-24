@@ -157,7 +157,13 @@ trait FollowsOperations
                 'failed' => 'Check failed.',
                 'changed' => 'Check changed the tree.',
                 default => 'Check operation succeeded.',
-            } : "{$verb} succeeded.",
+            } : ($operation->kind === 'tasks.analyze' ? match ($operation->result['outcome'] ?? null) {
+                'ready' => 'Analysis ready. This is evidence, not approval.',
+                'action_required' => 'Analysis requires action. This is not approval.',
+                'blocked' => 'Analysis blocked. This is not approval.',
+                'changed' => 'Analysis changed the tree. This is not usable turn evidence.',
+                default => 'Analysis operation succeeded. Inspect its evidence.',
+            } : "{$verb} succeeded."),
             'cancelled' => "{$verb} cancelled.",
             default => "{$verb} failed.",
         });

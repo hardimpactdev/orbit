@@ -13,6 +13,7 @@ use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
+use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
@@ -27,6 +28,7 @@ use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Tasks\TaskAnalysisPlan;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -38,6 +40,7 @@ use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
+use App\Http\Requests\Tasks\StartTaskAnalysisRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
@@ -65,7 +68,7 @@ final class TaskGroupsController extends Controller
     }
 
     /** Starts tasks.turn and answers 202 with the queued operation. */
-    #[StartsOperation(OperationKinds::TasksTurn)]
+    #[StartsOperation(OperationKinds::TasksTurn, maxJsonBytes: PHP_INT_MAX)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function turn(StartTaskTurnRequest $request, Task $group, StartTaskTurnAction $action): JsonResponse
     {
@@ -95,6 +98,16 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksPublish)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function publish(StartTaskPublishRequest $request, Task $group, StartTaskPublishAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    #[StartsOperation(OperationKinds::TasksAnalyze, requiresKey: true, maxJsonBytes: TaskAnalysisPlan::RequestBytes)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function analyze(StartTaskAnalysisRequest $request, Task $group, StartTaskAnalysisAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);

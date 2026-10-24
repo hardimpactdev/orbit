@@ -97,7 +97,7 @@ function task_effect_sites(): array
             foreach ($finder->findInstanceOf($nodes, ClassMethod::class) as $method) {
                 $effect = $finder->findFirst($method->stmts ?? [], static function (Node $node): bool {
                     return ($node instanceof MethodCall && $node->name instanceof Identifier
-                            && in_array($node->name->name, ['send', 'respond', 'startCheck', 'provision', 'start'], true))
+                            && in_array($node->name->name, ['send', 'respond', 'startCheck', 'startAnalysis', 'provision', 'start'], true))
                         || ($node instanceof MethodCall && $node->name instanceof Identifier && $node->name->name === 'create'
                             && $node->var instanceof PropertyFetch && $node->var->name instanceof Identifier && $node->var->name->name === 'driver')
                         || (($node instanceof Assign || $node instanceof AssignOp || $node instanceof AssignRef)

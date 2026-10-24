@@ -16,6 +16,8 @@ final class TaskTurnData extends Data
         public string $thread,
         public ?string $model = null,
         public ?int $check = null,
+        /** @var array{operation: int, plan_sha256: string}|null */
+        public ?array $analysis = null,
     ) {}
 
     public function threadRole(): TaskThreadRole

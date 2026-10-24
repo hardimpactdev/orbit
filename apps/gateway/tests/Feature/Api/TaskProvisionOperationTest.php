@@ -20,6 +20,7 @@ use App\Domain\Operations\OperationSweeper;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExtensionState;
@@ -43,12 +44,14 @@ use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Tests\Support\FakeTaskAnalysisRunner;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     enable_operation_queue();
+    app()->instance(TaskAnalysisRunner::class, new FakeTaskAnalysisRunner);
     $this->travelTo(now()->startOfSecond());
 });
 
@@ -267,6 +270,27 @@ describe('tasks.provision', function (): void {
         expect($group->taskable->routes()->sole()->domain)->toBe('task.provision.test');
         expect(TaskCheck::query()->count())->toBe(0);
     });
+
+    it('records the initial analysis base once at provision and retains unavailable bases without guessing later', function (bool $available): void {
+        $group = provision_operation_group();
+        test_task_vm($group, $this->gatewayNode);
+        provision_operation_fakes();
+        $analysis = app(TaskAnalysisRunner::class);
+        $analysis->initialBase = $available ? str_repeat('b', 40) : null;
+        $operation = provision_operation_start($group, 'provision.fixed-base');
+        app(OperationRunner::class)->run($operation->id);
+        $operation->refresh();
+        $instance = $group->fresh()->taskable;
+        $recorded = ['base' => $analysis->initialBase, 'instance_id' => $instance->id,
+            'repository' => $group->project->repository_url, 'branch' => $instance->branch];
+        expect($operation->status)->toBe(OperationStatus::Succeeded)->and($operation->state['analysis_base'])->toBe($recorded)
+            ->and($analysis->baseReads)->toBe(1)->and($analysis->starts)->toBe(0);
+        $analysis->initialBase = str_repeat('c', 40);
+        app(OperationRunner::class)->run($operation->id);
+        $this->postJson('/api/v1/task-groups/'.$group->id.'/provision', [], ['Idempotency-Key' => 'provision.fixed-base'])
+            ->assertAccepted()->assertJsonPath('data.id', $operation->id);
+        expect($operation->fresh()->state['analysis_base'])->toBe($recorded)->and($analysis->baseReads)->toBe(1);
+    })->with([false, true]);
 
     it('ends the group after a Route effect fails and never retries it', function (): void {
         $group = provision_operation_group();

@@ -9012,6 +9012,175 @@
       }
     },
     {
+      "name": "tasks-analyze",
+      "extension": "tasks",
+      "title": "tasks:analyze",
+      "description": "Starts keyed tasks.analyze with exactly subtask, plan, plan_sha256, base, head, and tree. Runs only tracked executable bin/task-analyze in the owned external workspace with a fixed stdin envelope, no agent and no TaskCheck. Retains bounded complete exact-byte evidence and native provenance. Outcomes ready, action_required, blocked, and changed are evidence, never approval. Uses the provisioned initial merge base and fresh whole-worktree identity, including untracked files. Recovery adopts the same reserved execution and report; cancellation retains the fence until terminal descendant proof. See /reference/tasks#analyze-a-repository.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/analyze",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "subtask": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric current subtask ID"
+          },
+          "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "source",
+              "asserted_by",
+              "complete",
+              "paths"
+            ],
+            "description": "Complete cumulative native manifest. At most 32 KiB of RFC 8785 canonical JSON. Entries already sorted by UTF-8 (path, change, from-or-empty); no conflicting/duplicate endpoints. Completeness is a provenance assertion, not mechanical approval.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "brief_id",
+                  "revision_sha256"
+                ],
+                "properties": {
+                  "brief_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "revision_sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              },
+              "asserted_by": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "complete": {
+                "const": true
+              },
+              "paths": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "change",
+                        "path"
+                      ],
+                      "properties": {
+                        "change": {
+                          "type": "string",
+                          "enum": [
+                            "add",
+                            "modify",
+                            "delete"
+                          ]
+                        },
+                        "path": {
+                          "type": "string",
+                          "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "change",
+                        "from",
+                        "path"
+                      ],
+                      "properties": {
+                        "change": {
+                          "const": "rename"
+                        },
+                        "from": {
+                          "type": "string",
+                          "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                        },
+                        "path": {
+                          "type": "string",
+                          "description": "A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "plan_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of RFC 8785 canonical manifest JSON."
+          },
+          "base": {
+            "type": "string",
+            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+          },
+          "head": {
+            "type": "string",
+            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+          },
+          "tree": {
+            "type": "string",
+            "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "Idempotency-Key",
+          "subtask",
+          "plan",
+          "plan_sha256",
+          "base",
+          "head",
+          "tree"
+        ]
+      }
+    },
+    {
       "name": "tasks-cancel",
       "extension": "tasks",
       "title": "Cancel a Task group",
@@ -10114,7 +10283,7 @@
       "name": "tasks-turn",
       "extension": "tasks",
       "title": "Run one agent turn",
-      "description": "Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model and reviewer check. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.",
+      "description": "Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model, reviewer check, and analysis reference {operation, plan_sha256}. Analysis must be successful usable evidence for this child, fresh under the turn lease before first send; dispatched recovery keeps the same complete prompt and key. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/turn",
       "path_inputs": [
@@ -10173,6 +10342,24 @@
             "type": "integer",
             "minimum": 1,
             "description": "Conditionally required."
+          },
+          "analysis": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "plan_sha256"
+            ],
+            "properties": {
+              "operation": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "plan_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
           }
         },
         "additionalProperties": false,

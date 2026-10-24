@@ -101,7 +101,7 @@ it('retains a persisted turn through restart, unknown state, and an old stopped 
     $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
     $leases = app(TaskWorkspaceLease::class);
     $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
-    $leases->dispatch($thread, $driver->observation);
+    $key = $leases->dispatch($thread, $driver->observation);
     $restarted = new TaskWorkspaceLease;
     $driver->observation = new AgentObservation(null);
     $restarted->reconcile($group);
@@ -109,10 +109,86 @@ it('retains a persisted turn through restart, unknown state, and an old stopped 
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'old');
     $restarted->reconcile($group);
     expect($lease->fresh()->status)->toBe('held');
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'new');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $key);
     $restarted->reconcile($group);
     expect($lease->fresh()->status)->toBe('released');
 });
+
+it('retains a keyed dispatch without matching terminal evidence', function (?string $previous, AgentThreadState $state, string $observed): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+    $leases->dispatch($thread, $previous === null ? null : new AgentObservation(AgentThreadState::Done, turnId: $previous), key: 'owned-turn', message: 'Work.');
+    $driver->observation = new AgentObservation($state, turnId: $observed);
+
+    $leases->reconcile($group);
+
+    expect($lease->refresh()->status)->toBe('held');
+    expect($lease->getAttribute('dispatch_completed'))->toBeFalse();
+    expect($leases->completedSend($thread, 'owned-turn', 'Work.'))->toBeFalse();
+    expect(fn () => $leases->acquire($group, 'check', 'competitor', queue: false))->toThrow(TaskWorkspaceWaiting::class);
+})->with([
+    'unknown previous turn and unrelated terminal key' => [null, AgentThreadState::Done, 'unrelated-turn'],
+    'known previous turn and unrelated terminal key' => ['old', AgentThreadState::Done, 'unrelated-turn'],
+    'unknown previous turn and unrelated failed key' => [null, AgentThreadState::Failed, 'unrelated-turn'],
+    'known previous turn and unrelated failed key' => ['old', AgentThreadState::Failed, 'unrelated-turn'],
+    'unknown previous turn and matching idle key' => [null, AgentThreadState::Idle, 'owned-turn'],
+    'matching key is idle, not completed' => ['old', AgentThreadState::Idle, 'owned-turn'],
+]);
+
+it('preserves terminal reconciliation for adopted pre-existing turns without a dispatch key', function (?AgentThreadState $initial, AgentThreadState $terminal): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $driver->observation = new AgentObservation($initial, turnId: 'pre-existing-turn');
+    $leases = app(TaskWorkspaceLease::class);
+    $leases->reconcile($group);
+    $lease = TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->where('status', 'held')->sole();
+
+    expect($lease->getAttribute('adopted'))->toBeTrue();
+    expect($lease->dispatch_key)->toBeNull();
+    expect(fn () => $leases->acquire($group, 'check', 'competitor', queue: false))->toThrow(TaskWorkspaceWaiting::class);
+    $driver->observation = new AgentObservation($terminal, turnId: 'pre-existing-turn');
+
+    $leases->reconcile($group);
+
+    expect($lease->refresh()->status)->toBe('released');
+    expect($lease->getAttribute('dispatch_completed'))->toBeTrue();
+    expect($leases->acquire($group, 'check', 'competitor', queue: false)->owner)->toBe('competitor');
+})->with([
+    'working owner' => [AgentThreadState::Working],
+    'paused owner' => [AgentThreadState::AskingForInput],
+    'unreadable owner' => [null],
+])->with([
+    'idle with a turn ID' => [AgentThreadState::Idle],
+    'done with a turn ID' => [AgentThreadState::Done],
+    'failed with a turn ID' => [AgentThreadState::Failed],
+]);
+
+it('releases a keyed dispatch after observing its exact terminal request key', function (?string $previous, AgentThreadState $state): void {
+    $group = tick_group();
+    $driver = lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
+    $leases->dispatch($thread, $previous === null ? null : new AgentObservation(AgentThreadState::Done, turnId: $previous), key: 'owned-turn', message: 'Work.');
+    $driver->observation = new AgentObservation($state, turnId: 'owned-turn');
+
+    $leases->reconcile($group);
+
+    expect($lease->refresh()->status)->toBe('released');
+    expect($lease->getAttribute('dispatch_completed'))->toBeTrue();
+    expect($leases->completedSend($thread, 'owned-turn', 'Work.'))->toBeTrue();
+    expect($leases->acquire($group, 'check', 'next')->owner)->toBe('next');
+})->with([
+    'done after unreadable previous turn' => [null, AgentThreadState::Done],
+    'failed after unreadable previous turn' => [null, AgentThreadState::Failed],
+    'done after known previous turn' => ['old', AgentThreadState::Done],
+    'failed after known previous turn' => ['old', AgentThreadState::Failed],
+]);
 
 it('does not mistake an old stopped turn for a prepared dispatch and releases removed preparation only', function (): void {
     $group = tick_group();
@@ -308,11 +384,11 @@ it('continues paused input within the same lease and completion fence', function
     $thread = AgentThread::query()->findOrFail($group->tasks->first()->implementer_agent_thread_id);
     $leases = app(TaskWorkspaceLease::class);
     $lease = $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
-    $leases->dispatch($thread, $driver->observation);
-    $driver->observation = new AgentObservation(AgentThreadState::AskingForInput, turnId: 'new');
+    $key = $leases->dispatch($thread, $driver->observation);
+    $driver->observation = new AgentObservation(AgentThreadState::AskingForInput, turnId: $key);
     $registry->get('pi')->send($thread, 'Continue without input.');
     expect($lease->fresh()->status)->toBe('held')->and($lease->fresh()->getAttribute('previous_turn_id'))->toBe('old');
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'new');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $key);
     $leases->reconcile($group);
     expect($lease->fresh()->status)->toBe('released');
 });

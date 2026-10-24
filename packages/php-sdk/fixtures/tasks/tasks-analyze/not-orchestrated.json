@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\AnalyzeTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/analyze",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "operation.target_busy",
+            "message": "Another operation on this task group has not ended.",
+            "details": {
+                "operation_id": 2
+            }
+        }
+    }
+}

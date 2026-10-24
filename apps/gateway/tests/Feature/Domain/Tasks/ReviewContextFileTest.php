@@ -428,19 +428,25 @@ function review_context_opening(): array
         'review_attempt' => $task->review_attempt,
         'posted_at' => now(),
     ]);
-    $driver = new FakeAgentDriver('pi');
+    $driver = new class('pi') extends FakeAgentDriver
+    {
+        #[Override]
+        public function observe(AgentThread $thread): AgentObservation
+        {
+            return new AgentObservation(AgentThreadState::Done, turnId: $this->acceptedTurnKeys[$thread->external_id]);
+        }
+    };
     $log = new class
     {
         /** @var list<array{message: string, context: ?string}> */
         public array $turns = [];
     };
-    $driver->beforeTurn = function (string $message) use ($driver, $log, $checkout): void {
+    $driver->beforeTurn = function (string $message) use ($log, $checkout): void {
         $path = review_context_file_path($checkout);
         $log->turns[] = [
             'message' => $message,
             'context' => is_file($path) ? (string) file_get_contents($path) : null,
         ];
-        $driver->observation = new AgentObservation(state: AgentThreadState::Done, turnId: 'context-turn-'.count($log->turns));
     };
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);

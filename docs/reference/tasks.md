@@ -161,7 +161,7 @@ For hosted handoff CI, cancel stops a queued push under the existing publish sto
 
 #### Analyze an external group's repository
 
-This is the agreed docs-first contract for the fixed analysis addition in [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#fixed-repository-analysis). Runtime implementation and its independent review follow this documentation child. It does not establish live interruption or docs-workflow proof, and it does not open external review-and-merge or topology admission.
+The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#fixed-repository-analysis). Repository analysis and turn evidence do not establish live interruption or docs-workflow proof. They do not open external review-and-merge or topology admission.
 
 `POST /api/v1/task-groups/{group}/analyze` starts `tasks.analyze`, served by the Gateway with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller command, argument list, environment, executable, working directory, report path, model, or analyzer selector. API, SDK, CLI `tasks:analyze`, and generated MCP metadata share the native request contract; clients do not define competing schemas or aliases.
 
@@ -246,7 +246,9 @@ Immediately before the first Pi send, compare fresh candidate, base, repository,
 
 Add the full manifest, validated envelope, and Gateway provenance to the caller's semantic prompt, labelled as repository evidence. Enforce the existing 100,000-character bound on the combined prompt, including fixed instructions and evidence, before sending. Overflow refuses with no send; no summary, shortened tail, truncation, or host-file mount substitutes for the report. A smaller task or plan, or a separately reviewed transport design, is required.
 
-Persist the exact assembled prompt, reference, and hash in turn state before dispatch. After dispatch, same-key recovery retains the original Pi/Durable send identity and persisted prompt. It recovers the original turn rather than revalidating the intentionally edited checkout and starting a second send. Freshness checks govern the first send, not recovery of a dispatched turn.
+Persist the exact assembled prompt, reference, and hash in turn state before dispatch. Verify that retained reference and complete prompt hash before reuse; a corrupt binding fails without another send and does not release an uncertain owner. After confirmed acceptance, same-key recovery retains the original Pi/Durable send identity and persisted prompt. It recovers the original turn rather than revalidating the intentionally edited checkout and starting a second send.
+
+A local dispatch journal alone does not prove acceptance. If an unconfirmed request now has stale evidence, wait under the original lease without resending; a negative observation does not stop a delayed request from arriving later. A terminal observation for another key cannot release that lease. Uncertain work has no timeout-based release, including after a crash between journaling and transmission. Freshness checks govern first admission and unconfirmed retries, not recovery of a confirmed dispatched turn.
 
 The initial report is input to its author turn. Author edits intentionally invalidate its candidate identity. After the normal handoff commit and check, analyze the current checked candidate again before an evidence-bound reviewer turn. Preserve initial and current operation IDs in caller evidence. Rework or entry to the next child needs fresh evidence when the plan or candidate changes; never rerun baseline for this purpose.
 
@@ -285,7 +287,7 @@ The shared task-operation rules apply. A missing workspace returns HTTP 409 `tas
 | `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |
 | `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
 | `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
-| `analysis` (docs-first addition) | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
+| `analysis` | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
 
 The operation holds the group and sends one turn through Pi. The send key is its `Idempotency-Key`, or `operation-{id}`. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
 
@@ -829,6 +831,10 @@ A live or unreadable actor, unmanaged legacy ownership, uncertain provider destr
 For an owner recorded on another Gateway host, pass `--gateway-node=ID`. Orbit uses that Node’s pinned SSH transport and verifies the exact recorded hostname, boot and process start identity. A live or unreadable owner is refused. On that pinned Node and matching hostname, a changed boot proves the recorded process ended, just as it does for a local Gateway. With the original boot, Orbit requires the exact PID and process start identity to prove death. An unreadable boot or mismatched hostname does not prove death.
 
 Remote operations and separate turns still need their own terminal evidence. A rebooted managed check ends as interrupted and failed; a result from its previous boot cannot pass a gate or establish a causal after-tree.
+
+Before an opening turn, Orbit journals its request key and forwards that same key to the driver, including when Orbit generates it. A dispatched keyed turn completes its lease only when Pi reports `done` or `failed` for that exact key. `idle`, an unreadable prior observation, and terminal state for another key prove no completion. This preserves the fence while a delayed request may still arrive.
+
+A pre-existing turn adopted without a dispatch journal has no request key to match. Orbit retains that owner until it observes a nonempty turn ID in `idle`, `done`, or `failed`.
 
 A permanently lost Pi runtime can leave a dispatched turn without terminal evidence. The lease remains held, and the operator release command refuses it. There is no supported force-release or expiry for that turn; restoring authoritative runtime evidence or a separately reviewed recovery procedure is required. A ghost teardown with no Instance, saved endpoint, or authoritative provider destruction has the same evidence limit.
 

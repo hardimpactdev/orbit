@@ -25,6 +25,7 @@ use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
+use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
@@ -63,6 +64,10 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\PrunePendingTaskThreads;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAnalysisEvidence;
+use App\Domain\Tasks\TaskAnalysisOperation;
+use App\Domain\Tasks\TaskAnalysisPlan;
+use App\Domain\Tasks\TaskAnalysisReport;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -231,11 +236,14 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis through shared TaskOperations admission; TaskAnalysisOperationTest exercises the boundary.'],
+        TaskAnalysisOperation::class => ['read' => 'Dispatches only the fixed read-only analysis under its owning operation and workspace lease.'],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
         TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
         StartTaskTurnAction::class => ['execute' => 'tasks.turn explicitly admits an external group through shared TaskOperations.'],
         TaskTurnOperation::class => [
+            'read' => 'Resumes the original external analysis-bound send under its persisted identity and workspace lease.',
             'send' => 'tasks.turn is the external group holder and sole turn sender.',
             'run' => 'Runs the external turn operation under its group hold.',
         ],
@@ -268,6 +276,26 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis admission is exercised by TaskAnalysisOperationTest.'],
+        TaskAnalysisOperation::class => [
+            'validate' => 'Requires the current child of an open external group without dispatch.',
+            'run' => 'Plans one owned fixed analysis without lifecycle advancement.',
+            'waitingStep' => 'Supplies analysis waiting and cancellation hooks.',
+            'read' => 'Reserves or recovers the same fixed analysis execution under the existing workspace lease.',
+            'stop' => 'Stops the exact reserved execution before releasing its lease.',
+            'abandon' => 'Removes queued ownership without repeating a dispatch.',
+        ],
+        TaskAnalysisEvidence::class => [
+            'resolve' => 'Validates same-child usable complete evidence without dispatch.',
+            'requireFresh' => 'Reads fixed base and fresh workspace identity under the caller lease; sends no turn.',
+            'candidateTree' => 'Reads the validated evidence candidate identity.',
+            'prompt' => 'Builds bounded untrusted evidence input without dispatch.',
+        ],
+        TaskAnalysisPlan::class => [
+            'parse' => 'Validates the closed canonical manifest and digest without effects.',
+            'path' => 'Validates an exact relative file path without effects.',
+        ],
+        TaskAnalysisReport::class => ['validate' => 'Validates complete original report bytes and execution identity without effects.'],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         TaskPublishOperation::class => [
             'requireCheck' => 'Requires the passed handoff commit of this group and unchanged HEAD.',

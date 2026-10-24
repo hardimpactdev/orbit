@@ -20,6 +20,9 @@ class FakeAgentDriver implements AgentDriver
     /** @var list<array<string, mixed>> */
     public array $calls = [];
 
+    /** @var array<string, string> accepted request key by external thread ID */
+    public array $acceptedTurnKeys = [];
+
     public bool $supportsInterruption = false;
 
     public bool $failNextInterrupt = false;
@@ -59,7 +62,12 @@ class FakeAgentDriver implements AgentDriver
             throw new \RuntimeException('SQLSTATE[40001]: serialization failure');
         }
 
-        return 'conversation-'.count($this->calls);
+        $externalId = 'conversation-'.count($this->calls);
+        if (! $intent->deferOpeningTurn && $intent->openingKey !== null) {
+            $this->acceptedTurnKeys[$externalId] = $intent->openingKey;
+        }
+
+        return $externalId;
     }
 
     public function send(AgentThread $thread, string $message, ?string $key = null): void
@@ -79,6 +87,9 @@ class FakeAgentDriver implements AgentDriver
             $exception->turnRejected = true;
 
             throw $exception;
+        }
+        if ($key !== null) {
+            $this->acceptedTurnKeys[$thread->external_id] = $key;
         }
     }
 

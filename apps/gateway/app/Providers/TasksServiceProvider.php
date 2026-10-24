@@ -18,6 +18,7 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
@@ -88,6 +89,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
+        TaskAnalysisRunner::class => RemoteTaskCheckRunner::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,

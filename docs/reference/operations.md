@@ -72,7 +72,7 @@ Use the kind and target type to start or find the work of a command.
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
-| `tasks:analyze` (docs-first addition) | `tasks.analyze` | `task_group` | Gateway |
+| `tasks:analyze` | `tasks.analyze` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 
@@ -84,7 +84,7 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 ### Fixed repository analysis evidence
 
-The agreed docs-first contract for [Tasks analysis](/reference/tasks#analyze-an-external-groups-repository) adds keyed `tasks.analyze` with `workspace_ready`, `analysis`, and `report` steps, using existing task ownership and detached supervision. Its key is required, unlike the optional keys on ordinary operation starts. Same-key replay runs before mutable eligibility checks, never dispatches a second scanner, and keeps the original bounded artifact even after VM destruction. This addition does not change baseline/check inputs, ordinary turns, or closed external review-and-merge/topology admission.
+[Tasks analysis](/reference/tasks#analyze-an-external-groups-repository) runs keyed `tasks.analyze` with `workspace_ready`, `analysis`, and `report` steps, using existing task ownership and detached supervision. Its key is required, unlike the optional keys on ordinary operation starts. Same-key replay runs before mutable eligibility checks, never dispatches a second scanner, and keeps the original bounded artifact even after VM destruction. This addition does not change baseline/check inputs, ordinary turns, or closed external review-and-merge/topology admission.
 
 The terminal result is `{outcome, artifact, provenance}`. `artifact: {sha256, bytes, content}` preserves exact complete UTF-8 stdout, at most 64 KiB/depth 24, not the step's 8 KiB diagnostic tail. The digest and length apply to decoded content bytes, not reserialized JSON. Size the typed transport for JSON escaping of the entire bounded result; never truncate it. Gateway-owned provenance binds the complete plan and candidate to repository, branch, owned workspace, run, lease, entrypoint digest, before/after snapshots, duration, exit code, and zero mechanical LLM calls. Tasks owns the detailed field list; repository code owns report semantics and docs mappings.
 
