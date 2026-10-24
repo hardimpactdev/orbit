@@ -21,6 +21,74 @@ def program(name):
     return source.replace('# ORBIT_TASK_UNIT_STATE', (RESOURCES / 'tasks/unit-state.py').read_text())
 
 
+class TaskAnalysisBaseTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.checkout = Path(self.temporary.name)
+        self.git('init', '--quiet')
+        (self.checkout / 'tracked').write_text('original\n')
+        self.git('add', 'tracked')
+        self.git('commit', '--quiet', '-m', 'base')
+        self.base = self.git('rev-parse', 'HEAD')
+        self.git('commit', '--quiet', '--allow-empty', '-m', 'starting commit')
+        self.start = self.git('rev-parse', 'HEAD')
+        self.git('commit', '--quiet', '--allow-empty', '-m', 'later candidate')
+        self.head = self.git('rev-parse', 'HEAD')
+        self.git('remote', 'add', 'origin', 'invalid://must-not-fetch')
+        self.script = self.checkout / '.git/check-fixture'
+        self.script.write_text(program('tasks/check'))
+
+    def git(self, *arguments):
+        return subprocess.check_output(['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost',
+                                        '-C', str(self.checkout), *arguments], text=True).strip()
+
+    def invoke(self, start):
+        result = subprocess.run(['python3', '-I', str(self.script), 'analysis-base', str(self.checkout), start],
+                                capture_output=True, text=True, timeout=10, check=True)
+        return json.loads(result.stdout)
+
+    def test_base_uses_starting_commit_not_current_head_without_mutating_candidate(self):
+        self.git('update-ref', 'refs/remotes/origin/main', self.head)
+        (self.checkout / 'tracked').write_text('dirty\n')
+        (self.checkout / 'untracked').write_text('untracked\n')
+        index = (self.checkout / '.git/index').read_bytes()
+        refs = self.git('show-ref')
+        self.assertEqual(self.invoke(self.start), {'base': self.start})
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.head)
+        self.assertEqual(self.git('show-ref'), refs)
+        self.assertEqual((self.checkout / '.git/index').read_bytes(), index)
+        self.assertEqual((self.checkout / 'tracked').read_text(), 'dirty\n')
+        self.assertEqual((self.checkout / 'untracked').read_text(), 'untracked\n')
+        self.assertFalse((self.checkout / '.git/FETCH_HEAD').exists())
+        self.assertFalse((self.checkout / '.git/orbit').exists())
+
+    def test_sha256_repository_base_is_a_full_object_id(self):
+        self.checkout = self.checkout / 'sha256'
+        self.checkout.mkdir()
+        self.git('init', '--quiet', '--object-format=sha256')
+        self.git('commit', '--quiet', '--allow-empty', '-m', 'sha256 start')
+        start = self.git('rev-parse', 'HEAD')
+        self.git('update-ref', 'refs/remotes/origin/main', start)
+        self.assertEqual(len(start), 64)
+        self.assertEqual(self.invoke(start), {'base': start})
+
+    def test_missing_local_main_does_not_fetch_or_guess_a_base(self):
+        self.assertEqual(self.invoke(self.start), {'base': ''})
+        self.assertFalse((self.checkout / '.git/FETCH_HEAD').exists())
+
+    def test_unrelated_local_main_has_no_base(self):
+        unrelated = self.git('commit-tree', 'HEAD^{tree}', '-m', 'unrelated root')
+        self.git('update-ref', 'refs/remotes/origin/main', unrelated)
+        self.assertEqual(self.invoke(self.start), {'base': ''})
+
+    def test_invalid_or_missing_starting_commit_is_not_a_revision_selector(self):
+        self.git('update-ref', 'refs/remotes/origin/main', self.head)
+        for start in ('', 'HEAD', '--all', 'a' * 40):
+            with self.subTest(start=start):
+                self.assertEqual(self.invoke(start), {'base': ''})
+
+
 class TaskUnitStateTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

@@ -184,7 +184,11 @@ Every path names a file relative to the repository root, encoded in UTF-8 and at
 
 Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
 
-`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with `origin/main`, fixed across children. Analysis performs no fetch, merge, or base adoption. An authorized base update keeps old evidence and requires a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
+`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with `origin/main`, fixed across children.
+
+Provision calls `analysis-base` in the existing task-check program. It finds the merge base of the Instance's starting commit and local `refs/remotes/origin/main`. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
+
+Analysis performs no fetch, merge, or base adoption. An authorized base update keeps old evidence and requires a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
 Gateway verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots under the lease before dispatch and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, lease, execution identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
 

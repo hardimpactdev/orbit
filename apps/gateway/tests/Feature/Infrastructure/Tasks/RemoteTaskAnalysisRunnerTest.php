@@ -109,12 +109,28 @@ it('resolves only the provisioned starting commit against the local origin main 
     new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'task starting commit'], $instance->checkout_path)->mustRun();
     $starting = trim(new Process(['git', 'rev-parse', 'HEAD'], $instance->checkout_path)->mustRun()->getOutput());
     $instance->update(['starting_commit' => $starting]);
+    new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'later candidate'], $instance->checkout_path)->mustRun();
+    $candidate = trim(new Process(['git', 'rev-parse', 'HEAD'], $instance->checkout_path)->mustRun()->getOutput());
     new Process(['git', 'update-ref', 'refs/remotes/origin/main', $head], $instance->checkout_path)->mustRun();
     $pinned = $runner->initialAnalysisBase($instance);
     expect($pinned)->toBe($head);
-    new Process(['git', 'update-ref', 'refs/remotes/origin/main', $starting], $instance->checkout_path)->mustRun();
-    expect($runner->inspectAnalysis($instance, $pinned)['base'])->toBe($head)
-        ->and($runner->inspectAnalysis($instance, $pinned)['head'])->toBe($starting);
+    new Process(['git', 'update-ref', 'refs/remotes/origin/main', $candidate], $instance->checkout_path)->mustRun();
+    expect($runner->initialAnalysisBase($instance))->toBe($starting)
+        ->and($runner->inspectAnalysis($instance, $pinned)['base'])->toBe($head)
+        ->and($runner->inspectAnalysis($instance, $pinned)['head'])->toBe($candidate);
     new Process(['git', 'update-ref', '-d', 'refs/remotes/origin/main'], $instance->checkout_path)->mustRun();
     expect($runner->initialAnalysisBase($instance))->toBeNull();
 });
+
+it('leaves the initial base unavailable without a full existing starting commit', function (?string $starting): void {
+    $instance = analysis_runner_instance();
+    $instance->update(['starting_commit' => $starting]);
+    new Process(['git', 'update-ref', 'refs/remotes/origin/main', 'HEAD'], $instance->checkout_path)->mustRun();
+
+    expect(check_runner(new LocalShellSshExecutor)->initialAnalysisBase($instance))->toBeNull();
+})->with([
+    'missing' => [null],
+    'revision selector' => ['HEAD'],
+    'option' => ['--all'],
+    'absent object' => [str_repeat('a', 40)],
+]);

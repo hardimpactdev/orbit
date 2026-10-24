@@ -110,11 +110,10 @@ final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCh
 
     public function initialAnalysisBase(Instance $instance): ?string
     {
-        $command = <<<'BASH'
-            base=$(git -C "$checkout" merge-base refs/remotes/origin/main "$2" 2>/dev/null) || base=""
-            printf '{"base":"%s"}\n' "$base"
-            BASH;
-        $result = $this->run($instance, [$instance->starting_commit ?? ''], $command,
+        $script = TaskUnitProgram::read('tasks/check');
+        $result = $this->run($instance, [$instance->starting_commit ?? ''],
+            TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" analysis-base "$checkout" "$2"',
             'The initial analysis base could not be read.', 'The initial analysis base answer is invalid.');
         $base = $result['base'] ?? null;
 
