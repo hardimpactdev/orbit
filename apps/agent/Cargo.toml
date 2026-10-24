@@ -12,6 +12,8 @@ name = "orbit-agent"
 path = "src/main.rs"
 
 [dependencies]
+orbit-agent-contract = { path = "crates/contract" }
+orbit-documents-agent = { path = "../gateway/extensions/documents/agent" }
 bollard = "0.18"
 futures-util = "0.3"
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }

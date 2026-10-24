@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
-use App\Domain\Extensions\ConfigValue;
 use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Models\Node;
 use Illuminate\Container\Attributes\Tag;
 
 /**
@@ -21,24 +23,10 @@ final readonly class NativeGatewayFpmConverger
 {
     private const string LIVE_POOL = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
-    /** Where each start hook program lives. A hook name ends in `-start`, which no core path in it does. */
-    public const string START_HOOK_DIRECTORY = '/etc/orbit';
-
-    public const string START_HOOK_DROP_INS = '/etc/systemd/system/php8.5-fpm.service.d';
-
-    /** The hooks core installed, one `<name> <drop-in>` line each. Core removes only the hooks it lists. */
-    public const string START_HOOK_MANIFEST = '/etc/orbit/php-fpm-start-hooks';
-
-    public const string START_HOOK_NAME = '/\A[a-z0-9]+(?:-[a-z0-9]+)*-start\z/D';
-
-    public const string START_HOOK_DROP_IN = '/\Aorbit-[a-z0-9]+(?:-[a-z0-9]+)*\.conf\z/D';
-
-    private const string START_HOOKS_PROGRAM = 'gateway.install-start-hooks';
-
     /** @param iterable<GatewayServiceStartHook> $startHooks */
     public function __construct(
         private ProcessRunner $processes,
-        private RemoteProgramCatalog $programs,
+        private AgentCommandRunner $agents,
         #[Tag(GatewayServiceStartHook::class)] private iterable $startHooks,
     ) {}
 
@@ -46,9 +34,8 @@ final readonly class NativeGatewayFpmConverger
      * Installs the pool and the start hooks, runs each hook, and activates the pool. A hook that breaks the contract
      * stops convergence before anything is installed.
      */
-    public function converge(string $generatedPool): void
+    public function converge(Node $node, string $generatedPool): void
     {
-        $this->validateStartHooks();
         $version = bin2hex(random_bytes(8));
         $candidateDirectory = "/etc/php/8.5/fpm/orbit-candidates/{$version}";
         $candidateMain = $candidateDirectory.'/php-fpm.conf';
@@ -61,6 +48,7 @@ final readonly class NativeGatewayFpmConverger
                 errorCode: 'gateway.fpm_config_invalid',
                 arguments: ['sudo', 'php-fpm8.5', '--test', '--fpm-config', $candidateMain],
             );
+            $this->installStartHooks($node, true);
             $this->run(
                 step: 'gateway-fpm-install',
                 errorCode: 'gateway.fpm_config_install_failed',
@@ -73,16 +61,6 @@ final readonly class NativeGatewayFpmConverger
             throw $exception;
         }
 
-        $this->installStartHooks();
-        // A running distro FPM service can activate the Gateway pool with a reload, which skips ExecStartPre.
-        foreach ($this->startHooks as $hook) {
-            $this->run(
-                step: 'gateway-fpm-start-hook',
-                errorCode: 'gateway.fpm_start_failed',
-                arguments: ['sudo', self::START_HOOK_DIRECTORY.'/'.$hook->name()],
-                message: "Gateway FPM start hook [{$hook->name()}] failed.",
-            );
-        }
         $this->run(
             step: 'gateway-fpm-enable',
             errorCode: 'gateway.fpm_start_failed',
@@ -154,73 +132,24 @@ final readonly class NativeGatewayFpmConverger
         );
     }
 
-    /**
-     * Installs each contributed hook with `gateway.install-start-hooks`, which changes only files whose bytes differ.
-     * It removes the hooks the manifest lists that are no longer contributed. A hook takes effect at the next PHP-FPM
-     * start; only {@see converge()} runs it.
-     */
-    public function installStartHooks(): void
+    /** Installs compiled hook configuration; execution is requested only before activating a changed pool. */
+    public function installStartHooks(Node $node, bool $run = false): void
     {
-        $this->validateStartHooks();
-        $checkout = config()->string('orbit.gateway_checkout');
-        $home = config()->string('orbit.home');
-        $arguments = ['sudo', 'bash', '-seu', '--', self::START_HOOK_DIRECTORY, self::START_HOOK_DROP_INS, self::START_HOOK_MANIFEST];
+        $hooks = [];
         foreach ($this->startHooks as $hook) {
-            array_push($arguments, $hook->name(), $hook->dropIn(), $hook->description(), $hook->renderHook($checkout, $home));
+            $hooks[] = ['command' => $hook->command(), 'input' => $hook->input(config()->string('orbit.gateway_checkout'), config()->string('orbit.home'))];
         }
-        $program = $this->programs->program(self::START_HOOKS_PROGRAM);
-        $result = $this->processes->run(new ProcessInvocation(
-            arguments: $arguments,
-            timeout: (float) $program->timeoutSeconds,
-            input: $program->source,
-        ));
-
-        if (! $result->succeeded()) {
-            // The program's last marker names the hook it was working on. An empty one means a step for every hook.
-            preg_match_all('/^orbit-start-hook=(\S*)$/m', $result->stderr, $markers);
-            $hook = end($markers[1]);
-
-            throw new NodeProvisioningException(
-                step: 'gateway-fpm-start-hook-install',
-                errorCode: 'gateway.fpm_config_install_failed',
-                message: is_string($hook) && $hook !== '' ? "Gateway FPM start hook [{$hook}] could not be installed or removed." : 'The Gateway FPM start hooks could not be installed.',
-                result: $result,
-            );
-        }
-    }
-
-    /**
-     * Each hook names a program in /etc/orbit that ends in `-start`, so it cannot take a core path, and an `orbit-*.conf`
-     * drop-in that systemd reads. The two names are independent. The description is one printable line, so it cannot add a directive to the drop-in.
-     * No two hooks share a program or a drop-in.
-     *
-     * @throws NodeProvisioningException
-     */
-    private function validateStartHooks(): void
-    {
-        $names = [];
-        $dropIns = [];
-        foreach ($this->startHooks as $hook) {
-            $name = $hook->name();
-            $dropIn = $hook->dropIn();
-            $problem = match (true) {
-                preg_match(self::START_HOOK_NAME, $name) !== 1 => 'a program name that does not end in -start',
-                preg_match(self::START_HOOK_DROP_IN, $dropIn) !== 1 => 'a drop-in that is not orbit-*.conf',
-                $dropIn === SystemdVpnOrderingDropIn::FILE_NAME => "the drop-in [{$dropIn}] that core writes",
-                ! ConfigValue::printableLine($hook->description()) => 'a description that is not one printable line',
-                isset($names[$name]) => "the program name [{$name}] of another hook",
-                isset($dropIns[$dropIn]) => "the drop-in [{$dropIn}] of another hook",
-                default => null,
+        try {
+            $this->agents->run($node, 'gateway.converge-start-hooks', ['hooks' => $hooks, 'run' => $run]);
+        } catch (AgentCommandRefused $refused) {
+            [$step, $code] = match ($refused->errorCode) {
+                'gateway.start_hooks_invalid' => ['gateway-fpm-start-hook-validate', 'gateway.fpm_config_invalid'],
+                'gateway.start_hook_failed' => ['gateway-fpm-start-hook', 'gateway.fpm_start_failed'],
+                default => ['gateway-fpm-start-hook-install', 'gateway.fpm_config_install_failed'],
             };
-            if ($problem !== null) {
-                throw new NodeProvisioningException(
-                    step: 'gateway-fpm-start-hook-validate',
-                    errorCode: 'gateway.fpm_config_invalid',
-                    message: 'Gateway FPM start hook ['.$hook::class."] has {$problem}.",
-                );
-            }
-            $names[$name] = true;
-            $dropIns[$dropIn] = true;
+            throw new NodeProvisioningException($step, $code, $refused->getMessage(), previous: $refused, result: AgentStep::output($refused));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException('gateway-fpm-start-hook-install', 'gateway.fpm_config_install_failed', 'Gateway startup hooks did not return a result.', previous: $failure, result: $failure->result);
         }
     }
 

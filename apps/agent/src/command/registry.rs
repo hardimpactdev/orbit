@@ -4,6 +4,7 @@ use super::{
     identity::{Platform, Privilege},
     Command, CommandError, Context, Outcome, COMMON_ERRORS,
 };
+use orbit_agent_contract::{Registrar, StartHook};
 use serde_json::{json, Value};
 use std::{sync::OnceLock, time::Duration};
 
@@ -71,20 +72,102 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
     } else {
         Vec::new()
     };
+    invoke::<C>(input, context)
+}
+
+fn invoke<C: Command>(input: C::Input, context: &Context) -> Outcome {
     match C::run(input, context) {
         Ok(output) => Outcome::Ok(serde_json::to_value(output).expect("an output serializes")),
         Err(error) => Outcome::refused(error.code(), error.message(), error.details()),
     }
 }
 
-/// Every command this binary implements. Each extension adds one line here (ADR 0210, ADR 0225).
-fn build() -> Vec<Entry> {
-    crate::commands::all()
+/// Startup behavior and its filenames belong to the compiled contributor.
+pub struct HookEntry {
+    pub command: &'static str,
+    pub name: &'static str,
+    pub drop_in: &'static str,
+    pub description: &'static str,
+    pub validate: fn(Value) -> Result<(), Outcome>,
+    pub run: fn(Value, &Context) -> Outcome,
 }
-
+fn validate_hook<H: StartHook>(input: Value) -> Result<(), Outcome> {
+    let input = serde_json::from_value(input).map_err(|_| {
+        Outcome::refused(
+            "agent.invalid_input",
+            "The startup input does not match the command.",
+            json!({}),
+        )
+    })?;
+    if H::target(&input).as_deref() != Some(orbit_agent_contract::START_HOOK_TARGET) {
+        return Err(Outcome::refused(
+            "agent.invalid_input",
+            "Startup hooks must use the shared startup target.",
+            json!({}),
+        ));
+    }
+    H::validate(&input).map_err(|e| Outcome::refused(e.code(), e.message(), e.details()))
+}
+fn run_hook<H: StartHook>(input: Value, context: &Context) -> Outcome {
+    let context = Context::new(
+        context.platform,
+        context
+            .deadline()
+            .min(std::time::Instant::now() + H::TIMEOUT),
+    );
+    match serde_json::from_value(input) {
+        Ok(input) => invoke::<H>(input, &context),
+        Err(_) => Outcome::refused(
+            "agent.invalid_input",
+            "The startup input does not match the command.",
+            json!({}),
+        ),
+    }
+}
+struct Registry {
+    commands: Vec<Entry>,
+    hooks: Vec<HookEntry>,
+}
+impl Registrar for Registry {
+    fn command<C: Command>(&mut self) {
+        self.commands.push(entry::<C>());
+    }
+    fn start_hook<H: StartHook>(&mut self) {
+        assert!(
+            H::MUTATES
+                && H::RESOURCES.is_empty()
+                && H::privilege(Platform::Linux) == Some(Privilege::Root)
+                && H::privilege(Platform::Macos).is_none(),
+            "startup hooks must be Linux root mutations"
+        );
+        self.command::<H>();
+        self.hooks.push(HookEntry {
+            command: H::NAME,
+            name: H::FILE_NAME,
+            drop_in: H::DROP_IN,
+            description: H::DESCRIPTION,
+            validate: validate_hook::<H>,
+            run: run_hook::<H>,
+        });
+    }
+}
+/// One composition call per extension. Core knows only the shared contracts.
+fn registry() -> &'static Registry {
+    static REGISTRY: OnceLock<Registry> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = Registry {
+            commands: crate::commands::all(),
+            hooks: Vec::new(),
+        };
+        orbit_documents_agent::register(&mut registry);
+        registry
+    })
+}
 pub fn all() -> &'static [Entry] {
-    static ENTRIES: OnceLock<Vec<Entry>> = OnceLock::new();
-    ENTRIES.get_or_init(build)
+    &registry().commands
+}
+pub fn hooks() -> &'static [HookEntry] {
+    &registry().hooks
 }
 
 pub fn find(name: &str) -> Option<&'static Entry> {

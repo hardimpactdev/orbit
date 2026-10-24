@@ -54,6 +54,16 @@ class ScriptRatchetTest(unittest.TestCase):
         self.assertEqual(sum(counts['files'].values()), 8)
         self.assertEqual(counts['inline'], {})
 
+    def test_compiled_extension_sources_are_not_delivered_scripts(self):
+        counts = self.scan({
+            'apps/gateway/extensions/documents/agent/Cargo.toml': '[package]',
+            'apps/gateway/extensions/documents/agent/src/lib.rs': 'pub fn register() {}',
+            'apps/gateway/extensions/documents/agent/src/hidden.rs': '#!/bin/sh\ntrue',
+            'apps/gateway/extensions/documents/agent/src/worker.py': 'pass',
+            'apps/gateway/extensions/documents/resources/worker.rs': 'program',
+        })
+        self.assertEqual(sum(counts['files'].values()), 3)
+
     def test_moves_between_files_and_into_extensions_are_neutral(self):
         before = self.scan({
             'apps/gateway/app/One.php': "<<<'SCRIPT'\ntrue\nSCRIPT;\n",

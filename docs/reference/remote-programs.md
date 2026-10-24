@@ -126,11 +126,10 @@ The `Remote programs` CI job runs the guard and its regression tests before prog
 
 ## Programs
 
-These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`. Gateway PHP-FPM convergence runs `gateway.install-start-hooks` on the Gateway itself, as `sudo bash -seu -- <arguments>`.
+These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`. Gateway PHP-FPM startup hooks use the compiled `gateway.converge-start-hooks` command.
 
 | Program | Purpose |
 | --- | --- |
-| `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 

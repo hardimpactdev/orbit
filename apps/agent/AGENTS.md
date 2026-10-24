@@ -8,8 +8,8 @@ From this directory, run:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+scripts/check-crates clippy --locked --all-targets -- -D warnings
+scripts/check-crates test --locked
 cargo build --release --locked
 ```
 

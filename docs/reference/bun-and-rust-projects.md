@@ -94,8 +94,8 @@ The agent runs only on Linux Nodes. It talks to systemd over D-Bus and reads its
 ```bash
 cd apps/agent
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+scripts/check-crates clippy --locked --all-targets -- -D warnings
+scripts/check-crates test --locked
 cargo build --release --locked
 ```
 
@@ -128,3 +128,5 @@ bun run dev
 ## CI
 
 The `Web`, `Pi server`, `Rust agent`, and `Desktop app` jobs check these projects on every pull request. The `Rust agent` and `Desktop app` jobs skip their steps when the pull request does not change their project or the CI workflow. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI checks the desktop app's Rust shell but does not build a bundle.
+
+The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.

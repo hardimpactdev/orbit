@@ -12,14 +12,10 @@ pub mod registry;
 pub mod run;
 pub mod supervise;
 
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Map, Value};
-use std::{
-    io::{Read, Write},
-    time::{Duration, Instant},
-};
+use serde_json::{json, Value};
+use std::io::{Read, Write};
 
-pub use identity::{Platform, Privilege};
+pub use orbit_agent_contract::{Command, CommandError, Context, Platform, Privilege};
 
 /// The envelope field that carries the expected SHA-256 of the agent binary. Frozen.
 pub const SHA_FIELD: &str = "agent_sha256";
@@ -42,60 +38,6 @@ pub const COMMON_ERRORS: &[&str] = &[
     "agent.target_busy",
     "agent.lock_unavailable",
 ];
-
-/// One named Node action with a typed contract.
-pub trait Command {
-    const NAME: &'static str;
-    const SUMMARY: &'static str;
-    /// A mutation runs under its own supervisor and target lock; a read takes no lock.
-    const MUTATES: bool;
-    /// The longest the command may run. The envelope's remaining deadline can shorten it.
-    const TIMEOUT: Duration;
-    type Input: DeserializeOwned;
-    type Output: Serialize;
-    type Error: CommandError;
-
-    /// The identity the command runs as on each platform, or `None` where it is unsupported.
-    fn privilege(platform: Platform) -> Option<Privilege>;
-
-    /// The canonical target a mutation locks exclusively, such as a checkout path. Reads take no lock.
-    fn target(_input: &Self::Input) -> Option<String> {
-        None
-    }
-
-    /// The shared resources a mutation changes, locked after its target in sorted order.
-    const RESOURCES: &'static [&'static str] = &[];
-    fn run(input: Self::Input, context: &Context) -> Result<Self::Output, Self::Error>;
-}
-
-/// A declared, typed refusal or failure of one command.
-pub trait CommandError {
-    /// Every code this error type can return.
-    const CODES: &'static [&'static str];
-    fn code(&self) -> &'static str;
-    fn message(&self) -> String;
-    fn details(&self) -> Value {
-        Value::Object(Map::new())
-    }
-}
-
-/// What a running command knows about its call.
-pub struct Context {
-    pub platform: Platform,
-    deadline: Instant,
-}
-impl Context {
-    pub fn new(platform: Platform, deadline: Instant) -> Self {
-        Self { platform, deadline }
-    }
-    pub fn deadline(&self) -> Instant {
-        self.deadline
-    }
-    /// The time left, never less than zero.
-    pub fn remaining(&self) -> Duration {
-        self.deadline.saturating_duration_since(Instant::now())
-    }
-}
 
 /// A complete result line.
 #[derive(Debug, Clone, PartialEq)]

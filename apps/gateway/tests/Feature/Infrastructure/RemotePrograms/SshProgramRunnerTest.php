@@ -125,7 +125,7 @@ describe('SshProgramRunner', function (): void {
     })->with([RemoteProgramLanguage::Python, RemoteProgramLanguage::Bash]);
 
     it('rejects unsafe account names before a program can run', function (string $user): void {
-        expect(fn () => new RemoteProgramCatalog()->program('gateway.install-start-hooks', user: $user))
+        expect(fn () => new RemoteProgramCatalog()->program('gateway.task-workspace-owner', user: $user))
             ->toThrow(InvalidArgumentException::class);
     })->with(['-root', 'orbit;id', "orbit\nroot", 'orbit app', '', str_repeat('a', 33)]);
 

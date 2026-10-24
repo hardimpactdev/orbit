@@ -30,7 +30,7 @@ if ! git merge-base --is-ancestor "$commit" "$head"; then
     exit 1
 fi
 
-last=$(git log -1 --format=%H "$head" -- apps/agent)
+last=$("$(dirname "${BASH_SOURCE[0]}")/source-commit" "$head")
 if [[ "$last" != "$commit" ]]; then
     echo "The last commit that changed apps/agent at $head is $last, not $commit" >&2
     exit 1

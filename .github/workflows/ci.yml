@@ -465,7 +465,7 @@ jobs:
         env:
           NODE_SCRIPTS_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before || 'HEAD^1' }}
         run: |
-          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py
+          pytest -n auto --dist=load -q tools/test_node_scripts_ratchet.py tools/test_agent_source_commit.py
           # A handoff push compares with where its branch left main: its event base is the previous handoff, or none.
           if [ "$HANDOFF_PUSH" = true ]; then NODE_SCRIPTS_BASE=$(git merge-base origin/main HEAD); fi
           bin/node-scripts-ratchet --base "$NODE_SCRIPTS_BASE"
@@ -703,9 +703,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: scripts/check-crates clippy --locked --all-targets -- -D warnings
       - name: Run tests
-        run: cargo test --locked
+        run: scripts/check-crates test --locked
       # The delivery of this exact source: both static Linux binaries, SHA256SUMS, and manifest.json (ADR 0225).
       # The release workflow publishes this artifact once main's required checks pass; it never rebuilds.
       - name: Build the agent delivery

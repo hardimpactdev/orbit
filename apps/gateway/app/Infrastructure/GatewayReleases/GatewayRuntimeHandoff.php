@@ -127,7 +127,7 @@ final readonly class GatewayRuntimeHandoff
     {
         $gateway = $this->gateway();
         $caddy = $this->caddy($gateway);
-        $fpm = $this->fpm();
+        $fpm = $this->fpm($gateway);
         $this->step('units', 'gateway.release_units_failed', function (): void {
             $this->hibernator->converge();
             $this->agentView->converge();
@@ -256,22 +256,22 @@ final readonly class GatewayRuntimeHandoff
      * Reloads PHP-FPM only for a changed pool, because a reload ends the requests in flight. The start hooks are
      * installed either way: a changed hook takes effect at the next start, and a reload runs every hook first.
      */
-    private function fpm(): string
+    private function fpm(Node $gateway): string
     {
         $rendered = $this->fpmRenderer->renderPool($this->applicationPath, $this->orbitHome);
 
         if (($this->readLivePool)($this->livePool) === $rendered) {
-            $this->step('fpm', 'gateway.release_fpm_failed', function (): void {
-                $this->fpm->installStartHooks();
+            $this->step('fpm', 'gateway.release_fpm_failed', function () use ($gateway): void {
+                $this->fpm->installStartHooks($gateway);
             });
 
             return 'unchanged';
         }
 
-        $this->step('fpm', 'gateway.release_fpm_failed', function () use ($rendered): void {
+        $this->step('fpm', 'gateway.release_fpm_failed', function () use ($rendered, $gateway): void {
             $generated = rtrim($this->orbitHome, '/').'/generated/gateway/php-fpm-pool.conf';
             $this->files->put($generated, $rendered, 0o644);
-            $this->fpm->converge($generated);
+            $this->fpm->converge($gateway, $generated);
         });
 
         return 'reloaded';

@@ -106,7 +106,9 @@ def selected_projects(paths, root):
         selected.append(('repository', (('bin/api-fixtures', '--check'),)))
     for project in ('apps/agent', 'apps/desktop/src-tauri'):
         prefix = 'apps/desktop/' if 'desktop' in project else project + '/'
-        if any(path.startswith(prefix) or path == '.github/workflows/ci.yml' for path in paths):
+        if any(path.startswith(prefix) or path == '.github/workflows/ci.yml'
+               or (project == 'apps/agent' and re.match(r'apps/gateway/extensions/[^/]+/agent/', path))
+               for path in paths):
             selected.append((project, (RUST_FORMAT,)))
     if any(path.startswith('apps/web/') for path in paths):
         selected.extend((('apps/web', (WEB_INSTALL,)), ('apps/web', WEB_CHECK_COMMANDS)))

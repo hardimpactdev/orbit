@@ -29,7 +29,7 @@ done
 
 agent=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$agent"
-[[ -n $commit ]] || commit=$(git log -1 --format=%H -- .)
+[[ -n $commit ]] || commit=$(scripts/source-commit)
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo "build-delivery: invalid commit '$commit'" >&2; exit 1; }
 version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)
 

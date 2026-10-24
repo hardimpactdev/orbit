@@ -27,6 +27,22 @@
       ]
     },
     {
+      "name": "gateway.converge-start-hooks",
+      "summary": "Publish registered Gateway startup hooks and optionally run them before activation.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.start_hooks_invalid",
+        "gateway.start_hooks_unsafe",
+        "gateway.start_hooks_failed",
+        "gateway.start_hook_failed"
+      ]
+    },
+    {
       "name": "tools.inspect-vp-store",
       "summary": "Inspect exact immutable deployment runtimes without locks or network access.",
       "mutates": false,
@@ -4312,6 +4328,21 @@
         "wireguard.peer_dns_recovery_failed",
         "wireguard.peer_dns_uplink_missing",
         "wireguard.peer_dns_repair_failed"
+      ]
+    },
+    {
+      "name": "documents.prepare-cleanup",
+      "summary": "Prepare and invalidate the local document cleanup gate before Gateway startup.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "documents.cleanup_input_invalid",
+        "documents.cleanup_state_unsafe",
+        "documents.cleanup_start_failed"
       ]
     }
   ]

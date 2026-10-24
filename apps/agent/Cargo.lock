@@ -1373,6 +1373,8 @@ dependencies = [
  "libc",
  "libgit2-sys",
  "libz-sys",
+ "orbit-agent-contract",
+ "orbit-documents-agent",
  "rand 0.8.8",
  "regex",
  "reqwest",
@@ -1392,6 +1394,25 @@ dependencies = [
  "xz2",
  "zbus",
  "zip",
+]
+
+[[package]]
+name = "orbit-agent-contract"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rustix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "orbit-documents-agent"
+version = "0.1.0"
+dependencies = [
+ "orbit-agent-contract",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

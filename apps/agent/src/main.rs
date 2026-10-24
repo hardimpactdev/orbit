@@ -52,6 +52,12 @@ fn main() {
                 orbit_agent::commands::image_recipe::worker::service(&arguments[2..])
             } else if arguments.get(1).is_some_and(|name| name == "vp-project") {
                 orbit_agent::commands::vp_project::service(&arguments[2..])
+            } else if arguments.get(1).is_some_and(|name| {
+                orbit_agent::command::registry::hooks()
+                    .iter()
+                    .any(|hook| hook.command == name)
+            }) {
+                orbit_agent::commands::gateway_start_hooks::service(&arguments[1..])
             } else {
                 orbit_agent::commands::schedules::service(&arguments[1..])
             };

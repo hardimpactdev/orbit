@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# One delivery identity covers core and every compiled extension source.
+set -euo pipefail
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+git -C "$root" log -1 --format=%H "${1:-HEAD}" -- apps/agent ':(glob)apps/gateway/extensions/*/agent/**'

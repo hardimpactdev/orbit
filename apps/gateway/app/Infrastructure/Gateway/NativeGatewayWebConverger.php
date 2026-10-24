@@ -55,7 +55,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
             0o644,
         );
         $this->certificatePublisher->publish($node, $certificate);
-        $this->fpm->converge($generatedFpmPool);
+        $this->fpm->converge($node, $generatedFpmPool);
         $this->build($node);
         $this->hibernator->converge();
         $this->agentView->converge();

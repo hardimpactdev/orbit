@@ -83,7 +83,7 @@ describe('RemoteProgramCatalog', function (): void {
             }
         }
 
-        expect($names)->toContain('gateway.install-start-hooks');
+        expect($names)->toBe(['gateway.task-workspace-owner']);
         foreach ($names as $name) {
             expect($catalog->program($name)->name)->toBe($name);
         }

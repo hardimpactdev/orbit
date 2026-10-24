@@ -60,6 +60,9 @@ def inventory(files):
             len(parts) > 2 and parts[0] == 'extensions' and parts[2] == 'tests'
         ):
             continue
+        compiled_rust = len(parts) >= 4 and parts[0] == 'extensions' and parts[2] == 'agent' and (
+            path.suffix == '.rs' or parts[3:] == ('Cargo.toml',)
+        )
         in_resources = 'resources' in parts
         is_php = path.suffix == '.php' or content.lstrip().startswith(b'<?php')
         is_data = name.endswith(DATA_SUFFIXES) or (path.name == '.gitkeep' and not content.strip())
@@ -69,7 +72,7 @@ def inventory(files):
             except (ValueError, ET.ParseError):
                 is_data = False
         if name != OPCACHE_RESET and (
-            (not is_data and (not is_php or in_resources)) or content.startswith(b'#!')
+            (not is_data and not compiled_rust and (not is_php or in_resources)) or content.startswith(b'#!')
         ):
             counts['files'][name] = 1
         if is_php:

@@ -1649,9 +1649,11 @@
             "title": "Bun and Rust projects",
             "kind": "reference",
             "components": [
+                "apps/gateway",
                 "apps/web"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Node agent",

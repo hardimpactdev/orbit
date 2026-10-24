@@ -27,7 +27,6 @@ use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
@@ -200,7 +199,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeReleaseCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, ?FakeAgentCommandRunner $agent = null, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null, ?FakeAgentCommandRunner $hooks = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -216,7 +215,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             recipeImages: $recipeImages,
             builds: $builds,
             fpmRenderer: new GatewayFpmConfigRenderer,
-            fpm: new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), [...app()->tagged(GatewayServiceStartHook::class)]),
+            fpm: new NativeGatewayFpmConverger($processes, $hooks ?? new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]), [...app()->tagged(GatewayServiceStartHook::class)]),
             files: new ProtectedFileWriter,
             hibernator: $units,
             agentView: $units,
@@ -504,25 +503,18 @@ describe('gateway:release:handoff', function (): void {
             ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
     });
 
-    it('installs the start hooks for an unchanged pool, and runs them only before a reload', function (?string $livePool, array $expected): void {
+    it('installs the start hooks for an unchanged pool and runs them only before a reload', function (?string $livePool, bool $run): void {
         handoff_gateway();
-        [$handoff, $processes] = runtime_handoff(livePool: $livePool);
+        $agents = new FakeAgentCommandRunner()->answer('gateway.converge-start-hooks', ['changed' => true]);
+        [$handoff] = runtime_handoff(livePool: $livePool, hooks: $agents);
 
         $handoff->serve();
-        $steps = [];
-        foreach ($processes->ran as $arguments) {
-            $steps[] = match (true) {
-                array_slice($arguments, 0, 5) === ['sudo', 'bash', '-seu', '--', '/etc/orbit'] => 'install '.$arguments[7],
-                $arguments === ['sudo', '/etc/orbit/project-document-cleanup-start'] => 'run',
-                $arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm'] => 'reload',
-                default => null,
-            };
-        }
 
-        expect(array_values(array_filter($steps)))->toBe($expected);
+        expect($agents->calls[0]['input']['run'])->toBe($run)
+            ->and($agents->calls[0]['input']['hooks'][0]['command'])->toBe('documents.prepare-cleanup');
     })->with([
-        'unchanged pool' => [null, ['install project-document-cleanup-start']],
-        'changed pool' => ["[orbit-gateway]\nchdir = /old\n", ['install project-document-cleanup-start', 'run', 'reload']],
+        'unchanged pool' => [null, false],
+        'changed pool' => ["[orbit-gateway]\nchdir = /old\n", true],
     ]);
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

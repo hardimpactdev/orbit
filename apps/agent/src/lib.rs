@@ -1,3 +1,4 @@
+pub use orbit_agent_contract::command_errors;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

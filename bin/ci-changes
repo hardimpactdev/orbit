@@ -55,6 +55,7 @@ RULES = [
     ('apps/desktop/*', {'desktop', 'docs'}),
     # The Gateway reads the agent's command contract and shared fixtures, and its privileged tests run the built agent.
     ('apps/agent/*', {'agent', 'gateway', 'docs'}),
+    ('apps/gateway/extensions/*/agent/*', {'agent', 'gateway', 'docs'}),
     # TaskTopologyCatalogParityTest and TopologySeedContractTest read the E2E catalog/harness.
     ('apps/e2e/resources/topology-nodes.json', {'gateway'}),
     ('apps/e2e/app/E2E/Value/TopologyRecipe.php', {'gateway'}),

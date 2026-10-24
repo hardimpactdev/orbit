@@ -26,6 +26,12 @@ def expand_braces(pattern):
 
 
 class SelectionTest(unittest.TestCase):
+    def test_extension_native_changes_build_the_agent(self):
+        for path in ['apps/gateway/extensions/documents/agent/src/lib.rs',
+                     'apps/gateway/extensions/documents/agent/Cargo.toml']:
+            self.assertTrue(ci.selection([path])['jobs']['agent'])
+            self.assertTrue(ci.selection([path])['jobs']['agent-macos'])
+
     def test_docs_only_starts_only_docs(self):
         result = ci.selection(['docs/reference/implementation-loop.md'])
         self.assertEqual(result['matrix']['project'], [{'name': 'Docs', 'directory': 'apps/docs'}])
