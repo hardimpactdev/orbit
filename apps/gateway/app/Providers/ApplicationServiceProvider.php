@@ -264,6 +264,7 @@ use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativeNodeStateInspector;
 use App\Infrastructure\Doctor\NativePhpPoolDirectoryInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
@@ -273,7 +274,6 @@ use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
-use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
@@ -518,7 +518,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         InstalledPackageInventory::class => SharedInstalledPackageInventory::class,
-        NodeStateInspector::class => SshNodeStateInspector::class,
+        NodeStateInspector::class => NativeNodeStateInspector::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,

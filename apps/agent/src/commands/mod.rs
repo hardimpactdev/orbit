@@ -16,6 +16,7 @@ pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
+mod doctor_node;
 mod doctor_role;
 mod doctor_route;
 pub mod environment;
@@ -27,6 +28,7 @@ pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
 mod metrics_exporter;
+mod metrics_publication;
 mod metrics_runtime;
 pub mod os_release;
 pub mod peer_dns;
@@ -150,6 +152,7 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_publication::Publish>(),
         entry::<caddy_publication::CheckAddresses>(),
         entry::<caddy_publication::ReadLive>(),
+        entry::<doctor_node::InspectNode>(),
         entry::<doctor_role::InspectRole>(),
         entry::<doctor_route::InspectPrivateRoute>(),
         entry::<doctor_route::InspectApplicationUrls>(),
@@ -162,6 +165,7 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_exporter::NodeExporter>(),
         entry::<metrics_exporter::Cadvisor>(),
         entry::<metrics_runtime::MetricsRuntime>(),
+        entry::<metrics_publication::Publication>(),
         entry::<metrics_runtime::MetricsHealth>(),
         entry::<metrics_runtime::MetricsCredentials>(),
         entry::<service_metrics::ServiceRuntime>(),

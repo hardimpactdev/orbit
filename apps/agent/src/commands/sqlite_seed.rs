@@ -429,12 +429,18 @@ fn prepare_source(input: &SourceInput) -> Result<SourceOutput> {
     write_state(&input.state_dir, &input.record("preparing"))?;
 
     as_account(&source, || {
-        // SAFETY: umask only changes the mode of files this thread creates next.
-        let previous = unsafe { libc::umask(0o077) };
-        let destination = Connection::open(&input.snapshot_path);
-        // SAFETY: as above.
-        unsafe { libc::umask(previous) };
-        let mut destination = destination?;
+        // Create the private database before SQLite opens it. umask is process-wide,
+        // so changing it here would also change unrelated threads' file permissions.
+        let snapshot = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&input.snapshot_path)?;
+        drop(snapshot);
+        let mut destination = Connection::open_with_flags(
+            &input.snapshot_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
         let maximum_pages = (available - RESERVE) / page_size;
         let deadline = Instant::now() + Duration::from_secs(30);
         {

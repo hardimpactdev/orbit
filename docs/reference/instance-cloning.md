@@ -94,7 +94,7 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 ## SQLite seed
 
-`sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything.
+`sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The agent creates the snapshot as a private `0600` file before SQLite opens it, without changing umask, which controls permissions for every thread in the process. The Gateway checks the path and disk space on both Nodes before it replaces anything.
 
 The [Node agent](/reference/node-agent#commands) does the work on each Node as root:
 

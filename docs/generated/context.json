@@ -2298,6 +2298,7 @@
                 "Node",
                 "Node agent",
                 "Placement",
+                "Process",
                 "Project",
                 "Role",
                 "Route"
@@ -3213,9 +3214,7 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
-                "Node agent",
                 "Process",
                 "Role"
             ],

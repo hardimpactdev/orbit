@@ -1022,6 +1022,20 @@
       ]
     },
     {
+      "name": "doctor.inspect-node",
+      "summary": "Observe Node identity, addresses, observer state, and filesystem capacity.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": "account"
+      },
+      "errors": [
+        "doctor.node_input_invalid",
+        "doctor.node_inspection_failed"
+      ]
+    },
+    {
       "name": "doctor.inspect-role-runtime",
       "summary": "Inspect role packages, services, and the installed Caddy version without repairs.",
       "mutates": false,
@@ -1324,6 +1338,26 @@
         "metrics.volume_purge_failed",
         "metrics.remote_command_timed_out",
         "metrics.credentials_reset_failed"
+      ]
+    },
+    {
+      "name": "metrics.publication-firewall",
+      "summary": "Converge or remove Grafana's ordered Gateway-only firewall boundary.",
+      "mutates": true,
+      "timeout_seconds": 300,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "metrics.publication_firewall_inspection_failed",
+        "metrics.publication_firewall_inactive",
+        "metrics.publication_firewall_ownership_drift",
+        "metrics.publication_firewall_apply_failed",
+        "metrics.publication_firewall_verify_failed",
+        "metrics.publication_firewall_remove_failed",
+        "metrics.publication_firewall_remove_verify_failed",
+        "metrics.remote_command_timed_out"
       ]
     },
     {

@@ -135,7 +135,7 @@ Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Ga
 
 The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When a Node or an access grant to the Gateway Node is removed while a Metrics role exists, the Gateway calls `caddy.reload` through the local agent adapter. The agent holds the shared Caddy publication lock during the reload. Later requests fail, and open streaming connections close. A failed reload reports `metrics.caddy_publication_failed`.
 
-The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node.
+The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node. The `metrics.publication-firewall` command owns this boundary under the Node firewall lock. It checks both rules before mutation and places the allow before the deny, with both before broad WireGuard trust. If the allow fails, the deny stays in place. Removal verifies absence; abandonment without a Gateway matches only the exact Orbit comments.
 
 ## Authorization
 

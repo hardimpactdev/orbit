@@ -30,7 +30,7 @@ final readonly class MetricsPublicationManager implements PublicationManager
         private GatewayCertificateIssuer $certificates,
         private MetricsCertificatePublisher $certificatePublisher,
         private NodeCaddyBuilds $builds,
-        private MetricsPublicationSshExecutor $firewall,
+        private MetricsPublicationFirewall $firewall,
         private PrivateDnsManager $dns,
         private ?DevelopmentProjectionOperationLock $projection = null,
         private ?MetricsGatewayResolver $gateways = null,
