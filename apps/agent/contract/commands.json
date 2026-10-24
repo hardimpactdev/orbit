@@ -1018,6 +1018,34 @@
       ]
     },
     {
+      "name": "pi.inspect-artifact",
+      "summary": "Check the managed account's installed Pi digest and executable mode.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "pi.artifact_invalid",
+        "pi.artifact_failed"
+      ]
+    },
+    {
+      "name": "pi.configure-runtime",
+      "summary": "Publish the managed account's private Pi provider settings and token.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "pi.runtime_invalid",
+        "pi.runtime_failed"
+      ]
+    },
+    {
       "name": "php.inspect-build",
       "summary": "Inspect the pinned PHP build, extra packages, and extension ownership.",
       "mutates": false,

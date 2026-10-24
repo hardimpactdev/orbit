@@ -118,6 +118,49 @@ fn invalid_data_refuses_before_creating_the_cache() {
         assert!(!files.path(CACHE).exists());
     }
 }
+
+#[test]
+fn inspection_needs_no_cache_and_detects_missing_different_and_nonexecutable_bytes() {
+    let (_work, files, account) = fixture();
+    let input = chunk(b"pi", 0, 2);
+    assert!(!inspect(&account, &input.sha256).unwrap().current);
+    assert!(matches!(
+        inspect(&account, "bad"),
+        Err(Error::Invalid { .. })
+    ));
+    assert!(!account.home.join(".local").exists());
+    receive(&files, &input).unwrap();
+    install(&files, &account, &input.sha256).unwrap();
+    fs::remove_dir_all(files.path(CACHE)).unwrap();
+    assert!(inspect(&account, &input.sha256).unwrap().current);
+    assert!(inspect(&account, &input.sha256).unwrap().current);
+    assert!(!inspect(&account, &"e".repeat(64)).unwrap().current);
+    fs::set_permissions(account.home.join(BINARY), fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!inspect(&account, &input.sha256).unwrap().current);
+    receive(&files, &input).unwrap();
+    assert!(install(&files, &account, &input.sha256).unwrap().changed);
+    assert!(inspect(&account, &input.sha256).unwrap().current);
+}
+
+#[test]
+fn inspection_and_install_refuse_a_link_in_the_runtime_ancestors_before_any_write() {
+    let (_work, files, account) = fixture();
+    let input = chunk(b"pi", 0, 2);
+    receive(&files, &input).unwrap();
+    let outside = files.path("/outside");
+    fs::create_dir_all(outside.join("bin")).unwrap();
+    fs::write(outside.join("bin/pi-server"), b"pi").unwrap();
+    std::os::unix::fs::symlink(&outside, account.home.join(".local")).unwrap();
+    assert!(matches!(
+        inspect(&account, &input.sha256),
+        Err(Error::Failed { .. })
+    ));
+    assert!(matches!(
+        install(&files, &account, &input.sha256),
+        Err(Error::Failed { .. })
+    ));
+    assert_eq!(fs::read(outside.join("bin/pi-server")).unwrap(), b"pi");
+}
 #[test]
 fn refuses_symlink_artifacts_and_install_destinations_without_writing_through_them() {
     let (_work, files, account) = fixture();

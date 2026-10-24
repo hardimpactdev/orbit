@@ -9,7 +9,8 @@ use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\TaskVms\TaskVmRuntime;
 
-arch('Recipe and Docker migration actions use the typed agent boundary')
-    ->expect([ConvergeNodeRecipeAction::class, MigrateDockerAction::class, NodeRecipeProgram::class])
+arch('Recipe, Docker migration and Pi runtime use the typed agent boundary')
+    ->expect([ConvergeNodeRecipeAction::class, MigrateDockerAction::class, NodeRecipeProgram::class, TaskVmRuntime::class])
     ->not->toUse([NodeShell::class, SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);

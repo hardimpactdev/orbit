@@ -30,10 +30,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\ParkTaskVm;
@@ -53,7 +50,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
-use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -251,10 +248,9 @@ describe('park', function (): void {
 
 describe('resume', function (): void {
     beforeEach(function (): void {
-        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
-        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-        $this->ssh = new AppDevFakeSshExecutor;
-        app()->instance(SshExecutor::class, $this->ssh);
+        $this->agents = new FakeAgentCommandRunner;
+        $this->agents->answer('agent.status', ['observer' => 'active']);
+        app()->instance(AgentCommandRunner::class, $this->agents);
         Sleep::fake(syncWithCarbon: true);
     });
 
@@ -276,16 +272,18 @@ describe('resume', function (): void {
         expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($vm->fresh()?->ready_at?->timestamp)->toBe(now()->timestamp)
             ->and($this->provider->calls)->toBe(['start', 'start'])
-            ->and($this->ssh->commands[0]->arguments)->toBe(['systemctl', 'is-active', '--quiet', 'orbit-agent.service'])
-            ->and($this->ssh->connections[0]->host)->toBe('10.44.0.129');
+            ->and($this->agents->commands())->toBe(['agent.status', 'agent.status'])
+            ->and($this->agents->calls[0]['node'])->toBe($vm->node->name);
         Http::assertSent(static fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.str_repeat('p', 64)));
         Sleep::assertNeverSlept();
     });
 
     it('waits while the Node agent is not active', function (): void {
         Http::fake(['*' => Http::response([], 200)]);
-        $this->ssh = new AppDevFakeSshExecutor([new CommandResult(3, '', '', 1, false)]);
-        app()->instance(SshExecutor::class, $this->ssh);
+        $observations = 0;
+        $this->agents->answer('agent.status', static function () use (&$observations): array {
+            return ['observer' => ++$observations === 1 ? 'inactive' : 'active'];
+        });
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
 
@@ -296,7 +294,7 @@ describe('resume', function (): void {
         app()->call([unserialize(serialize($job))->withFakeQueueInteractions(), 'handle']);
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
-            ->and($this->ssh->commands)->toHaveCount(2);
+            ->and($this->agents->calls)->toHaveCount(2);
         Http::assertSentCount(1);
     });
 
@@ -310,7 +308,7 @@ describe('resume', function (): void {
 
         $job->assertReleased(2);
         expect($vm->fresh()?->state)->toBe(TaskVmState::Parked)
-            ->and($this->ssh->commands)->toHaveCount(1);
+            ->and($this->agents->calls)->toHaveCount(1);
         Http::assertSentCount(1);
         Sleep::assertNeverSlept();
     });

@@ -66,6 +66,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -106,6 +107,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
@@ -1104,6 +1106,8 @@ describe(DestroyTaskVm::class, function (): void {
         mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
         mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
         app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+        app()->instance(AgentCommandRunner::class,
+            new FakeAgentCommandRunner()->answer('agent.status', ['observer' => 'active']));
         Http::fake(['http://10.44.0.129:3774/capabilities' => Http::response(['models' => []])]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);

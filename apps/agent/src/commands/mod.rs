@@ -50,6 +50,7 @@ pub mod php_build;
 mod php_profile;
 pub mod php_runtime;
 pub mod pi_artifact;
+pub mod pi_runtime;
 pub mod processes;
 pub mod production;
 pub mod production_home;
@@ -168,6 +169,8 @@ pub fn all() -> Vec<Entry> {
         entry::<image_recipe::verify::Verify>(),
         entry::<pi_artifact::Receive>(),
         entry::<pi_artifact::Install>(),
+        entry::<pi_artifact::Inspect>(),
+        entry::<pi_runtime::Configure>(),
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),

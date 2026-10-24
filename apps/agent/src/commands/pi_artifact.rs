@@ -61,6 +61,24 @@ pub struct Received {
 pub struct Installed {
     pub changed: bool,
 }
+#[derive(Debug, Serialize)]
+pub struct Inspection {
+    pub current: bool,
+}
+
+pub fn inspect(account: &Account, sha256: &str) -> Result<Inspection, Error> {
+    if !recipe::types::valid_digest(sha256, 64) {
+        return Err(invalid("Invalid Pi SHA-256"));
+    }
+    recipe::store::check_home(&account.home, account, false)?;
+    let target = account.home.join(BINARY);
+    recipe::store::check_path(&account.home, &target, account)?;
+    Ok(Inspection {
+        current: owned(&target, account.uid)?
+            && fs::metadata(&target).map_err(failed)?.mode() & 0o7777 == 0o755
+            && file_sha256(&target).map_err(failed)? == sha256,
+    })
+}
 fn paths(files: &Files, sha256: &str) -> Result<(PathBuf, PathBuf), Error> {
     if !recipe::types::valid_digest(sha256, 64) {
         return Err(invalid("Invalid Pi SHA-256"));
@@ -156,6 +174,7 @@ pub fn receive(files: &Files, input: &Chunk) -> Result<Received, Error> {
     })
 }
 pub fn install(files: &Files, account: &Account, sha256: &str) -> Result<Installed, Error> {
+    let current = inspect(account, sha256)?.current;
     let (_, ready) = paths(files, sha256)?;
     if !owned(&ready, files.uid)? || file_sha256(&ready).map_err(failed)? != sha256 {
         return Err(invalid(
@@ -163,10 +182,7 @@ pub fn install(files: &Files, account: &Account, sha256: &str) -> Result<Install
         ));
     }
     let target = account.home.join(BINARY);
-    if owned(&target, account.uid)?
-        && file_sha256(&target).map_err(failed)? == sha256
-        && fs::metadata(&target).map_err(failed)?.mode() & 0o777 == 0o755
-    {
+    if current {
         return Ok(Installed { changed: false });
     }
     for path in [account.home.join(".local"), account.home.join(".local/bin")] {
@@ -193,6 +209,23 @@ pub fn install(files: &Files, account: &Account, sha256: &str) -> Result<Install
     let _ = fs::remove_file(candidate);
     result.map_err(failed)?;
     Ok(Installed { changed: true })
+}
+pub struct Inspect;
+impl Command for Inspect {
+    const NAME: &'static str = "pi.inspect-artifact";
+    const SUMMARY: &'static str =
+        "Check the managed account's installed Pi digest and executable mode.";
+    const MUTATES: bool = false;
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = InstallInput;
+    type Output = Inspection;
+    type Error = Error;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Account)
+    }
+    fn run(input: InstallInput, _: &Context) -> Result<Inspection, Error> {
+        inspect(&Account::named(&input.user)?, &input.sha256)
+    }
 }
 pub struct Receive;
 impl Command for Receive {

@@ -14,18 +14,15 @@ use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\PiArtifactDelivery;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use SensitiveParameter;
 use Throwable;
 
 /**
@@ -38,47 +35,10 @@ final readonly class TaskVmRuntime
     /** The only `models.json` provider on a task VM. The model router is the VM's only model route. */
     public const string PiProvider = 'orbit-task-vm';
 
-    public const int ArtifactMaxBytes = 268435456;
-
-    /** The Pi executable of the managed user. The base image holds the Gateway's pinned build there. */
-    public const string PiPath = '.local/bin/pi-server';
-
-    /**
-     * Installs the Pi executable from stdin when it has the digest in `$1`. The base image build runs it
-     * too, so a VM from a current image already has the pinned executable.
-     */
-    public const string InstallPi = <<<'BASH'
-        bin="$HOME/.local/bin"
-        install -d -m 0755 -- "$HOME/.local" "$bin"
-        staged=$(mktemp "$bin/.pi-server.XXXXXX")
-        trap 'rm -f -- "$staged"' EXIT
-        cat >"$staged"
-        printf '%s  %s\n' "$1" "$staged" | sha256sum --check --status
-        chmod 0755 -- "$staged"
-        mv -f -- "$staged" "$bin/pi-server"
-        trap - EXIT
-        BASH;
-
-    /** Prints `current` when the installed Pi executable has the digest in `$1`. */
-    private const string PiIsCurrent = <<<'BASH'
-        if printf '%s  %s\n' "$1" "$HOME/.local/bin/pi-server" | sha256sum --check --status 2>/dev/null; then
-            printf current
-        fi
-        BASH;
-
-    private const string WritePrivate = <<<'BASH'
-        dir="$HOME/.pi/agent"
-        install -d -m 0700 -- "$HOME/.pi" "$dir"
-        staged=$(mktemp "$dir/.$1.XXXXXX")
-        trap 'rm -f -- "$staged"' EXIT
-        cat >"$staged"
-        mv -f -- "$staged" "$dir/$1"
-        trap - EXIT
-        BASH;
-
     public function __construct(
         private TaskVmSettings $settings,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
+        private PiArtifactDelivery $delivery,
         private ModelKeyIssuer $keys,
         private CreateProcessAction $processes,
         private PiConnection $pi,
@@ -99,21 +59,26 @@ final readonly class TaskVmRuntime
             throw TaskVmConfig::invalid('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
         }
         $key = $this->ensureModelKey($vm, $origin, 60);
-        $timeout = 60;
         $this->clock->step('model-key');
 
         try {
-            $home = '/home/'.$node->user;
-            // A VM from a current base image has the pinned executable, so only an older image needs the upload.
-            $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', $timeout)->stdout;
-            if (trim($installed) !== 'current') {
-                $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
+            $input = ['user' => $node->user, 'sha256' => $digest];
+            $installed = $this->agents->run($node, 'pi.inspect-artifact', $input);
+            if (($installed['current'] ?? null) === false) {
+                $this->delivery->deliver($node, $artifact, $digest);
+                $this->agents->run($node, 'pi.install-artifact', $input);
                 $this->clock->step('pi-upload');
-            } else {
+            } elseif (($installed['current'] ?? null) === true) {
                 $this->clock->step('pi-current');
+            } else {
+                throw new AgentRunnerFailure('pi.inspect-artifact', AgentRunnerFailure::MalformedResult, 'Pi inspection did not report its installed state.');
             }
-            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', $timeout);
-            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($token), 'task-vm-pi-token', $timeout);
+            $configured = $this->agents->run($node, 'pi.configure-runtime', [
+                'user' => $node->user, 'origin' => $origin, 'model_key' => $key, 'token' => $token, 'models' => $this->settings->piModels,
+            ]);
+            if (! is_string($configured['binary'] ?? null) || ! is_string($configured['token_file'] ?? null)) {
+                throw new AgentRunnerFailure('pi.configure-runtime', AgentRunnerFailure::MalformedResult, 'Pi preparation did not return its runtime paths.');
+            }
             $this->clock->step('pi-files');
             $this->processes->execute(new AddProcessData(
                 targetType: ProcessTargetType::Node,
@@ -121,8 +86,8 @@ final readonly class TaskVmRuntime
                 name: 'pi-server',
                 runtime: ProcessRuntime::Systemd,
                 command: [
-                    $home.'/'.self::PiPath, 'serve', '--host='.$node->wireguard_ip, '--port='.$this->pi->port(),
-                    '--token-file='.$home.'/.pi/agent/orbit-token', '--allow-provider='.self::PiProvider,
+                    $configured['binary'], 'serve', '--host='.$node->wireguard_ip, '--port='.$this->pi->port(),
+                    '--token-file='.$configured['token_file'], '--allow-provider='.self::PiProvider,
                 ],
                 image: null,
                 workingDirectory: null,
@@ -151,7 +116,9 @@ final readonly class TaskVmRuntime
         }
 
         try {
-            $this->ssh->execute($node, new RemoteCommand(['systemctl', 'is-active', '--quiet', NodeAgentFootprint::Service.'.service'], timeout: 15), 'task-vm-agent', 'task_vm.resume_timeout', 15, 'Task VM resume');
+            if (($this->agents->run($node, 'agent.status')['observer'] ?? null) !== 'active') {
+                return false;
+            }
 
             return Http::connectTimeout(3)->timeout(5)->withToken($this->pi->token($node))
                 ->get($this->pi->baseUrl($node).'/capabilities')->successful();
@@ -217,21 +184,5 @@ final readonly class TaskVmRuntime
         } catch (Throwable $exception) {
             throw new TaskVmException(TaskVmError::ModelKeyFailed, 'The group model key could not be confirmed with the model router.', 502, $exception);
         }
-    }
-
-    private function models(string $origin, #[SensitiveParameter] string $key): string
-    {
-        return json_encode(['providers' => [self::PiProvider => [
-            'baseUrl' => $origin.'/v1',
-            'api' => 'openai-responses',
-            'apiKey' => $key,
-            'models' => array_map(static fn (string $model): array => ['id' => $model, 'reasoning' => true], $this->settings->piModels),
-        ]]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n";
-    }
-
-    /** @param list<string> $arguments */
-    private function run(Node $node, array $arguments, ?ProtectedInput $input, string $step, float $timeout): CommandResult
-    {
-        return $this->ssh->execute($node, new RemoteCommand($arguments, protectedInput: $input, timeout: $timeout), $step, 'task_vm.runtime_failed', $timeout, 'Task VM runtime');
     }
 }
