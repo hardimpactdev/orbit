@@ -83,13 +83,13 @@ impl Runtime for Native {
             })
     }
 }
-fn absolute(path: &Path) -> bool {
+pub(super) fn absolute(path: &Path) -> bool {
     path.is_absolute()
         && !path
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))
 }
-fn valid_domain(domain: &str) -> bool {
+pub(super) fn valid_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= 253
         && domain.split('.').all(|label| {

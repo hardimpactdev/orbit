@@ -8,14 +8,12 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\Instance;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\Route;
 use Throwable;
@@ -33,131 +31,37 @@ use Throwable;
 final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeInspector
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
-        private CommandDeadline $deadline,
+        private AgentCommandRunner $agents,
         private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
         private ?NodeCaddyfileRenderer $builds = null,
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
         private UfwManagedRulesCheck $ufw = new UfwManagedRulesCheck,
-        private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
-        private int $defaultForwardingPort = 443,
     ) {}
 
     public function inspect(Node $node, Route $route): PublicRouteEdgeObservation
     {
         try {
             $site = $this->publicSite($node, $route);
-            $result = $this->ssh->execute(
-                $node,
-                new RemoteCommand(
-                    arguments: [
-                        'sudo',
-                        'bash',
-                        '-seu',
-                        '--',
-                        $site->domain,
-                        base64_encode($this->expectedBlock($node, $site)),
-                        $site->certificateDirectory(),
-                        $this->liveCaddyfilePath,
-                        ...$this->forwardingTargets($site),
-                    ],
-                    input: <<<'BASH'
-                        domain=$1
-                        expected=$(printf '%s' "$2" | base64 --decode)
-                        certificates=$3
-                        live=$(readlink -f "$4")
-                        # The one live file a Node Caddy build writes must hold the rendered public site. TLS lines
-                        # are compared separately below, so a TLS-only difference reports as a TLS mismatch.
-                        observed=$(sed '/^[[:space:]]*tls /d' "$live" 2>/dev/null || true)
-                        case "$observed" in
-                            *"$expected"*) printf 'ingress=1\n' ;;
-                            *) printf 'ingress=0\n' ;;
-                        esac
-                        # Caddy must manage the public certificate: the public site pins no Orbit CA
-                        # leaf, and it opts into automation unless the Node leaves automation on.
-                        site=$(awk -v start="$domain {" '
-                            $0 == start { inside = 1 }
-                            inside { print }
-                            inside && $0 == "}" { exit }
-                        ' "$live" 2>/dev/null || true)
-                        if [ -n "$site" ] \
-                            && ! grep -qs -- "tls $certificates/cert.pem" "$live" \
-                            && { printf '%s\n' "$site" | grep -Eq '^[[:space:]]+tls force_automate$' \
-                                || ! grep -Eqs '^[[:space:]]*auto_https[[:space:]]+(disable_certs|off)$' "$live"; }; then
-                            printf 'tls=1\n'
-                        else
-                            printf 'tls=0\n'
-                        fi
-                        # Inspect the certificate actually served on the public listener. Caddy's storage
-                        # layout is deliberately not assumed; the listener is the source of truth. Use only
-                        # Ubuntu's packaged Mozilla roots, not the system trust bundle, which includes local roots.
-                        public_roots=$(mktemp)
-                        trap 'rm -f -- "$public_roots"' EXIT
-                        if [ -d /usr/share/ca-certificates/mozilla ]; then
-                            find /usr/share/ca-certificates/mozilla -type f -name '*.crt' -exec cat {} + > "$public_roots"
-                        fi
-                        served=$(timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$domain" \
-                            -verify_hostname "$domain" -verify_return_error -showcerts \
-                            -CAfile "$public_roots" -no-CApath -no-CAstore </dev/null 2>&1 || true)
-                        certificate=$(printf '%s\n' "$served" | awk '
-                            /-----BEGIN CERTIFICATE-----/ { cert = 1 }
-                            cert { print }
-                            /-----END CERTIFICATE-----/ && cert { exit }
-                        ')
-                        if [ -z "$certificate" ] || ! printf '%s\n' "$served" | grep -Fq 'Verify return code: 0 (ok)'; then
-                            printf 'certificate=missing\n'
-                        else
-                            certificate_dates=$(printf '%s\n' "$certificate" | openssl x509 -noout -startdate -enddate 2>/dev/null)
-                            not_before=$(printf '%s\n' "$certificate_dates" | sed -n 's/^notBefore=//p')
-                            not_after=$(printf '%s\n' "$certificate_dates" | sed -n 's/^notAfter=//p')
-                            if [ -z "$not_before" ] || [ -z "$not_after" ]; then
-                                printf 'certificate=missing\n'
-                            else
-                                start_epoch=$(date -d "$not_before" +%s 2>/dev/null || true)
-                                end_epoch=$(date -d "$not_after" +%s 2>/dev/null || true)
-                                if [ -z "$start_epoch" ] || [ -z "$end_epoch" ] || [ "$end_epoch" -le "$start_epoch" ]; then
-                                    printf 'certificate=missing\n'
-                                elif [ $((end_epoch - $(date +%s))) -lt $(((end_epoch - start_epoch) / 6)) ]; then
-                                    printf 'certificate=expiring\n'
-                                else
-                                    printf 'certificate=ok\n'
-                                fi
-                            fi
-                        fi
-                        # The Ingress must reach every private address the public site forwards to. A composed
-                        # site that serves the Instance directly forwards nowhere and always matches.
-                        forwarding=1
-                        for target in "${@:5}"; do
-                            if ! timeout 1 bash -c 'echo >"/dev/tcp/${1%:*}/${1##*:}"' _ "$target" 2>/dev/null; then
-                                forwarding=0
-                            fi
-                        done
-                        printf 'forwarding=%s\n' "$forwarding"
-                        BASH,
-                ),
-                step: 'doctor-public-route',
-                errorCode: 'instance.inspection_failed',
-                commandTimeout: $this->deadline->cap(30.0),
-            );
+            $result = $this->agents->run($node, 'doctor.inspect-public-route', [
+                'domain' => $site->domain,
+                'expected_site' => $this->expectedBlock($node, $site),
+                'certificates' => $site->certificateDirectory(),
+                'forwarding' => $this->forwardingTargets($site),
+            ]);
+            foreach (['ingress', 'forwarding', 'tls'] as $key) {
+                if (! is_bool($result[$key] ?? null)) {
+                    throw new DoctorInspectionException;
+                }
+            }
             $firewallMatches = $this->firewallMatches($node);
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
 
-        $values = [];
-        foreach (explode("\n", trim($result->stdout)) as $line) {
-            [$key, $value] = array_pad(explode('=', $line, 2), 2, null);
-            if (is_string($key) && is_string($value)) {
-                $values[$key] = $value;
-            }
-        }
-
         return new PublicRouteEdgeObservation(
-            ingressProjectionMatches: isset($values['ingress']) ? $values['ingress'] === '1' : null,
-            privateForwardingMatches: isset($values['forwarding']) ? $values['forwarding'] === '1' : null,
-            publicTlsMatches: isset($values['tls'], $values['certificate'])
-                ? $values['tls'] === '1' && $values['certificate'] === 'ok'
-                : null,
+            ingressProjectionMatches: $result['ingress'],
+            privateForwardingMatches: $result['forwarding'],
+            publicTlsMatches: $result['tls'],
             firewallMatches: $firewallMatches,
         );
     }
@@ -202,16 +106,13 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                 throw new DoctorInspectionException;
             }
 
-            $targets[] = trim($host, '[]').':'.(is_int($port) ? $port : $this->defaultForwardingPort);
+            $targets[] = $host.':'.(is_int($port) ? $port : 443);
         }
 
         return $targets;
     }
 
-    /**
-     * The public site as the Node Caddy build renders it on this Node, so it carries the build's listeners, without
-     * its source comment, its trailing newline, and its TLS lines.
-     */
+    /** The public site as this Node's Caddy build renders it. Rust owns comparison with the live site. */
     private function expectedBlock(Node $node, DevelopmentSite $site): string
     {
         $block = ($this->builds ?? app(NodeCaddyfileRenderer::class))->render($node)->blocksFor($site->scope)[0] ?? null;
@@ -220,12 +121,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
             throw new DoctorInspectionException;
         }
 
-        $lines = array_slice(explode("\n", rtrim($block, "\n")), 1);
-
-        return implode("\n", array_filter(
-            $lines,
-            static fn (string $line): bool => preg_match('/^\s*tls /', $line) !== 1,
-        ));
+        return $block;
     }
 
     /** The Ingress firewall matches when every managed public HTTP rule is present exactly. */
@@ -237,13 +133,11 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
             return true;
         }
 
-        $result = $this->ssh->execute(
-            $node,
-            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            step: 'doctor-public-route-firewall',
-            errorCode: 'instance.inspection_failed',
-            commandTimeout: $this->deadline->cap(30.0),
-        );
+        $status = $this->agents->run($node, 'firewall.status', ['stored' => false]);
+        if (! is_string($status['status'] ?? null)) {
+            throw new DoctorInspectionException;
+        }
+        $result = new CommandResult(0, $status['status'], '', 0, false);
 
         return $this->ufw->matches($result, $rules);
     }

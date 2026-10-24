@@ -73,6 +73,10 @@ fn extension(certificate: &str, name: &str) -> String {
 
 /// The leaf's validity in seconds, from its `notBefore` and `notAfter`.
 pub fn validity(dates: &str) -> Option<i64> {
+    validity_bounds(dates).map(|(start, end)| end - start)
+}
+
+pub(super) fn validity_bounds(dates: &str) -> Option<(i64, i64)> {
     let format = time::macros::format_description!(
         "[month repr:short] [day padding:space] [hour]:[minute]:[second] [year] GMT"
     );
@@ -82,7 +86,10 @@ pub fn validity(dates: &str) -> Option<i64> {
     };
     let start = date("notBefore=")?;
     let end = date("notAfter=")?;
-    Some((end - start).whole_seconds())
+    Some((
+        start.assume_utc().unix_timestamp(),
+        end.assume_utc().unix_timestamp(),
+    ))
 }
 
 fn key_is_rsa_2048(key: &str) -> bool {

@@ -1117,6 +1117,20 @@
       ]
     },
     {
+      "name": "doctor.inspect-public-route",
+      "summary": "Inspect a public Route's live site, forwarding and public certificate.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "doctor.public_route_invalid",
+        "doctor.public_route_unavailable"
+      ]
+    },
+    {
       "name": "doctor.inspect-custom-proxy",
       "summary": "Inspect a custom proxy's live site, certificate files, DNS and loopback reachability.",
       "mutates": false,
