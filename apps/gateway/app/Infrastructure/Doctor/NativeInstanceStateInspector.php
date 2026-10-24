@@ -10,13 +10,13 @@ use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Throwable;
@@ -29,6 +29,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private ProductionInstanceInspectionExpectationFactory $productionExpectations,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function inspect(Instance $instance): InstanceInspectionData
@@ -43,38 +44,29 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             $account = $this->accounts->resolve($instance->node);
             $root = $this->removal->instanceRoot($instance, $account);
             $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
-            $result = $this->ssh->execute(
-                $instance->node,
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $repository,
-                        $instance->checkout_path,
-                        $root->value,
-                        $account->user,
-                        $account->group,
-                        $instance->source_layout,
-                        $instance->starting_commit ?? '',
-                    ],
-                    input: self::remoteScript(),
-                ),
-                step: 'doctor-instance',
-                errorCode: 'instance.inspection_failed',
-                commandTimeout: $this->deadline->cap(30.0),
-            );
+            $values = $this->agents->run($instance->node, 'doctor.inspect-development-source', [
+                'repository' => $repository,
+                'checkout' => $instance->checkout_path,
+                'root' => $root->value,
+                'user' => $account->user,
+                'group' => $account->group,
+                'layout' => $instance->source_layout,
+                'starting_commit' => $instance->starting_commit ?? '',
+            ], $this->deadline->cap(30.0));
+            foreach (['checkout', 'layout', 'origin', 'history'] as $field) {
+                if (! is_bool($values[$field] ?? null)) {
+                    throw new DoctorInspectionException;
+                }
+            }
         } catch (Throwable) {
             throw new DoctorInspectionException;
         }
 
-        $values = $this->parse($result, 4, allowUnavailable: false);
-
         return new InstanceInspectionData(
-            checkoutExists: $this->observed($values, 0),
-            repositoryLayoutMatches: $this->observed($values, 1),
-            originMatches: $this->observed($values, 2),
-            sourceIdentityMatches: $this->observed($values, 3),
+            checkoutExists: $values['checkout'],
+            repositoryLayoutMatches: $values['layout'],
+            originMatches: $values['origin'],
+            sourceIdentityMatches: $values['history'],
         );
     }
 
@@ -115,19 +107,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         );
     }
 
-    /**
-     * @param  list<?bool>  $values
-     */
-    private function observed(array $values, int $index): bool
-    {
-        $value = $values[$index] ?? null;
-        if (! is_bool($value)) {
-            throw new DoctorInspectionException;
-        }
-
-        return $value;
-    }
-
     /** @return list<?bool> */
     private function parse(CommandResult $result, int $count, bool $allowUnavailable): array
     {
@@ -150,62 +129,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             '2' => null,
             default => throw new DoctorInspectionException,
         }, $values);
-    }
-
-    private static function remoteScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            repository=$1
-            checkout=$2
-            allowed_root=$3
-            managed_user=$4
-            managed_group=$5
-            source_layout=$6
-            starting_commit=$7
-
-            emit() {
-                if "$@"; then printf '1\n'; else printf '0\n'; fi
-            }
-            checkout_exists() {
-                case "$checkout" in "$allowed_root"/*) ;; *) return 1 ;; esac
-                test -d "$checkout" &&
-                    test ! -L "$checkout" &&
-                    test "$(realpath -e "$checkout")" = "$checkout" &&
-                    test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
-            }
-            repository_layout_matches() {
-                checkout_exists || return 1
-                test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout" || return 1
-
-                git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir) || return 1
-                common_dir=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir) || return 1
-
-                if [ "$source_layout" = checkout ]; then
-                    test -d "$checkout/.git" &&
-                        test ! -L "$checkout/.git" &&
-                        test "$git_dir" = "$checkout/.git" &&
-                        test "$common_dir" = "$checkout/.git"
-                else
-                    test "$source_layout" = worktree &&
-                        test -f "$checkout/.git" &&
-                        test ! -L "$checkout/.git" &&
-                        test "$git_dir" != "$common_dir"
-                fi
-            }
-            origin_matches() {
-                test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
-            }
-            source_identity_matches() {
-                test -n "$starting_commit" || return 1
-                test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit" || return 1
-                git -C "$checkout" merge-base "$starting_commit" HEAD >/dev/null
-            }
-
-            emit checkout_exists
-            emit repository_layout_matches
-            emit origin_matches
-            emit source_identity_matches
-            BASH;
     }
 
     private function productionProgram(ProductionInstanceInspectionExpectation $expectation): string

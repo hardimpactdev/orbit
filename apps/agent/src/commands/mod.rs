@@ -17,6 +17,7 @@ pub mod dev_certificates;
 pub mod dev_deploy;
 pub mod dev_source;
 mod doctor_node;
+mod doctor_project;
 mod doctor_role;
 mod doctor_route;
 pub mod environment;
@@ -153,6 +154,8 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_publication::CheckAddresses>(),
         entry::<caddy_publication::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
+        entry::<doctor_project::InspectProject>(),
+        entry::<doctor_project::InspectDevelopmentSource>(),
         entry::<doctor_role::InspectRole>(),
         entry::<doctor_route::InspectPrivateRoute>(),
         entry::<doctor_route::InspectApplicationUrls>(),

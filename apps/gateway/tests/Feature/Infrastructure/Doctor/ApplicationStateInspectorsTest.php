@@ -29,8 +29,6 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
@@ -41,278 +39,172 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FixtureProcessRunner;
 use Tests\Support\UnixSocketDirectory;
 
-it('checks only selected-node app projections through the fixed SSH boundary', function (): void {
+it('batches only settled selected-node Project checkouts through the agent', function (): void {
     $project = application_inspector_app();
     $node = application_inspector_node();
+    $node->update(['settings' => ['apps' => ['path' => '/fast/apps']]]);
     $instance = application_app_instance($project, $node);
+    $instance->update(['checkout_path' => "/fast/apps/{$project->slug}/development"]);
     application_app_instance($project, application_inspector_node(), 'other-node');
-    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
-
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, true))
-        ->and($ssh->commands)
-        ->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            $project->repository_url,
-            $instance->checkout_path,
-            '/srv/users/nckrtl/apps',
-            'nckrtl',
-            '',
-            '',
-            'app-dev',
-            '/srv/users/nckrtl/apps',
-        ])
-        ->and($ssh->connections[0]->host)
-        ->toBe($node->wireguard_ip)
-        ->and($ssh->connections[0]->user)
-        ->toBe('nckrtl')
-        ->and($ssh->connections[0]->port)
-        ->toBe(22)
-        ->and($ssh->connections[0]->identityFile)
-        ->toBe('/tmp/doctor-key')
-        ->and($ssh->connections[0]->knownHostsFile)
-        ->toBe('/tmp/doctor-known-hosts')
-        ->and($ssh->connections[0]->commandTimeout)
-        ->toBe(30.0);
-});
-
-it('excludes removing Instances from App checkout inspection', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    application_app_instance($project, $node, 'active');
     $removing = application_app_instance($project, $node, 'removing');
     application_mark_removing($removing);
-    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
-
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, true))
-        ->and($ssh->commands)
-        ->toHaveCount(1);
-});
-
-it('excludes in-flight App checkouts while preserving settled checkout failures', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $settled = application_app_instance($project, $node, 'settled');
-    $provisioning = application_app_instance($project, $node, 'provisioning');
-    $provisioning->update([
-        'status' => InstanceState::CheckoutPrepared,
-        'provisioning_step' => 'checkout',
-        'environment' => 'production',
+    application_app_instance($project, $node, 'provisioning')->update([
+        'status' => InstanceState::CheckoutPrepared, 'provisioning_step' => 'checkout',
     ]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result('', exitCode: 1)]);
-
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $settled->id]))
-        ->and($ssh->commands)
-        ->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments[4])
-        ->toBe($settled->checkout_path);
-});
-
-it('keeps per-checkout app failures bounded and continues inspecting other Instances', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $failed = application_app_instance($project, $node, 'failed');
-    application_app_instance($project, $node, 'healthy');
-    $ssh = new AppDevFakeSshExecutor([
-        app_inspector_result('', exitCode: 1),
-        app_origin_result($project->repository_url),
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-project', [
+        'checkouts' => [['instance_id' => (int) $instance->id, 'matches' => true]],
     ]);
 
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(2, true, [], [(int) $failed->id]))
-        ->and($ssh->commands)
-        ->toHaveCount(2);
+    expect(application_app_inspector($agents)->inspect($project, $node))->toEqual(new ProjectInspectionData(1, true));
+    expect($agents->calls)->toBe([[
+        'node' => $node->name, 'command' => 'doctor.inspect-project', 'input' => [
+            'repository' => $project->repository_url,
+            'checkouts' => [[
+                'instance_id' => (int) $instance->id, 'path' => $instance->checkout_path,
+                'root' => '/fast/apps', 'user' => 'nckrtl', 'production' => false,
+            ]],
+        ],
+    ]]);
 });
 
-it('checks app-production origins as the app owner within its production root', function (): void {
+it('supplies recorded production home and owner without a shell', function (): void {
     $project = application_inspector_app();
     $node = application_inspector_node();
     $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('A', 44));
-    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-project', [
+        'checkouts' => [['instance_id' => (int) $instance->id, 'matches' => true]],
+    ]);
 
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, true))
-        ->and($ssh->connections[0]->user)
-        ->toBe('nckrtl')
-        ->and($ssh->commands[0]->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            $project->repository_url,
-            $instance->checkout_path,
-            $instance->production_home,
-            $instance->production_user,
-            $project->slug,
-            $instance->name,
-            'app-prod',
-            '',
-        ])
-        ->and($ssh->commands[0]->input)
-        ->toContain('sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url');
+    expect(application_app_inspector($agents)->inspect($project, $node))->toEqual(new ProjectInspectionData(1, true));
+    expect($agents->calls[0]['input']['checkouts'])->toBe([[
+        'instance_id' => (int) $instance->id, 'path' => $instance->checkout_path,
+        'root' => $instance->production_home, 'user' => $instance->production_user, 'production' => true,
+    ]]);
 });
 
-it('returns a bounded mismatch for an app-production origin', function (): void {
+it('preserves mismatching and unavailable checkout identities independently', function (): void {
     $project = application_inspector_app();
     $node = application_inspector_node();
-    $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('B', 44));
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
+    $failed = application_app_instance($project, $node, 'failed');
+    $mismatch = application_app_instance($project, $node, 'mismatch');
+    $healthy = application_app_instance($project, $node, 'healthy');
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-project', ['checkouts' => [
+        ['instance_id' => (int) $failed->id, 'matches' => null],
+        ['instance_id' => (int) $mismatch->id, 'matches' => false],
+        ['instance_id' => (int) $healthy->id, 'matches' => true],
+    ]]);
 
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
-        ->and($ssh->commands[0]->input)
-        ->toContain('test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"');
+    expect(application_app_inspector($agents)->inspect($project, $node))
+        ->toEqual(new ProjectInspectionData(3, false, [(int) $mismatch->id], [(int) $failed->id]));
+    expect($agents->calls)->toHaveCount(1);
 });
 
-it('returns a bounded app mismatch and a healthy empty selection', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $instance = application_app_instance($project, $node);
-    $mismatch = application_app_inspector(new AppDevFakeSshExecutor([
-        app_inspector_result("0\n"),
-    ]))
-        ->inspect($project, $node);
-    $empty = application_app_inspector(new AppDevFakeSshExecutor)->inspect($project, application_inspector_node());
-
-    expect($mismatch)
-        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
-        ->and($empty)
+it('returns a healthy empty Project selection without a command', function (): void {
+    $agents = new FakeAgentCommandRunner;
+    expect(application_app_inspector($agents)->inspect(application_inspector_app(), application_inspector_node()))
         ->toEqual(new ProjectInspectionData(0, true));
+    expect($agents->calls)->toBe([]);
 });
 
-it('fails app inspection closed for invalid intent and failed observations', function (
-    string $repository,
-    CommandResult $result,
-): void {
+it('keeps a failed or malformed Project observation unavailable', function (string $failure): void {
     $project = application_inspector_app();
     $node = application_inspector_node();
     $instance = application_app_instance($project, $node);
-    $project->repository_url = $repository;
+    $agents = new FakeAgentCommandRunner;
+    match ($failure) {
+        'refusal' => $agents->refuse('doctor.inspect-project', 'doctor.project_input_invalid'),
+        'transport' => $agents->answer('doctor.inspect-project', static fn (): array => throw new RuntimeException('lost transport')),
+        'missing' => $agents->answer('doctor.inspect-project', []),
+        'wrong identity' => $agents->answer('doctor.inspect-project', ['checkouts' => [['instance_id' => 0, 'matches' => true]]]),
+        'wrong value' => $agents->answer('doctor.inspect-project', ['checkouts' => [['instance_id' => (int) $instance->id, 'matches' => 'true']]]),
+    };
 
-    $inspection = fn (): ProjectInspectionData => application_app_inspector(
-        new AppDevFakeSshExecutor([$result]),
-    )->inspect($project, $node);
-
-    if ($repository === 'not a repository') {
-        expect($inspection)->toThrow(DoctorInspectionException::class, '');
-
-        return;
-    }
-
-    expect($inspection())
+    expect(application_app_inspector($agents)->inspect($project, $node))
         ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]));
-})->with([
-    'invalid origin' => ['not a repository', app_inspector_result("1\n")],
-    'command failure' => ['https://github.com/acme/project.git', app_inspector_result('', exitCode: 1)],
-    'malformed output' => ['https://github.com/acme/project.git', app_inspector_result('private-output')],
-    'truncated output' => ['https://github.com/acme/project.git', app_inspector_result("1\n", truncated: true)],
-]);
+})->with(['refusal', 'transport', 'missing', 'wrong identity', 'wrong value']);
 
-it('observes only Instance source evidence through the fixed SSH boundary', function (): void {
-    $node = application_inspector_node();
-    $instance = application_app_instance(application_inspector_app(), $node);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
-
-    $inspection = application_instance_inspector($ssh)->inspect($instance);
-
-    expect($inspection)
-        ->toEqual(new InstanceInspectionData(true, true, true, true))
-        ->and($ssh->commands[0]->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            $instance->project->repository_url,
-            $instance->checkout_path,
-            '/srv/users/nckrtl/apps',
-            'nckrtl',
-            'nckrtl',
-            $instance->source_layout,
-            $instance->starting_commit,
-        ])
-        ->and($ssh->commands[0]->input)
-        ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
-        ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
+it('refuses invalid Project intent before an agent call', function (): void {
+    $project = application_inspector_app();
+    $project->repository_url = 'not a repository';
+    $agents = new FakeAgentCommandRunner;
+    expect(fn () => application_app_inspector($agents)->inspect($project, application_inspector_node()))
+        ->toThrow(DoctorInspectionException::class);
+    expect($agents->calls)->toBe([]);
 });
 
-it('inspects a checkout that keeps its directory after a Project slug change', function (): void {
+it('sends recorded Instance source intent through the agent after a Project rename', function (): void {
     $node = application_inspector_node();
     $project = application_inspector_app();
     $instance = application_app_instance($project, $node);
     $checkout = $instance->checkout_path;
     $project->update(['slug' => 'renamed-project']);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-development-source', [
+        'checkout' => true, 'layout' => true, 'origin' => true, 'history' => true,
+    ]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
-
-    expect($checkout)->not->toContain('renamed-project')
-        ->and($inspection)->toEqual(new InstanceInspectionData(true, true, true, true))
-        ->and($ssh->commands[0]->arguments[4])->toBe($checkout)
-        ->and($ssh->commands[0]->arguments[5])->toBe('/srv/users/nckrtl/apps');
+    expect(application_instance_inspector($agents)->inspect($instance->refresh()))
+        ->toEqual(new InstanceInspectionData(true, true, true, true));
+    expect($agents->calls)->toBe([[
+        'node' => $node->name, 'command' => 'doctor.inspect-development-source', 'input' => [
+            'repository' => $project->repository_url, 'checkout' => $checkout,
+            'root' => '/srv/users/nckrtl/apps', 'user' => 'nckrtl', 'group' => 'nckrtl',
+            'layout' => $instance->source_layout, 'starting_commit' => $instance->starting_commit,
+        ],
+    ]]);
 });
 
 it('fails Instance inspection closed for a checkout path that does not end in the Instance name', function (string $path): void {
-    $node = application_inspector_node();
-    $instance = application_app_instance(application_inspector_app(), $node);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
     $instance->update(['checkout_path' => $path]);
-    $ssh = new AppDevFakeSshExecutor([]);
+    $agents = new FakeAgentCommandRunner;
 
-    expect(fn () => application_instance_inspector($ssh)->inspect($instance->refresh()))
-        ->toThrow(DoctorInspectionException::class)
-        ->and($ssh->commands)->toBe([]);
+    expect(fn () => application_instance_inspector($agents)->inspect($instance->refresh()))
+        ->toThrow(DoctorInspectionException::class);
+    expect($agents->calls)->toBe([]);
 })->with([
     'another name' => '/srv/users/nckrtl/apps/project/main',
     'too shallow' => '/development',
     'protected root' => '/srv/users/nckrtl/project/development',
 ]);
 
-it('maps each Instance source observation without retaining diagnostics', function (
-    string $remote,
-    InstanceInspectionData $expected,
-): void {
+it('maps each development source mismatch independently', function (string $field, string $property): void {
     $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote, stderr: 'private-stderr')]);
+    $values = ['checkout' => true, 'layout' => true, 'origin' => true, 'history' => true];
+    $values[$field] = false;
+    $agents = new FakeAgentCommandRunner()->answer('doctor.inspect-development-source', $values);
 
-    $inspection = application_instance_inspector($ssh)->inspect($instance);
-
-    expect($inspection)->toEqual($expected)->and(json_encode($inspection))->not->toContain('private');
+    expect(application_instance_inspector($agents)->inspect($instance)->{$property})->toBeFalse();
 })->with([
-    'checkout missing' => ["0\n1\n1\n1\n", new InstanceInspectionData(false, true, true, true)],
-    'repository not independent' => ["1\n0\n1\n1\n", new InstanceInspectionData(true, false, true, true)],
-    'origin mismatch' => ["1\n1\n0\n1\n", new InstanceInspectionData(true, true, false, true)],
-    'source identity mismatch' => ["1\n1\n1\n0\n", new InstanceInspectionData(true, true, true, false)],
+    ['checkout', 'checkoutExists'], ['layout', 'repositoryLayoutMatches'],
+    ['origin', 'originMatches'], ['history', 'sourceIdentityMatches'],
 ]);
 
-it('rejects an unavailable marker from the non-nullable development observation', function (): void {
+it('sanitizes failed and malformed development source observations', function (string $failure): void {
     $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $agents = new FakeAgentCommandRunner;
+    match ($failure) {
+        'refusal' => $agents->refuse('doctor.inspect-development-source', 'doctor.source_inspection_failed'),
+        'transport' => $agents->answer('doctor.inspect-development-source', static fn (): array => throw new RuntimeException('remote-secret-token')),
+        'missing' => $agents->answer('doctor.inspect-development-source', []),
+        'unavailable' => $agents->answer('doctor.inspect-development-source', ['checkout' => null, 'layout' => true, 'origin' => true, 'history' => true]),
+        'malformed' => $agents->answer('doctor.inspect-development-source', ['checkout' => 'private-output', 'layout' => true, 'origin' => true, 'history' => true]),
+    };
 
-    expect(fn (): InstanceInspectionData => application_instance_inspector(
-        new AppDevFakeSshExecutor([app_inspector_result("2\n1\n1\n1\n")]),
-    )->inspect($instance))->toThrow(DoctorInspectionException::class, '');
+    $exception = application_capture_exception(fn () => application_instance_inspector($agents)->inspect($instance));
+    application_assert_sanitized($exception, 'remote-secret-token');
+})->with(['refusal', 'transport', 'missing', 'unavailable', 'malformed']);
+
+it('keeps migrated source inspectors behind the agent boundary', function (): void {
+    expect(file_get_contents(app_path('Infrastructure/Doctor/NativeProjectStateInspector.php')))
+        ->not->toContain('SshExecutor', 'RemoteCommand', 'ProcessRunner', '<<<');
+    $instance = file_get_contents(app_path('Infrastructure/Doctor/NativeInstanceStateInspector.php'));
+    $development = substr($instance, 0, strpos($instance, 'private function inspectProduction'));
+    expect($development)->toContain('doctor.inspect-development-source')->not->toContain('new RemoteCommand', '$this->ssh->execute');
 });
 
 it('checks the selected release environment in its application directory', function (string $webRoot, string $suffix, string $target): void {
@@ -1067,443 +959,6 @@ it('fails production inspection closed for malformed, failed, truncated, and dia
     'stderr' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", stderr: 'private-production-value')],
 ]);
 
-it('reports shared Instance Git administration as non-independent', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $sharedGitDirectory = "{$fixture['sandbox']}/shared.git";
-    $files = new Filesystem;
-    $files->copyDirectory("{$fixture['checkout']}/.git", $sharedGitDirectory);
-    file_put_contents("{$fixture['checkout']}/.git/commondir", "{$sharedGitDirectory}\n");
-
-    try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $instance->project->repository_url,
-                $fixture['checkout'],
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                $fixture['startingCommit'],
-            ],
-            $script,
-        );
-
-        expect($result->stdout)->toBe("1\n0\n1\n1\n");
-    } finally {
-        $files->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('accepts a development checkout that switched branches within the recorded history', function (
-    Closure $switch,
-): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $switch($fixture);
-
-    try {
-        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
-
-        expect($result->stdout)->toBe("1\n1\n1\n1\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-})->with([
-    'feature branch with new commits' => [function (array $fixture): void {
-        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--create', 'fix/feature']);
-        application_commit($fixture['checkout'], 'feature.md');
-    }],
-    'branch that starts before the starting commit' => [function (array $fixture): void {
-        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--create', 'maintenance/older', "{$fixture['startingCommit']}~1"]);
-        application_commit($fixture['checkout'], 'maintenance.md');
-    }],
-    'detached HEAD' => [function (array $fixture): void {
-        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--detach', "{$fixture['startingCommit']}~1"]);
-    }],
-]);
-
-it('reports a development checkout whose history was replaced', function (Closure $replace): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $replace($fixture);
-
-    try {
-        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
-
-        expect($result->stdout)->toBe("1\n1\n1\n0\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-})->with([
-    'unrelated history in the same checkout' => [function (array $fixture): void {
-        application_run(['git', '-C', $fixture['checkout'], 'switch', '--quiet', '--orphan', 'unrelated']);
-        application_commit($fixture['checkout'], 'unrelated.md');
-    }],
-    'another repository with the same origin' => [function (array $fixture): void {
-        $files = new Filesystem;
-        $files->deleteDirectory($fixture['checkout']);
-        application_run(['git', 'init', '--quiet', '--initial-branch=development', $fixture['checkout']]);
-        application_run(['git', '-C', $fixture['checkout'], 'config', 'user.name', 'Orbit Test']);
-        application_run(['git', '-C', $fixture['checkout'], 'config', 'user.email', 'orbit@example.test']);
-        application_run(['git', '-C', $fixture['checkout'], 'remote', 'add', 'origin', $fixture['repository']]);
-        application_commit($fixture['checkout'], 'other.md');
-    }],
-]);
-
-it('reports a development checkout without a recorded starting commit', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $fixture['startingCommit'] = '';
-
-    try {
-        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
-
-        expect($result->stdout)->toBe("1\n1\n1\n0\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('compares the configured Instance origin, not the insteadOf rewrite Git applies', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
-
-    try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $instance->project->repository_url,
-                $fixture['checkout'],
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                $fixture['startingCommit'],
-            ],
-            $script,
-        );
-
-        expect($result->stdout)->toBe("1\n1\n1\n1\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('checks a development checkout under the Node apps root', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $node->update(['settings' => ['apps' => ['path' => '/fast/apps']]]);
-    $instance = application_app_instance($project, $node);
-    $instance->update(['checkout_path' => "/fast/apps/{$project->slug}/development"]);
-    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
-
-    $inspection = application_app_inspector($ssh)->inspect($project, $node);
-
-    expect($inspection)
-        ->toEqual(new ProjectInspectionData(1, true))
-        ->and($ssh->commands[0]->arguments)
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            $project->repository_url,
-            "/fast/apps/{$project->slug}/development",
-            '/fast/apps',
-            'nckrtl',
-            '',
-            '',
-            'app-dev',
-            '/fast/apps',
-        ]);
-});
-
-it('matches an app origin under the Node apps root despite an insteadOf rewrite', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($project->repository_url);
-    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
-    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
-
-    try {
-        $result = application_app_local_run($project, $node);
-
-        expect($result->stdout)->toBe('1 '.base64_encode($project->repository_url)."\n")
-            ->and(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($project, $node))
-            ->toEqual(new ProjectInspectionData(1, true));
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('still reports a truly different Instance origin despite an insteadOf rule', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
-    application_run(['git', '-C', $fixture['checkout'], 'remote', 'set-url', 'origin', 'https://git.example.test/acme/other.git']);
-
-    try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $instance->project->repository_url,
-                $fixture['checkout'],
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                $fixture['startingCommit'],
-            ],
-            $script,
-        );
-
-        expect($result->stdout)->toBe("1\n1\n0\n1\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('still reports a truly different app origin despite an insteadOf rule', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($project->repository_url);
-    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
-    application_run(['git', '-C', $fixture['checkout'], 'remote', 'set-url', 'origin', 'https://git.example.test/acme/other.git']);
-    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    $instance = application_app_instance($project, $node);
-    $instance->update(['checkout_path' => $fixture['checkout']]);
-
-    try {
-        $result = application_app_local_run($project, $node);
-
-        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($project, $node))
-            ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('HTTPS project vs SSH origin of the same repository is not a mismatch', function (string $project, string $origin): void {
-    $app = application_inspector_app();
-    $app->update(['repository_url' => $project]);
-    $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($origin);
-    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
-
-    try {
-        $result = application_app_local_run($app, $node);
-
-        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($app, $node))
-            ->toEqual(new ProjectInspectionData(1, true));
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-})->with([
-    'scp-style SSH origin' => ['https://github.com/acme/hauzer.git', 'git@github.com:acme/hauzer.git'],
-    'SSH URL origin' => ['https://github.com/acme/hauzer.git', 'ssh://git@github.com/acme/hauzer.git'],
-    'SSH origin without .git' => ['https://github.com/acme/hauzer.git', 'git@github.com:acme/hauzer'],
-    'SSH project and HTTPS origin' => ['git@github.com:acme/hauzer.git', 'https://github.com/acme/hauzer'],
-]);
-
-it('HTTPS project vs SSH origin of a different repository is still a mismatch', function (string $origin): void {
-    $app = application_inspector_app();
-    $app->update(['repository_url' => 'https://github.com/acme/hauzer.git']);
-    $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($origin);
-    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    $instance = application_app_instance($app, $node);
-    $instance->update(['checkout_path' => $fixture['checkout']]);
-
-    try {
-        $result = application_app_local_run($app, $node);
-
-        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($app, $node))
-            ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-})->with([
-    'fork path' => ['git@github.com:fork/hauzer.git'],
-    'other repository' => ['git@github.com:acme/mealou.git'],
-    'other host' => ['git@gitlab.com:acme/hauzer.git'],
-]);
-
-it('HTTPS project vs SSH origin on app-production matches by repository identity', function (): void {
-    $project = application_inspector_app();
-    $project->update(['repository_url' => 'https://github.com/hardimpactdev/hauzer.git']);
-    $node = application_inspector_node();
-    $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('C', 44));
-
-    $same = application_app_inspector(new AppDevFakeSshExecutor([
-        app_origin_result('git@github.com:hardimpactdev/hauzer.git'),
-    ]))->inspect($project, $node);
-    $fork = application_app_inspector(new AppDevFakeSshExecutor([
-        app_origin_result('git@github.com:someone/hauzer.git'),
-    ]))->inspect($project, $node);
-
-    expect($same)
-        ->toEqual(new ProjectInspectionData(1, true))
-        ->and($fork)
-        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
-});
-
-it('treats a missing or unreadable app origin as a mismatch and malformed origin output as a failure', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $instance = application_app_instance($project, $node);
-    $inspect = fn (CommandResult $result): ProjectInspectionData => application_app_inspector(
-        new AppDevFakeSshExecutor([$result]),
-    )->inspect($project, $node);
-
-    expect($inspect(app_inspector_result("1 \n")))
-        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
-        ->and($inspect(app_origin_result('not a repository')))
-        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
-        ->and($inspect(app_inspector_result("1 not-base64!\n")))
-        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]))
-        ->and($inspect(app_inspector_result("1\n")))
-        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]));
-});
-
-it('fails app inspection for a checkout outside the effective apps root', function (): void {
-    $project = application_inspector_app();
-    $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($project->repository_url);
-    $node->update(['settings' => ['apps' => ['path' => "{$fixture['sandbox']}/configured"]]]);
-    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
-    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
-    application_app_inspector($ssh)->inspect($project, $node);
-
-    try {
-        $result = new FixtureProcessRunner()->run(
-            new ProcessInvocation($ssh->commands[0]->arguments, input: $ssh->commands[0]->input),
-        );
-
-        expect($ssh->commands[0]->arguments[5])->toBe("{$fixture['sandbox']}/configured")
-            ->and($result->succeeded())->toBeFalse()
-            ->and($result->stdout)->toBe('');
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('keeps a symlink checkout false when ownership lookup succeeds', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $symlink = "{$fixture['allowedRoot']}/acme/symlink";
-    symlink($fixture['checkout'], $symlink);
-
-    try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $instance->project->repository_url,
-                $symlink,
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                $fixture['startingCommit'],
-            ],
-            $script,
-        );
-
-        expect($result->stdout)->toBe("0\n0\n1\n1\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('keeps a non-canonical checkout false when ownership lookup succeeds', function (): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($instance);
-    $fixture = application_instance_repository_fixture($instance->project->repository_url);
-    $nonCanonicalCheckout = "{$fixture['allowedRoot']}/acme/../acme/development";
-
-    try {
-        $result = application_run(
-            [
-                'bash',
-                '-seu',
-                '--',
-                $instance->project->repository_url,
-                $nonCanonicalCheckout,
-                $fixture['allowedRoot'],
-                $fixture['user'],
-                $fixture['group'],
-                'checkout',
-                $fixture['startingCommit'],
-            ],
-            $script,
-        );
-
-        expect($result->stdout)->toBe("0\n0\n1\n1\n");
-    } finally {
-        new Filesystem()->deleteDirectory($fixture['sandbox']);
-    }
-});
-
-it('fails instance observations closed on remote errors', function (
-    CommandResult $remote,
-): void {
-    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
-
-    expect(
-        fn (): InstanceInspectionData => application_instance_inspector(
-            new AppDevFakeSshExecutor([$remote]),
-        )
-            ->inspect($instance),
-    )
-        ->toThrow(DoctorInspectionException::class, '');
-})->with([
-    'remote failure' => [app_inspector_result('', exitCode: 1, stderr: 'private')],
-    'remote malformed' => [app_inspector_result('private-output')],
-    'remote truncated' => [app_inspector_result("1\n1\n1\n1\n1\n", truncated: true)],
-]);
-
-it('redacts thrown remote timeouts while preserving the capped deadlines', function (): void {
-    $node = application_inspector_node();
-    $instance = application_app_instance(application_inspector_app(), $node);
-    $remoteTimeout = application_timeout('remote-secret-token');
-    expect((string) $remoteTimeout)->toContain('remote-secret-token');
-    $remote = new ApplicationInspectorTimeoutSshExecutor($remoteTimeout);
-    $remoteException = application_capture_exception(
-        fn (): InstanceInspectionData => application_instance_inspector($remote)->inspect($instance),
-    );
-    application_assert_sanitized($remoteException, sentinel: 'remote-secret-token');
-    expect($remote->connections[0]->commandTimeout)
-        ->toBe(30.0)
-        ->and(json_encode($remote->connections))
-        ->not->toContain('sentinel');
-});
-
-function application_timeout(string $sentinel): ProcessTimedOutException
-{
-    return new ProcessTimedOutException(
-        new Process(['bash', '-c', $sentinel])->setTimeout(30),
-        ProcessTimedOutException::TYPE_GENERAL,
-    );
-}
-
 /** @param non-empty-list<string> $arguments */
 function application_run(array $arguments, ?string $input = null): CommandResult
 {
@@ -1511,14 +966,6 @@ function application_run(array $arguments, ?string $input = null): CommandResult
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;
-}
-
-function application_instance_remote_script(Instance $instance): string
-{
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
-    application_instance_inspector($ssh)->inspect($instance);
-
-    return $ssh->commands[0]->input;
 }
 
 function application_production_observation_program(string $observation, string $setup, string $webRoot = 'public'): string
@@ -1568,66 +1015,6 @@ function application_process_stat(int $pid, int $parentPid, int $startTime, int 
         ...array_fill(0, 12, '0'),
         (string) $startTime,
     ])."\n";
-}
-
-/** @return array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string} */
-function application_instance_repository_fixture(string $repository): array
-{
-    $sandbox = sys_get_temp_dir().'/orbit-doctor-instance-'.Str::uuid();
-    $allowedRoot = "{$sandbox}/apps";
-    $checkout = "{$allowedRoot}/acme/development";
-    $files = new Filesystem;
-    $files->makeDirectory(dirname($checkout), 0o755, true);
-    application_run(['git', 'init', '--initial-branch=development', $checkout]);
-    application_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
-    application_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
-    application_commit($checkout, 'CHANGELOG.md');
-    application_commit($checkout, 'README.md');
-    application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', $repository]);
-    $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
-    $identity = posix_getpwuid(posix_geteuid());
-    $groupIdentity = posix_getgrgid(posix_getegid());
-    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
-        ? $groupIdentity['name']
-        : $user;
-
-    return [
-        'sandbox' => $sandbox,
-        'repository' => $repository,
-        'allowedRoot' => $allowedRoot,
-        'checkout' => $checkout,
-        'startingCommit' => $startingCommit,
-        'user' => $user,
-        'group' => $group,
-    ];
-}
-
-function application_commit(string $checkout, string $file): void
-{
-    file_put_contents("{$checkout}/{$file}", "{$file}\n");
-    application_run(['git', '-C', $checkout, 'add', $file]);
-    application_run(['git', '-C', $checkout, 'commit', '--quiet', '-m', "Add {$file}"]);
-}
-
-/**
- * @param  array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string}  $fixture
- * @return non-empty-list<string>
- */
-function application_instance_source_arguments(Instance $instance, array $fixture): array
-{
-    return [
-        'bash',
-        '-seu',
-        '--',
-        $instance->project->repository_url,
-        $fixture['checkout'],
-        $fixture['allowedRoot'],
-        $fixture['user'],
-        $fixture['group'],
-        'checkout',
-        $fixture['startingCommit'],
-    ];
 }
 
 function application_capture_exception(Closure $operation): DoctorInspectionException
@@ -1714,12 +1101,10 @@ function application_mark_removing(Instance $instance): void
     }
 }
 
-function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeProjectStateInspector
+function application_app_inspector(FakeAgentCommandRunner $agents): NativeProjectStateInspector
 {
     return new NativeProjectStateInspector(
-        $ssh,
-        application_inspector_keys(),
-        application_inspector_hosts(),
+        $agents,
         new CommandDeadline,
         application_inspector_accounts(),
         app(StorageRootResolver::class),
@@ -1728,14 +1113,18 @@ function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeProjectSta
 }
 
 function application_instance_inspector(
-    SshExecutor $ssh,
+    SshExecutor|FakeAgentCommandRunner $runner,
 ): NativeInstanceStateInspector {
+    $ssh = $runner instanceof SshExecutor ? $runner : new AppDevFakeSshExecutor;
+    $agents = $runner instanceof FakeAgentCommandRunner ? $runner : new FakeAgentCommandRunner;
+
     return new NativeInstanceStateInspector(
         new DevelopmentSshExecutor($ssh, application_inspector_keys(), application_inspector_hosts()),
         new CommandDeadline,
         application_inspector_accounts(),
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
         app(ProductionInstanceInspectionExpectationFactory::class),
+        $agents,
     );
 }
 
@@ -1821,20 +1210,6 @@ function application_inspector_hosts(): KnownHostsStore
     };
 }
 
-function app_origin_result(string $origin): CommandResult
-{
-    return app_inspector_result('1 '.base64_encode($origin)."\n");
-}
-
-/** Runs the Project origin check for the Node's single checkout on this machine. */
-function application_app_local_run(Project $project, Node $node): CommandResult
-{
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
-    application_app_inspector($ssh)->inspect($project, $node);
-
-    return application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
-}
-
 function app_inspector_result(
     string $stdout,
     int $exitCode = 0,
@@ -1842,21 +1217,4 @@ function app_inspector_result(
     bool $truncated = false,
 ): CommandResult {
     return new CommandResult($exitCode, $stdout, $stderr, 1, $truncated);
-}
-
-final class ApplicationInspectorTimeoutSshExecutor implements SshExecutor
-{
-    public array $connections = [];
-
-    public function __construct(
-        private Throwable $timeout,
-    ) {}
-
-    public function execute(
-        SshConnection $connection,
-        RemoteCommand $command,
-    ): CommandResult {
-        $this->connections[] = $connection;
-        throw $this->timeout;
-    }
 }

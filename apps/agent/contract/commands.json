@@ -1036,6 +1036,33 @@
       ]
     },
     {
+      "name": "doctor.inspect-project",
+      "summary": "Observe the repository identity of settled Project checkouts in one call.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "doctor.project_input_invalid"
+      ]
+    },
+    {
+      "name": "doctor.inspect-development-source",
+      "summary": "Observe development checkout ownership, Git layout, origin, and recorded history.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "doctor.source_input_invalid",
+        "doctor.source_inspection_failed"
+      ]
+    },
+    {
       "name": "doctor.inspect-role-runtime",
       "summary": "Inspect role packages, services, and the installed Caddy version without repairs.",
       "mutates": false,
