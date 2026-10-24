@@ -238,7 +238,7 @@ Added to the home screen of an iPhone or iPad, the app stays in memory and navig
 
 ## Web directory
 
-The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The directory belongs to the `orbit` user and the `caddy` group.
+The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The Gateway calls `gateway.prepare-web-directory` through the agent runner. The command checks the path and existing directories before any change, refuses symlinks, and prepares the web directory and its `releases` child as `orbit:caddy` with mode `0750`. Repeating the command leaves matching directories unchanged.
 
 | Path | Contents |
 | --- | --- |

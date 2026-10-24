@@ -1046,6 +1046,20 @@
       ]
     },
     {
+      "name": "gateway.prepare-web-directory",
+      "summary": "Prepare the Gateway web release directories for Caddy.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "gateway.web_directory_invalid",
+        "gateway.web_directory_failed"
+      ]
+    },
+    {
       "name": "php.inspect-build",
       "summary": "Inspect the pinned PHP build, extra packages, and extension ownership.",
       "mutates": false,

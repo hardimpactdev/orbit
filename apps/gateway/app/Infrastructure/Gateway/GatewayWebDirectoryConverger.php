@@ -5,55 +5,42 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
+use App\Models\Node;
 
-/**
- * Prepares the web app release directory that the Gateway site serves. Releases arrive through
- * `bin/web-deploy`; this only guarantees a real directory Caddy can read, one level below the
- * `orbit` home that the checkout convergence already opens to the `caddy` group.
- */
+/** Requests the static web release directories that Caddy serves on the Gateway Node. */
 final readonly class GatewayWebDirectoryConverger
 {
     public function __construct(
-        private ProcessRunner $processes,
+        private AgentCommandRunner $agents,
         private string $webRoot,
     ) {}
 
-    public function converge(): void
+    public function converge(Node $node): void
     {
-        if (preg_match('#^/home/orbit/[A-Za-z0-9_-][A-Za-z0-9._-]*\z#', $this->webRoot) !== 1) {
+        try {
+            $this->agents->run($node, 'gateway.prepare-web-directory', ['path' => $this->webRoot]);
+        } catch (AgentCommandRefused $refused) {
+            $invalid = $refused->errorCode === 'gateway.web_directory_invalid';
+
             throw new NodeProvisioningException(
-                step: 'gateway-web-validate',
-                errorCode: 'gateway.web_directory_invalid',
-                message: "Gateway web directory [{$this->webRoot}] must be a direct child of /home/orbit.",
+                step: $invalid ? 'gateway-web-validate' : 'gateway-web-directory',
+                errorCode: $invalid ? 'gateway.web_directory_invalid' : 'gateway.web_directory_failed',
+                message: $refused->getMessage(),
+                previous: $refused,
+                result: AgentStep::output($refused),
+            );
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException(
+                step: 'gateway-web-directory',
+                errorCode: 'gateway.web_directory_failed',
+                message: 'Gateway web directory convergence failed.',
+                previous: $failure,
+                result: $failure->result,
             );
         }
-
-        $result = $this->processes->run(new ProcessInvocation(
-            arguments: ['sudo', 'bash', '-seu', '--', $this->webRoot],
-            timeout: 60.0,
-            input: <<<'BASH'
-                web=$1
-                test ! -L "$web"
-                test ! -L "$web/releases"
-                install -d -o orbit -g caddy -m 0750 -- "$web" "$web/releases"
-                BASH,
-        ));
-
-        if (! $result->succeeded()) {
-            throw $this->failure($result);
-        }
-    }
-
-    private function failure(CommandResult $result): NodeProvisioningException
-    {
-        return new NodeProvisioningException(
-            step: 'gateway-web-directory',
-            errorCode: 'gateway.web_directory_failed',
-            message: 'Gateway web directory convergence failed.',
-            result: $result,
-        );
     }
 }

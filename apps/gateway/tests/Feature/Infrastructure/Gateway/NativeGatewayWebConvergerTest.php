@@ -327,7 +327,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->toBeTrue()
             ->and($commands->contains(['sudo', 'chmod', '0600', '/home/orbit/orbit-gateway/.env']))
             ->toBeTrue()
-            ->and($commands->contains(['sudo', 'bash', '-seu', '--', '/home/orbit/web']))
+            ->and($commands->contains(['orbit-agent', 'command', 'gateway.prepare-web-directory']))
             ->toBeTrue()
             ->and($commands->contains(static fn (array $arguments): bool => (
                 ($arguments[1] ?? null) === 'install'
@@ -1003,7 +1003,14 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             fpmRenderer: new GatewayFpmConfigRenderer,
             files: new ProtectedFileWriter,
             checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
-            webDirectory: new GatewayWebDirectoryConverger($processes, '/home/orbit/web'),
+            webDirectory: new GatewayWebDirectoryConverger(
+                new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', static function (array $input) use ($processes): array {
+                    $processes->run(new ProcessInvocation(['orbit-agent', 'command', 'gateway.prepare-web-directory'], input: json_encode($input, JSON_THROW_ON_ERROR)));
+
+                    return ['changed' => true];
+                }),
+                '/home/orbit/web',
+            ),
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
             fpm: new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), [...app()->tagged(GatewayServiceStartHook::class)]),
             builds: new NodeCaddyBuilder(

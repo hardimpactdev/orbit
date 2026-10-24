@@ -866,7 +866,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                     checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 ),
                 webDirectory: new GatewayWebDirectoryConverger(
-                    processes: app(ProcessRunner::class),
+                    agents: app(AgentCommandRunner::class),
                     webRoot: Config::string('orbit.gateway_web'),
                 ),
                 certificatePublisher: new NativeGatewayCertificatePublisher(

@@ -13,6 +13,7 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -25,6 +26,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeAgentCommandRunner;
 
 function start_hook(string $name, string $dropIn, string $description = 'test start hook', string $program = "#!/bin/bash\nexit 0\n"): GatewayServiceStartHook
 {
@@ -554,9 +556,12 @@ describe('production wiring', function (): void {
     });
 
     it('installs and runs the Documents hook before the reload in Gateway web convergence', function (): void {
+        $agents = new FakeAgentCommandRunner()->answer('gateway.prepare-web-directory', ['changed' => false]);
+        app()->instance(AgentCommandRunner::class, $agents);
         app(GatewayWebConverger::class)->converge($this->gateway, 'gateway.orbit', '10.44.0.2');
 
         expect(start_hook_steps($this->runner->calls))->toBe(['install project-document-cleanup-start', 'run project-document-cleanup-start', 'reload']);
+        expect($agents->commands())->toBe(['gateway.prepare-web-directory']);
     });
 
     it('installs and runs the Documents hook before the reload in the release handoff', function (): void {

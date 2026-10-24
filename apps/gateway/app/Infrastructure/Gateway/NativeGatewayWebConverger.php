@@ -46,7 +46,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->checkout->validate();
         $this->caddyInstaller->install();
         $this->checkout->converge();
-        $this->webDirectory->converge();
+        $this->webDirectory->converge($node);
         $certificate = $this->certificates->issue($hostname, $wireguardIp);
         $generatedFpmPool = rtrim(string: $this->orbitHome, characters: '/').'/generated/gateway/php-fpm-pool.conf';
         $this->files->put(

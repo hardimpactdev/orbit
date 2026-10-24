@@ -26,6 +26,7 @@ mod doctor_role;
 mod doctor_route;
 pub mod environment;
 pub mod firewall;
+mod gateway_web;
 mod guest;
 pub mod health;
 pub mod hibernation;
@@ -171,6 +172,7 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Install>(),
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
+        entry::<gateway_web::PrepareDirectory>(),
         entry::<php_build::operations::Inspect>(),
         entry::<php_build::operations::Install>(),
         entry::<php_profile::Configure>(),
