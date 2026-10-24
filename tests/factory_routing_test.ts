@@ -284,6 +284,102 @@ Deno.test({
 });
 
 Deno.test({
+  name: "real factory binds plan consent to the latest decision after rejection",
+  ignore: !haveSwamp,
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async (t) => {
+    const fake = startFakeGateway({ 780: {}, 781: {} });
+    const dir = await copyRepo(fake.url);
+    const proof = await Deno.makeTempDir({ prefix: "swamp-plan-decision-evidence-" });
+    let passed = true;
+    try {
+      for (const [group, variant] of [[780, "generic-reapproval"], [781, "rejected-plan-restored"]] as const) {
+        const ok = await t.step(variant, async () => {
+          const workItem = `tg-${group}`;
+          const method = (name: string, ...inputs: string[]) => swamp(dir, "model", "method", "run", "orbit-groups", name, "--input", `workItem=${workItem}`, ...inputs.flatMap((v) => ["--input", v]));
+          const query = async (name: string) => (lastJson(await swamp(dir, "data", "query", `modelName == "orbit-groups" && name == "${name}"`, "--select", "attributes", "--json")).results as Record<string, unknown>[])[0];
+          const status = async () => { await method("status"); return await query(`status-${workItem}`); };
+          const record = (payload: unknown) => method("record_artifact", "name=plan", `payload=${JSON.stringify(payload)}`);
+          const approve = (note: string) => method("approve", "gateId=plan-authorized", "actor=simulated-plan-owner", `note=${note}`);
+          const f = await analysisFixture(fake.groups.get(group)!);
+          await method("start");
+          // Even an exact note from a different stage is not applicable consent.
+          await approve(planConsentNote(f.plan));
+          await Deno.writeTextFile(`${dir}/tick-input.json`, JSON.stringify({ maxSteps: 3, workItems: [workItem] }));
+          const tick = () => swamp(dir, "workflow", "run", "groups-driver", "--input-file", `${dir}/tick-input.json`);
+          let s = await status();
+          for (let n = 0; n < 20 && (s.stage as { id: string }).id !== "plan"; n++) { await tick(); s = await status(); }
+          assertEquals((s.stage as { id: string }).id, "plan");
+          const closed = async (label: string) => {
+            await tick();
+            const s = await status();
+            await Deno.writeTextFile(`${proof}/${variant}-${label}.json`, JSON.stringify({ status: s, starts: [...fake.starts] }, null, 2));
+            assertEquals((s.stage as { id: string }).id, "plan", label);
+            assertEquals(fake.startsOf(group, "analyze"), 0, label);
+            assertEquals(fake.startsOf(group, "implement"), 0, label);
+            assertEquals(fake.startsOf(group, "review"), 0, label);
+            assertEquals((s.transitions as { name: string; satisfied: boolean }[]).find((v) => v.name === "authorized")?.satisfied, false, label);
+          };
+          await record(f.plan);
+          await closed("exact-from-other-stage");
+          // Stored generic preapproval alone must not override a rejection.
+          await swamp(dir, "model", "method", "run", "orbit-driver-groups", "preapprove", "--input", `workItem=${workItem}`, "--input", "gateId=plan-authorized", "--input", "stage=plan", "--input", "cycle=1", "--input", "actor=simulated-older-generic-owner");
+          await record(f.plan);
+          await approve(planConsentNote(f.plan));
+          await method("reject", "gateId=plan-authorized", "actor=simulated-plan-owner", "note=Withdraw this exact plan consent; revise the plan before analysis.");
+          await closed("rejection-only");
+          await closed("rejection-still-closed");
+          if (variant === "generic-reapproval") {
+            await approve("General approval only; no artifact digest or scope.");
+            await closed("generic-after-rejection");
+          } else {
+            const v2 = structuredClone(f.plan);
+            v2.manifest.revision++;
+            v2.manifest.paths.unshift({ change: "add", path: "extra-v2.txt" });
+            v2.plan_sha256 = await sha256(canonical(v2.manifest));
+            await record(v2);
+            await approve(planConsentNote(v2));
+            const approved = await status();
+            assertEquals((approved.transitions as { name: string; satisfied: boolean }[]).find((v) => v.name === "authorized")?.satisfied, true);
+            await Deno.writeTextFile(`${proof}/${variant}-v2-authorized.json`, JSON.stringify({ plan: v2, status: approved }, null, 2));
+            // No driver tick between approval of v2 and restoring rejected v1.
+            await record(f.plan);
+            await closed("rejected-v1-restored");
+          }
+          await approve(planConsentNote({ ...f.plan, branch: "wrong-task-branch" }));
+          await closed("wrong-scope-after-rejection");
+          if (variant === "generic-reapproval") {
+            // Latest means authoritative even without a new rejection: do not
+            // fall back to an older exact record behind a generic decision.
+            await approve(planConsentNote(f.plan));
+            await approve("Superseding generic decision; exact plan not authorized.");
+            await closed("generic-supersedes-fresh-exact");
+          }
+          await approve(planConsentNote(f.plan));
+          for (let n = 0; n < 10 && fake.startsOf(group, "analyze") === 0; n++) await tick();
+          assertEquals(fake.startsOf(group, "analyze"), 1);
+          const q = lastJson(await swamp(dir, "data", "query", `modelName == "orbit-gateway" && name == "job-${workItem}.analyze.c1"`, "--select", "attributes.request", "--json"));
+          const request = (q.results as { body: Record<string, unknown> }[])[0];
+          assertEquals(request.body.plan_sha256, f.plan.plan_sha256);
+          assertEquals(request.body.plan, f.plan.manifest);
+          assertEquals(fake.startsOf(group, "implement"), 0);
+          assertEquals(fake.startsOf(group, "review"), 0);
+          assertEquals([...fake.starts].filter(([, n]) => n > 1), []);
+          await Deno.writeTextFile(`${proof}/${variant}-fresh-v1-admitted.json`, JSON.stringify({ request, starts: [...fake.starts], latestDecision: await query(`approval-${workItem}-plan-authorized`) }, null, 2));
+        });
+        passed = ok && passed;
+      }
+      console.log(`Latest plan decision proof (real factory, fake Gateway): ${proof}`);
+    } finally {
+      await fake.close();
+      if (passed) await Deno.remove(dir, { recursive: true });
+      else console.log(`Failed decision fixture and method/workflow reports retained: ${dir}; proof: ${proof}`);
+    }
+  },
+});
+
+Deno.test({
   name: "real factory parks a failed edited author until retry approval and reanalyzes its terminal candidate",
   ignore: !haveSwamp,
   sanitizeResources: false,

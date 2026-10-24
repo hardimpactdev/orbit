@@ -91,13 +91,26 @@ Identical content retains its identity; any changed manifest or scope needs
 its own explicit consent.
 
 The official `human-approval` gate still enforces approval/rejection and cycle
-rules. An additional official CEL gate requires a matching note in this run's
-approval records for the current stage/cycle. A generic approval or driver
-preapproval cannot authorize an unspecified future plan. Replacing v1 with v2
-in the same cycle leaves the transition closed until v2 is explicitly approved.
-The factory versions the artifact and approval using its existing records;
-there is no second ledger or factory fork. This implementation grants no
-approval outside its isolated simulated fixtures.
+rules. The additional official CEL gate selects the **last decision** for the
+current stage/cycle in this run. That decision must approve the exact current
+payload with the matching note. Historical matching notes cannot supply consent
+behind a later rejection, generic approval, wrong-scope approval or approval of
+another plan. After rejection, restoring v1 behind an exact v2 approval stays
+closed until fresh exact v1 consent. Generic approval after rejection also stays
+closed. A generic approval or driver preapproval cannot authorize an unspecified
+future plan. Replacing v1 with v2 in the same cycle requires exact v2 consent.
+
+This ordering reuses installed official factory `2026.10.13.1` and its
+`models/_lib/run_data.ts`:
+lines 349–369 load every approval version in ascending version order, and lines
+375–395 exclude records from prior run eras. `models/_lib/gates.ts:217–223`
+filters by current stage/cycle and reads the last decision for the human gate;
+lines 346–365 expose those ordered records to CEL. The new predicate filters
+the same way before selecting the last record. It does not compare timestamps
+or search backward for a matching approval. A return to `plan` increments its
+cycle, so an earlier cycle cannot authorize it. The factory versions artifacts
+and approvals using its existing records; there is no second ledger or factory
+fork. This implementation grants no approval outside isolated simulated fixtures.
 Swamp validates the closed manifest, digest, brief revision, UTF-8 byte ordering,
 unique safe file endpoints, 256-entry/32-KiB bounds, and cumulative revisions
 before an analysis start. Native validation also checks tracked delete/rename
@@ -262,13 +275,30 @@ The original 13-scenario test is explicitly filtered out of this targeted run;
 no test timeout, assertion, call or tick limit was relaxed. Current lint, type
 checks, source citations and local links were checked.
 
-Current targeted evidence on Beast:
+Retained R1 targeted evidence on Beast:
 `/tmp/swamp-plan-consent-evidence-6a0bf1a9770aa493`,
 `/tmp/swamp-failed-author-evidence-46b1bef256e135ff`, and
 `/tmp/swamp-pr9-r1-r2-{focused,factory}.log`. They retain gate status, the exact
 admitted request, failed stage evidence/artifact and recovery operation identities.
 These are real official factory/driver runs with fake Gateway transport, not
 live approval, failure, cancellation or interruption proof.
+
+R2 correction validation: the new real-factory regression failed both rejection
+sequences against the old gate, then passed with the authoritative-decision
+rule above. The two consent tests passed in 1m45s (32s existing consent controls,
+73s new regression with two scenarios). They prove zero analysis/turn starts
+until fresh exact consent after generic reapproval or rejected-v1 restoration
+behind approved v2. Each scenario then starts exactly one matching analysis.
+Rejection alone, stored generic preapproval, wrong-scope notes, other-stage
+consent and a generic decision superseding fresh exact consent all stay closed.
+No test, tick or call bound changed. Current test type checking, lint, native
+source line bounds, local links, JSON example and whitespace validation passed.
+The R1 retry repair and producer/consumer code are byte-identical to the
+independently reviewed R2 head; their passed evidence is reused, not rerun.
+Current consent evidence is `/tmp/swamp-plan-consent-evidence-be188702fd6684b5`
+and `/tmp/swamp-plan-decision-evidence-4739e9c4bf47c53f`. R2 responses, red/green
+logs, exact official-source hashes and validation are retained on Beast at
+`/tmp/swamp-pr9-r2-fix`. Full adoption acceptance remains incomplete.
 
 The final producer run retained evidence at
 `/tmp/swamp-analysis-evidence-39d3b35d20cfdef9` on Beast. Fixed-command durations
