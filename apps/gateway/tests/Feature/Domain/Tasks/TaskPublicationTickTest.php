@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\Instance;
 use App\Models\Task;
@@ -164,7 +165,7 @@ it('retries publication after Orbit commits and changes HEAD itself', function (
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);
@@ -203,7 +204,7 @@ it('refuses a reset to the pre-approval HEAD after Orbit committed', function ()
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);

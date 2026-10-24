@@ -94,7 +94,10 @@ function turn_operation_finish(Operation $operation, FakeAgentDriver $driver, Ag
 
 function turn_operation_check(Task $task): TaskCheck
 {
-    return $task->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'pid' => 10, 'process_started' => 'start', 'started_at' => now()]);
+    $check = $task->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'pid' => 10, 'process_started' => 'start', 'started_at' => now()]);
+    task_checked_operation($check);
+
+    return $check;
 }
 
 describe('tasks.turn', function (): void {
@@ -261,6 +264,8 @@ describe('tasks.turn', function (): void {
         $this->postJson('/api/v1/task-groups/'.$group->id.'/turn', $input)->assertUnprocessable()->assertJsonPath('error.code', 'tasks.commit_not_checked');
         $check = turn_operation_check($task);
         $check->update(['commit_sha' => str_repeat('c', 40)]);
+        $owner = Operation::query()->where('kind', 'tasks.check')->sole();
+        $owner->update(['result' => [...$owner->result, 'commit' => $check->commit_sha]]);
         $this->postJson('/api/v1/task-groups/'.$group->id.'/turn', [...$input, 'check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'tasks.head_moved');
     });
 

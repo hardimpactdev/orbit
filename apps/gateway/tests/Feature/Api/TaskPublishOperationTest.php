@@ -60,6 +60,8 @@ function publish_operation_group(): array
         'pid' => 0, 'process_started' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
     ]);
 
+    task_checked_operation($check);
+
     return [$group, $check];
 }
 
@@ -144,6 +146,8 @@ it('recovers a lost push outcome before completing publication or a waiting canc
     $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Checked');
     $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
     $check->update(['commit_sha' => $commit]);
+    $owner = Operation::query()->where('kind', 'tasks.check')->sole();
+    $owner->update(['result' => [...$owner->result, 'commit' => $commit]]);
     app(TaskCheckRunner::class)->head = $commit;
     $group->taskable->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
     GitRemoteRedirect::global($root.'/origin.git', 'https://github.com/acme/shop.git');
@@ -335,7 +339,7 @@ it('refuses tick and ended groups', function (string $mode, string $status, stri
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', $code);
 
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 })->with([['tick', 'running', 'tasks.not_orchestrated'], ['external', 'completed', 'tasks.group_closed'], ['external', 'cancelled', 'tasks.group_closed'], ['external', 'failed', 'tasks.group_closed']]);
 
 it('refuses a missing workspace', function (): void {
@@ -345,7 +349,7 @@ it('refuses a missing workspace', function (): void {
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'tasks.no_workspace');
 
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 });
 
 it('requires a passed handoff commit of this group', function (string $kind, string $status, ?string $commit, bool $foreign): void {
@@ -358,7 +362,7 @@ it('requires a passed handoff commit of this group', function (string $kind, str
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.commit_not_checked');
 
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 })->with([['handoff', 'failed', null, false], ['handoff', 'changed', str_repeat('a', 40), false], ['baseline', 'passed', str_repeat('a', 40), false], ['handoff', 'passed', null, false], ['handoff', 'passed', str_repeat('a', 40), true]]);
 
 it('refuses moved HEAD at admission', function (): void {
@@ -367,7 +371,7 @@ it('refuses moved HEAD at admission', function (): void {
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'tasks.head_moved');
 
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 });
 
 it('resumes a parked VM first and checks HEAD after resume', function (bool $moved): void {
@@ -442,7 +446,7 @@ it('replays a keyed publish before later admission and refuses changed input', f
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id], ['Idempotency-Key' => 'publish.c1'])->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.status', 'succeeded');
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id + 1], ['Idempotency-Key' => 'publish.c1'])->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
-    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('operations', 2); // completed check owner plus the new operation
 });
 
 it('validates the closed typed publish input', function (array $input): void {
@@ -450,7 +454,7 @@ it('validates the closed typed publish input', function (array $input): void {
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', $input)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
 
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 })->with([[[]], [['check' => '1']], [['check' => 0]], [['check' => 1, 'command' => 'true']], [['check' => 1, 'pull_request' => ['title' => 'Title']]], [['check' => 1, 'pull_request' => ['body' => 'Body']]], [['check' => 1, 'pull_request' => null]], [['check' => 1, 'pull_request' => ['title' => 'Title', 'body' => 'Body', 'base' => 'other']]]]);
 
 it('requires Gateway access and enabled Tasks', function (): void {
@@ -461,7 +465,7 @@ it('requires Gateway access and enabled Tasks', function (): void {
     app(TaskExtensionState::class)->disable();
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'extension.disabled');
-    $this->assertDatabaseCount('operations', 0);
+    $this->assertDatabaseCount('operations', 1); // only the completed check owner
 });
 
 it('holds the group across operation kinds', function (): void {
@@ -470,7 +474,7 @@ it('holds the group across operation kinds', function (): void {
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')->assertJsonPath('error.details.operation_id', $holder->id);
 
-    $this->assertDatabaseCount('operations', 1);
+    $this->assertDatabaseCount('operations', 2); // completed check owner plus the new operation
 });
 
 it('records the publish refusal contract for a tick group', function (): void {

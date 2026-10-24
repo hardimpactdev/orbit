@@ -27,6 +27,7 @@ use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -749,7 +750,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public bool $fails = false;
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
             if ($this->fails) {

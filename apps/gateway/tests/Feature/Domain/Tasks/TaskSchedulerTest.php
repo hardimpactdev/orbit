@@ -58,6 +58,7 @@ use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -2093,7 +2094,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
             $sha = str_repeat('c', 40);
@@ -2728,7 +2729,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
 
@@ -3387,7 +3388,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
     {
         public int $calls = 0;
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->calls++;
 
@@ -3458,7 +3459,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
         public function __construct(private string $sha) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->calls++;
             $leases = app(TaskWorkspaceLease::class);

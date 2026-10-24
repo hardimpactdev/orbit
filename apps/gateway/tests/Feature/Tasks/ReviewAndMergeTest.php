@@ -51,6 +51,7 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
@@ -374,7 +375,7 @@ function rm_runtime(array $receipts = []): object
             return null;
         }
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $checks = app(TaskCheckRunner::class);
             if ($checks instanceof FakeTaskCheckRunner) {
