@@ -5,8 +5,10 @@ Historical implementation brief for the independently reviewed
 delivered the native boundary at `8b6fb914c6fbab3abd70459afe832f7307e4d5c6`.
 The baseline below was `2187129c471c20a34b6c91d5e1cb6c34878b8742`.
 Do not repeat this implementation. The [Swamp adoption](repository-analysis-adoption.md)
-records the now-supported runtime consumer, proof boundaries and demonstrated
-remaining failure/base metadata gaps. Native follow-up remains parent-owned.
+records the now-supported runtime consumer, proof boundaries and
+adoption of the public failure/base metadata delivered by ORB2074/PR1505 at
+`0364765d6d41794f3f89d702e0f72cc54e954b07`. Native delivery is not live external
+workflow or interruption proof.
 
 ## Smallest useful boundary
 

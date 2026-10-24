@@ -1,5 +1,5 @@
 import { type GroupRequest, syncGroupAssistance } from "./group_assistance.ts";
-import { type AuthorizedPlan, briefSource, type Candidate, validateAnalysis, validatePlan } from "./repository_analysis.ts";
+import { type AuthorizedPlan, briefSource, canonical, type Candidate, validateAnalysis, validateAnalysisFailure, validatePlan, validateProvisionResult } from "./repository_analysis.ts";
 
 // The stage work of an externally orchestrated Orbit task group (ADR 0229).
 // Each call has ensure semantics for one driver key `<workItem>.<stage>.c<cycle>`:
@@ -153,9 +153,9 @@ export function inputIdentity(args: StageArgs): string {
   };
   switch (args.stage) {
     case "implement":
-      return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null });
+      return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null, workspace: envelope(args.workspace)?.payload ?? null });
     case "review":
-      return JSON.stringify({ handoff: ref(args.handoff), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null });
+      return JSON.stringify({ handoff: ref(args.handoff), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null, workspace: envelope(args.workspace)?.payload ?? null });
     case "analyze": {
       let candidate: unknown;
       try { candidate = analysisCandidate(args); } catch { candidate = null; }
@@ -236,7 +236,31 @@ export function analysisCandidate(args: StageArgs): { candidate: Candidate; purp
 
 async function authorized(args: StageArgs, g: GroupRow): Promise<AuthorizedPlan> {
   const previous = envelope(args.analysis)?.payload.plan as AuthorizedPlan | undefined;
-  return await validatePlan(envelope(args.plan)?.payload, briefSource(g), args.workItem, previous);
+  const p = await validatePlan(envelope(args.plan)?.payload, briefSource(g), args.workItem, previous);
+  const w = envelope(args.workspace)?.payload;
+  const result = validateProvisionResult({ instance_id: w?.instanceId, node_id: w?.nodeId, starting_commit: w?.startingCommit, analysis_base: w?.analysisBase });
+  const pin = result.analysis_base;
+  if (w?.group !== g.id || w.outcome !== "ready" || !Number.isSafeInteger(w.operationId) || Number(w.operationId) < 1 ||
+    pin.base !== p.base || pin.repository !== p.repository || pin.branch !== p.branch) throw new Error("plan differs from the scoped immutable public provision identity");
+  return p;
+}
+
+function requireOperation(job: Job, op: Record<string, unknown>): void {
+  if (op.id !== job.operationId || op.kind !== `tasks.${job.stage}` || op.target_type !== "task_group" || op.target_id !== job.group ||
+    (job.stage === "analyze" && canonical(op.input) !== canonical(job.request?.body))) throw new Error("operation differs from the admitted group/request identity");
+}
+
+function failureMetadata(job: Job, op: Record<string, unknown>): Record<string, unknown> {
+  if (job.stage !== "analyze") return {};
+  try {
+    requireOperation(job, op);
+    if (op.status !== "failed" || op.result == null) return { requiredBytes: null, failure: null, diagnosticsAvailability: "no public failure metadata" };
+    if (op.failed_step !== "analysis") throw new Error("analysis failure metadata has a different failed step");
+    const failure = validateAnalysisFailure(op.result, op.error_code);
+    return { failure, requiredBytes: failure.error.required_bytes, diagnosticsAvailability: "validated public failure result" };
+  } catch (e) {
+    return { failure: null, requiredBytes: null, diagnosticsAvailability: "invalid public failure metadata", metadataInvalid: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 async function turnAnalysis(args: StageArgs, g: GroupRow, t: TaskRow, http: Http): Promise<{ operation: number; plan_sha256: string }> {
@@ -428,7 +452,8 @@ function failureArtifacts(job: Job, op: Record<string, unknown>, args: StageArgs
 }
 
 /** Map a succeeded operation's result to the factory products of its stage. */
-async function products(job: Job, result: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence">> {
+async function products(job: Job, op: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence"> & { state?: Job["state"]; lastError?: string }> {
+  const result = (op.result ?? {}) as Record<string, unknown>;
   const ev = (extra: Record<string, unknown> = {}) => ({ status: "succeeded", runId: String(job.operationId), operationId: job.operationId, ...extra });
   switch (job.stage) {
     case "analyze": {
@@ -438,6 +463,7 @@ async function products(job: Job, result: Record<string, unknown>, http: Http, a
       let omitted: string[] = [];
       let invalid: string | null = null;
       try {
+        requireOperation(job, op);
         ({ outcome, omitted } = await validateAnalysis(result, { operation: job.operationId!, group: job.group, subtask: job.subtask!, plan: p, candidate,
           instanceId: context.instanceId, nodeId: context.nodeId }));
         const current = await authorized(args, await readGroup(http, job.group));
@@ -449,11 +475,21 @@ async function products(job: Job, result: Record<string, unknown>, http: Http, a
       return { artifacts: { analysis: { subtask: job.subtask, outcome, purpose, operationId: job.operationId, plan_sha256: p.plan_sha256, plan: p,
         candidate, omitted, invalid, result } }, evidence: ev({ outcome }) };
     }
-    case "provision":
-      return {
-        artifacts: { workspace: { instanceId: result.instance_id, nodeId: result.node_id, startingCommit: result.starting_commit } },
-        evidence: ev(),
-      };
+    case "provision": {
+      try {
+        requireOperation(job, op);
+        const r = validateProvisionResult(result);
+        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: r.instance_id,
+          nodeId: r.node_id, startingCommit: r.starting_commit, analysisBase: r.analysis_base } }, evidence: ev({ operation: op }) };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        return { state: "failed", lastError: "public provision analysis identity unavailable",
+          artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "blocked", instanceId: null, nodeId: null,
+            startingCommit: null, analysisBase: null } },
+          evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId,
+            code: "swamp.analysis_workspace_unavailable", error, operation: op } };
+      }
+    }
     case "baseline":
     case "handoff": {
       const name = job.stage;
@@ -628,14 +664,12 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   job = { ...job, operationStatus: status, lastError: null, nextReadAt: nextRead(clock(), op.poll_after_seconds) };
   if (TERMINAL_OPERATION.includes(status)) {
     if (status === "succeeded") {
-      job = { ...job, state: "succeeded", ...(await products(job, (op.result ?? {}) as Record<string, unknown>, deps.http, args)) };
+      job = await withGroupOutcome({ ...job, state: "succeeded", ...(await products(job, op, deps.http, args)) }, deps.http);
     } else {
       const error = `${status}${op.error_code ? ` ${op.error_code}` : ""}${op.failed_step ? ` at ${op.failed_step}` : ""}`;
       job = await withGroupOutcome(
         { ...job, state: "failed", lastError: error, artifacts: failureArtifacts(job, op, args), evidence: { status: "failed", runId: String(job.operationId), operationId: job.operationId, error, code: op.error_code ?? null,
-          // Public OperationData does not expose private analysis failure metadata.
-          // Keep the whole supported read. Never reconstruct required_bytes from a tail.
-          operation: op, requiredBytes: null, diagnosticsAvailability: "public operation fields only" } },
+          operation: op, ...failureMetadata(job, op) } },
         deps.http,
       );
     }

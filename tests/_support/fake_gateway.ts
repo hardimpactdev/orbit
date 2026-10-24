@@ -16,6 +16,8 @@ export interface Scenario {
   reviewAlways?: "changes_requested";
   publishFailOnce?: boolean;
   prClosedOnce?: boolean;
+  provisionIdentity?: Record<string, unknown>;
+  analysisFailure?: { schema: number; error: { code: string; required_bytes: number | null } };
 }
 
 interface Group {
@@ -59,7 +61,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
 
   const bump = (g: Group, k: string) => (g.counts[k] = (g.counts[k] ?? 0) + 1);
 
-  async function run(g: Group, kind: string, body: Record<string, unknown>, operation: number): Promise<{ status: string; result?: unknown; error_code?: string }> {
+  async function run(g: Group, kind: string, body: Record<string, unknown>, operation: number): Promise<{ status: string; result?: unknown; error_code?: string; failed_step?: string }> {
     const s = g.scenario;
     switch (kind) {
       case "provision":
@@ -70,17 +72,22 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           return { status: "failed", error_code: "task_vm.invalid_config" };
         }
         g.status = "running";
-        return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD } };
+        if (s.provisionIdentity) return { status: "succeeded", result: s.provisionIdentity };
+        return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD,
+          analysis_base: { base: HEAD, instance_id: 1, repository: "https://example.test/repo.git", branch: `task-${g.id}` } } };
       case "analyze": {
+        if (s.analysisFailure) return { status: "failed", error_code: s.analysisFailure.error.code, failed_step: "analysis", result: s.analysisFailure };
         if (body.head !== g.head || body.tree !== g.tree) return { status: "failed", error_code: "tasks.analysis_stale" };
         const f = await analysisFixture(g);
         const e = JSON.parse(f.result.artifact.content);
         const manifest = body.plan as typeof f.plan.manifest;
-        e.head = body.head; e.tree = body.tree; e.plan_sha256 = body.plan_sha256;
+        e.head = body.head; e.tree = body.tree; e.base = body.base; e.report.data.base = body.base; e.plan_sha256 = body.plan_sha256;
         e.report.data.paths = manifest.paths.flatMap((p) => p.change === "rename" ? [p.from, p.path] : [p.path]).sort();
         const content = JSON.stringify(e);
         const result = { ...f.result, artifact: { content, bytes: new TextEncoder().encode(content).length, sha256: await sha256(content) },
-          provenance: { ...f.result.provenance, operation_id: operation, subtask: body.subtask, plan_sha256: body.plan_sha256, plan_id: manifest.id, plan_revision: manifest.revision,
+          provenance: { ...f.result.provenance, operation_id: operation, subtask: body.subtask, base: body.base,
+            instance_id: s.provisionIdentity?.instance_id ?? 1, node_id: s.provisionIdentity?.node_id ?? 2,
+            plan_sha256: body.plan_sha256, plan_id: manifest.id, plan_revision: manifest.revision,
             before: { head: body.head, tree: body.tree }, after: { head: body.head, tree: body.tree } } };
         return { status: "succeeded", result };
       }

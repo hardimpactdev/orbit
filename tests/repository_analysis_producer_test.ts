@@ -1,11 +1,11 @@
 // Local producer integration, not a Gateway/VM/live ownership proof. Copy exact
 // merged source into disposable Git fixtures. Never execute in the source checkout.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { type Manifest, sha256, validateAnalysis } from "../extensions/behaviors/_lib/repository_analysis.ts";
+import { type Manifest, sha256, validateAnalysis, validateAnalysisFailure } from "../extensions/behaviors/_lib/repository_analysis.ts";
 import { analysisFixture } from "./_support/analysis_fixture.ts";
 
 const SOURCE = Deno.env.get("ORBIT_ANALYSIS_SOURCE") ?? "/fast/apps/orbit/default";
-const SOURCE_SHA = "8b6fb914c6fbab3abd70459afe832f7307e4d5c6";
+const SOURCE_SHA = "0364765d6d41794f3f89d702e0f72cc54e954b07";
 const FILES = [
   "bin/task-analyze",
   "apps/gateway/app/Support/StrictJson.php",
@@ -45,16 +45,15 @@ async function tree(root: string) {
 }
 
 Deno.test("real merged checker/adapter: owned pages, new/actual/delete/rename/unresolved paths, generator checks, typed overflow", async () => {
-  assertEquals(await git(SOURCE, "rev-parse", "HEAD"), SOURCE_SHA, "revalidate source drift explicitly; do not silently run a different checker");
   const evidence = await Deno.makeTempDir({ prefix: "swamp-analysis-evidence-" });
   const measurements: Record<string, unknown>[] = [];
   const hashes: Record<string, string> = {};
+  const sources = new Map<string, string>();
   for (const path of FILES) {
-    const bytes = await Deno.readTextFile(`${SOURCE}/${path}`);
     const committed = await command(SOURCE, "git", ["show", `${SOURCE_SHA}:${path}`]);
     assert(committed.success);
-    assertEquals(bytes, committed.stdout, `source drift: ${path}`);
-    hashes[path] = await sha256(bytes);
+    sources.set(path, committed.stdout);
+    hashes[path] = await sha256(committed.stdout);
   }
   for (
     const mode of [
@@ -74,7 +73,7 @@ Deno.test("real merged checker/adapter: owned pages, new/actual/delete/rename/un
     try {
       for (const path of FILES) {
         await Deno.mkdir(`${root}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
-        await Deno.copyFile(`${SOURCE}/${path}`, `${root}/${path}`);
+        await Deno.writeTextFile(`${root}/${path}`, sources.get(path)!);
       }
       await Deno.chmod(`${root}/bin/task-analyze`, 0o755);
       await write(
@@ -138,6 +137,7 @@ Deno.test("real merged checker/adapter: owned pages, new/actual/delete/rename/un
       if (["overflow", "unavailable"].includes(mode)) {
         assertEquals(out.code, 1);
         const failure = JSON.parse(out.stdout);
+        assertEquals(validateAnalysisFailure(failure, failure.error.code), failure);
         assertEquals(failure.error.code, mode === "overflow" ? "tasks.analysis_report_too_large" : "tasks.analysis_unavailable");
         if (mode === "overflow") {
           // Retain actual complete producer evidence separately as UNUSABLE. It is
