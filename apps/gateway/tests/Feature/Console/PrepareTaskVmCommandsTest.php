@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
@@ -13,6 +14,7 @@ use App\Models\NodeRole;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 beforeEach(function (): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24');
@@ -23,7 +25,12 @@ beforeEach(function (): void {
 });
 
 describe('task-vms:prepare-host', function (): void {
-    it('runs the host script as root with arguments from the host settings', function (): void {
+    beforeEach(function (): void {
+        $this->agents = new FakeAgentCommandRunner;
+        $this->agents->answer('incus.prepare-host', ['ready' => true]);
+        app()->instance(AgentCommandRunner::class, $this->agents);
+    });
+    it('sends the host settings to the native preparation command', function (): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
         task_vm_node_hosts([[
             'node_id' => $beast->id,
@@ -36,14 +43,11 @@ describe('task-vms:prepare-host', function (): void {
             ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0]. Build its images with task-vms:build-image.')
             ->assertSuccessful();
 
-        $command = $this->ssh->commands[0];
-        expect($this->ssh->connections[0]->host)->toBe('10.44.0.7')
-            ->and($command->arguments)->toBe([
-                'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-e2e', 'ubuntu-26.04-vm',
-            ])
-            ->and($command->input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')))
-            // Setup only touches the selected host.
-            ->and($this->ssh->commands)->toHaveCount(1);
+        expect($this->agents->calls)->toBe([['node' => 'beast', 'command' => 'incus.prepare-host', 'input' => [
+            'project' => 'orbit-tasks', 'network' => 'orbittask0', 'cidr' => '10.252.0.0/24',
+            'pool' => 'orbit-e2e', 'zfs_dataset' => null,
+        ]]]);
+        expect($this->ssh->commands)->toBe([]);
     });
 
     it('passes the ZFS dataset that creates a missing pool', function (): void {
@@ -52,9 +56,7 @@ describe('task-vms:prepare-host', function (): void {
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])->assertSuccessful();
 
-        expect($this->ssh->commands[0]->arguments)->toBe([
-            'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'ubuntu-26.04-vm', 'fast/orbit-tasks',
-        ]);
+        expect($this->agents->calls[0]['input']['zfs_dataset'])->toBe('fast/orbit-tasks');
     });
 
     it('refuses invalid host settings before it connects', function (array $host, string $message): void {
@@ -81,14 +83,13 @@ describe('task-vms:prepare-host', function (): void {
         expect($this->ssh->commands)->toBe([]);
     });
 
-    it('fails when the script does not confirm', function (): void {
+    it('reports the native setup refusal', function (): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
         task_vm_node_hosts([['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4]]);
-        $this->ssh = new AppDevFakeSshExecutor([new CommandResult(1, '', "incus-host: ufw is not installed\n", 1, false)]);
-        app()->instance(SshExecutor::class, $this->ssh);
+        $this->agents->refuse('incus.prepare-host', 'task_vm.setup_failed', ['stage' => 'prerequisites', 'reason' => 'ufw is not installed.']);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])
-            ->expectsOutputToContain("[task_vm.setup_failed] [incus-host.sh] failed on Node [beast] with exit code [1].\nincus-host: ufw is not installed")
+            ->expectsOutputToContain('[task_vm.setup_failed] Task VM host setup failed on Node [beast]: ufw is not installed.')
             ->assertFailed();
     });
 });
@@ -193,7 +194,7 @@ describe('task VM setup scripts', function (): void {
         $syntax->run();
 
         expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput());
-    })->with(['incus-host.sh', 'hub.sh', 'base-image-clean.sh']);
+    })->with(['hub.sh', 'base-image-clean.sh']);
 
     it('pass shellcheck when it is installed', function (): void {
         $finder = new ExecutableFinder;
@@ -205,73 +206,12 @@ describe('task VM setup scripts', function (): void {
 
         $check = new Process([
             $shellcheck,
-            resource_path('task-vms/incus-host.sh'),
             resource_path('task-vms/hub.sh'),
             resource_path('task-vms/base-image-clean.sh'),
         ]);
         $check->run();
 
         expect($check->getExitCode())->toBe(0, $check->getOutput());
-    });
-
-    it('never creates a pool on a ZFS dataset that already exists', function (bool $exists): void {
-        // Stubs: Incus has no pool, `zfs list` finds the dataset or not, and every call is logged.
-        $bin = sys_get_temp_dir().'/orbit-task-vm-zfs-'.bin2hex(random_bytes(4));
-        mkdir($bin);
-        $log = $bin.'/calls.log';
-        file_put_contents($bin.'/incus', "#!/bin/sh\necho \"incus \$*\" >> {$log}\n[ \"\$1 \$2\" = 'storage show' ] && exit 1\nexit 0\n");
-        file_put_contents($bin.'/zfs', "#!/bin/sh\necho \"zfs \$*\" >> {$log}\nexit ".($exists ? 0 : 1)."\n");
-        file_put_contents($bin.'/ufw', "#!/bin/sh\nexit 0\n");
-        array_map(static fn (string $stub): bool => chmod($bin.'/'.$stub, 0755), ['incus', 'zfs', 'ufw']);
-        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-        $process = new Process([$bash, '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'data/backups']);
-        $process->setInput(file_get_contents(resource_path('task-vms/incus-host.sh')));
-        $process->setEnv(['PATH' => $bin.':'.getenv('PATH')]);
-        $process->run();
-        $calls = (string) file_get_contents($log);
-        array_map(unlink(...), glob($bin.'/*') ?: []);
-        rmdir($bin);
-
-        if ($exists) {
-            expect($process->getExitCode())->toBe(1)
-                ->and($process->getErrorOutput())->toContain('ZFS dataset [data/backups] already exists; name a new dataset for storage pool [orbit-tasks]')
-                ->and($calls)->toBe("incus storage show orbit-tasks\nzfs list -H -o name -- data/backups\n");
-        } else {
-            expect($calls)->toContain("zfs list -H -o name -- data/backups\nincus storage create orbit-tasks zfs source=data/backups\n");
-        }
-    })->with(['existing dataset' => true, 'new dataset' => false]);
-
-    it('restricts the task VM project once the bridge and profile exist', function (): void {
-        // Stubs: an existing ZFS pool, project, bridge, and stock image; every call is logged.
-        $bin = sys_get_temp_dir().'/orbit-task-vm-restrict-'.bin2hex(random_bytes(4));
-        mkdir($bin);
-        $log = $bin.'/calls.log';
-        file_put_contents($bin.'/incus', <<<SH
-            #!/bin/sh
-            echo "incus \$*" >> {$log}
-            case "\$1 \$2" in
-              'storage show') echo 'driver: zfs' ;;
-              'network get') echo '10.252.0.1/24' ;;
-              'project get') echo 'false' ;;
-            esac
-            exit 0
-            SH);
-        file_put_contents($bin.'/ufw', "#!/bin/sh\necho \"ufw \$*\" >> {$log}\nexit 0\n");
-        array_map(static fn (string $stub): bool => chmod($bin.'/'.$stub, 0755), ['incus', 'ufw']);
-        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-        $process = new Process([$bash, '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img']);
-        $process->setInput(file_get_contents(resource_path('task-vms/incus-host.sh')));
-        $process->setEnv(['PATH' => $bin.':'.getenv('PATH')]);
-        $process->run();
-        $calls = explode("\n", trim((string) file_get_contents($log)));
-        array_map(unlink(...), glob($bin.'/*') ?: []);
-        rmdir($bin);
-
-        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0 restricted.virtual-machines.lowlevel=allow restricted.devices.disk=allow restricted.devices.disk.paths=/var/lib/orbit/package-cache', $calls, true);
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toBe("{\"ok\":true}\n")
-            ->and($restrict)->toBeInt()
-            ->and($restrict)->toBeGreaterThan(array_search('incus profile device set default eth0 network=orbittask0 security.port_isolation=true --project orbit-tasks', $calls, true));
     });
 
     it('reject invalid arguments before they change anything', function (string $script, array $arguments, string $message): void {
@@ -285,12 +225,6 @@ describe('task VM setup scripts', function (): void {
             ->and($process->getOutput())->toBe('')
             ->and($process->getErrorOutput())->toContain($message);
     })->with([
-        'host network outside the prefix' => ['incus-host.sh', ['orbit-tasks', 'incusbr0', '10.252.0.0/24', 'default', 'img'], 'invalid network [incusbr0]'],
-        'host cidr not a network' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.1/24', 'default', 'img'], 'not a network address'],
-        'host cidr too wide' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.0.0.0/8', 'default', 'img'], 'prefix must be /16 to /28'],
-        'host argument count' => ['incus-host.sh', ['orbit-tasks'], 'usage: incus-host.sh'],
-        'host ZFS pool as dataset' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'fast'], 'invalid ZFS dataset [fast]'],
-        'host ZFS dataset as an option' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', '-o/x'], 'invalid ZFS dataset [-o/x]'],
         'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
         'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
         'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],

@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmHost;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\IncusGuestCall;
 use Tests\Support\RecipeImageUnitGuest;
 use Tests\Support\RecipeProgramPayload;
@@ -110,6 +113,20 @@ final class FakeIncusImageHost implements SshExecutor
     /** A test can interleave another operation after the remote result has been captured. */
     public ?Closure $afterExecute = null;
 
+    public function bindAgentInventory(): void
+    {
+        $agents = new FakeAgentCommandRunner;
+        $agents->answer('incus.images', function (): array {
+            if ($this->fail === 'image list') {
+                throw new AgentCommandRefused('incus.images', 'task_vm.host_command_failed', 'Image list failed.', ['operation' => 'image list', 'exit_code' => 1]);
+            }
+
+            return ['images' => $this->images];
+        });
+        $agents->answer('incus.instances', fn (): array => ['names' => array_keys($this->instances)]);
+        app()->instance(AgentCommandRunner::class, $agents);
+    }
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->connections[] = $connection;
@@ -135,11 +152,6 @@ final class FakeIncusImageHost implements SshExecutor
                 static fn (string $name, ?string $image): array => ['name' => $name, 'config' => $image === null ? [] : ['volatile.base_image' => $image]],
                 array_keys($this->instances),
                 $this->instances,
-            ))),
-            $operation[0] === 'image' && $operation[1] === 'list' => $this->answer('image list', fn () => json_encode(array_map(
-                static fn (string $fingerprint, array $aliases): array => ['fingerprint' => $fingerprint, 'aliases' => array_map(static fn (string $name): array => ['name' => $name], $aliases)],
-                array_keys($this->images),
-                $this->images,
             ))),
             $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
             $operation[0] === 'exec' => $this->exec($this->guest[] = IncusGuestCall::decode($command)),

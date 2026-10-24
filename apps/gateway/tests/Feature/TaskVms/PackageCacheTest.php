@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\TaskVms\FillPackageCacheAction;
 use App\Actions\TaskVms\ObservePackageCacheAction;
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -186,7 +187,7 @@ function package_cache_transport(SshExecutor $ssh): TaskVmPackageCache
         public function put(string $host, int $port, HostKey $key): void {}
     };
 
-    return new TaskVmPackageCache(new IncusHost($ssh, $keys, $known));
+    return new TaskVmPackageCache(new IncusHost($ssh, $keys, $known, app(AgentCommandRunner::class)));
 }
 
 it('names the failed cache operation and path with bounded sanitized evidence', function (string $operation, string $path, int $failureAt): void {

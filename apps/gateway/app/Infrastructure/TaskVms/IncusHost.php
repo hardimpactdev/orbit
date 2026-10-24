@@ -7,6 +7,8 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -28,6 +30,7 @@ final readonly class IncusHost
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private AgentCommandRunner $agents,
     ) {}
 
     /**
@@ -37,6 +40,25 @@ final readonly class IncusHost
     public function run(TaskVmHost $host, Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
     {
         return $this->execute($node, ['incus', '--project', $host->project, ...$arguments], $input, $timeout);
+    }
+
+    public function prepare(TaskVmHost $host, Node $node): void
+    {
+        try {
+            $result = $this->agents->run($node, 'incus.prepare-host', [
+                'project' => $host->project, 'network' => $host->network, 'cidr' => $host->cidr,
+                'pool' => $host->pool, 'zfs_dataset' => $host->zfsDataset,
+            ]);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode !== 'task_vm.setup_failed') {
+                throw $error;
+            }
+            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
+            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup failed on Node [{$node->name}]: {$reason}");
+        }
+        if (($result['ready'] ?? null) !== true) {
+            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup did not confirm readiness on Node [{$node->name}].");
+        }
     }
 
     /** Sends one API request with `incus query`, which refuses `--project`: the path names the project. */
@@ -81,29 +103,17 @@ final readonly class IncusHost
      */
     public function images(TaskVmHost $host, Node $node, float $timeout = 900.0): array
     {
-        $result = $this->run($host, $node, ['image', 'list', '--format', 'json'], timeout: $timeout);
-        if (! $result->succeeded()) {
-            throw self::failed("the images of Node [{$node->name}]", 'image list', $result);
+        $result = $this->observe($node, 'incus.images', ['project' => $host->project], "the images of Node [{$node->name}]", $timeout);
+        $images = $result['images'] ?? null;
+        if (! is_array($images)) {
+            throw self::invalid('the agent image inventory', 'images are missing');
+        }
+        $validated = [];
+        foreach ($images as $fingerprint => $aliases) {
+            $validated[(string) $fingerprint] = self::strings($aliases);
         }
 
-        $list = self::json("the images of Node [{$node->name}]", $result);
-        if (! array_is_list($list)) {
-            throw self::invalid("the images of Node [{$node->name}]", 'the image list is not a JSON list');
-        }
-        $images = [];
-        foreach ($list as $image) {
-            $fingerprint = is_array($image) ? $image['fingerprint'] ?? null : null;
-            $aliases = is_array($image) ? $image['aliases'] ?? null : null;
-            if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1 || ! is_array($aliases) || ! array_is_list($aliases)) {
-                throw self::invalid("the images of Node [{$node->name}]", 'an image has no fingerprint or aliases');
-            }
-            $images[$fingerprint] = array_values(array_filter(array_map(
-                static fn (mixed $alias): mixed => is_array($alias) ? $alias['name'] ?? null : null,
-                $aliases,
-            ), is_string(...)));
-        }
-
-        return $images;
+        return $validated;
     }
 
     /**
@@ -115,28 +125,9 @@ final readonly class IncusHost
      */
     public function instanceNames(TaskVmHost $host, Node $node): array
     {
-        $subject = "the instances of Node [{$node->name}]";
-        $project = $this->run($host, $node, ['project', 'show', '--', $host->project], timeout: 120.0);
-        if (! $project->succeeded()) {
-            throw self::failed("the Incus project [{$host->project}] of Node [{$node->name}]", 'project show', $project);
-        }
+        $result = $this->observe($node, 'incus.instances', ['project' => $host->project], "the instances of Node [{$node->name}]");
 
-        $result = $this->run($host, $node, ['list', '--format', 'csv', '--columns', 'n'], timeout: 120.0);
-        if (! $result->succeeded()) {
-            throw self::failed($subject, 'list', $result);
-        }
-        if ($result->truncated) {
-            throw self::invalid($subject, 'the output is not complete');
-        }
-
-        $names = array_values(array_filter(explode("\n", trim($result->stdout)), static fn (string $line): bool => $line !== ''));
-        foreach ($names as $name) {
-            if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9-]{0,62}\z/D', $name) !== 1) {
-                throw self::invalid($subject, 'an instance name is invalid');
-            }
-        }
-
-        return $names;
+        return self::strings($result['names'] ?? null);
     }
 
     /**
@@ -148,21 +139,29 @@ final readonly class IncusHost
      */
     public function inventory(Node $node): array
     {
-        $instances = array_map(
-            fn (string $url): array => $this->resource($node, $url, '/1.0/instances/'),
-            $this->urls($node, '/1.0/instances?all-projects=true'),
-        );
-        $volumes = [];
-        foreach ($this->urls($node, '/1.0/storage-pools') as $poolUrl) {
-            $pool = $this->resource($node, $poolUrl, '/1.0/storage-pools/')['name'];
-            $prefix = '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom/';
-            foreach ($this->urls($node, '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom?all-projects=true') as $url) {
-                ['project' => $project, 'name' => $name] = $this->resource($node, $url, $prefix);
-                $volumes[] = ['project' => $project, 'pool' => $pool, 'name' => $name];
-            }
+        $result = $this->observe($node, 'incus.inventory', [], "the Incus resources of Node [{$node->name}]");
+        $instances = $result['instances'] ?? null;
+        $volumes = $result['volumes'] ?? null;
+        if (! is_array($instances) || ! array_is_list($instances) || ! is_array($volumes) || ! array_is_list($volumes)) {
+            throw self::invalid('the agent host inventory', 'resource lists are missing');
         }
 
-        return ['instances' => $instances, 'volumes' => $volumes];
+        return [
+            'instances' => array_map(static function (mixed $row): array {
+                if (! is_array($row) || ! is_string($row['project'] ?? null) || ! is_string($row['name'] ?? null)) {
+                    throw self::invalid('the agent host inventory', 'an instance is invalid');
+                }
+
+                return ['project' => $row['project'], 'name' => $row['name']];
+            }, $instances),
+            'volumes' => array_map(static function (mixed $row): array {
+                if (! is_array($row) || ! is_string($row['project'] ?? null) || ! is_string($row['pool'] ?? null) || ! is_string($row['name'] ?? null)) {
+                    throw self::invalid('the agent host inventory', 'a volume is invalid');
+                }
+
+                return ['project' => $row['project'], 'pool' => $row['pool'], 'name' => $row['name']];
+            }, $volumes),
+        ];
     }
 
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
@@ -217,38 +216,36 @@ final readonly class IncusHost
     }
 
     /**
-     * The URLs that one `incus query` GET of `$path` lists.
-     *
-     * @return list<string>
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
-    private function urls(Node $node, string $path): array
+    private function observe(Node $node, string $command, array $input, string $subject, ?float $timeout = null): array
     {
-        $subject = "the Incus resources of Node [{$node->name}]";
-        $result = $this->execute($node, ['incus', 'query', '--', $path], null, 120.0);
-        $list = self::json($subject, $result->succeeded() ? $result : throw self::failed($subject, 'query', $result));
-        if (! array_is_list($list) || ! array_all($list, static fn (mixed $url): bool => is_string($url))) {
-            throw self::invalid($subject, 'the answer is not a list of URLs');
-        }
+        try {
+            return $this->agents->run($node, $command, $input, $timeout);
+        } catch (AgentCommandRefused $error) {
+            if ($error->errorCode === 'task_vm.invalid_host_output') {
+                throw self::invalid($subject, is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage());
+            }
+            if ($error->errorCode === 'task_vm.host_command_failed') {
+                $operation = is_string($error->details['operation'] ?? null) ? $error->details['operation'] : $command;
+                $code = is_int($error->details['exit_code'] ?? null) ? $error->details['exit_code'] : -1;
+                $detail = is_string($error->details['stderr'] ?? null) ? $error->details['stderr'] : '';
+                throw new TaskVmException($error->errorCode, "`incus {$operation}` for {$subject} failed with exit code [{$code}].".($detail === '' ? '' : "\n{$detail}"), 502);
+            }
 
-        return $list;
+            throw $error;
+        }
     }
 
-    /**
-     * The project and name of the resource that `$url` names below `$prefix`.
-     *
-     * @return array{project: string, name: string}
-     */
-    private function resource(Node $node, string $url, string $prefix): array
+    /** @return list<string> */
+    private static function strings(mixed $value): array
     {
-        $path = parse_url($url, PHP_URL_PATH);
-        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
-        $name = is_string($path) && str_starts_with($path, $prefix) ? rawurldecode(substr($path, strlen($prefix))) : '';
-        $project = $query['project'] ?? 'default';
-        if ($name === '' || str_contains($name, '/') || ! is_string($project) || $project === '') {
-            throw self::invalid("the Incus resources of Node [{$node->name}]", "the URL [{$url}] names no resource");
+        if (! is_array($value) || ! array_is_list($value) || ! array_all($value, static fn (mixed $item): bool => is_string($item))) {
+            throw self::invalid('the agent inventory', 'a string list is invalid');
         }
 
-        return ['project' => $project, 'name' => $name];
+        return $value;
     }
 
     /** @param  list<string>  $arguments */

@@ -17,6 +17,8 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -40,6 +42,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -73,6 +76,38 @@ final class TaskVmSweepIncus implements SshExecutor
 
     public ?Closure $afterExecute = null;
 
+    public function bindAgentInventory(): void
+    {
+        $agents = new FakeAgentCommandRunner;
+        $agents->answer('incus.instances', function (array $input, Node $node): array {
+            if ($this->projectMissing || $this->failList) {
+                throw new AgentCommandRefused('incus.instances', 'task_vm.host_command_failed', 'Inventory unavailable.', ['operation' => $this->projectMissing ? 'project show' : 'list', 'exit_code' => 1]);
+            }
+
+            return ['names' => $this->instances[$node->wireguard_ip] ?? []];
+        });
+        $agents->answer('incus.images', fn (array $input, Node $node): array => ['images' => array_fill_keys($this->images[$node->wireguard_ip] ?? [], [])]);
+        $agents->answer('incus.inventory', function (array $input, Node $node): array {
+            if ($this->failInventory) {
+                throw new AgentCommandRefused('incus.inventory', 'task_vm.host_command_failed', 'Inventory unavailable.', ['operation' => 'query', 'exit_code' => 1]);
+            }
+            $instances = array_map(static fn (string $name): array => ['project' => 'orbit-tasks', 'name' => $name], $this->instances[$node->wireguard_ip] ?? []);
+            foreach ($this->foreign[$node->wireguard_ip] ?? [] as $resource) {
+                [$project, $name] = explode('/', $resource, 2);
+                $instances[] = ['project' => $project, 'name' => $name];
+            }
+            $volumes = [];
+            foreach ($this->volumes[$node->wireguard_ip] ?? [] as $resource) {
+                [$project, $pool, $name] = explode('/', $resource, 3);
+                $volumes[] = ['project' => $project, 'pool' => $pool, 'name' => $name];
+            }
+            usort($volumes, static fn (array $a, array $b): int => strcmp($a['pool'], $b['pool']));
+
+            return ['instances' => $instances, 'volumes' => $volumes];
+        });
+        app()->instance(AgentCommandRunner::class, $agents);
+    }
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         if ($this->beforeExecute !== null) {
@@ -89,26 +124,9 @@ final class TaskVmSweepIncus implements SshExecutor
     private function executeCommand(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments];
-        if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'incus', 'query', '--']) {
-            return $this->failInventory ? new CommandResult(1, '', 'Error: forbidden', 1, false) : $this->query($connection->host, $command->arguments[5]);
-        }
         $arguments = array_slice($command->arguments, 5);
-        if ($arguments === ['project', 'show', '--', 'orbit-tasks']) {
-            // Incus answers `list` for a missing project with an empty list, so only this call tells.
-            return $this->projectMissing ? new CommandResult(1, '', 'Error: Project not found', 1, false) : new CommandResult(0, "name: orbit-tasks\n", '', 1, false);
-        }
-        if ($arguments === ['list', '--format', 'csv', '--columns', 'n']) {
-            if ($this->failList) {
-                return new CommandResult(1, '', 'Error: not found', 1, false);
-            }
-
-            return new CommandResult(0, $this->projectMissing ? '' : implode("\n", $this->instances[$connection->host] ?? []).($this->instances[$connection->host] ?? [] ? "\n" : ''), '', 1, false);
-        }
         if ($arguments === ['list', '--format', 'json']) {
             return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
-        }
-        if ($arguments === ['image', 'list', '--format', 'json']) {
-            return new CommandResult(0, json_encode(array_map(static fn (string $fingerprint): array => ['fingerprint' => $fingerprint, 'aliases' => []], $this->images[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
         }
         if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
             return new CommandResult(0, '[]', '', 1, false);
@@ -121,27 +139,6 @@ final class TaskVmSweepIncus implements SshExecutor
         }
 
         throw new RuntimeException('Unexpected command: '.implode(' ', $command->arguments));
-    }
-
-    /** Answers the inventory GETs as Incus does: URLs, with `?project=` except in `default`. */
-    private function query(string $host, string $path): CommandResult
-    {
-        $url = static fn (string $base, string $project, string $name): string => $base.rawurlencode($name).($project === 'default' ? '' : '?project='.$project);
-        $volumes = array_map(static fn (string $volume): array => explode('/', $volume, 3), $this->volumes[$host] ?? []);
-        $urls = match (true) {
-            $path === '/1.0/instances?all-projects=true' => [
-                ...array_map(static fn (string $name): string => $url('/1.0/instances/', 'orbit-tasks', $name), $this->instances[$host] ?? []),
-                ...array_map(static fn (string $instance): string => $url('/1.0/instances/', ...explode('/', $instance, 2)), $this->foreign[$host] ?? []),
-            ],
-            $path === '/1.0/storage-pools' => ['/1.0/storage-pools/default', '/1.0/storage-pools/orbit-tasks'],
-            preg_match('#\A/1\.0/storage-pools/([a-z0-9-]+)/volumes/custom\?all-projects=true\z#', $path, $pool) === 1 => array_values(array_map(
-                static fn (array $volume): string => $url("/1.0/storage-pools/{$pool[1]}/volumes/custom/", $volume[0], $volume[2]),
-                array_filter($volumes, static fn (array $volume): bool => $volume[1] === $pool[1]),
-            )),
-            default => throw new RuntimeException('Unexpected query: '.$path),
-        };
-
-        return new CommandResult(0, json_encode($urls, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), '', 1, false);
     }
 }
 
@@ -176,6 +173,7 @@ beforeEach(function (): void {
         TaskVmSettingsBuilder::host($this->shark->id, ['cidr' => '10.251.78.0/24', 'maxVms' => 4]),
     ]]);
     $this->incus = new TaskVmSweepIncus;
+    $this->incus->bindAgentInventory();
     app()->instance(SshExecutor::class, $this->incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
     {

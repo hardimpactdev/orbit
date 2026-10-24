@@ -56,6 +56,7 @@ function recipeImageTransport(Node $host): FakeIncusImageHost
 {
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $incus = new FakeIncusImageHost;
+    $incus->bindAgentInventory();
     $incus->recipeImages = true;
     $incus->images = [IMAGE_STOCK => [TaskVmHost::SourceImage], IMAGE_OLD => [TaskVmHost::BaseImage]];
     app()->instance(SshExecutor::class, $incus);

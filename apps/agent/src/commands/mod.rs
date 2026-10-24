@@ -26,6 +26,7 @@ pub mod firewall;
 pub mod health;
 pub mod hibernation;
 pub mod horizon_queue;
+mod incus;
 pub mod instances;
 pub mod laravel;
 pub mod metrics_certificate;
@@ -91,6 +92,10 @@ macro_rules! command_errors {
 pub fn all() -> Vec<Entry> {
     vec![
         entry::<agent::Status>(),
+        entry::<incus::ReadImages>(),
+        entry::<incus::ReadInstances>(),
+        entry::<incus::ReadInventory>(),
+        entry::<incus::setup::PrepareHost>(),
         entry::<agent::Install>(),
         entry::<agent_footprint::ConfigureAgent>(),
         entry::<agent_footprint::RemoveAgent>(),

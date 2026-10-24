@@ -26,6 +26,64 @@
       ]
     },
     {
+      "name": "incus.images",
+      "summary": "Read the fingerprints and aliases of a project's Incus images.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed"
+      ]
+    },
+    {
+      "name": "incus.instances",
+      "summary": "Read instance names only after proving the Incus project exists.",
+      "mutates": false,
+      "timeout_seconds": 240,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed"
+      ]
+    },
+    {
+      "name": "incus.inventory",
+      "summary": "Read instances and custom volumes across all Incus projects and pools.",
+      "mutates": false,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "incus.input_invalid",
+        "task_vm.invalid_host_output",
+        "task_vm.host_command_failed"
+      ]
+    },
+    {
+      "name": "incus.prepare-host",
+      "summary": "Converge a task VM host's ZFS pool, isolated bridge, project, profile, and stock image.",
+      "mutates": true,
+      "timeout_seconds": 900,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.setup_failed"
+      ]
+    },
+    {
       "name": "agent.install",
       "summary": "Install a staged, pinned agent binary and restart the observer on it.",
       "mutates": true,

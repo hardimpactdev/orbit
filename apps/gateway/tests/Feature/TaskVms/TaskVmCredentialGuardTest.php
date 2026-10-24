@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -116,7 +117,7 @@ it('refuses a GitHub credential on a task VM host, where incus exec would hand i
         }
 
         public function put(string $host, int $port, HostKey $key): void {}
-    });
+    }, app(AgentCommandRunner::class));
     $host = Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl']);
     $taskHost = new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
 

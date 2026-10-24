@@ -15,7 +15,7 @@ use App\Models\TaskVm;
 
 /**
  * Runs task VMs on an Incus host Node with `sudo -n incus --project <project> …` over SSH, as the
- * host's managed user. `incus-host.sh` prepared the project, the bridge with its ACL and the default
+ * host's managed user. `incus.prepare-host` prepared the project, the bridge with its ACL and the default
  * profile, and `IncusTaskVmImageBuilder` the base image that every VM launches. The provider never
  * creates a network: it pins the VM's profile NIC to the host's configured bridge with port isolation.
  * This class validates the instance output of Incus; `TaskVmGuest` reads the guest. Every VM name follows `--`, so

@@ -18,8 +18,6 @@ use App\Models\Node;
  */
 final readonly class TaskVmSetupScript
 {
-    public const string HostScript = 'incus-host.sh';
-
     public const string HubScript = 'hub.sh';
 
     private const string Confirmation = '{"ok":true}';

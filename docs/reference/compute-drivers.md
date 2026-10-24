@@ -358,6 +358,10 @@ A live PPA would be a second owner of Git, and an exact APT version alone does n
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
+The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
+
+`task-vms:prepare-host` sends the configured project, bridge, subnet, pool, and optional ZFS dataset to `incus.prepare-host`. The command validates existing storage, project network scope, and bridge address before changing them. It refuses to create a pool on a dataset that already exists. Rust owns the ACL, isolated profile NIC, project restrictions, stock image copy, and UFW forwarding rule. Repeated calls converge the same resources under the host and firewall locks. A setup failure returns `task_vm.setup_failed`; it does not claim to undo a partly completed setup.
+
 The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
 ### From claim to workspace
@@ -965,7 +969,7 @@ Restore the prior Gateway release with its loader and recipe, and select its ret
 
 ### Prepare an Incus host
 
-Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
+Run `task-vms:prepare-host {node}` once for each host. It calls `incus.prepare-host` through the pinned agent runner. The command returns readiness after convergence.
 
 First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
 
@@ -982,7 +986,7 @@ Task VMs need nothing that the restrictions forbid, except low-level config: med
 
 The command takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
 
-Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
+Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
 The restrictions forbid privileged and nested containers, host devices, backups, snapshots, and every network except the task bridge. Host disks are limited to the [read-only package-cache directory](#shared-package-cache). Low-level VM config is allowed for memory reporting.
 

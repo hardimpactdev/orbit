@@ -1,0 +1,77 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\TaskVms\IncusHost;
+use App\Models\Node;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\TaskVmSettingsBuilder;
+
+it('reads image, instance, and host inventories through the agent on the selected Node', function (): void {
+    $node = new Node(['id' => 123, 'name' => 'host']);
+    $host = TaskVmSettingsBuilder::host(123);
+    $fingerprint = str_repeat('a', 64);
+    $inventory = ['instances' => [['project' => 'default', 'name' => 'operator-vm']], 'volumes' => [['project' => 'orbit-tasks', 'pool' => 'tank', 'name' => 'data']]];
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer('incus.images', ['images' => [$fingerprint => ['orbit-task-base']]])
+        ->answer('incus.instances', ['names' => ['tvm-1']])
+        ->answer('incus.inventory', $inventory);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $incus = app(IncusHost::class);
+
+    expect($incus->images($host, $node, 37))->toBe([$fingerprint => ['orbit-task-base']])
+        ->and($incus->instanceNames($host, $node))->toBe(['tvm-1'])
+        ->and($incus->inventory($node))->toBe($inventory)
+        ->and($incus->aliasTarget($host, $node, 'orbit-task-base'))->toBe($fingerprint)
+        ->and($incus->aliasTarget($host, $node, 'absent'))->toBeNull();
+    expect(array_slice($agents->calls, 0, 3))->toBe([
+        ['node' => 'host', 'command' => 'incus.images', 'input' => ['project' => $host->project]],
+        ['node' => 'host', 'command' => 'incus.instances', 'input' => ['project' => $host->project]],
+        ['node' => 'host', 'command' => 'incus.inventory', 'input' => []],
+    ])->and($agents->deadlines[0])->toBe(37.0);
+});
+
+it('maps native inventory refusals to the existing host error', function (string $code, array $details, string $message): void {
+    $node = new Node(['id' => 123, 'name' => 'host']);
+    $agents = new FakeAgentCommandRunner;
+    $agents->refuse('incus.instances', $code, $details);
+    app()->instance(AgentCommandRunner::class, $agents);
+
+    expect(fn () => app(IncusHost::class)->instanceNames(TaskVmSettingsBuilder::host(123), $node))
+        ->toThrow(fn (TaskVmException $error) => expect([$error->errorCode, $error->status, $error->getMessage()])->toBe([$code, 502, $message]));
+    expect($agents->commands())->toBe(['incus.instances']);
+})->with([
+    'unreadable' => ['task_vm.invalid_host_output', ['reason' => 'the output is not complete'], 'Incus returned invalid output for the instances of Node [host]: the output is not complete.'],
+    'failed' => ['task_vm.host_command_failed', ['operation' => 'project show', 'exit_code' => 1, 'stderr' => 'Project not found'], "`incus project show` for the instances of Node [host] failed with exit code [1].\nProject not found"],
+]);
+
+it('rejects malformed typed inventory results', function (string $method, string $command, array $output): void {
+    $node = new Node(['id' => 123, 'name' => 'host']);
+    $agents = new FakeAgentCommandRunner;
+    $agents->answer($command, $output);
+    app()->instance(AgentCommandRunner::class, $agents);
+    $incus = app(IncusHost::class);
+
+    expect(fn () => $method === 'inventory' ? $incus->inventory($node) : $incus->{$method}(TaskVmSettingsBuilder::host(123), $node))
+        ->toThrow(TaskVmException::class);
+})->with([
+    ['images', 'incus.images', []],
+    ['images', 'incus.images', ['images' => ['pin' => [42]]]],
+    ['instanceNames', 'incus.instances', ['names' => ['name' => 'value']]],
+    ['inventory', 'incus.inventory', []],
+    ['inventory', 'incus.inventory', ['instances' => [['project' => null, 'name' => 'x']], 'volumes' => []]],
+    ['inventory', 'incus.inventory', ['instances' => [], 'volumes' => [['project' => 'p', 'pool' => 42, 'name' => 'x']]]],
+]);
+
+it('keeps migrated Incus inventory methods behind the typed agent boundary', function (): void {
+    $lines = file(app_path('Infrastructure/TaskVms/IncusHost.php'));
+    foreach (['images', 'instanceNames', 'inventory', 'observe'] as $name) {
+        $method = new ReflectionMethod(IncusHost::class, $name);
+        $source = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+        foreach (['RemoteCommand', '$this->execute(', '$this->run(', 'json_decode', 'parse_url', 'parse_str'] as $forbidden) {
+            expect($source)->not->toContain($forbidden);
+        }
+    }
+});
