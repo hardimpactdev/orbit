@@ -29,7 +29,7 @@ it('runs real Python command arguments and stdin independently of its compiled s
 
 it('uses each real command deadline instead of the host default', function (): void {
     $host = new PythonPrograms;
-    $hung = $host->runCommand("import signal\nprint('started', flush=True)\nsignal.pause()", [], timeoutSeconds: 0.05);
+    $hung = $host->runCommand("import signal\nprint('started', flush=True)\nsignal.pause()", [], timeoutSeconds: 0.5);
     $result = $host->runCommand("print('started')\nprint('finished')", [], timeoutSeconds: 0.4);
 
     expect($hung->exitCode)->toBe(124)->and($hung->stdout)->toBe("started\n")

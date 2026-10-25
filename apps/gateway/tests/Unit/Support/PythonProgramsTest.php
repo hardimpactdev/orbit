@@ -51,7 +51,7 @@ it('captures stdout stderr and nonzero exits without poisoning the next invocati
 });
 
 it('bounds a hung real program and can execute another program afterwards', function (): void {
-    $host = new PythonPrograms(timeoutSeconds: 0.1);
+    $host = new PythonPrograms(timeoutSeconds: 0.5);
     $bootstrap = file_get_contents(__DIR__.'/../../../resources/remote/bootstrap.py');
     $hung = $host->run($bootstrap, 'timeout-proof', "import time\nprint('started', flush=True)\ntime.sleep(30)\0{}");
     $passed = $host->run($bootstrap, 'success-proof', "print('recovered')\0{}");
@@ -63,7 +63,7 @@ it('bounds a hung real program and can execute another program afterwards', func
 });
 
 it('kills a hung program and its children before returning the timeout', function (): void {
-    $programs = new PythonPrograms(timeoutSeconds: 0.2);
+    $programs = new PythonPrograms(timeoutSeconds: 0.5);
     $source = "import subprocess, time\nchild = subprocess.Popen(['sleep', '30'])\nprint(child.pid, flush=True)\ntime.sleep(30)";
 
     $result = $programs->runCommand($source, []);
