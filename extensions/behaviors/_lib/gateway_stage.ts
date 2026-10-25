@@ -13,7 +13,7 @@ import { type AuthorizedPlan, briefSource, canonical, type Candidate, validateAn
 // no second operation: the Gateway returns the same one. A call for the same key
 // with other input is refused as a conflict.
 
-export const STAGES = ["provision", "baseline", "analyze", "implement", "handoff", "review", "publish", "merged"] as const;
+export const STAGES = ["provision", "baseline", "analyze", "implement", "handoff", "review", "publish", "merged", "script", "repair", "finish"] as const;
 export type Stage = (typeof STAGES)[number];
 
 export interface HttpResponse {
@@ -70,6 +70,8 @@ export interface StageArgs {
   analysis?: unknown;
   workspace?: unknown;
   baseline?: unknown;
+  script?: unknown;
+  routine?: boolean;
 }
 
 export interface Deps {
@@ -151,6 +153,10 @@ export function inputIdentity(args: StageArgs): string {
     const e = envelope(rec);
     return e ? { recordedAt: e.recordedAt, payload: e.payload } : null;
   };
+  if (args.routine) return JSON.stringify({ routine: true,
+    ...(args.stage === "handoff" ? { script: ref(args.script), change: ref(args.change) } : {}),
+    ...(["repair", "publish", "finish"].includes(args.stage) ? { handoff: ref(args.handoff) } : {}),
+    ...(["repair", "finish"].includes(args.stage) ? { script: ref(args.script) } : {}) });
   switch (args.stage) {
     case "implement":
       return JSON.stringify({ handoff: ref(args.handoff), review: ref(args.review), plan: envelope(args.plan)?.payload ?? null, analysis: envelope(args.analysis)?.payload ?? null, workspace: envelope(args.workspace)?.payload ?? null });
@@ -245,6 +251,13 @@ async function authorized(args: StageArgs, g: GroupRow): Promise<AuthorizedPlan>
   return p;
 }
 
+/** TaskTurnData::toArray() persists these nullable defaults even when omitted. */
+function turnInputIdentity(input: unknown): string {
+  return canonical(input !== null && typeof input === "object" && !Array.isArray(input)
+    ? { model: null, check: null, analysis: null, ...input }
+    : input);
+}
+
 function requireOperation(job: Job, op: Record<string, unknown>): void {
   if (op.id !== job.operationId || op.kind !== `tasks.${job.stage}` || op.target_type !== "task_group" || op.target_id !== job.group ||
     (job.stage === "analyze" && canonical(op.input) !== canonical(job.request?.body))) throw new Error("operation differs from the admitted group/request identity");
@@ -319,6 +332,10 @@ async function setSubtaskStatus(http: Http, group: number, t: TaskRow, status: s
 async function plan(args: StageArgs, group: number, http: Http): Promise<{ subtask: number | null; request: PlannedRequest | null; analysisContext?: Job["analysisContext"] }> {
   const g = await readGroup(http, group);
   const base = `/api/v1/task-groups/${group}`;
+  if (args.routine) {
+    if (g.orchestration !== "external" || g.tasks.length !== 1) throw new Error("routine requires one external group with exactly one child");
+    if (hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine preserves current operator and safety assistance");
+  }
   const req = (path: string, body: Record<string, unknown>, subtask: number | null) => ({
     subtask,
     request: { path: `${base}${path}`, body, idempotencyKey: idempotencyKey(args.key, subtask) },
@@ -344,6 +361,22 @@ async function plan(args: StageArgs, group: number, http: Http): Promise<{ subta
   const t = currentSubtask(g);
   if (!t) throw new Error(`group ${group} has no open subtask`);
   switch (args.stage) {
+    case "script":
+      if (!args.routine) throw new Error("script stage requires the routine method");
+      await setSubtaskStatus(http, group, t, "running");
+      return req("/script", { subtask: t.id, script: "scripts/dependencies", args: ["routine"] }, t.id);
+    case "repair": {
+      if (!args.routine) throw new Error("repair stage requires the routine method");
+      const h = ofSubtask(args.handoff, t.id);
+      const script = ofSubtask(args.script, t.id);
+      if (!(h && ["failed", "changed"].includes(String(h.outcome))) && !(script && script.outcome === "failed")) throw new Error("repair requires failed script or local check evidence");
+      return req("/turn", { subtask: t.id, role: "implementer", thread: "new", prompt:
+        implementerPrompt(g, t, null, envelope(args.handoff), null) +
+        "\n\nThis is the single routine dependency repair turn. Preserve manifest ranges, overrides and release-age/security policy. " +
+        "If the routine command failed, fix its cause and rerun scripts/dependencies routine in this VM; do not claim ready until it completes. " +
+        "Fix the failing checks. Do not add majors or unrelated changes. Stop blocked if you cannot finish within this turn. " +
+        `\nRoutine command output: ${String(script?.output ?? "")}` }, t.id);
+    }
     case "baseline":
       await setSubtaskStatus(http, group, t, "running");
       return req("/check", { subtask: t.id, phase: "baseline" }, t.id);
@@ -476,6 +509,11 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
         candidate, omitted, invalid, result } }, evidence: ev({ outcome }) };
     }
     case "provision": {
+      if (args.routine) {
+        requireOperation(job, op);
+        if (![result.instance_id, result.node_id].every((n) => Number.isSafeInteger(n) && Number(n) > 0)) throw new Error("provision has no workspace identity");
+        return { artifacts: { workspace: { group: job.group, operationId: job.operationId, outcome: "ready", instanceId: result.instance_id, nodeId: result.node_id } }, evidence: ev() };
+      }
       try {
         requireOperation(job, op);
         const r = validateProvisionResult(result);
@@ -490,8 +528,29 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
             code: "swamp.analysis_workspace_unavailable", error, operation: op } };
       }
     }
+    case "script": {
+      requireOperation(job, op);
+      if (canonical(op.input) !== canonical(job.request?.body) || !["passed", "failed"].includes(String(result.outcome)) ||
+        (result.exit_code !== null && !Number.isInteger(result.exit_code)) || typeof result.changed !== "boolean" ||
+        typeof result.output !== "string" || typeof result.output_truncated !== "boolean" ||
+        ![result.head, result.tree].every((v) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v)) ||
+        (result.outcome === "passed") !== (result.exit_code === 0)) throw new Error("invalid scoped script result");
+      return { artifacts: { script: { subtask: job.subtask, ...result } }, evidence: ev() };
+    }
     case "baseline":
     case "handoff": {
+      if (args.routine) {
+        if (op.id !== job.operationId || op.kind !== "tasks.check" || op.target_type !== "task_group" || op.target_id !== job.group ||
+          canonical(op.input) !== canonical(job.request?.body) || !["passed", "failed", "changed", "lost"].includes(String(result.outcome)) ||
+          !Number.isSafeInteger(result.check_id) || Number(result.check_id) < 1 ||
+          ![result.head, result.tree].every((v) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(v)) ||
+          (result.outcome === "passed" && !(typeof result.commit === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result.commit)))) throw new Error("invalid scoped routine check");
+        if (result.outcome === "passed") {
+          const g = await readGroup(http, job.group);
+          if (g.tasks.length !== 1 || g.tasks[0].id !== job.subtask || hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine completion preserves independent children/assistance");
+          await setSubtaskStatus(http, job.group, g.tasks[0], "completed");
+        }
+      }
       const name = job.stage;
       const outcome = String(result.outcome);
       return {
@@ -511,7 +570,9 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
       };
     }
     case "implement":
+    case "repair":
     case "review": {
+      if (args.routine && (op.kind !== "tasks.turn" || op.id !== job.operationId || op.target_type !== "task_group" || op.target_id !== job.group || turnInputIdentity(op.input) !== turnInputIdentity(job.request?.body))) throw new Error("invalid scoped routine repair");
       const receipt = (result.receipt ?? null) as Record<string, unknown> | null;
       const outcome = receipt ? String(receipt.outcome) : "none";
       // The Gateway returns the thread as its id (TaskTurnOperation).
@@ -536,9 +597,13 @@ async function products(job: Job, op: Record<string, unknown>, http: Http, args:
         if (t) await setSubtaskStatus(http, job.group, t, "completed");
         artifact.hasNext = g.tasks.some((x) => x.id !== job.subtask && OPEN_SUBTASK.includes(x.status));
       }
-      return { artifacts: { [job.stage === "implement" ? "change" : "review"]: artifact }, evidence: ev({ outcome }) };
+      return { artifacts: { [job.stage === "review" ? "review" : "change"]: artifact }, evidence: ev({ outcome }) };
     }
     case "publish":
+      if (args.routine) {
+        requireOperation(job, op);
+        if (canonical(op.input) !== canonical(job.request?.body)) throw new Error("publish operation differs from its checked request");
+      }
       return {
         artifacts: {
           "pull-request": {
@@ -567,22 +632,52 @@ async function withGroupOutcome(job: Job, http: Http): Promise<Job> {
 }
 
 /** `merged`: complete the group once its published pull request merged. No operation. */
-async function merged(job: Job, http: Http): Promise<Job> {
+async function merged(job: Job, http: Http, routine = false): Promise<Job> {
   const g = await readGroup(http, job.group);
+  if (routine && (hasAssistance(g) || g.tasks.some(hasAssistance))) return { ...job, lastError: "routine preserves operator/safety assistance during cleanup" };
   const state = g.watched_pr_state ?? null;
   if (g.status === "completed") return { ...job, state: "succeeded", lastError: null, evidence: { status: "succeeded", runId: job.key, completed: true } };
   if (state === "merged") {
     const r = await http("POST", `/api/v1/task-groups/${job.group}/complete`);
     if (r.status !== 200) return { ...job, lastError: `completing group: ${errorCode(r)}` };
+    if (routine && (data(r).status !== "completed" || hasAssistance(data(r) as AssistanceFields))) return { ...job, lastError: "routine completion retains cleanup/safety failure" };
     return { ...job, state: "succeeded", lastError: null, evidence: { status: "succeeded", runId: job.key, completed: true } };
   }
   if (state === "closed") return { ...job, state: "failed", evidence: { status: "failed", runId: job.key, error: "pull request closed without merge" } };
   return { ...job, operationStatus: `pull request ${state ?? "not observed yet"}` };
 }
 
+function hasAssistance(r: AssistanceFields): boolean {
+  return r.assistance_requested !== false || r.assistance_kind !== null || r.assistance_reason !== null || r.assistance_question !== null;
+}
+
+/** No-change cleanup uses existing board moves and completion; never invent a PR. */
+async function finishRoutine(job: Job, args: StageArgs, http: Http): Promise<Job> {
+  const h = envelope(args.handoff)?.payload;
+  const script = envelope(args.script)?.payload;
+  if (!args.routine || h?.outcome !== "passed" || script?.changed !== false ||
+    (h.candidate as Candidate | undefined)?.tree !== script.tree) throw new Error("finish requires passed unchanged routine evidence");
+  const g = await readGroup(http, job.group);
+  if (g.status === "completed" && !hasAssistance(g) && !g.tasks.some(hasAssistance)) return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
+  if (g.tasks.length !== 1 || g.tasks[0].id !== h.subtask || g.tasks[0].status !== "completed" || hasAssistance(g) || g.tasks.some(hasAssistance) || g.watched_pr_url) throw new Error("no-change cleanup requires its completed child and no assistance or PR");
+  if (g.status !== "settling") {
+    const moved = await http("PATCH", `/api/v1/task-groups/${job.group}`, { status: "settling" });
+    if (moved.status !== 200) throw new Error(`no-change settling refused: ${errorCode(moved)}`);
+  }
+  const response = await http("POST", `/api/v1/task-groups/${job.group}/complete`);
+  if (response.status !== 200) return { ...job, lastError: errorCode(response) };
+  const done = data(response) as unknown as GroupRow;
+  if (done.status !== "completed" || hasAssistance(done)) throw new Error("no-change completion requires clean cleanup evidence");
+  return { ...job, state: "succeeded", evidence: { status: "succeeded", runId: job.key, completed: true } };
+}
+
 /** One ensure call for one driver key. */
 export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
   const group = groupOf(args.workItem);
+  if (args.routine) {
+    const parsed = keyParts(args.key);
+    if (parsed.workItem !== args.workItem || parsed.stage !== args.stage) throw new Error("routine key does not match work item and stage");
+  }
   // Deadlines are taken from a fresh clock reading after each response, so a slow
   // request does not use up the poll interval the Gateway asked for.
   const clock = deps.now ?? Date.now;
@@ -604,8 +699,13 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       lastError: null, inputIdentity: identity, nextReadAt: null, artifacts: {}, evidence: null,
     };
 
+  if (args.stage === "finish") {
+    job = await finishRoutine(job, args, deps.http);
+    await deps.writeJob(job);
+    return job;
+  }
   if (args.stage === "merged") {
-    job = await merged(job, deps.http);
+    job = await merged(job, deps.http, args.routine);
     await deps.writeJob(job);
     return job;
   }
@@ -626,6 +726,14 @@ export async function runStage(args: StageArgs, deps: Deps): Promise<Job> {
       await deps.writeJob(job);
     }
     const req = job.request!;
+    if (args.routine) {
+      // A retained request may outlive an operator change or a lost response.
+      // Reconcile receipts under the same key only while the observed group is safe.
+      const g = await readGroup(deps.http, group);
+      if (g.orchestration !== "external" || g.tasks.length !== 1 ||
+        (job.subtask !== null && g.tasks[0].id !== job.subtask) ||
+        hasAssistance(g) || g.tasks.some(hasAssistance)) throw new Error("routine dispatch preserves current children/operator/safety assistance");
+    }
     const r = await deps.http("POST", req.path, req.body, req.idempotencyKey);
     if (r.status === 202) {
       const op = data(r);

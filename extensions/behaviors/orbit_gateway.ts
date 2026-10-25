@@ -67,7 +67,7 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.25.2",
+  version: "2026.10.25.4",
   globalArguments: GlobalArgsSchema,
   resources: {
     job: {
@@ -131,6 +131,12 @@ export const behavior = {
         return { dataHandles: handle ? [handle] : [] };
       },
     },
+    routine: {
+      description: "Routine website update: the tracked script, one repair turn, checks, publication and cleanup through existing keyed jobs",
+      arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
+        key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional() }),
+      execute: async (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true }, context),
+    },
     stage: {
       description: "Ensure the Gateway operation of one stage entry: start it once, then report its result",
       arguments: z.object({
@@ -145,39 +151,36 @@ export const behavior = {
         workspace: z.unknown().optional(),
         baseline: z.unknown().optional(),
       }),
-      execute: async (
-        args: StageArgs,
-        context: {
-          globalArgs: GlobalArgs;
-          definition: { name: string };
-          queryData: (predicate: string, select?: string) => Promise<unknown[]>;
-          writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
-          logger: { info: (msg: string, props?: Record<string, unknown>) => void };
-        },
-      ) => {
-        let handle: { name: string } | null = null;
-        const job = await runStage(args, {
-          http: curlHttp(context.globalArgs),
-          readJob: async () => {
-            const rows = (await context.queryData(
-              `modelName == "${context.definition.name}" && name == "job-${args.key}"`,
-              "attributes",
-            )) as Job[];
-            return rows[0] ?? null;
-          },
-          writeJob: async (j) => {
-            handle = await context.writeResource("job", `job-${args.key}`, j as unknown as Record<string, unknown>);
-          },
-        });
-        context.logger.info("{key}: {state} op={op} {status} {err}", {
-          key: args.key,
-          state: job.state,
-          op: job.operationId ?? "-",
-          status: job.operationStatus ?? "",
-          err: job.lastError ?? "",
-        });
-        return { dataHandles: handle ? [handle] : [] };
-      },
+      execute: executeStage,
     },
   },
 };
+
+interface StageContext {
+  globalArgs: GlobalArgs;
+  definition: { name: string };
+  queryData: (predicate: string, select?: string) => Promise<unknown[]>;
+  writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
+  logger: { info: (msg: string, props?: Record<string, unknown>) => void };
+}
+
+async function executeStage(args: StageArgs, context: StageContext) {
+  let handle: { name: string } | null = null;
+  const job = await runStage(args, {
+    http: curlHttp(context.globalArgs),
+    readJob: async () => {
+      const rows = (await context.queryData(
+        `modelName == "${context.definition.name}" && name == "job-${args.key}"`, "attributes",
+      )) as Job[];
+      return rows[0] ?? null;
+    },
+    writeJob: async (j) => {
+      handle = await context.writeResource("job", `job-${args.key}`, j as unknown as Record<string, unknown>);
+    },
+  });
+  context.logger.info("{key}: {state} op={op} {status} {err}", {
+    key: args.key, state: job.state, op: job.operationId ?? "-",
+    status: job.operationStatus ?? "", err: job.lastError ?? "",
+  });
+  return { dataHandles: handle ? [handle] : [] };
+}

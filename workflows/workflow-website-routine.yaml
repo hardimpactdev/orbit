@@ -1,0 +1,19 @@
+id: a3a8f33b-7430-4053-a392-47c6a674dc03
+name: website-routine
+tags: {}
+description: One manual tick for one explicitly started website routine; never creates a group.
+inputs:
+  properties:
+    workItem: { type: string, description: 'Existing routine work item tg-<group id>' }
+  required: [workItem]
+jobs:
+  - name: tick
+    steps:
+      - name: reconcile
+        task:
+          type: model_method
+          modelIdOrName: orbit-driver-routine
+          methodName: tick
+          inputs:
+            workItems: '${{ [inputs.workItem] }}'
+            maxSteps: 3

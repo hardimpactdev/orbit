@@ -2,15 +2,19 @@
 
 A spike to test whether [Swamp](https://swamp-club.com) can replace the
 hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
-upgrades as the test case. Nothing here changes Orbit code, the live Gateway,
-or Orbit task records.
+upgrades as the test case. The current routine uses repo-owned commands and
+Gateway operations in task VMs. Authoring and fixture validation change no live
+Gateway or task records.
 
-The isolated [documentation workflow](docs/repository-analysis-adoption.md) was
-accepted through PR10. The next [dependency workflow slice](docs/dependency-workflow-adoption.md)
-corrects registry-failure handling and records the missing task-owned mechanical
-update capability. Dependency task-VM execution stays blocked pending normal
-native contract review and delivery. External review-and-merge/topology admission
-stays closed. Live Swamp has not been updated by these changes.
+The [website routine workflow](docs/website-routine.md) adds task-VM dependency
+updates through the generic `tasks.script` operation. The website owns the
+commands and allowed versions. One failed update/check gets one repair turn;
+a second failure parks for assistance. Green work publishes a PR; unchanged
+work completes without one. Start only after the Orbit operation and website
+script merge and the Gateway release is verified. Nick owns the first live run.
+The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
+historical and is not part of this flow. External review-and-merge/topology
+admission stays closed. Live Swamp has not been updated by these changes.
 
 ## Setup on Beast
 

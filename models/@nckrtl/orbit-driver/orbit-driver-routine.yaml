@@ -1,0 +1,10 @@
+type: '@nckrtl/orbit-driver'
+typeVersion: 2026.10.23.1
+id: 83ee8787-6be7-4b75-9aac-0b1a3fc6b56c
+name: orbit-driver-routine
+version: 1
+tags: {}
+globalArguments:
+  factory: website-routine
+  assistanceModel: orbit-gateway
+methods: {}

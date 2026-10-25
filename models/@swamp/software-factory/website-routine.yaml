@@ -1,0 +1,184 @@
+type: '@swamp/software-factory'
+typeVersion: 2026.06.24.1
+id: 8955ebae-e23e-4a88-ae8e-97ba530b9c47
+name: website-routine
+version: 1
+tags: {}
+# One existing external group with one child; no schedule or group creation.
+globalArguments:
+  stages:
+    - id: provision
+      initial: true
+      maxCycles: 1
+      work:
+        mode: method
+        method: { modelIdOrName: orbit-gateway, methodName: routine, inputs: { workItem: '${{ self.workItem }}', stage: provision } }
+        resultEvidence: provision-run
+      artifacts:
+        - name: workspace
+          schema: { type: object, additionalProperties: true, required: [group, operationId, outcome, instanceId, nodeId] }
+      transitions:
+        - name: ready
+          to: script
+          gates: [{ type: evidence-recorded, config: { name: provision-run, requireField: { status: succeeded } } }]
+        - name: failed
+          to: assistance
+          gates: [{ type: evidence-recorded, config: { name: provision-run, requireField: { status: failed } } }]
+    - id: script
+      maxCycles: 1
+      work:
+        mode: method
+        method: { modelIdOrName: orbit-gateway, methodName: routine, inputs: { workItem: '${{ self.workItem }}', stage: script } }
+        resultEvidence: script-run
+      artifacts:
+        - name: script
+          schema:
+            type: object
+            additionalProperties: true
+            required: [subtask, outcome, exit_code, output, output_truncated, changed, head, tree]
+            properties:
+              subtask: { type: integer, minimum: 1 }
+              outcome: { type: string, enum: [passed, failed] }
+              output: { type: string }
+              output_truncated: { type: boolean }
+              changed: { type: boolean }
+              head: { type: string }
+              tree: { type: string }
+      transitions:
+        - name: check
+          to: handoff
+          gates:
+            - { type: evidence-recorded, config: { name: script-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.script.outcome == "passed"' } }
+        - name: repair
+          to: repair
+          gates:
+            - { type: evidence-recorded, config: { name: script-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.script.outcome == "failed" && artifacts.script.exit_code != null' } }
+        - name: unknown
+          to: assistance
+          gates:
+            - { type: evidence-recorded, config: { name: script-run } }
+            - { type: cel, config: { expr: 'evidence.script_run.status == "failed" || (has(artifacts.script) && artifacts.script.exit_code == null)' } }
+    - id: handoff
+      maxCycles: 2
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: routine
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: handoff
+            script: '${{ data.latest(self.name, "artifact-script") }}'
+            change: '${{ data.latest(self.name, "artifact-change") }}'
+        resultEvidence: handoff-run
+      artifacts:
+        - name: handoff
+          schema: { type: object, additionalProperties: true, required: [subtask, outcome, checkId, commit, candidate, output] }
+      transitions:
+        - name: publish
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome == "passed" && (artifacts.script.changed || artifacts.handoff.candidate.tree != artifacts.script.tree)' } }
+        - name: unchanged
+          to: finish
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome == "passed" && !artifacts.script.changed && artifacts.handoff.candidate.tree == artifacts.script.tree' } }
+        - name: repair
+          to: repair
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.handoff.outcome in ["failed", "changed"] && !has(artifacts.change)' } }
+        - name: stop
+          to: assistance
+          gates:
+            - { type: evidence-recorded, config: { name: handoff-run } }
+            - { type: cel, config: { expr: 'evidence.handoff_run.status == "failed" || (artifacts.handoff.outcome != "passed" && (has(artifacts.change) || !(artifacts.handoff.outcome in ["failed", "changed"])))' } }
+    - id: repair
+      maxCycles: 1
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: routine
+          inputs:
+            workItem: '${{ self.workItem }}'
+            stage: repair
+            script: '${{ data.latest(self.name, "artifact-script") }}'
+            handoff: '${{ data.latest(self.name, "artifact-handoff") }}'
+        resultEvidence: repair-run
+      artifacts:
+        - name: change
+          schema: { type: object, additionalProperties: true, required: [subtask, outcome] }
+      transitions:
+        - name: recheck
+          to: handoff
+          gates:
+            - { type: evidence-recorded, config: { name: repair-run, requireField: { status: succeeded } } }
+            - { type: cel, config: { expr: 'artifacts.change.outcome == "ready_for_review"' } }
+        - name: stop
+          to: assistance
+          gates:
+            - { type: evidence-recorded, config: { name: repair-run } }
+            - { type: cel, config: { expr: 'evidence.repair_run.status == "failed" || artifacts.change.outcome != "ready_for_review"' } }
+    - id: publish
+      maxCycles: 3
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: routine
+          inputs: { workItem: '${{ self.workItem }}', stage: publish, handoff: '${{ data.latest(self.name, "artifact-handoff") }}' }
+        resultEvidence: publish-run
+      artifacts:
+        - name: pull-request
+          schema: { type: object, additionalProperties: true, required: [branch, commit, number, url] }
+      transitions:
+        - name: published
+          to: merged
+          gates: [{ type: evidence-recorded, config: { name: publish-run, requireField: { status: succeeded } } }]
+        - name: retry
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: publish-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: publish-retry } }
+    - id: merged
+      maxCycles: 3
+      work:
+        mode: method
+        method: { modelIdOrName: orbit-gateway, methodName: routine, inputs: { workItem: '${{ self.workItem }}', stage: merged } }
+        resultEvidence: merged-run
+      transitions:
+        - name: done
+          to: completed
+          gates: [{ type: evidence-recorded, config: { name: merged-run, requireField: { status: succeeded, completed: true } } }]
+        - name: republish
+          to: publish
+          gates:
+            - { type: evidence-recorded, config: { name: merged-run, requireField: { status: failed } } }
+            - { type: human-approval, config: { id: republish } }
+    - id: finish
+      maxCycles: 1
+      work:
+        mode: method
+        method:
+          modelIdOrName: orbit-gateway
+          methodName: routine
+          inputs: { workItem: '${{ self.workItem }}', stage: finish, handoff: '${{ data.latest(self.name, "artifact-handoff") }}', script: '${{ data.latest(self.name, "artifact-script") }}' }
+        resultEvidence: finish-run
+      transitions:
+        - name: done
+          to: completed
+          gates: [{ type: evidence-recorded, config: { name: finish-run, requireField: { status: succeeded, completed: true } } }]
+    - id: assistance
+      description: Stop after one repair; the operator decides the next action outside this routine.
+      transitions:
+        - name: acknowledge
+          to: failed
+          gates: [{ type: human-approval, config: { id: routine-assistance } }]
+    - { id: completed, terminal: true }
+    - { id: failed, terminal: true }
+methods: {}

@@ -5,6 +5,12 @@ import { analysisFixture, HEAD, TREE } from "./analysis_fixture.ts";
 import { sha256 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
 
 export interface Scenario {
+  scriptNoChange?: boolean;
+  scriptFails?: boolean;
+  scriptInfrastructureFailure?: boolean;
+  scriptInterrupted?: boolean;
+  handoffFailOnce?: boolean;
+  repairBlocked?: boolean;
   subtasks?: number;
   provisionFails?: boolean;
   provisionCancelOnce?: boolean;
@@ -75,6 +81,13 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         if (s.provisionIdentity) return { status: "succeeded", result: s.provisionIdentity };
         return { status: "succeeded", result: { instance_id: 1, node_id: 2, starting_commit: HEAD,
           analysis_base: { base: HEAD, instance_id: 1, repository: "https://example.test/repo.git", branch: `task-${g.id}` } } };
+      case "script": {
+        bump(g, "script");
+        if (s.scriptInfrastructureFailure) return { status: "failed", error_code: "tasks.script_unavailable" };
+        if (!s.scriptNoChange) g.tree = "e".repeat(40);
+        return { status: "succeeded", result: { outcome: s.scriptFails || s.scriptInterrupted ? "failed" : "passed", exit_code: s.scriptInterrupted ? null : s.scriptFails ? 23 : 0,
+          output: s.scriptFails ? "npm update failed" : "updated", output_truncated: false, changed: !s.scriptNoChange, head: g.head, tree: g.tree } };
+      }
       case "analyze": {
         if (s.analysisFailure) return { status: "failed", error_code: s.analysisFailure.error.code, failed_step: "analysis", result: s.analysisFailure };
         if (body.head !== g.head || body.tree !== g.tree) return { status: "failed", error_code: "tasks.analysis_stale" };
@@ -98,7 +111,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           return { status: "succeeded", result: { outcome: "passed", check_id: nextOp, commit: null, head: g.head, tree: g.tree, deliverables: [], output: "ok" } };
         }
         if (s.handoffCancelOnce && n === 1) return { status: "cancelled" };
-        const outcome = s.handoffAlwaysFails ? "failed" : "passed";
+        const outcome = s.handoffAlwaysFails || (s.handoffFailOnce && n === 1) ? "failed" : "passed";
         if (outcome === "passed") g.head = operation.toString(16).padStart(40, "0");
         return { status: "succeeded", result: { outcome, check_id: nextOp, commit: outcome === "passed" ? g.head : null, head: g.head, tree: g.tree, deliverables: [], output: outcome } };
       }
@@ -114,7 +127,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
           g.tree = "c".repeat(40);
           return { status: "failed", error_code: "tasks.turn_failed", result: { receipt: null, thread, state: "failed", after: { head: g.head, tree: g.tree }, after_reset: null } };
         }
-        return { status: "succeeded", result: { receipt: { outcome: "ready_for_review", summary: "done" }, thread, state: "done", after: { head: g.head, tree: g.tree } } };
+        return { status: "succeeded", result: { receipt: { outcome: s.repairBlocked ? "blocked" : "ready_for_review", summary: "done" }, thread, state: "done", after: { head: g.head, tree: g.tree } } };
       }
       case "publish": {
         const n = bump(g, "publish");
@@ -207,14 +220,16 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
         g.status = "completed";
         return json(200, view());
       }
-      const op = /^\/(provision|check|analyze|turn|publish)$/.exec(rest);
+      const op = /^\/(provision|script|check|analyze|turn|publish)$/.exec(rest);
       if (req.method === "POST" && op) {
         const key = req.headers.get("idempotency-key") ?? "";
         starts.set(key, (starts.get(key) ?? 0) + 1);
         if (byKey.has(key)) return json(202, { ...ops.get(byKey.get(key)!), status: "queued", poll_after_seconds: 1 });
         const id = nextOp++;
         const out = await run(g, op[1], body, id);
-        const rec = { id, kind: `tasks.${op[1]}`, target_type: "task_group", target_id: g.id, input: body, ...out };
+        // StartTaskTurnAction persists TaskTurnData::toArray(), including nullable defaults.
+        const input = op[1] === "turn" ? { model: null, check: null, analysis: null, ...body } : body;
+        const rec = { id, kind: `tasks.${op[1]}`, target_type: "task_group", target_id: g.id, input, ...out };
         ops.set(id, rec);
         byKey.set(key, id);
         return json(202, { ...rec, status: "queued", poll_after_seconds: 1 });
