@@ -26,6 +26,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -41,11 +42,11 @@ use Tests\Support\WebArtifactFixture;
 
 beforeEach(function (): void {
     $this->fixture = GatewayReleaseFixture::create();
-    $this->current = $this->fixture->layout->currentPath();
-    $this->sha = $this->fixture->inPlaceCheckout();
-    $this->id = substr($this->sha, 0, 12);
-    $this->steps = new AdoptionSteps;
     $this->adoptionFixture = new GatewayAdoptionFixture($this->fixture);
+    $this->sha = $this->adoptionFixture->sha;
+    $this->id = substr($this->sha, 0, 12);
+    $this->source = $this->fixture->base.'/adopt-source';
+    $this->steps = new AdoptionSteps;
     config(['orbit.home' => $this->fixture->base.'/home']);
     $node = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.1']);
     $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
@@ -104,14 +105,12 @@ describe('gateway:release:adopt', function (): void {
     });
 
     it('starts the fleet rollout only after phase 2 verifies the exact commit, never after phase 1', function (): void {
-        $this->fixture->write('apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
         $target = $this->fixture->commit('Ships the fleet rollout');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->fixture->releaseFile(substr($target, 0, 12), 'apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
         $fleet = new FakeFleetConvergeUnits;
         $this->steps->failVerify = true;
 
-        release_failure(fn () => adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $source));
+        release_failure(fn () => adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $this->source));
 
         // Phase 1 recorded `verified` after a serving check, and phase 2 failed: the fleet stays where it is.
         expect(GatewayRelease::query()->orderBy('id')->pluck('outcome')->first())->toBe('verified')
@@ -119,9 +118,8 @@ describe('gateway:release:adopt', function (): void {
 
         $this->steps->failVerify = false;
         $fix = $this->fixture->commit('Forward fix');
-        $this->fixture->git($source, 'fetch', '--quiet', $this->fixture->origin);
-        $this->fixture->git($source, 'checkout', '--quiet', '--detach', $fix);
-        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($fix, $source);
+        $this->fixture->releaseFile(substr($fix, 0, 12), 'apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
+        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($fix, $this->source);
 
         expect($fleet->started)->toBe(1);
     });
@@ -136,15 +134,14 @@ describe('gateway:release:adopt', function (): void {
     });
 
     it('adopts into a newer commit in two phases: the checkout\'s own commit first, then a deploy with migrations', function (): void {
-        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
         $target = $this->fixture->commit('Newer release with a migration');
         $targetId = substr($target, 0, 12);
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
 
-        $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $source);
+        $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $this->source);
 
-        expect($result)->toMatchArray(['release' => $targetId, 'sha' => $target, 'from' => $this->sha])
+        expect(collect($this->adoptionFixture->agents->calls)->firstWhere('command', 'gateway.resolve-adoption-target')['input'])
+            ->toBe(['checkout' => $this->fixture->layout->applicationPath, 'target' => substr($target, 0, 10), 'source' => $this->source])
+            ->and($result)->toMatchArray(['release' => $targetId, 'sha' => $target, 'from' => $this->sha])
             ->and($result['phase1']['release'])->toBe($this->id)
             ->and($result['deploy']['migrations_ran'])->toBeTrue()
             ->and($result['deploy']['previous'])->toBe($this->id)
@@ -162,22 +159,19 @@ describe('gateway:release:adopt', function (): void {
 
     it('adopts into a commit with its CI web build installed and published, and smokes the release', function (): void {
         $arguments = $this->fixture->base.'/smoke-args';
-        $this->fixture->write('bin/gateway-smoke', "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($arguments)."\necho '{\"schema\":1,\"passed\":true,\"checks\":{}}'\n");
-        chmod($this->fixture->origin.'/bin/gateway-smoke', 0755);
         $target = $this->fixture->commit('Newer release with smoke');
         $targetId = substr($target, 0, 12);
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->fixture->releaseFile($targetId, 'bin/gateway-smoke', "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($arguments)."\necho '{\"schema\":1,\"passed\":true,\"checks\":{}}'\n", 0755);
         $web = new WebArtifactFixture($this->fixture->layout, $this->fixture->base.'/web');
         $web->github(sha: $target);
         $smoke = new ScriptGatewayReleaseSmoke(
             layout: $this->fixture->layout,
-            processes: $this->fixture,
+            processes: new NativeProcessRunner,
             origin: 'https://gateway.orbit',
             webRoot: $web->web,
         );
 
-        $result = adoption($this->fixture, $this->steps, web: $web->build(), smoke: $smoke)->execute($target, $source);
+        $result = adoption($this->fixture, $this->steps, web: $web->build(), smoke: $smoke)->execute($target, $this->source);
         $passed = file($arguments, FILE_IGNORE_NEW_LINES);
         $record = GatewayRelease::query()->where('release_id', $targetId)->sole();
 
@@ -192,27 +186,21 @@ describe('gateway:release:adopt', function (): void {
     });
 
     it('records phase 1 after phase 2 when the checkout\'s database has no release records yet', function (): void {
-        $this->fixture->write('apps/gateway/database/migrations/2026_10_13_000000_create_gateway_releases_table.php', "<?php\n");
         $target = $this->fixture->commit('Adds the release records');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
         Schema::rename('gateway_releases', 'gateway_releases_later');
         $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
 
-        adoption($this->fixture, $this->steps)->execute($target, $source);
+        adoption($this->fixture, $this->steps)->execute($target, $this->source);
 
         expect(GatewayRelease::query()->pluck('release_id')->sort()->values()->all())->toEqualCanonicalizing([$this->id, substr($target, 0, 12)])
             ->and(GatewayRelease::query()->where('release_id', $this->id)->value('outcome'))->toBe('verified');
     });
 
     it('stays adopted on the checkout\'s commit and pauses when the target\'s migration fails', function (): void {
-        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
         $target = $this->fixture->commit('Broken migration');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
         $this->steps->failMigrate = true;
 
-        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $source));
+        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $this->source));
 
         expect($exception->errorCode)->toBe('gateway.release_migrate_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($this->id)
@@ -266,13 +254,10 @@ describe('gateway:release:adopt', function (): void {
         adoption($this->fixture, $this->steps)->execute();
         GatewayRelease::query()->delete();
         Schema::rename('gateway_releases', 'gateway_releases_later');
-        $this->fixture->write('apps/gateway/database/migrations/2026_10_13_000000_create_gateway_releases_table.php', "<?php\n");
         $target = $this->fixture->commit('Adds the release records');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
         $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
 
-        $result = adoption($this->fixture, $this->steps)->execute($target, $source);
+        $result = adoption($this->fixture, $this->steps)->execute($target, $this->source);
 
         expect($result['resumed'])->toBeTrue()
             ->and(GatewayRelease::query()->where('release_id', $this->id)->value('outcome'))->toBe('resumed')
@@ -280,17 +265,14 @@ describe('gateway:release:adopt', function (): void {
     });
 
     it('keeps a phase-2 pause when adopt runs again, and does not resume a release that is not phase 1\'s', function (): void {
-        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
         $target = $this->fixture->commit('Migrates, then fails verify');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
         $this->steps->failVerify = true;
         $marker = $this->fixture->base.'/home/gateway-release.paused';
 
-        release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $source));
+        release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $this->source));
         $pausedFirst = is_file($marker);
         $this->steps->steps = [];
-        $again = adoption($this->fixture, $this->steps)->execute($target, $source);
+        $again = adoption($this->fixture, $this->steps)->execute($target, $this->source);
 
         expect($pausedFirst)->toBeTrue()
             ->and($this->fixture->layout->currentReleaseId())->toBe(substr($target, 0, 12))
@@ -358,7 +340,7 @@ function adoption(
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
     $guard = new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands());
-    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands($fixture->builderAgents()));
+    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock', $fixture->releaseCommands());
     $deploy = new DeployGatewayReleaseAction(
         $lock,
         $builder,

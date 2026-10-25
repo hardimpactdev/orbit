@@ -29,7 +29,7 @@ beforeEach(function (): void {
     $db->statement('INSERT INTO owners VALUES (3)');
     $db->statement("INSERT INTO notes VALUES (1, 3, 'recoverable note and association')");
     $this->database = $this->pipeline->fixture->database($this->pipeline->home, 'recovery_test');
-    app()->instance(GatewayReleaseDatabase::class, new class($this->database, $this->pipeline) implements GatewayReleaseDatabase
+    app()->instance(GatewayReleaseDatabase::class, new readonly class($this->database, $this->pipeline) implements GatewayReleaseDatabase
     {
         public function __construct(private GatewayReleaseDatabase $real, private GatewayReleasePipeline $pipeline) {}
 
@@ -90,7 +90,7 @@ it('refuses pending migrations and wrong staged identities before runtime or rec
     foreach ([['commit' => str_repeat('a', 40), 'record' => (string) $this->staged->id], ['commit' => $this->target, 'record' => (string) ($this->staged->id + 1)]] as $arguments) {
         expect(Artisan::call('gateway:release:finalize', $arguments))->toBe(2);
     }
-    $this->pipeline->fixture->builderAgents()->refuse('gateway.check-release-migrations', 'gateway.release_schema_pending');
+    $this->pipeline->fixture->agents->refuse('gateway.check-release-migrations', 'gateway.release_schema_pending');
     expect(Artisan::call('gateway:release:finalize', ['commit' => $this->target, 'record' => (string) $this->staged->id]))->toBe(1)
         ->and($this->pipeline->steps)->toBe([])
         ->and(hash_file('sha256', $this->staged->phases['recovery']['path']))->toBe($this->originalHash)
@@ -124,7 +124,7 @@ it('refuses missing or invalid original recovery before any consumer starts', fu
 });
 
 it('retains the hold if protected recovery changes after runtime handoff', function (): void {
-    $smoke = new class($this->pipeline->recoveryAgents) implements GatewayReleaseSmoke
+    $smoke = new readonly class($this->pipeline->recoveryAgents) implements GatewayReleaseSmoke
     {
         public function __construct(private FakeAgentCommandRunner $agents) {}
 

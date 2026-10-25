@@ -258,10 +258,7 @@ describe('gateway:release:auto', function (): void {
         expect($this->pipeline->automatic()->execute()['result'])->toBe('not_adopted');
 
         $this->pipeline->adopt();
-        $current = $this->pipeline->fixture->layout->currentReleaseId();
-        $revision = $this->pipeline->fixture->layout->releasePath((string) $current).'/REVISION';
-        chmod(dirname($revision), 0755);
-        unlink($revision);
+        $this->pipeline->fixture->incomplete((string) $this->pipeline->fixture->currentId(), time());
 
         expect($this->pipeline->automatic()->execute()['result'])->toBe('no_deployed_release')
             ->and($this->pipeline->resolutions)->toBe([])

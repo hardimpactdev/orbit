@@ -26,6 +26,7 @@ beforeEach(function (): void {
     $this->configuration = ['driver' => 'sqlite', 'database' => $this->database];
     config(['database.default' => 'release_owner', 'database.connections.release_owner' => $this->configuration]);
     $this->cache = $this->pipeline->fixture->layout->applicationPath.'/bootstrap/cache/config.php';
+    mkdir(dirname($this->cache), 0700, true);
     putenv('APP_CONFIG_CACHE='.$this->cache);
     $this->values = [
         'orbit' => ['home' => $this->pipeline->home, 'gateway_checkout' => $this->pipeline->fixture->layout->applicationPath],
@@ -48,7 +49,7 @@ afterEach(function (): void {
 it('refuses root and a native account refusal at public boundaries before locks or records', function (int $uid): void {
     $this->agents->refuse('gateway.inspect-release-owner', 'gateway.release_owner_invalid');
     app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($this->pipeline->fixture->layout, $this->commands, static fn (): int => $uid));
-    $before = $this->pipeline->fixture->layout->currentReleaseId();
+    $before = $this->pipeline->fixture->currentId();
     foreach (['gateway:release:stage', 'gateway:release:deploy', 'gateway:release:finalize', 'gateway:release:abandon', 'gateway:release:inspect-process'] as $command) {
         $arguments = ['commit' => str_repeat('a', 40), ...(in_array($command, ['gateway:release:finalize', 'gateway:release:abandon'], true) ? ['record' => '1'] : []), ...($command === 'gateway:release:inspect-process' ? ['process' => '1'] : [])];
         expect(Artisan::call($command, $arguments))->toBe(1);
@@ -58,7 +59,7 @@ it('refuses root and a native account refusal at public boundaries before locks 
     expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
     expect(is_file($this->pipeline->home.'/gateway-release-step.lock'))->toBeFalse();
     expect(GatewayRelease::query()->count())->toBe(0);
-    expect($this->pipeline->fixture->layout->currentReleaseId())->toBe($before);
+    expect($this->pipeline->fixture->currentId())->toBe($before);
     expect($this->pipeline->steps)->toBe([]);
     expect($this->pipeline->snapshots)->toBe(0);
 })->with(['root' => 0, 'different account' => 2147483647]);
@@ -78,7 +79,7 @@ it('sends release owner intent and compares the verified cache with the live con
 
 it('refuses divergent connection or cached configuration before any release work', function (string $change): void {
     $other = $this->pipeline->home.'/other.sqlite';
-    (new PDO('sqlite:'.$other))->exec('CREATE TABLE preserve_me (id INTEGER)');
+    new PDO('sqlite:'.$other)->exec('CREATE TABLE preserve_me (id INTEGER)');
     $configuration = $this->configuration;
     $values = $this->values;
     match ($change) {
@@ -97,7 +98,7 @@ it('refuses divergent connection or cached configuration before any release work
     };
     config(['database.connections.release_owner' => $configuration]);
     file_put_contents($this->cache, '<?php return '.var_export($values, true).';');
-    $before = $this->pipeline->fixture->layout->currentReleaseId();
+    $before = $this->pipeline->fixture->currentId();
     $hashes = [hash_file('sha256', $this->database), hash_file('sha256', $other)];
 
     expect(Artisan::call('gateway:release:stage', ['commit' => str_repeat('a', 40)]))->toBe(1);
@@ -105,7 +106,7 @@ it('refuses divergent connection or cached configuration before any release work
     expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
     expect($this->pipeline->snapshots)->toBe(0);
     expect($this->pipeline->steps)->toBe([]);
-    expect($this->pipeline->fixture->layout->currentReleaseId())->toBe($before);
+    expect($this->pipeline->fixture->currentId())->toBe($before);
     expect([hash_file('sha256', $this->database), hash_file('sha256', $other)])->toBe($hashes);
 })->with(['running-url', 'cached-url', 'cached-driver', 'cached-database', 'cached-default', 'cached-home', 'cached-checkout', 'read', 'write', 'options', 'retained-connection', 'retained-pdo']);
 
@@ -141,12 +142,13 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     $layout = $this->pipeline->fixture->layout;
     $values = $this->values;
     $other = $this->pipeline->home.'/other.sqlite';
-    (new PDO('sqlite:'.$other))->exec('CREATE TABLE preserve_me (id INTEGER)');
+    new PDO('sqlite:'.$other)->exec('CREATE TABLE preserve_me (id INTEGER)');
     $values['database']['connections']['release_owner']['database'] = $other;
     $target = $this->pipeline->fixture->commit('shared configuration selects another database');
     $targetCache = $layout->releaseApplicationPath(substr($target, 0, 12)).'/bootstrap/cache/config.php';
+    mkdir(dirname($targetCache), 0700, true);
     $refreshed = false;
-    $this->pipeline->fixture->builderAgents()->answer('gateway.refresh-release-configuration', function (array $input) use ($target, $values, $targetCache, &$refreshed): array {
+    $this->pipeline->fixture->agents->answer('gateway.refresh-release-configuration', function (array $input) use ($target, $values, $targetCache, &$refreshed): array {
         expect($input['release'])->toBe(substr($target, 0, 12));
         file_put_contents($targetCache, '<?php return '.var_export($values, true).';');
         $refreshed = true;
@@ -163,7 +165,7 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     {
         public function assertHeld(string $targetSha): void {}
     });
-    $before = $layout->currentReleaseId();
+    $before = $this->pipeline->fixture->currentId();
     $hash = hash_file('sha256', $other);
 
     expect(Artisan::call('gateway:release:stage', ['commit' => $target]))->toBe(1);
@@ -171,7 +173,7 @@ it('revalidates the refreshed target before snapshot or migration at the public 
     expect($refreshed)->toBeTrue();
     expect($this->pipeline->snapshots)->toBe(0);
     expect($this->pipeline->steps)->toBe([]);
-    expect($layout->currentReleaseId())->toBe($before);
+    expect($this->pipeline->fixture->currentId())->toBe($before);
     expect(hash_file('sha256', $other))->toBe($hash);
     expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse();
     expect(GatewayRelease::query()->sole()->migrations_ran)->toBeFalse();

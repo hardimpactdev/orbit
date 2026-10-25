@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\GatewayRelease;
 use Illuminate\Filesystem\Filesystem;
 use Tests\Support\GatewayReleasePipeline;
@@ -58,18 +57,10 @@ it('switches back when the release smoke command runs past its limit', function 
     $fixture = $pipeline->fixture;
     try {
         $first = substr($pipeline->adopt(), 0, 12);
-        $fixture->write('bin/gateway-smoke', "#!/usr/bin/env bash\nsleep 60 &\nwait\n");
-        chmod($fixture->origin.'/bin/gateway-smoke', 0755);
         $sha = $fixture->commit('Smoke hangs');
         $fixture->builder()->prepare($sha);
-        $smoke = new ScriptGatewayReleaseSmoke(
-            layout: $fixture->layout,
-            processes: $fixture,
-            origin: 'https://gateway.orbit',
-            webRoot: $fixture->base.'/web',
-            timeoutSeconds: 1,
-            graceSeconds: 0,
-        );
+        file_put_contents(smoke_release($fixture->base, substr($sha, 0, 12)).'/smoke-mode', 'hang');
+        $smoke = smoke_runner($fixture->layout, timeout: 1, grace: 0);
 
         $exception = release_failure(fn () => $pipeline->rollback($smoke)->execute(substr($sha, 0, 12)));
         $record = GatewayRelease::query()->firstOrFail();

@@ -95,7 +95,7 @@ describe('gateway:release:run', function (): void {
 
     it('records a refused commit on its record without marking it failed for automatic releases', function (): void {
         $this->pipeline->adopt();
-        $this->pipeline->fixture->builderAgents()->refuse('gateway.prepare-release', 'gateway.release_commit_unknown');
+        $this->pipeline->fixture->agents->refuse('gateway.prepare-release', 'gateway.release_commit_unknown');
 
         expect(release_failure(fn () => $this->pipeline->deployer()->execute('abcdef1234567'))->errorCode)->toBe('gateway.release_commit_unknown')
             ->and(GatewayRelease::query()->sole())

@@ -27,10 +27,8 @@ use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FeatureTestEnvironment;
-use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GuardsSudo;
 use Tests\Support\TestToolchain;
-use Tests\Support\WithSharedGitFixtureCleanup;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
@@ -67,23 +65,6 @@ uses(TestCase::class, LazilyRefreshDatabase::class, WithCachedConfig::class, Wit
         $this->featureEnvironment->finish();
     })
     ->in('Feature');
-
-uses(WithSharedGitFixtureCleanup::class)
-    ->beforeAll(fn () => GatewayReleaseFixture::prepare())
-    ->in('Feature/GatewayReleases');
-
-uses()
-    ->beforeAll(fn () => GatewayReleaseFixture::prepareAdopted())
-    ->in(
-        'Feature/GatewayReleases/AbandonGatewayReleaseTest.php',
-        'Feature/GatewayReleases/FinalizeGatewayReleaseTest.php',
-        'Feature/GatewayReleases/GatewayReleaseExecutionOwnerTest.php',
-        'Feature/GatewayReleases/GatewayReleaseOperationsWiringTest.php',
-        'Feature/GatewayReleases/GatewayReleaseProcessDeclarationTest.php',
-        'Feature/GatewayReleases/GatewayReleaseTickConfirmationTest.php',
-        'Feature/GatewayReleases/GatewayReleaseFixtureTest.php',
-        'Feature/GatewayReleases/SystemdGatewayReleaseDrainTest.php',
-    );
 
 // Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()

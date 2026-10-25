@@ -199,8 +199,7 @@ describe('web command orchestration', function (): void {
 describe('prepare with the web build', function (): void {
     beforeEach(function (): void {
         $this->fixture = GatewayReleaseFixture::create();
-        $this->live = $this->fixture->layout->currentPath();
-        mkdir($this->live.'/apps/gateway', 0755, true);
+        $this->fixture->inPlace();
         $this->web = new WebArtifactFixture($this->fixture->layout, $this->fixture->base.'/web');
     });
 
@@ -228,7 +227,7 @@ describe('prepare with the web build', function (): void {
         expect($exception->errorCode)->toBe('gateway.release_web_build_missing')
             ->and($exception->sha)->toBe($sha)
             ->and($this->fixture->layout->preparedCommit(substr($sha, 0, 12)))->toBeNull()
-            ->and(is_link($this->live))->toBeFalse()
+            ->and($this->fixture->agents->commands())->not->toContain('gateway.finish-release', 'gateway.switch-release')
             ->and($this->web->agents->commands())->not->toContain('gateway.install-web-build');
     });
 

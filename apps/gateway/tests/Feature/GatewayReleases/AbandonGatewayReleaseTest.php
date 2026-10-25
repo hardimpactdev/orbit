@@ -61,7 +61,7 @@ beforeEach(function (): void {
 
         public bool $fail = true;
 
-        public function __construct(private GatewayReleaseDatabase $real) {}
+        public function __construct(private readonly GatewayReleaseDatabase $real) {}
 
         public function snapshot(string $id): string
         {
@@ -150,8 +150,7 @@ it('refuses altered identities and a lost drain without changing restored data o
     } elseif ($fault === 'drain') {
         $this->drain->refuse = true;
     } elseif ($fault === 'source') {
-        unlink($this->pipeline->fixture->layout->currentPath());
-        symlink($this->pipeline->fixture->layout->linkTarget(substr($this->target, 0, 12)), $this->pipeline->fixture->layout->currentPath());
+        $this->pipeline->fixture->select(substr($this->target, 0, 12));
     } elseif ($fault === 'recovery') {
         $this->pipeline->recoveryAgents->refuse('gateway.verify-release-recovery', 'gateway.release_recovery_invalid');
     } elseif ($fault === 'automatic') {

@@ -49,8 +49,8 @@ use DateTimeImmutable;
 use Illuminate\Support\Facades\Config;
 
 /**
- * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: real layout, Git, lock, and
- * records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
+ * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: scripted agent answers, and the real
+ * lock and records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
  * `$failVerify`, `$failSnapshot`, or `$green` to steer one release.
  */
 final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDatabase, GatewayReleaseRuntime, GatewayReleaseSmoke, GatewayReleaseUnitStarter, GatewayReleaseVerifier, GatewayReleaseWebBuild, GreenCommitResolver, ReleaseAlertNotifier
@@ -115,20 +115,17 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     public function adopt(): string
     {
         if ($this->adopted) {
-            return trim($this->fixture->git($this->fixture->layout->currentPath(), 'rev-parse', 'HEAD'));
+            return (string) $this->fixture->preparedSha($this->fixture->currentId());
         }
         $sha = $this->fixture->commit('Adopted release');
-        $this->fixture->builder()->prepare($sha);
-        $current = $this->fixture->layout->currentPath();
-        exec('rm -rf '.escapeshellarg($current));
-        symlink($this->fixture->layout->linkTarget(substr($sha, 0, 12)), $current);
+        $this->fixture->select($this->fixture->builder()->prepare($sha)->id);
 
         return $sha;
     }
 
     public function lock(): GatewayReleaseLock
     {
-        return new GatewayReleaseLock($this->home.'/gateway-release.lock', $this->fixture->releaseCommands($this->fixture->builderAgents()));
+        return new GatewayReleaseLock($this->home.'/gateway-release.lock', $this->fixture->releaseCommands());
     }
 
     public function source(): GatewayReleaseSource
