@@ -6,7 +6,6 @@ use App\Actions\GatewayReleases\FinalizeGatewayReleaseAction;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
-use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Gateway\GatewayServiceCommands;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
@@ -44,4 +43,4 @@ arch('Release preparation, database steps and units use the typed agent boundary
         NativeGatewayReleaseExecutionOwner::class,
         SystemdGatewayReleaseUnitStarter::class,
     ])
-    ->not->toUse([NodeShell::class, SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);
+    ->not->toUse([SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);

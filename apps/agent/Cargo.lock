@@ -1374,6 +1374,7 @@ dependencies = [
  "libgit2-sys",
  "libz-sys",
  "orbit-agent-contract",
+ "orbit-ai-router-agent",
  "orbit-documents-agent",
  "rand 0.8.8",
  "regex",
@@ -1404,6 +1405,21 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "orbit-ai-router-agent"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "orbit-agent-contract",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
 ]
 
 [[package]]

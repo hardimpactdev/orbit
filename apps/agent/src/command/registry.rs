@@ -4,7 +4,7 @@ use super::{
     identity::{Platform, Privilege},
     Command, CommandError, Context, Outcome, COMMON_ERRORS,
 };
-use orbit_agent_contract::{Registrar, StartHook};
+use orbit_agent_contract::{Registrar, Service, StartHook};
 use serde_json::{json, Value};
 use std::{sync::OnceLock, time::Duration};
 
@@ -127,8 +127,21 @@ fn run_hook<H: StartHook>(input: Value, context: &Context) -> Outcome {
 struct Registry {
     commands: Vec<Entry>,
     hooks: Vec<HookEntry>,
+    services: Vec<ServiceEntry>,
+}
+pub struct ServiceEntry {
+    pub name: &'static str,
+    pub supported: fn(Platform) -> bool,
+    pub run: fn(&[String]) -> i32,
 }
 impl Registrar for Registry {
+    fn service<S: Service>(&mut self) {
+        self.services.push(ServiceEntry {
+            name: S::NAME,
+            supported: S::supported,
+            run: S::run,
+        });
+    }
     fn command<C: Command>(&mut self) {
         self.commands.push(entry::<C>());
     }
@@ -158,8 +171,10 @@ fn registry() -> &'static Registry {
         let mut registry = Registry {
             commands: crate::commands::all(),
             hooks: Vec::new(),
+            services: Vec::new(),
         };
         orbit_documents_agent::register(&mut registry);
+        orbit_ai_router_agent::register(&mut registry);
         registry
     })
 }
@@ -168,6 +183,27 @@ pub fn all() -> &'static [Entry] {
 }
 pub fn hooks() -> &'static [HookEntry] {
     &registry().hooks
+}
+pub fn services() -> &'static [ServiceEntry] {
+    &registry().services
+}
+
+pub fn service(arguments: &[String], platform: Platform) -> Option<i32> {
+    dispatch_service(services(), arguments, platform)
+}
+fn dispatch_service(
+    entries: &[ServiceEntry],
+    arguments: &[String],
+    platform: Platform,
+) -> Option<i32> {
+    let name = arguments.first()?;
+    let entry = entries.iter().find(|entry| entry.name == name)?;
+    Some(if (entry.supported)(platform) {
+        (entry.run)(&arguments[1..])
+    } else {
+        eprintln!("This service is not supported on this platform.");
+        1
+    })
 }
 
 pub fn find(name: &str) -> Option<&'static Entry> {
@@ -199,6 +235,52 @@ pub fn contract() -> Value {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn compiled_services_dispatch_only_on_their_declared_platform() {
+        struct Example;
+        impl Service for Example {
+            const NAME: &'static str = "example-service";
+            fn supported(platform: Platform) -> bool {
+                platform == Platform::Linux
+            }
+            fn run(arguments: &[String]) -> i32 {
+                assert_eq!(arguments, ["argument"]);
+                42
+            }
+        }
+        let mut registry = Registry {
+            commands: Vec::new(),
+            hooks: Vec::new(),
+            services: Vec::new(),
+        };
+        registry.service::<Example>();
+        let arguments = ["example-service".into(), "argument".into()];
+        assert_eq!(
+            dispatch_service(&registry.services, &arguments, Platform::Linux),
+            Some(42)
+        );
+        assert_eq!(
+            dispatch_service(&registry.services, &arguments, Platform::Macos),
+            Some(1)
+        );
+        assert_eq!(
+            dispatch_service(&registry.services, &["unknown".into()], Platform::Linux),
+            None
+        );
+        assert_eq!(
+            dispatch_service(&registry.services, &[], Platform::Linux),
+            None
+        );
+        let mut names = BTreeSet::new();
+        for service in services() {
+            assert!(names.insert(service.name));
+            assert!(service
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b == b'-'));
+        }
+    }
 
     #[test]
     fn names_are_unique_and_namespaced() {

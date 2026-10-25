@@ -19,6 +19,9 @@ const INSTALL_RESERVE: Duration = Duration::from_secs(30);
 /// The observer must stay active this long after a restart.
 const HEALTH_WINDOW: Duration = Duration::from_secs(5);
 
+#[path = "agent_services.rs"]
+mod services;
+
 /// Where the agent binary lives on this platform.
 pub fn binary_path(platform: Platform) -> PathBuf {
     match platform {
@@ -297,6 +300,20 @@ fn replace(
         });
     }
 
+    let services = if cfg!(target_os = "linux") && target == Path::new(LINUX_BINARY) {
+        services::running(
+            Path::new("/proc"),
+            LINUX_BINARY,
+            &crate::command::registry::services()
+                .iter()
+                .map(|s| s.name)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| failed("inspect agent services", error))?
+    } else {
+        Vec::new()
+    };
+
     let directory = target
         .parent()
         .ok_or_else(|| failed("target directory", "no parent"))?;
@@ -316,10 +333,11 @@ fn replace(
         return Err(failed("replace", error));
     }
 
-    if !observer.restart_and_check() {
+    if !observer.restart_and_check() || !services::restart(&services) {
         if previous_sha256.is_some() {
             let _ = std::fs::rename(&kept, target);
             observer.restart_and_check();
+            services::restart(&services);
         }
         return Err(InstallError::HealthCheckFailed {
             observer: observer.label(),

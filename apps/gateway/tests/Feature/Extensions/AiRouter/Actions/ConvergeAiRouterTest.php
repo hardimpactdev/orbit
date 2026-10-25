@@ -6,6 +6,7 @@ use App\Actions\Processes\CreateProcessAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use Illuminate\Contracts\Cache\Lock;
@@ -25,14 +26,14 @@ use Orbit\Extensions\AiRouter\Models\AiRouterProcessSource;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
-    $this->node = Node::query()->create(['name' => 'collector', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '192.0.2.8']);
+    $this->node = Node::query()->create(['name' => 'collector', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '192.0.2.8']);
     $this->connection = DatabaseConnection::query()->create(['name' => 'Cache', 'slug' => 'cache', 'driver' => 'redis', 'host' => '192.0.2.50', 'port' => 6379]);
     app(ExtensionStore::class)->set('ai-router', true);
     app(AiRouterState::class)->enable($this->node->id, 'cache', 'http://127.0.0.1:8317', 'management', 'read', 'control');
     app()->instance(ProcessRuntimeManager::class, new ProcessesApiFakeRuntimeManager);
     $environment = app(AiRouterCollectorEnvironment::class)->build($this->connection);
     $this->process = app(CreateProcessAction::class)->execute(AiRouterProcess::data($this->node, $environment))['process'];
-    AiRouterProcessSource::query()->create(['process_id' => $this->process->id, 'source_revision' => hash_file('sha256', base_path('extensions/ai-router/resources/collector.py')), 'activation_pending' => false]);
+    AiRouterProcessSource::query()->create(['process_id' => $this->process->id, 'source_revision' => app(AgentDelivery::class)->pin($this->node), 'activation_pending' => false]);
 });
 
 it('retries failed or pending Process activation even when specification and source are current', function (array $attributes): void {

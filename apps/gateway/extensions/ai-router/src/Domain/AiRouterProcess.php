@@ -16,7 +16,7 @@ final readonly class AiRouterProcess
 
     public const int PORT = 8787;
 
-    public const string EXECUTABLE = '/usr/bin/python3';
+    public const string EXECUTABLE = '/usr/local/bin/orbit-agent';
 
     /**
      * @param  array<string, string>  $environment
@@ -32,9 +32,9 @@ final readonly class AiRouterProcess
             targetId: $node->id,
             name: self::NAME,
             runtime: ProcessRuntime::Systemd,
-            command: [self::EXECUTABLE, '/var/lib/orbit/ai-router/collector.py'],
+            command: [self::EXECUTABLE, 'service', 'ai-router-collector'],
             image: null,
-            workingDirectory: '/var/lib/orbit/ai-router',
+            workingDirectory: '/',
             environment: [...$environment, 'AI_ROUTER_PORT' => (string) self::PORT],
             ports: ['127.0.0.1:'.self::PORT.':'.self::PORT.'/tcp'],
             volumes: [],

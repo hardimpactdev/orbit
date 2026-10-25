@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Domain\Fleet\NodeFootprintArtifact;
-use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Actions\ConvergeAiRouterAction;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
@@ -15,6 +15,7 @@ final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
 {
     public function __construct(
         private AiRouterState $state,
+        private AgentDelivery $delivery,
         private ConvergeAiRouterAction $converge,
     ) {}
 
@@ -30,8 +31,7 @@ final readonly class AiRouterFootprintArtifact implements NodeFootprintArtifact
 
     public function digest(Node $node): string
     {
-        return hash_file('sha256', base_path('extensions/ai-router/resources/collector.py'))
-            ?: throw new ResourceOperationException('ai_router.source_missing', 'The AI router collector script is missing from the Gateway.', 500);
+        return $this->delivery->pin($node);
     }
 
     public function apply(Node $node): bool

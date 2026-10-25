@@ -158,7 +158,8 @@ it('enables ai-router when shared Valkey sits on a database Node', function (): 
     expect($process)->not->toBeNull()
         ->and($process->runtime_config['command'])->toBe([
             AiRouterProcess::EXECUTABLE,
-            '/var/lib/orbit/ai-router/collector.py',
+            'service',
+            'ai-router-collector',
         ])
         ->and($process->runtime_config['environment']['AI_ROUTER_CACHE_HOST'])->toBe('10.44.0.8')
         ->and($process->runtime_config['environment']['AI_ROUTER_CACHE_PORT'])->toBe('6379')

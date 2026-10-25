@@ -20,7 +20,6 @@ use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use Illuminate\Support\Facades\Config;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterSourcePublisher;
 use Tests\Support\Fleet\FleetFixtures;
 
 final class RecordingCliInstaller implements NodeCliInstaller
@@ -136,13 +135,6 @@ describe('fleet integration', function (): void {
             ->and($installer->installed)->toBe([]);
     });
 
-    it('says whether the AiRouter collector script changed', function (): void {
-        $script = $this->app->make(AiRouterSourcePublisher::class)->command("print('x')\n");
-
-        expect((string) stream_get_contents($script->protectedInput?->stream() ?? fopen('php://memory', 'r')))
-            ->toContain('echo '.AiRouterSourcePublisher::Unchanged)
-            ->toContain('echo '.AiRouterSourcePublisher::Published);
-    });
 });
 
 it('reports node.cli_foreign for a Node whose CLI Orbit did not install, and marks it during role converge', function (): void {

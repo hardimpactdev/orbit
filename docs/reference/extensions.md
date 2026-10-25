@@ -64,6 +64,8 @@ The provider registers what the extension owns: its routes with `loadRoutesFrom(
 
 ## Add a plug-in point
 
+Compiled Node services use the shared Rust `Service` trait in `orbit-agent-contract`. An extension registers its service through the same composition call as its commands. Core dispatches `orbit-agent service <name>` to that contribution, with its declared platform gate; the extension owns configuration validation and the service loop. The AI router contributes `ai-router-collector`, supervised by its existing Process. Disabling the Gateway extension preserves that Process; teardown stops it. Core contains no AI router behavior. Rust composition and service-dispatch tests enforce this boundary.
+
 Use this checklist when core adds a place for extensions to contribute:
 
 - Define a small typed interface and tag each implementation with the interface name in its provider.

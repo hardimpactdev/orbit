@@ -109,10 +109,18 @@ pub trait StartHook: Command {
     fn validate(input: &Self::Input) -> Result<(), Self::Error>;
 }
 
+/// A compiled service supervised by an existing Process or fixed systemd unit.
+pub trait Service {
+    const NAME: &'static str;
+    fn supported(platform: Platform) -> bool;
+    fn run(arguments: &[String]) -> i32;
+}
+
 /// The composition boundary; extensions cannot select their own dispatcher or runner.
 pub trait Registrar {
     fn command<C: Command>(&mut self);
     fn start_hook<H: StartHook>(&mut self);
+    fn service<S: Service>(&mut self);
 }
 
 /// Declares a command's error enum: each variant has its code, its message, and the fields that become

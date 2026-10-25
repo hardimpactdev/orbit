@@ -220,7 +220,9 @@ The lock wait always leaves 30 seconds of the call's deadline for the swap and t
 
 Only a refusal from `agent.install` itself, such as `agent.replace_failed` or `agent.health_check_failed`, records the pin in the Node's `agent_failed_pin`. Until `orbit node:converge` installs a pin, every command for that Node refuses at once with `agent.install_failed`, without contacting the Node. A recorded failed pin makes that converge re-apply the agent artifact even when its footprint digest already matches; the other artifacts keep their normal digest checks.
 
-`agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. When the observer does not stay active for 5 seconds, it restores the kept binary and fails with `agent.health_check_failed`. When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
+`agent.install` replaces only the binary. It checks the candidate's digest, keeps the previous binary as `orbit-agent.previous`, renames the new one into place, and restarts the observer with its existing configuration and secret. It also restarts running compiled services from that binary in their Orbit systemd units. It leaves stopped Processes and in-flight commands alone. When the observer does not stay active for 5 seconds or a compiled service restart fails, it restores the kept binary, restarts those services on it, and fails with `agent.health_check_failed`.
+
+When the installed binary already matches, it changes nothing, so concurrent mismatches install once. It removes the staged candidate whatever the outcome. It records no recipe identity.
 
 ## How it connects
 

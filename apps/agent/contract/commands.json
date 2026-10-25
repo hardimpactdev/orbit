@@ -5387,6 +5387,20 @@
         "documents.cleanup_state_unsafe",
         "documents.cleanup_start_failed"
       ]
+    },
+    {
+      "name": "ai-router.remove-source",
+      "summary": "Remove the code-owned retired collector source directory.",
+      "mutates": true,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "ai-router.source_unsafe",
+        "ai-router.source_remove_failed"
+      ]
     }
   ]
 }
