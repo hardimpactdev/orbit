@@ -191,9 +191,11 @@ mod tests {
             );
         }
         assert!(start.elapsed() < Duration::from_secs(2));
+        // Compare the status flags the writer sets; Darwin also reports a kernel flag once a descriptor was written.
+        let status = libc::O_ACCMODE | libc::O_APPEND | libc::O_NONBLOCK;
         assert_eq!(
-            unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_GETFL) },
-            before
+            unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_GETFL) } & status,
+            before & status
         );
     }
 }
