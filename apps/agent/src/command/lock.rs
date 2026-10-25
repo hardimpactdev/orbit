@@ -344,9 +344,10 @@ mod tests {
         let directory = temporary();
         let path = path_for(&directory, "target");
         let _first = acquire(&path, Instant::now()).unwrap();
-        let deadline = Instant::now() + Duration::from_millis(130);
+        // An unclipped 100 ms pause would end about 99 ms late; the margin allows a slow scheduler's oversleep.
+        let deadline = Instant::now() + Duration::from_millis(101);
         assert!(acquire(&path, deadline).is_err());
-        assert!(Instant::now() < deadline + Duration::from_millis(30));
+        assert!(Instant::now() < deadline + Duration::from_millis(60));
     }
 
     #[test]
