@@ -698,11 +698,12 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
-      # Native tests run the fixed /usr/bin/wg and setfacl that every Linux Node has.
+      # Native tests run the fixed /usr/bin/wg and setfacl, and grant the caddy account, as every Linux Node has.
       - name: Install native test prerequisites
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl wireguard-tools
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
