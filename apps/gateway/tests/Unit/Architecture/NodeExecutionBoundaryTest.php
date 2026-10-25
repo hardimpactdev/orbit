@@ -45,9 +45,11 @@ function node_execution_dependencies(string $source): array
         Illuminate\Support\Facades\Process::class,
         'exec', 'shell_exec', 'system', 'passthru', 'popen', 'proc_open', 'pcntl_exec',
     ];
+    // The bare name Process also names the Process model, so the Symfony and Laravel classes match by namespace.
+    $tokens = array_map(static fn (string $name): string => preg_quote(basename(str_replace('\\', '/', $name)), '/'), array_diff($names, [Process::class, Illuminate\Support\Facades\Process::class]));
+    $pattern = '/\b(?:'.implode('|', $tokens).')\b|(?:Component|Facades)\\\\+(?:Process|\{)|`/i';
     $code = implode('', array_map(static fn (array|string $token): string => is_array($token) ? (in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $token[1]) : $token, token_get_all($source)));
-    $tokens = array_map(static fn (string $name): string => preg_quote(basename(str_replace('\\', '/', $name)), '/'), $names);
-    if (preg_match('/\b(?:'.implode('|', $tokens).')\b|`/i', $code) !== 1) {
+    if (preg_match($pattern, $code) !== 1) {
         return [];
     }
     $forbidden = array_fill_keys(array_map(strtolower(...), $names), true);
@@ -80,6 +82,10 @@ it('recognizes execution dependencies through aliases strings functions and shel
     'group import' => 'use App\\Infrastructure\\Ssh\\{RemoteCommand}; new RemoteCommand([]);',
     'fully qualified' => 'new \\Symfony\\Component\\Process\\Process([]);',
     'facade' => 'use Illuminate\\Support\\Facades\\Process; Process::run([]);',
+    'grouped facade' => 'use Illuminate\\Support\\Facades\\{Log, Process}; Process::run([]);',
+    'grouped component' => 'use Symfony\\Component\\{Process\\Process}; new Process([]);',
+    'namespace import' => 'use Symfony\\Component\\Process; new Process\\Process([]);',
+    'class string' => '$class = "Symfony\\\\Component\\\\Process\\\\Process"; new $class([]);',
     'container string' => 'app("App\\\\Infrastructure\\\\Ssh\\\\SshExecutor");',
     'function' => 'proc_open("command", [], $pipes);',
     'qualified function' => '\\shell_exec("command");',
