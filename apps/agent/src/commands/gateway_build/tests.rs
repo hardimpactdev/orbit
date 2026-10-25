@@ -1082,3 +1082,23 @@ fn delivery_preserves_invalid_existing_files_and_refuses_linked_manifests() {
         assert!(!f.path().join("REVISION").exists());
     }
 }
+
+#[test]
+fn removal_clears_an_incomplete_release_with_read_only_directories_from_a_stopped_prepare() {
+    let f = Fixture::new();
+    let mut host = Fake::default();
+    let path = f.path();
+    let vendor = path.join("apps/gateway/vendor");
+    fs::create_dir_all(&vendor).unwrap();
+    fs::write(vendor.join("autoload.php"), "<?php").unwrap();
+    for directory in [&vendor, &path.join("apps/gateway"), &path] {
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o555)).unwrap();
+    }
+    let layout = Layout::new(&f.checkout).unwrap();
+    assert_eq!(prepared(&layout, &f.sha[..12]).unwrap(), None);
+    assert!(remove(&f.release(), &mut host, deadline()).unwrap().changed);
+    assert!(!path.exists());
+    assert!(!remove(&f.release(), &mut host, deadline()).unwrap().changed);
+    assert!(f.work.0.join("releases").is_dir());
+    assert!(f.repository.is_dir());
+}

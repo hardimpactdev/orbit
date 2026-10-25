@@ -499,3 +499,55 @@ fn inventory_observes_serving_application_changes_and_incomplete_current() {
     input.running_application = Some(PathBuf::from("relative"));
     assert!(matches!(inventory(&input), Err(Error::Invalid {})));
 }
+
+#[test]
+fn inventory_refuses_an_unreadable_releases_directory_without_changing_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let releases = f.layout.base.join("releases");
+    fs::set_permissions(&releases, fs::Permissions::from_mode(0o300)).unwrap();
+    let input = InventoryInput {
+        running_application: None,
+        checkout: f.checkout.clone(),
+    };
+    let observed: Vec<_> = (0..2).map(|_| inventory(&input)).collect();
+    let mode = fs::metadata(&releases).unwrap().mode() & 0o7777;
+    fs::set_permissions(&releases, fs::Permissions::from_mode(0o755)).unwrap();
+    for result in observed {
+        assert!(matches!(result, Err(Error::Conflict {})));
+    }
+    assert_eq!(mode, 0o300);
+    assert_eq!(
+        f.current(),
+        PathBuf::from(format!("releases/{}", &f.first[..12]))
+    );
+    assert!(inventory(&input)
+        .unwrap()
+        .commits
+        .contains_key(&f.first[..12]));
+}
+
+#[test]
+fn inventory_names_digit_only_releases_with_json_strings() {
+    let f = Fixture::new();
+    let releases = f.layout.base.join("releases");
+    let prepared = "983536432205";
+    let sha = format!("{prepared}{}", "a".repeat(28));
+    fs::create_dir(releases.join(prepared)).unwrap();
+    fs::write(releases.join(prepared).join("REVISION"), format!("{sha}\n")).unwrap();
+    fs::create_dir(releases.join("000000000777")).unwrap();
+    let observed = serde_json::to_value(
+        inventory(&InventoryInput {
+            running_application: None,
+            checkout: f.checkout.clone(),
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(observed["commits"][prepared], serde_json::json!(sha));
+    assert!(observed["incomplete"]["000000000777"].is_i64());
+    assert!(observed["retained"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!(prepared)));
+}
