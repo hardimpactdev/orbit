@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\TaskVms\IncusHost;
@@ -32,10 +33,31 @@ it('sends builder preparation, publication, and alias intent through the selecte
     $image->promote($host, $node, $pin);
     expect($image->instances($host, $node))->toBe(['builder' => $pin]);
 
-    expect($guests->installs[0]->name)->toBe('builder')->and($guests->calls[0]['command'])->toBe('image.prepare-incus');
+    expect($guests->installs[0]->name)->toBe('builder');
+    expect(array_column($guests->calls, 'command'))->toBe(['image.owner', 'image.prepare-incus']);
     expect($agents->calls[0])->toBe(['node' => 'host', 'command' => 'incus.image', 'input' => ['project' => $host->project, 'operation' => ['kind' => 'prepare_metadata', 'name' => 'builder']]]);
     expect($agents->calls[1]['input']['operation'])->toEqual(['kind' => 'publish', 'name' => 'builder', 'alias' => 'owned-build', 'properties' => (object) ['orbit.profile' => 'base']]);
     expect($agents->calls[2]['input']['operation'])->toBe(['kind' => 'promote', 'alias' => $host->imageAlias, 'fingerprint' => $pin]);
+});
+
+it('refuses a builder with the wrong account identity before preparation or host metadata changes', function (): void {
+    $node = new Node(['id' => 123, 'name' => 'host', 'architecture' => 'x86_64']);
+    $host = TaskVmSettingsBuilder::host(123);
+    $agents = new FakeAgentCommandRunner;
+    $guests = new FakeGuestAgentCommandRunner;
+    $guests->answer = static function (): array {
+        throw new AgentCommandRefused(
+            'image.owner', 'task_vm.image_check_failed', 'The account has the wrong IDs.', ['stage' => 'owner', 'reason' => 'UID and GID must both be 1000.'],
+        );
+    };
+    app()->instance(AgentCommandRunner::class, $agents);
+    app()->instance(GuestAgentCommandRunner::class, $guests);
+    $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'builder');
+
+    expect(fn () => app(IncusTaskVmImageBuilder::class)->singleBoot($host, $node, $shell))
+        ->toThrow(TaskVmException::class, 'UID and GID must both be 1000.');
+    expect(array_column($guests->calls, 'command'))->toBe(['image.owner']);
+    expect($agents->calls)->toBe([]);
 });
 
 it('requires the typed image result to confirm publication', function (array $result): void {

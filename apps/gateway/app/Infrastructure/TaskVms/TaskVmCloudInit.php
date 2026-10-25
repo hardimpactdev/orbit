@@ -67,11 +67,10 @@ final readonly class TaskVmCloudInit
     /** The user-data of the base image builder, which boots from the stock image. */
     public function renderImageBuilder(string $gatewayPublicKey): string
     {
-        // bootcmd runs before cloud-init creates users, so the group exists with its pinned gid. A taken uid or gid
-        // makes cloud-init fail, and with it the build.
+        // The stock image creates the user's primary group. image.owner refuses a UID or GID mismatch
+        // before either image builder prepares the guest or runs recipe phases.
         return self::document([
-            'bootcmd' => [['sh', '-c', 'getent group '.self::User.' >/dev/null || groupadd --gid '.self::Uid.' '.self::User]],
-            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => self::User, 'no_user_group' => true]],
+            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'no_user_group' => false]],
         ]);
     }
 

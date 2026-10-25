@@ -132,6 +132,8 @@ Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate U
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
+Builder cloud-init declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. Before preparing either an Incus or UpCloud builder, the Gateway installs the pinned agent and calls `image.owner`. That command requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. This check runs before recipe packages or workspace volumes can use the account. Image smoke checks require the same IDs again.
+
 ### PHP build
 
 The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, the VPN private DNS listener, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.

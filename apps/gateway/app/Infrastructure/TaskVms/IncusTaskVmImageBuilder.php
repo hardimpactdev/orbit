@@ -22,7 +22,7 @@ final readonly class IncusTaskVmImageBuilder
     public function singleBoot(TaskVmHost $host, Node $node, IncusGuestShell $shell): void
     {
         $guest = $shell->agentTarget();
-        $this->agents->installGuest($guest);
+        $this->recipe->owner($guest);
         try {
             $result = $this->agents->runGuest($guest, 'image.prepare-incus');
         } catch (AgentCommandRefused $error) {
