@@ -185,7 +185,17 @@ A direct `operation:cancel` stops a waiting local check as `tasks:check:cancel` 
 
 For hosted handoff CI, cancel stops a queued push under the existing publish stop rules; a started push must be reconciled before ownership ends. Once only hosted CI waits, cancel ends observation, not GitHub workflows. It does not erase the already pushed branch or check evidence. A cancelled observation cannot supply an eligible candidate even if its local `TaskCheck` remains passed.
 
-#### Analyze an external group's repository
+#### Run a tracked repository script
+
+`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The operation holds the group target and the existing workspace lease. It does not create a check, agent turn, commit, or dependency record.
+
+`script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. Orbit pins the script digest, HEAD, whole-workspace tree, and literal argument list before dispatch and verifies them again in the owned process. Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
+
+Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
+
+The detached runner uses the existing run receipt and cgroup supervision. Lost start replies reconcile the reserved run; they never blindly dispatch it again. A reservation proven not started is tombstoned and fails as `tasks.script_not_started`. An unavailable tracked executable fails as `tasks.script_unavailable`. Unknown process or lease ownership keeps the operation waiting and the workspace fenced. Cancellation must prove the process and descendants terminal before releasing ownership. A script has a fixed one-hour limit. An interrupted run reports failure after terminal proof; it is not an automatic retry.
+
+## Analyze an external group's repository
 
 The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#fixed-repository-analysis). Repository analysis and turn evidence do not establish live interruption or docs-workflow proof. They do not open external review-and-merge or topology admission.
 

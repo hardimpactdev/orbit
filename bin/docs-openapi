@@ -1928,7 +1928,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         op['parameters'].append({
-            'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] == 'tasks:analyze',
+            'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script'),
             'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},
             'description': 'A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409).',
         })
@@ -2017,7 +2017,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = websocket_envelope(data, 'Saved operation status, including superseded results.')
             if route['name'] != 'websocket:operation:show':
                 responses['202'] = websocket_envelope(data, 'Saved; application is pending. Follow the operation status URL.')
-                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] == 'tasks:analyze', 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
+                op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] in ('tasks:analyze', 'tasks:script'), 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Reuse the same key when retrying this change.'})
             if route['name'] == 'websocket:app:create':
                 responses['201'] = websocket_envelope(data, 'Created and confirmed by every required process.')
         elif starts_operation:

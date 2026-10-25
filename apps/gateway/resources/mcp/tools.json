@@ -9915,6 +9915,64 @@
       }
     },
     {
+      "name": "tasks-script",
+      "extension": "tasks",
+      "title": "tasks:script",
+      "description": "tasks:script",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/script",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "header_inputs": [
+        "Idempotency-Key"
+      ],
+      "starts_operation": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "Idempotency-Key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409)."
+          },
+          "subtask": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "script": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*$(?![\\s\\S])",
+            "maxLength": 512
+          },
+          "args": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "Idempotency-Key",
+          "subtask",
+          "script",
+          "args"
+        ]
+      }
+    },
+    {
       "name": "tasks-show",
       "extension": "tasks",
       "title": "Show a Task group",

@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskScriptRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -30,7 +31,7 @@ use Throwable;
 /**
  * Installs `.git/orbit/check` and drives it over SSH. Each call returns at once; the check itself runs detached.
  */
-final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCheckRunner
+final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCheckRunner, TaskScriptRunner
 {
     /** Eleven 100 KiB records fit below 8 MiB even with sixfold JSON escaping; PHP redacts the raw windows before storing tails. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
@@ -106,6 +107,35 @@ final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCh
         }
 
         return new TaskCheckProcess($pid, $started, $head, $tree, $runId);
+    }
+
+    /** @return array<string, mixed> */
+    public function inspectScript(Instance $instance, string $script): array
+    {
+        return $this->run($instance, [$script], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode(TaskUnitProgram::read('tasks/check'))]).
+            'check_python "$dir/check" script-inspect "$checkout" "$2"');
+    }
+
+    /** @param array<string, mixed> $input */
+    public function startScript(Instance $instance, array $input, string $runId): TaskCheckProcess
+    {
+        $script = TaskUnitProgram::read('tasks/check');
+        $data = $this->run($instance, [$runId, json_encode($input, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)],
+            TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" script-start "$checkout" "$2" "$3"', withVpHome: true, allocateTemporary: true);
+        if (! is_int($data['pid'] ?? null) || $data['pid'] < 1 || ! is_string($data['started'] ?? null)
+            || ! is_string($data['head'] ?? null) || ! is_string($data['tree'] ?? null) || ($data['run_id'] ?? null) !== $runId) {
+            throw new TaskCheckException('The tracked script start is not authoritatively known.');
+        }
+
+        return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree'], $runId);
+    }
+
+    /** @return array<string, mixed> */
+    public function readScript(Instance $instance, TaskCheckProcess $process): array
+    {
+        return $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''],
+            'check_python "$dir/check" status "$2" "$3" "$4" "$checkout"');
     }
 
     public function initialAnalysisBase(Instance $instance): ?string

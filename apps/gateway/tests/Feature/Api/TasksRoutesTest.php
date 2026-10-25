@@ -118,6 +118,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:publish' => ['api/v1/task-groups/{group}/publish', ['POST']],
         'tasks:analyze' => ['api/v1/task-groups/{group}/analyze', ['POST']],
+        'tasks:script' => ['api/v1/task-groups/{group}/script', ['POST']],
         'tasks:check' => ['api/v1/task-groups/{group}/check', ['POST']],
         'tasks:turn' => ['api/v1/task-groups/{group}/turn', ['POST']],
         'tasks:provision' => ['api/v1/task-groups/{group}/provision', ['POST']],

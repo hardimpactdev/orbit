@@ -72,6 +72,7 @@ Use the kind and target type to start or find the work of a command.
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
+| `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `tasks:analyze` | `tasks.analyze` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
@@ -333,3 +334,7 @@ The list request accepts any well-formed `kind` and `target_type`. A new kind th
 ### Names that map onto MCP Tasks
 
 MCP has an experimental Tasks primitive for long tool calls. An operation already has its parts: the ID, the status, the poll interval, and the get, list, and cancel requests. When `laravel/mcp` supports Tasks, `instance-deploy` and `instance-rollback` can return a task without a new record.
+
+### Tracked task scripts
+
+[Tasks scripts](/reference/tasks#run-a-tracked-repository-script) use `workspace_ready` and `script` steps. The key is required. Replaying the same key precedes admission checks and returns the original receipt and bounded result, including after workspace removal. The existing target hold, lease, delayed reads, cancellation, and uncertain-ownership fences apply. Script completion grants no factory approval, check eligibility, or next-step scheduling.

@@ -19,7 +19,7 @@ check snapshot CHECKOUT         print HEAD, its parent, its tree, and the workin
 check analysis-base CHECKOUT START
                                 read the merge base of the full starting commit and local origin/main, or an empty base
 
-The detached `run` process removes its allocated TMPDIR when it ends, including on INT, TERM, HUP, or cancel.
+Detached check and script processes remove their allocated TMPDIR when they end, including on INT, TERM, HUP, or cancel.
 It only removes a non-empty directory it owns that sits directly under the host temp root and matches
 `orbit-check-<euid>-*`. A leftover after SIGKILL is removed on a later cancel, not on status polls. A cleanup
 failure does not change the check's exit status. Status and snapshot keep working until the check finishes
@@ -223,7 +223,7 @@ def recover_start(run_id):
     lock.close()
 
 
-def start(checkout, setup=None, deliverables=None, command=None, run_id=None, analysis=None):
+def start(checkout, setup=None, deliverables=None, command=None, run_id=None, analysis=None, script=None):
     lock, record = None, None
     if run_id:
         lock, record, existing = start_record(run_id)
@@ -261,7 +261,9 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None, an
             if name in os.environ:
                 arguments.append('--setenv=' + name + '=' + os.environ[name])
         # FD3 belongs only to ordinary checks. Analysis receives its validated request, never auth.
-        if analysis is not None:
+        if script is not None:
+            auth = script.encode('utf-8')
+        elif analysis is not None:
             auth = analysis.encode('utf-8')
         else:
             try:
@@ -276,7 +278,7 @@ def start(checkout, setup=None, deliverables=None, command=None, run_id=None, an
                               '--property=StandardOutput=null', '--property=StandardError=null'])
             service = subprocess.run(arguments + ['--', sys.executable, os.path.abspath(__file__),
                                      'run-owned', run_id, checkout, head, tree, setup or '-', deliverables or '-', command,
-                                     'analysis' if analysis is not None else 'check'],
+                                     'script' if script is not None else ('analysis' if analysis is not None else 'check')],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             lock.close()
             if service.returncode != 0:
@@ -341,6 +343,9 @@ def run_owned(run_id, checkout, head, tree, setup, deliverables, command, profil
     write_start_record(record, {'run_id': run_id, 'state': 'started', 'pid': os.getpid(),
                                'started': process_started(os.getpid()), 'head': head, 'tree': tree, 'boot': boot})
     lock.close()
+    if profile == 'script':
+        run_script(checkout, head, tree, credentials)
+        return
     if profile == 'analysis':
         run_analysis(run_id, checkout, head, tree, credentials)
         return
@@ -397,6 +402,95 @@ def analysis_inspect(checkout, base):
                           'entrypoint_sha256': hashlib.sha256(content).hexdigest()}))
     except (OSError, ValueError, subprocess.SubprocessError):
         print(json.dumps({'unavailable': True}))
+
+
+def script_identity(checkout, relative):
+    import hashlib
+    if (not isinstance(relative, str) or len(relative) > 512
+            or not re.fullmatch(r'[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*', relative)
+            or any(part in ('.', '..') for part in relative.split('/'))):
+        raise ValueError('Invalid repository script path')
+    entrypoint = os.path.join(checkout, relative)
+    details = os.lstat(entrypoint)
+    if (not stat.S_ISREG(details.st_mode) or not details.st_mode & 0o111
+            or os.path.realpath(entrypoint) != os.path.abspath(entrypoint)):
+        raise ValueError('The tracked script must be a regular executable without symlinks')
+    tracked = subprocess.check_output(git_arguments(checkout, 'show', 'HEAD:' + relative), stderr=subprocess.DEVNULL)
+    with open(entrypoint, 'rb') as source:
+        content = source.read()
+    if content != tracked or git(checkout, 'ls-tree', 'HEAD', '--', relative).split()[0] != '100755':
+        raise ValueError('The executable differs from tracked HEAD')
+    return {'head': git(checkout, 'rev-parse', 'HEAD'), 'tree': working_tree(checkout),
+            'branch': git(checkout, 'symbolic-ref', '--short', 'HEAD'),
+            'entrypoint_sha256': hashlib.sha256(content).hexdigest()}
+
+
+def script_inspect(checkout, relative):
+    try:
+        print(json.dumps(script_identity(checkout, relative)))
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        print(json.dumps({'unavailable': True}))
+
+
+def run_script(checkout, head, tree, request):
+    """One tracked executable, literal argv, using existing owned process supervision."""
+    global CHILD_PROCESS
+    signal.signal(signal.SIGTERM, cancelled)
+    signal.signal(signal.SIGINT, cancelled)
+    signal.signal(signal.SIGHUP, cancelled)
+    record_allocated_tmpdir()
+    atexit.register(_release_allocated_tmpdir)
+    started = time.monotonic()
+    exit_code = 127
+    total = 0
+    window = bytearray()
+    try:
+        payload = json.loads(request)
+        identity = script_identity(checkout, payload['script'])
+        if any(identity[name] != payload[name] for name in ('head', 'tree', 'entrypoint_sha256', 'branch')):
+            raise ValueError('Script identity changed before execution')
+        args = payload['args']
+        if (not isinstance(args, list) or len(args) > 32
+                or any(not isinstance(arg, str) or len(arg) > 4096 or '\0' in arg for arg in args)):
+            raise ValueError('Invalid literal script arguments')
+        environment = {name: os.environ[name] for name in (
+            'HOME', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR', 'VP_HOME', 'COMPOSER_CACHE_DIR') if name in os.environ}
+        environment.update({'ORBIT_CHECK_PROCESSES': '1', 'COMPOSER_NO_INTERACTION': '1'})
+        process = subprocess.Popen([os.path.join(checkout, payload['script']), *args], cwd=checkout,
+            env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            start_new_session=True)
+        CHILD_PROCESS = process
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while selector.get_map() or process.poll() is None:
+                if time.monotonic() - started > 3600:
+                    stop_child_process()
+                    raise TimeoutError('Repository script timed out')
+                for key, _ in selector.select(0.1):
+                    chunk = os.read(key.fd, 8192)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                    else:
+                        total += len(chunk)
+                        window.extend(chunk)
+                        if len(window) > OUTPUT_WINDOW_BYTES:
+                            del window[:-OUTPUT_WINDOW_BYTES]
+        exit_code = process.wait()
+        process.stdout.close()
+        CHILD_PROCESS = None
+    except Exception:
+        window.extend(b'\nThe tracked repository script did not complete.\n')
+        total += 48
+    finally:
+        stop_child_process()
+        with open(LOG, 'wb') as log:
+            log.write(window[-OUTPUT_WINDOW_BYTES:])
+        after_head = git(checkout, 'rev-parse', 'HEAD')
+        after_tree = working_tree(checkout)
+        result = check_result(head, tree, after_head, after_tree, changed_paths(checkout, tree, after_tree),
+                              exit_code, None, None, None)
+        result.update({'checkout': checkout, 'script': True, 'output_bytes': total})
+        write_check_result(result)
 
 
 def run_analysis(run_id, checkout, head, tree, request):
@@ -1115,6 +1209,10 @@ def main(arguments):
         start(*arguments[1:])
     elif command == 'recover-start' and len(arguments) == 2:
         recover_start(arguments[1])
+    elif command == 'script-start' and len(arguments) == 4:
+        start(arguments[1], run_id=arguments[2], script=arguments[3])
+    elif command == 'script-inspect' and len(arguments) == 3:
+        script_inspect(*arguments[1:])
     elif command == 'analysis-start' and len(arguments) == 4:
         start(arguments[1], run_id=arguments[2], analysis=arguments[3])
     elif command == 'analysis-inspect' and len(arguments) == 3:
