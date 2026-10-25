@@ -13,6 +13,7 @@ use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmTopologyEvidenceReader;
 
 arch('Recipe, Docker migration and Pi runtime use the typed agent boundary')
     ->expect([ConvergeNodeRecipeAction::class, MigrateDockerAction::class, NodeRecipeProgram::class, TaskVmRuntime::class])
@@ -29,3 +30,7 @@ arch('Node admission uses the typed agent boundary')
 arch('Fleet self-update uses the typed agent boundary')
     ->expect(FleetNodeConverger::class)
     ->not->toUse([SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class]);
+
+arch('Task VM topology evidence uses the typed agent boundary')
+    ->expect(TaskVmTopologyEvidenceReader::class)
+    ->not->toUse([SshExecutor::class, ProcessRunner::class, RemoteProgramRunner::class, DevelopmentSshExecutor::class]);

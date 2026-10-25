@@ -5,12 +5,14 @@ use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
+    net::{IpAddr, SocketAddr},
     process::{Command as Process, Stdio},
     time::Duration,
 };
 
 command_errors! {
     pub enum CertificateError {
+        Input {} => "routes.certificate_input_invalid", "The Route certificate check needs an IP address, port, and domain.";
         Invalid { stderr: String } => "routes.certificate_invalid", "The workload does not serve a trusted certificate for the domain.";
     }
 }
@@ -18,7 +20,7 @@ command_errors! {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CertificateInput {
-    pub address: String,
+    pub address: IpAddr,
     pub port: u16,
     pub domain: String,
 }
@@ -27,27 +29,12 @@ pub struct CertificateInput {
 pub struct Verified {}
 
 pub fn verify(input: &CertificateInput) -> Result<Verified, CertificateError> {
-    let target = if input.address.contains(':') {
-        format!("[{}]:{}", input.address, input.port)
-    } else {
-        format!("{}:{}", input.address, input.port)
-    };
-    let output = Process::new("timeout")
-        .args([
-            "10",
-            "openssl",
-            "s_client",
-            "-connect",
-            &target,
-            "-servername",
-            &input.domain,
-            "-verify_return_error",
-        ])
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| CertificateError::Invalid {
-            stderr: error.to_string(),
-        })?;
+    let output =
+        certificate_process(input)?
+            .output()
+            .map_err(|error| CertificateError::Invalid {
+                stderr: error.to_string(),
+            })?;
     if output.status.success() {
         return Ok(Verified {});
     }
@@ -62,6 +49,26 @@ pub fn verify(input: &CertificateInput) -> Result<Verified, CertificateError> {
         .rev()
         .collect();
     Err(CertificateError::Invalid { stderr: tail })
+}
+
+fn certificate_process(input: &CertificateInput) -> Result<Process, CertificateError> {
+    if input.port == 0 || !super::doctor_route::valid_domain(&input.domain) {
+        return Err(CertificateError::Input {});
+    }
+    let mut process = Process::new("/usr/bin/timeout");
+    process
+        .args([
+            "10",
+            "/usr/bin/openssl",
+            "s_client",
+            "-connect",
+            &SocketAddr::new(input.address, input.port).to_string(),
+            "-servername",
+            &input.domain,
+            "-verify_return_error",
+        ])
+        .stdin(Stdio::null());
+    Ok(process)
 }
 
 pub struct VerifyCertificate;
@@ -85,3 +92,7 @@ impl Command for VerifyCertificate {
         verify(&input)
     }
 }
+
+#[cfg(test)]
+#[path = "tls_check_tests.rs"]
+mod tests;

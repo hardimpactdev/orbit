@@ -11,11 +11,11 @@ use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -26,7 +26,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
     ) {}
 
     public function artifact(Route $route): IngressSite
@@ -59,8 +59,11 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
                 throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_firewall_mismatch', 'The Process Node firewall must allow the selected Ingress source to the published listener. Add a managed firewall rule and retry.');
             }
             try {
-                $this->ssh->execute($ingress, new RemoteCommand(['curl', '--head', '--noproxy', '*', '--silent', '--show-error', '--connect-timeout', '10', '--max-time', '10', '--output', '/dev/null', '--header', 'Host: '.$route->domain, $upstream->url()]),
-                    step: 'public-edge-verified', errorCode: 'route.upstream_unreachable', commandTimeout: 15);
+                AgentStep::run($this->agents, $ingress, 'routes.verify-http', [
+                    'address' => $upstream->host,
+                    'port' => $upstream->port,
+                    'domain' => $route->domain,
+                ], 'public-edge-verified', 'route.upstream_unreachable', 'Public Route', 15);
             } catch (RuntimeConvergenceException $exception) {
                 throw new RuntimeConvergenceException('public-edge-verified', 'route.upstream_unreachable', 'The Ingress cannot reach the selected Process listener. Check its listener and firewall before retrying.', previous: $exception);
             }
@@ -156,25 +159,10 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     private function verifyHop(Node $from, string $address, string $domain, string $step): void
     {
-        $this->ssh->execute(
-            $from,
-            new RemoteCommand(
-                [
-                    'timeout',
-                    '10',
-                    'openssl',
-                    's_client',
-                    '-connect',
-                    "{$address}:443",
-                    '-servername',
-                    $domain,
-                    '-verify_return_error',
-                ],
-                input: '',
-            ),
-            step: $step,
-            errorCode: 'route.public_edge_unverified',
-            commandTimeout: 15,
-        );
+        AgentStep::run($this->agents, $from, 'routes.verify-certificate', [
+            'address' => $address,
+            'port' => 443,
+            'domain' => $domain,
+        ], $step, 'route.public_edge_unverified', 'Public Route', 15);
     }
 }

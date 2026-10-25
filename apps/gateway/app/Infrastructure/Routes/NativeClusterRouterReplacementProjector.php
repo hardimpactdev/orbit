@@ -9,12 +9,12 @@ use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -27,7 +27,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevRouteFirewallManager $firewall,
         private DnsmasqPrivateDnsManager $dns,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
     ) {}
 
     /**
@@ -189,27 +189,12 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             );
         }
 
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'from',
-                $routerAddress,
-                'to',
-                $workloadAddress,
-                'port',
-                '443',
-                'comment',
-                "orbit:route-{$route->id}-lan",
-            ]),
-            step: 'route-firewall',
-            errorCode: 'app-dev.route_firewall_failed',
-        );
+        AgentStep::run($this->agents, $instance->node, 'firewall.route-lan', [
+            'operation' => 'converge',
+            'route_id' => $route->id,
+            'router' => $routerAddress,
+            'workload' => $workloadAddress,
+        ], 'route-firewall', 'app-dev.route_firewall_failed', 'Route');
     }
 
     private function verifyLeaf(Instance $instance, Route $route, Node $router): void
@@ -227,25 +212,10 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             );
         }
 
-        $this->ssh->execute(
-            $router,
-            new RemoteCommand(
-                [
-                    'timeout',
-                    '10',
-                    'openssl',
-                    's_client',
-                    '-connect',
-                    "{$address}:443",
-                    '-servername',
-                    $route->domain,
-                    '-verify_return_error',
-                ],
-                input: '',
-            ),
-            step: 'workload-certificate',
-            errorCode: 'app-dev.workload_certificate_invalid',
-            commandTimeout: 15,
-        );
+        AgentStep::run($this->agents, $router, 'routes.verify-certificate', [
+            'address' => $address,
+            'port' => 443,
+            'domain' => $route->domain,
+        ], 'workload-certificate', 'app-dev.workload_certificate_invalid', 'Route', 15);
     }
 }

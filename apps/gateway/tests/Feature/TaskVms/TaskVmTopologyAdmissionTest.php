@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
@@ -11,6 +12,7 @@ use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmTopologyState;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -24,6 +26,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeAgentCommandRunner;
 
 /** @param list<CommandResult> $results */
 function topology_admission_ssh(array $results): AppDevFakeSshExecutor
@@ -164,20 +167,24 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
 });
 
-it('reads the newest MiB of the JSON evidence and counts its records since the handoff', function (): void {
+it('counts the agent evidence records since the handoff', function (): void {
     $line = static fn (int $minutes, string $label, string $node, int $exit): string => json_encode([
         'v' => 1, 'start' => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z'), 'end' => CarbonImmutable::now()->utc()->format('Y-m-d\\TH:i:s.v\\Z'),
         'duration_ms' => 10, 'label' => $label, 'node' => $node, 'exit' => $exit, 'argv' => ['orbit', 'node:list'],
     ], JSON_THROW_ON_ERROR)."\n";
-    $ssh = topology_admission_ssh([topology_admission_result(
-        ".e2e/evidence.jsonl\n".$line(60, 'before handoff', 'app-dev', 0).$line(10, 'ingress check', 'app-prod', 1).$line(5, 'node list', 'app-dev', 0),
+    $agents = new FakeAgentCommandRunner()->answer('task-vms.read-topology-evidence', ['content_base64' => base64_encode(
+        $line(60, 'before handoff', 'app-dev', 0).$line(10, 'ingress check', 'app-prod', 1).$line(5, 'node list', 'app-dev', 0),
     )]);
+    app()->instance(AgentCommandRunner::class, $agents);
 
     $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
-        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace', '.e2e/evidence.jsonl'])
-        ->and($ssh->commands[0]->arguments[2])->toContain('tail -c 1048576');
+        ->and($agents->calls)->toBe([[
+            'node' => $this->vm->node->name,
+            'command' => 'task-vms.read-topology-evidence',
+            'input' => ['checkout' => '/home/orbit/apps/orbit/workspace'],
+        ]]);
 });
 
 it('keeps a run whose unit started although the start call failed, and fails one without a unit', function (): void {
@@ -205,9 +212,16 @@ it('prepares the topology again when the VM restarted since it was ready', funct
 });
 
 it('counts no topology evidence without the JSON record file', function (): void {
-    topology_admission_ssh([topology_admission_result('')]);
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('task-vms.read-topology-evidence', ['content_base64' => null]));
 
     $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-dev', 'app-prod']);
+});
+
+it('refuses unreadable topology evidence instead of accepting a review without it', function (): void {
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->refuse('task-vms.read-topology-evidence', 'task_vm.evidence_unreadable'));
+
+    expect(fn () => app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30)))
+        ->toThrow(TaskCheckException::class, 'Orbit could not read the topology evidence log');
 });

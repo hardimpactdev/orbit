@@ -1482,7 +1482,7 @@ The implementer and the reviewer use the topology with `bin/e2e-topology`, as th
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. Orbit reads the newest MiB of `.e2e/evidence.jsonl`, skipping partial or malformed lines. A record counts when:
+The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vms.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
 
 - its command exited 0;
 - it started after the implementer's last handoff and before Orbit reads the evidence;

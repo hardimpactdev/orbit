@@ -29,6 +29,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -453,7 +454,17 @@ function certificate_order_bind_projectors(
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('doctor.resolve-route-dns', ['matches' => true]));
+    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
+        ->answer('doctor.resolve-route-dns', ['matches' => true])
+        ->answer('routes.verify-certificate', [])
+        ->answer('routes.verify-http', static function (array $input, Node $node) use ($nodes): array {
+            $nodes->forwarding[] = [$node->wireguard_ip, $input['address'], (string) $input['port']];
+            if ($nodes->failHttp) {
+                throw new AgentCommandRefused('routes.verify-http', 'routes.http_unreachable', 'Unreachable.');
+            }
+
+            return [];
+        }));
     $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
     $liveFirewall = new FakeAgentCommandRunner()->answer('firewall.inspect', static function (array $input, Node $node) use ($nodes): array {
         $host = $node->wireguard_ip;
@@ -637,14 +648,7 @@ final class CertificateOrderNodes implements SshExecutor
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
-        if (($command->arguments[0] ?? null) === 'curl' && in_array('--noproxy', $command->arguments, true)) {
-            $upstream = parse_url(array_last($command->arguments));
-            expect($command->arguments)->toContain('--head', 'Host: sync.example.com')->not->toContain('--fail', '--location');
-            $this->forwarding[] = [$host, $upstream['host'], (string) $upstream['port']];
-            if ($this->failHttp) {
-                return new CommandResult(7, '', 'curl: Failed to connect', 1, false);
-            }
-        }
+
         $input = is_string($command->input) ? $command->input : '';
 
         if (in_array($host, $this->down, true)) {

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Instances\InstanceState;
@@ -12,6 +13,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
@@ -110,6 +112,26 @@ describe('an Ingress that runs the workload while the Router is on another Node'
 
         expect($ingress)->toContain("https://{$this->route->domain} {")
             ->not->toContain('tls force_automate');
+    });
+
+    it('verifies both selected hops through the agent and maps a refused hop', function (): void {
+        $agents = new FakeAgentCommandRunner()->answer('routes.verify-certificate', []);
+        app()->instance(AgentCommandRunner::class, $agents);
+        $projector = app(NativePublicRouteEdgeProjector::class);
+
+        $projector->verifyPublicEdge($this->route);
+
+        expect($agents->calls)->toBe([
+            ['node' => $this->ingress->name, 'command' => 'routes.verify-certificate', 'input' => ['address' => '10.44.0.1', 'port' => 443, 'domain' => $this->route->domain]],
+            ['node' => $this->router->name, 'command' => 'routes.verify-certificate', 'input' => ['address' => '10.44.0.3', 'port' => 443, 'domain' => $this->route->domain]],
+        ])->and($agents->deadlines)->toBe([15.0, 15.0]);
+        $agents->refuse('routes.verify-certificate', 'routes.certificate_invalid', ['stderr' => 'untrusted']);
+
+        expect(fn () => $projector->verifyPublicEdge($this->route))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect([$exception->step, $exception->errorCode])->toBe(['ingress-forwarding', 'route.public_edge_unverified']);
+            });
+        expect($agents->calls)->toHaveCount(3);
     });
 
     it('builds the Router with the Ingress when the public edge activates', function (): void {

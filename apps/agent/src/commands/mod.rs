@@ -51,6 +51,7 @@ pub mod hibernation;
 mod homebrew;
 mod homebrew_scope;
 pub mod horizon_queue;
+pub mod http_check;
 mod image_boot;
 mod image_build;
 mod image_identity;
@@ -92,6 +93,7 @@ pub mod tls_check;
 pub mod tmpfiles;
 mod tool_output;
 mod tools_apt;
+pub mod topology_evidence;
 pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
@@ -327,6 +329,8 @@ pub fn all() -> Vec<Entry> {
         entry::<firewall::native::route::RouteLan>(),
         entry::<firewall::native::gateway::GatewayVpn>(),
         entry::<tls_check::VerifyCertificate>(),
+        entry::<http_check::VerifyHttp>(),
+        entry::<topology_evidence::ReadTopologyEvidence>(),
         entry::<caddy::InstallCertificate>(),
         entry::<caddy::Reload>(),
         entry::<caddy_publication::Publish>(),

@@ -3806,7 +3806,36 @@
         "macos": null
       },
       "errors": [
+        "routes.certificate_input_invalid",
         "routes.certificate_invalid"
+      ]
+    },
+    {
+      "name": "routes.verify-http",
+      "summary": "Check HTTP reachability of a public Process Route from its Ingress.",
+      "mutates": false,
+      "timeout_seconds": 15,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "routes.http_input_invalid",
+        "routes.http_unreachable"
+      ]
+    },
+    {
+      "name": "task-vms.read-topology-evidence",
+      "summary": "Read the newest MiB of a task VM checkout's topology evidence.",
+      "mutates": false,
+      "timeout_seconds": 30,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.evidence_input_invalid",
+        "task_vm.evidence_unreadable"
       ]
     },
     {

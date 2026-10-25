@@ -14,11 +14,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -32,7 +32,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
         private ProductionReleaseLayout $releaseLayout,
-        private DevelopmentSshExecutor $ssh,
+        private AgentCommandRunner $agents,
         private ?PublicRouteEdgeProjector $publicEdge = null,
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
     ) {}
@@ -127,27 +127,12 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
             );
         }
 
-        $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'from',
-                $routerAddress,
-                'to',
-                $workloadAddress,
-                'port',
-                '443',
-                'comment',
-                "orbit:route-{$route->id}-lan",
-            ]),
-            step: 'route-firewall',
-            errorCode: 'app-dev.route_firewall_failed',
-        );
+        AgentStep::run($this->agents, $instance->node, 'firewall.route-lan', [
+            'operation' => 'converge',
+            'route_id' => $route->id,
+            'router' => $routerAddress,
+            'workload' => $workloadAddress,
+        ], 'route-firewall', 'app-dev.route_firewall_failed', 'Route');
     }
 
     public function verifyWorkload(Instance $instance, Route $route): void
@@ -170,26 +155,11 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
             );
         }
 
-        $this->ssh->execute(
-            $router,
-            new RemoteCommand(
-                [
-                    'timeout',
-                    '10',
-                    'openssl',
-                    's_client',
-                    '-connect',
-                    "{$address}:443",
-                    '-servername',
-                    $route->domain,
-                    '-verify_return_error',
-                ],
-                input: '',
-            ),
-            step: 'workload-certificate',
-            errorCode: 'app-dev.workload_certificate_invalid',
-            commandTimeout: 15,
-        );
+        AgentStep::run($this->agents, $router, 'routes.verify-certificate', [
+            'address' => $address,
+            'port' => 443,
+            'domain' => $route->domain,
+        ], 'workload-certificate', 'app-dev.workload_certificate_invalid', 'Route', 15);
     }
 
     public function prepareRouterCaddy(Instance $instance, Route $route): void
