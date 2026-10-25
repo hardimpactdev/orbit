@@ -148,6 +148,81 @@ Deno.test("real dependency planner distinguishes verified no-change from missing
   }
 });
 
+// R1: validate the complete npm catalog before choosing stable releases. A
+// healthy sibling release must not hide an invalid key, value or latest tag.
+for (
+  const [name, body] of [
+    ["four-part", npm("1.0.0.9")],
+    ["shorthand", npm("1.0")],
+    ["mixed-dev", {
+      ...npm("1.0.0", "dev-main"),
+      "dist-tags": { latest: "1.0.0" },
+    }],
+    ["invalid-key", {
+      ...npm("1.0.0"),
+      versions: { "1.0.0.9": { version: "1.0.0" } },
+    }],
+    ["invalid-value", {
+      ...npm("1.0.0"),
+      versions: { "1.0.0": { version: "1.0.0.9" } },
+    }],
+    ["invalid-latest", { ...npm("1.0.0"), "dist-tags": { latest: "1.0" } }],
+    ["invalid-prerelease", {
+      ...npm("1.0.0", "1.0.0-01"),
+      "dist-tags": { latest: "1.0.0" },
+    }],
+  ] as const
+) {
+  Deno.test(`R1 npm ${name} retains unknown evidence and fails`, async () => {
+    const result = await run(
+      inventory("npm", [dep("one", "^1.0.0")]),
+      () => json(body),
+    );
+    assert(
+      result.failure instanceof Error,
+      `must refuse ${JSON.stringify(body)}`,
+    );
+    assertEquals(counts(result.plan).unknown, 1);
+    assertEquals(result.plan.subtasks, []);
+    const row = (result.plan.packages as Record<string, unknown>[])[0];
+    assertEquals([row.status, row.latest, row.maxInConstraint], [
+      "unknown",
+      null,
+      null,
+    ]);
+    assert(typeof row.note === "string" && row.note.length > 0);
+    assertEquals(result.requests, ["https://registry.npmjs.org/one"]);
+  });
+}
+
+Deno.test("R1 npm stable/prerelease and Composer compatibility remain usable", async () => {
+  // A valid prerelease tag is excluded from this existing stable-only policy;
+  // the stable maximum remains a real release, not a coerced prerelease.
+  const result = await run(
+    inventory("npm", [dep("one", "^1.0.0")]),
+    () => json(npm("1.0.0", "1.2.0", "2.0.0-beta.1")),
+  );
+  assertEquals(result.failure, null);
+  assertEquals(counts(result.plan).unknown, 0);
+  const row = (result.plan.packages as Record<string, unknown>[])[0];
+  assertEquals([row.status, row.latest, row.maxInConstraint], [
+    "bump",
+    "1.2.0",
+    "1.2.0",
+  ]);
+  for (
+    const versions of [["1.0"], ["1.0.0.9"], ["1.0.0", "dev-main", "1.1.0-dev"]]
+  ) {
+    const compatible = await run(
+      inventory(),
+      () => json(packagist(...versions)),
+    );
+    assertEquals(compatible.failure, null);
+    assertEquals(counts(compatible.plan).unknown, 0);
+    assertEquals(compatible.plan.subtasks, []);
+  }
+});
+
 Deno.test("registry HTTP/JSON/transport failure and partial package coverage fail the real plan method without erasing diagnostic rows", async () => {
   for (
     const response of [

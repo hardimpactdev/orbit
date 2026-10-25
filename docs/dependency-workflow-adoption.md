@@ -29,8 +29,14 @@ Valid no-change remains distinct: successful method, zero unknown rows and no
 upgrade subtasks, with explicit `current` rows. Existing unsupported/path/dev
 constraints are not queried and remain visibly `skipped`; zero subtasks with skipped rows is not a
 claim that every package was assessed. Numeric Composer shorthand/four-part
-normalization and the existing caret-major convention remain historical planner
-policy, not a replacement for Composer's resolver. An unsupported metadata
+normalization and dev-branch filtering apply only to Composer. npm validates
+all release keys, matching version values and any latest tag with strict
+node-semver before stable filtering. Four-part numbers, shorthand and invalid
+branch names cannot become npm stable releases, even beside healthy rows.
+Valid npm prereleases remain excluded from this planner's stable proposals;
+a valid prerelease latest tag falls back to the observed stable maximum.
+The existing caret-major convention remains historical planner policy, not a
+replacement for Composer's resolver. An unsupported metadata
 format fails closed. These checks detect missing and inconsistent fields; they
 cannot prove that a registry returned its entire historical catalog when a
 self-consistent subset is indistinguishable from a full response.
@@ -164,24 +170,35 @@ Focused validation uses already-installed tools/cache:
 ~/.swamp/deno/deno test --cached-only --allow-all tests/dependency_workflow_test.ts
 ```
 
-The workflow fixture runs five cases: healthy no-change succeeds; malformed,
-partial, unavailable and transport cases fail with retained unknown evidence.
-Only the synthetic scan and registry responses are substituted. No LLM or
-package-manager stage is present in this execution. Record fixture timings and
-zero mechanical LLM calls without claiming native performance or savings;
-there is no comparable baseline. Source, logs, negative controls, full responses
-and model readback are retained at `/tmp/swamp-dependency-boundary-ej0ac1bz`.
-The final run passed five tests in 12s, including five official-workflow cases.
-Current workflow proof: `/tmp/swamp-dependency-policy-proof-fa5e3140915fffea`.
-Planner step durations were 33 ms (no-change), 77 ms (malformed), 46 ms (partial),
-51 ms (HTTP unavailable) and 37 ms (transport failure); full CLI run/query wall
-durations are recorded separately. These are controlled fixture measurements,
-not native registry/task timings. Four planner/inventory tests also passed after
-the explicit skipped-constraint lookup guard; the final combined run includes
-that guard. The exact final tests against base `e6737edf` produced three expected
-failures and one unchanged inventory pass. Lint passed for three affected TS
-files and the behavior type check passed. No timeout, assertion, call/tick limit
-or skip was widened.
+The current R1 correction passes 13 affected tests in 19s: 12 direct
+planner/inventory tests and one official workflow test with 15 cases. Its seven
+npm negative cases cover four-part numbers, shorthand, a mixed healthy/dev
+catalog, invalid key/value/latest fields and an invalid numeric prerelease.
+All fail with retained unknown evidence before approval. npm stable no-change,
+valid prerelease filtering and Composer shorthand/four-part/dev compatibility
+remain successful. The original malformed/partial/HTTP/transport cases remain.
+Only scan inventory and registry IO are substituted; no LLM, package manager,
+factory/driver dependency dispatch or native task VM is invoked.
+
+Before the correction, these new assertions against exact PR11 R1 head
+`09a09873b4847b77c251744da56be264ab52a4a7` were RED: three direct cases exposed
+erroneous success (four-part, shorthand and mixed dev); the official workflow
+also erroneously succeeded on four-part metadata. The prior base controls and
+accepted docs-workflow proof remain retained. These are correctness controls,
+not native performance measurements or savings claims.
+
+Current response, source identities, complete direct probe output, RED/GREEN
+logs and reference/reuse validation are retained at
+`/tmp/swamp-pr11-r1-correction-GApLgpwY`. Full current workflow inputs, outputs,
+resources and timings are at
+`/tmp/swamp-dependency-policy-proof-77124efe59bfdee1`; the RED workflow proof is
+`/tmp/swamp-dependency-policy-proof-6bc06553b225c930`. Planner steps took 15–43 ms
+in these controlled fixtures. Per-case CLI/query wall durations and zero
+mechanical LLM calls are recorded separately in `outcomes.json`; no comparable
+native baseline exists. Earlier preparation/source evidence remains unchanged
+at `/tmp/swamp-dependency-boundary-ej0ac1bz`. Lint, behavior type checking,
+pinned source/local-link validation, version parity and whitespace checks pass.
+No timeout, assertion, call/tick limit or skip was widened.
 
 The complete historical 216325-byte / compact 162390-byte report and isolated
 69452-byte reports remain unusable. No evidence is shortened, rewritten or

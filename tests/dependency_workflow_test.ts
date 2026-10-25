@@ -8,6 +8,9 @@ Deno.test("official dependency workflow refuses registry faults before approval;
   const proof = await Deno.makeTempDir({
     prefix: "swamp-dependency-policy-proof-",
   });
+  console.log(
+    `Dependency policy workflow proof (scan/registry fixtures): ${proof}`,
+  );
   const invoke = async (...args: string[]) => {
     const out = await new Deno.Command("swamp", {
       args,
@@ -38,7 +41,12 @@ Deno.test("official dependency workflow refuses registry faults before approval;
       await Deno.mkdir(`${dir}/${to.slice(0, to.lastIndexOf("/")) || "."}`, {
         recursive: true,
       });
-      await Deno.copyFile(`${repo}/${from}`, `${dir}/${to}`);
+      await Deno.copyFile(
+        from === "extensions/behaviors/orbit_deps.ts"
+          ? Deno.env.get("DEPENDENCY_WORKFLOW_TEST_SOURCE") ?? `${repo}/${from}`
+          : `${repo}/${from}`,
+        `${dir}/${to}`,
+      );
     }
     await Deno.mkdir(`${dir}/extensions/behaviors`, { recursive: true });
     // Use the existing planner without adding injectable registry URLs or a
@@ -113,7 +121,15 @@ methods: {}
         }],
       }],
     };
-    const url = "https://repo.packagist.org/p2/acme/one.json";
+    const composerUrl = "https://repo.packagist.org/p2/acme/one.json";
+    const npmUrl = "https://registry.npmjs.org/one";
+    const npm = (...versions: string[]) => ({
+      name: "one",
+      versions: Object.fromEntries(
+        versions.map((version) => [version, { version }]),
+      ),
+      "dist-tags": { latest: versions.at(-1) },
+    });
     const outcomes: Record<string, unknown> = {};
     const hashes: Record<string, string> = {};
     for (
@@ -140,22 +156,128 @@ methods: {}
       `${proof}/fixture_deps.ts`,
     );
     for (
-      const [name, response, transportFailure] of [
-        ["no-change", {
-          body: { packages: { "acme/one": [{ version: "1.0.0" }] } },
-        }, false],
-        ["malformed", { body: {} }, false],
-        ["partial", {
-          body: { packages: { "acme/one": [{}, { version: "1.1.0" }] } },
-        }, false],
-        ["unavailable", { status: 503, raw: "unavailable" }, false],
-        ["transport", { body: {} }, true],
+      const [name, response, transportFailure, ecosystem, success] of [
+        [
+          "no-change",
+          {
+            body: { packages: { "acme/one": [{ version: "1.0.0" }] } },
+          },
+          false,
+          "composer",
+          true,
+        ],
+        ["malformed", { body: {} }, false, "composer", false],
+        [
+          "partial",
+          {
+            body: { packages: { "acme/one": [{}, { version: "1.1.0" }] } },
+          },
+          false,
+          "composer",
+          false,
+        ],
+        [
+          "unavailable",
+          { status: 503, raw: "unavailable" },
+          false,
+          "composer",
+          false,
+        ],
+        ["transport", { body: {} }, true, "composer", false],
+        [
+          "composer-compat",
+          {
+            body: {
+              packages: {
+                "acme/one": ["1.0", "1.0.0.9", "dev-main"].map((version) => ({
+                  version,
+                })),
+              },
+            },
+          },
+          false,
+          "composer",
+          true,
+        ],
+        ["npm-no-change", { body: npm("1.0.0") }, false, "npm", true],
+        [
+          "npm-prerelease",
+          { body: npm("1.0.0", "2.0.0-beta.1") },
+          false,
+          "npm",
+          true,
+        ],
+        ["npm-four-part", { body: npm("1.0.0.9") }, false, "npm", false],
+        ["npm-shorthand", { body: npm("1.0") }, false, "npm", false],
+        [
+          "npm-mixed-dev",
+          {
+            body: {
+              ...npm("1.0.0", "dev-main"),
+              "dist-tags": { latest: "1.0.0" },
+            },
+          },
+          false,
+          "npm",
+          false,
+        ],
+        [
+          "npm-invalid-key",
+          {
+            body: {
+              ...npm("1.0.0"),
+              versions: { "1.0.0.9": { version: "1.0.0" } },
+            },
+          },
+          false,
+          "npm",
+          false,
+        ],
+        [
+          "npm-invalid-value",
+          {
+            body: {
+              ...npm("1.0.0"),
+              versions: { "1.0.0": { version: "1.0.0.9" } },
+            },
+          },
+          false,
+          "npm",
+          false,
+        ],
+        [
+          "npm-invalid-latest",
+          { body: { ...npm("1.0.0"), "dist-tags": { latest: "1.0" } } },
+          false,
+          "npm",
+          false,
+        ],
+        [
+          "npm-invalid-prerelease",
+          {
+            body: {
+              ...npm("1.0.0", "1.0.0-01"),
+              "dist-tags": { latest: "1.0.0" },
+            },
+          },
+          false,
+          "npm",
+          false,
+        ],
       ] as const
     ) {
+      const url = ecosystem === "npm" ? npmUrl : composerUrl;
+      const inv = structuredClone(baseInventory);
+      if (ecosystem === "npm") {
+        const e = inv.subProjects[0].ecosystems[0];
+        e.ecosystem = e.manager = "npm";
+        e.direct[0].name = e.direct[0].registryName = "one";
+        e.direct[0].constraint = "^1.0.0";
+      }
       await Deno.writeTextFile(
         `${dir}/fixture.json`,
         JSON.stringify({
-          inventory: baseInventory,
+          inventory: inv,
           responses: { [url]: response },
           transportFailure,
         }),
@@ -179,26 +301,6 @@ methods: {}
       const approval = execution.jobs.find((j: { name: string }) =>
         j.name === "approve"
       );
-      assertEquals(
-        execution.status,
-        name === "no-change" ? "succeeded" : "failed",
-      );
-      assertEquals(
-        planning.steps.find((s: { name: string }) => s.name === "plan").status,
-        name === "no-change" ? "succeeded" : "failed",
-      );
-      assertEquals(
-        approval.steps[0].status,
-        "skipped",
-        "no fixture grants a major approval",
-      );
-      if (name !== "no-change") {
-        assertEquals(
-          approval.status,
-          "skipped",
-          "a failed plan must not enter approval",
-        );
-      }
       const query = await invoke(
         "data",
         "query",
@@ -223,10 +325,30 @@ methods: {}
         `${proof}/${name}-plan.json`,
         JSON.stringify(plan, null, 2),
       );
-      assertEquals(plan.counts.unknown, name === "no-change" ? 0 : 1);
+      assertEquals(
+        execution.status,
+        success ? "succeeded" : "failed",
+      );
+      assertEquals(
+        planning.steps.find((s: { name: string }) => s.name === "plan").status,
+        success ? "succeeded" : "failed",
+      );
+      assertEquals(
+        approval.steps[0].status,
+        "skipped",
+        "no fixture grants a major approval",
+      );
+      if (!success) {
+        assertEquals(
+          approval.status,
+          "skipped",
+          "a failed plan must not enter approval",
+        );
+      }
+      assertEquals(plan.counts.unknown, success ? 0 : 1);
       assertEquals(
         run.code === 0,
-        name === "no-change",
+        success,
         run.stdout + run.stderr,
       );
       outcomes[name] = {
@@ -242,9 +364,9 @@ methods: {}
     }
     const requests = (await Deno.readTextFile(`${dir}/requests.jsonl`)).trim()
       .split("\n").map((s) => JSON.parse(s));
-    assertEquals(requests.length, 5);
+    assertEquals(requests.length, 15);
     assert(
-      requests.every((r) => r.url === url),
+      requests.every((r) => r.url === composerUrl || r.url === npmUrl),
       "only the controlled registry transport was used",
     );
     await Deno.writeTextFile(

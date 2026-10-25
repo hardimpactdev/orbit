@@ -114,7 +114,7 @@ interface RegistryInfo {
 const PackagistResponse = z.object({ packages: z.record(z.string(), z.array(z.object({ version: z.string().min(1) }))) });
 const NpmResponse = z.object({ name: z.string(), versions: z.record(z.string(), z.object({ version: z.string() })), "dist-tags": z.object({ latest: z.string().optional() }).optional() });
 
-function registryVersion(raw: string): string | null {
+function composerRegistryVersion(raw: string): string | null {
   if (raw.startsWith("dev-") || raw.endsWith("-dev")) return null;
   // normaliseVersion also handles old lockfile shorthand. Registry evidence
   // must not coerce arbitrary text containing digits into a successful release.
@@ -129,6 +129,14 @@ function registryVersion(raw: string): string | null {
   return isStable(value) ? value : null;
 }
 
+function npmRegistryVersion(raw: string): string {
+  // Validate the whole npm version before any stable filtering. Composer's
+  // shorthand, fourth numeric component and dev branches do not apply here.
+  const value = semver.valid(raw);
+  if (value === null) throw new Error("Invalid npm registry version");
+  return value;
+}
+
 async function fetchRegistry(ecosystem: Ecosystem, name: string): Promise<RegistryInfo> {
   const json = async (response: Response): Promise<unknown> => {
     try { return await response.json(); } catch { throw new Error("Registry returned invalid JSON"); }
@@ -140,7 +148,7 @@ async function fetchRegistry(ecosystem: Ecosystem, name: string): Promise<Regist
     if (!parsed.success) throw new Error("Packagist returned malformed package metadata");
     const rows = parsed.data.packages[name];
     if (!rows?.length) throw new Error("Packagist omitted the requested package releases");
-    const versions = rows.map((v) => registryVersion(v.version)).filter((v): v is string => v !== null);
+    const versions = rows.map((v) => composerRegistryVersion(v.version)).filter((v): v is string => v !== null);
     if (!versions.length) throw new Error("Packagist supplied no supported stable releases");
     const latest = versions.reduce<string | null>((a, v) => (a === null || gt(v, a) ? v : a), null);
     return { versions, latest };
@@ -153,12 +161,19 @@ async function fetchRegistry(ecosystem: Ecosystem, name: string): Promise<Regist
   if (!parsed.success || parsed.data.name !== name) throw new Error("npm returned malformed or foreign package metadata");
   const body = parsed.data;
   const entries = Object.entries(body.versions);
-  if (!entries.length || entries.some(([version, value]) => value.version !== version)) throw new Error("npm returned incomplete release metadata");
-  const versions = entries.map(([v]) => registryVersion(v)).filter((v): v is string => v !== null);
-  if (!versions.length) throw new Error("npm supplied no supported stable releases");
+  if (!entries.length) throw new Error("npm returned incomplete release metadata");
+  const releases = entries.map(([version, value]) => {
+    const parsedVersion = npmRegistryVersion(version);
+    npmRegistryVersion(value.version);
+    if (value.version !== version) throw new Error("npm returned inconsistent release metadata");
+    return parsedVersion;
+  });
   const tagged = body["dist-tags"]?.latest;
+  const taggedVersion = tagged === undefined ? null : npmRegistryVersion(tagged);
   if (tagged !== undefined && !Object.hasOwn(body.versions, tagged)) throw new Error("npm latest tag names a missing release");
-  const stableTag = tagged === undefined ? null : registryVersion(tagged);
+  const versions = releases.filter(isStable);
+  if (!versions.length) throw new Error("npm supplied no supported stable releases");
+  const stableTag = taggedVersion !== null && isStable(taggedVersion) ? taggedVersion : null;
   const latest = stableTag !== null
     ? stableTag
     : versions.reduce<string | null>((a, v) => (a === null || gt(v, a) ? v : a), null);
