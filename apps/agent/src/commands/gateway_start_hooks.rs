@@ -4,7 +4,7 @@ use crate::{
     command::{
         lock,
         registry::{self, HookEntry},
-        Command, Context, Outcome, Platform, Privilege,
+        Context, Outcome, Platform,
     },
     command_errors,
 };
@@ -16,7 +16,6 @@ use std::{
     io::{self, Read},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
-    time::Duration,
 };
 const DIRECTORY: &str = "/etc/orbit";
 const UNITS: &str = "/etc/systemd/system/php8.5-fpm.service.d";
@@ -46,8 +45,6 @@ pub struct Input {
 pub struct Output {
     pub changed: bool,
 }
-pub struct Converge;
-
 /// FPM activation invokes these fixed, synchronous hooks, then releases their target so
 /// ExecStartPre can acquire it while the enclosing FPM convergence service is still running.
 pub(super) fn before_activation(input: Input, context: &Context) -> Result<Output, Error> {
@@ -59,7 +56,13 @@ pub(super) fn before_activation(input: Input, context: &Context) -> Result<Outpu
         context.deadline(),
     )
     .map_err(|_| failed("lock"))?;
-    let result = Converge::run(input, context)?;
+    let result = converge(
+        &Files::system(),
+        &mut recipe::Native(context),
+        &input,
+        registry::hooks(),
+        context,
+    )?;
     for lock in held {
         lock.release_after_children()
             .map_err(|_| failed("lock-release"))?;
@@ -67,31 +70,6 @@ pub(super) fn before_activation(input: Input, context: &Context) -> Result<Outpu
     Ok(result)
 }
 
-impl Command for Converge {
-    const NAME: &'static str = "gateway.converge-start-hooks";
-    const SUMMARY: &'static str =
-        "Publish registered Gateway startup hooks and optionally run them before activation.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = Input;
-    type Output = Output;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(_: &Input) -> Option<String> {
-        Some(orbit_agent_contract::START_HOOK_TARGET.into())
-    }
-    fn run(input: Input, context: &Context) -> Result<Output, Error> {
-        converge(
-            &Files::system(),
-            &mut recipe::Native(context),
-            &input,
-            registry::hooks(),
-            context,
-        )
-    }
-}
 fn failed(stage: &str) -> Error {
     Error::Failed {
         stage: stage.into(),

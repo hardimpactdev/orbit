@@ -16,7 +16,7 @@ use crate::command::{Command, Context, Platform, Privilege};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::{
-    ffi::{CStr, CString, OsStr},
+    ffi::OsStr,
     fs,
     io::Write,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -36,31 +36,13 @@ struct Entry {
 }
 
 fn entry(user: &str) -> Option<Entry> {
-    let name = CString::new(user).ok()?;
-    // SAFETY: getpwnam and getgrgid return pointers into static storage or null; the fields are copied at once.
-    unsafe {
-        let entry = libc::getpwnam(name.as_ptr());
-        if entry.is_null() {
-            return None;
-        }
-        let group = libc::getgrgid((*entry).pw_gid);
-        Some(Entry {
-            uid: (*entry).pw_uid,
-            group: if group.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr((*group).gr_name)
-                    .to_string_lossy()
-                    .into_owned()
-            },
-            home: CStr::from_ptr((*entry).pw_dir)
-                .to_string_lossy()
-                .into_owned(),
-            shell: CStr::from_ptr((*entry).pw_shell)
-                .to_string_lossy()
-                .into_owned(),
-        })
-    }
+    let account = crate::command::identity::passwd(user)?;
+    Some(Entry {
+        uid: account.uid,
+        group: crate::command::identity::group_name(account.gid).unwrap_or_default(),
+        home: account.home,
+        shell: account.shell,
+    })
 }
 
 /// The account is Orbit's system account for this home.

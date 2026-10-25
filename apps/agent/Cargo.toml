@@ -55,5 +55,9 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
+# Every Node keeps two copies and every command hashes its own binary; symbols only add bytes to both.
+[profile.release]
+strip = "symbols"
+
 [dev-dependencies]
 axum = { version = "0.8", features = ["ws"] }

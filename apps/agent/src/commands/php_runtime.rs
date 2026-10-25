@@ -16,7 +16,6 @@ use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    ffi::CString,
     fs,
     io::{Read, Write},
     os::unix::{
@@ -159,11 +158,7 @@ impl Host {
 }
 
 fn group(name: &str) -> Option<u32> {
-    let name = CString::new(name).ok()?;
-    // SAFETY: getgrnam reads a NUL-terminated name and returns a static record or null.
-    let record = unsafe { libc::getgrnam(name.as_ptr()) };
-    // SAFETY: a non-null record is valid until the next getgr* call.
-    (!record.is_null()).then(|| unsafe { (*record).gr_gid })
+    crate::command::identity::group_id(name)
 }
 
 fn owned(path: &Path, uid: u32, gid: u32, mode: u32) -> bool {

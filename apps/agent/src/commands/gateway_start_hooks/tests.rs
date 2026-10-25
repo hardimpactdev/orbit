@@ -1,5 +1,6 @@
 use super::*;
 use crate::commands::recipe::{Failure, WorkDir};
+use std::time::Duration;
 use std::{os::unix::fs::symlink, time::Instant};
 struct Fixture {
     _work: WorkDir,

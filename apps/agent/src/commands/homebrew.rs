@@ -294,26 +294,5 @@ scope_read!(
         host, scope
     )
 );
-pub struct BottleTag;
-impl Command for BottleTag {
-    const NAME: &'static str = "tools.homebrew-bottle-tag";
-    const SUMMARY: &'static str =
-        "Resolve the Node's Homebrew bottle tag without developer commands.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(30);
-    type Input = BottleInput;
-    type Output = BottleOutput;
-    type Error = Error;
-    fn privilege(_: Platform) -> Option<Privilege> {
-        Some(Privilege::Account)
-    }
-    fn run(input: BottleInput, context: &Context) -> Result<BottleOutput> {
-        bottle_tag(
-            &mut recipe::Native(context),
-            context.platform,
-            input.architecture,
-        )
-    }
-}
 #[cfg(test)]
 mod tests;

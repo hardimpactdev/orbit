@@ -50,7 +50,7 @@ Linux Homebrew scope checks and first-use setup use `tools.inspect-homebrew-scop
 
 On macOS, `tools.inspect-homebrew-scope` reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
 
-`tools.homebrew-version`, `tools.homebrew-bottle-tag`, and `tools.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
+`tools.homebrew-version` and `tools.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
 
 `tools.homebrew-formula-adoption` reads the installed version and metadata together. It returns the observed version and any adoption block. It changes no package or Tool intent. The Gateway records only the selected package after checking that result.
 

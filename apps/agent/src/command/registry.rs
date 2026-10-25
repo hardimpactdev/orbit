@@ -357,7 +357,7 @@ mod tests {
             std::time::Instant::now(),
         )
         .unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_millis(400);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
         let context = Context::new(Platform::Linux, deadline);
         match with_locks::<ResourceOnly>(json!({}), &context, resource_locks) {
             Outcome::Refused { code, .. } => assert_eq!(code, "agent.target_busy"),

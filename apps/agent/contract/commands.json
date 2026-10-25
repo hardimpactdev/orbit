@@ -71,22 +71,6 @@
       ]
     },
     {
-      "name": "gateway.converge-start-hooks",
-      "summary": "Publish registered Gateway startup hooks and optionally run them before activation.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "gateway.start_hooks_invalid",
-        "gateway.start_hooks_unsafe",
-        "gateway.start_hooks_failed",
-        "gateway.start_hook_failed"
-      ]
-    },
-    {
       "name": "gateway.check-release-adoption",
       "summary": "Prepare or inspect a Gateway release adoption repository and private environment.",
       "mutates": false,
@@ -1460,33 +1444,6 @@
       "summary": "Read the verified Homebrew manager version.",
       "mutates": false,
       "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tools.homebrew_input_invalid",
-        "tools.homebrew_scope_absent",
-        "tools.homebrew_scope_conflict",
-        "tools.homebrew_scope_unreadable",
-        "tools.homebrew_operation_failed",
-        "tools.homebrew_output_invalid",
-        "tools.homebrew_version_unsupported",
-        "tools.homebrew_bottle_unavailable",
-        "tools.homebrew_package_protected",
-        "tools.homebrew_candidate_invalid",
-        "tools.homebrew_cask_source",
-        "tools.homebrew_cask_artifact",
-        "tools.homebrew_cask_authorization",
-        "tools.homebrew_cask_checksum",
-        "tools.homebrew_cask_version"
-      ]
-    },
-    {
-      "name": "tools.homebrew-bottle-tag",
-      "summary": "Resolve the Node's Homebrew bottle tag without developer commands.",
-      "mutates": false,
-      "timeout_seconds": 30,
       "privilege": {
         "linux": "account",
         "macos": "account"
