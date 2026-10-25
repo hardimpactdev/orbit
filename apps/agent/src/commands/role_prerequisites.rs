@@ -124,11 +124,6 @@ struct Account {
     home: PathBuf,
 }
 
-/// Where a host path lives under the [`Files`] root.
-fn at(files: &Files, path: &Path) -> PathBuf {
-    files.root.join(path.strip_prefix("/").unwrap_or(path))
-}
-
 /// Runs a program and fails the step with its standard error.
 fn run(
     host: &mut impl Host,
@@ -320,7 +315,7 @@ fn install(
 
     if input.apps_directory {
         directory(
-            &at(files, &account.home.join("apps")),
+            &files.at(&account.home.join("apps")),
             uid,
             gid,
             "apps-directory",

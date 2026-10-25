@@ -189,6 +189,10 @@ impl Files {
     pub fn path(&self, absolute: &str) -> PathBuf {
         self.root.join(absolute.trim_start_matches('/'))
     }
+    /// Where a host path, such as an account's home, lives under the root.
+    pub fn at(&self, path: &Path) -> PathBuf {
+        self.root.join(path.strip_prefix("/").unwrap_or(path))
+    }
     pub fn apt(&self) -> PathBuf {
         self.path("/etc/apt")
     }

@@ -2,12 +2,12 @@
 //! `docker container exec`. The root password reaches the client through one environment variable, never an argument
 //! or a file; the SQL goes on its standard input. A copy dumps and loads inside the container, so data never leaves it.
 
-use super::incus::{stream, MAX_OUTPUT};
+use super::incus::{exchange, MAX_OUTPUT};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
-    io::{self, Write},
+    io,
     path::PathBuf,
     process::{Command as Process, Stdio},
     time::{Duration, Instant},
@@ -111,40 +111,25 @@ struct Native {
 
 impl Host for Native {
     fn exec(&mut self, request: &Request) -> Result<Answer, DatabaseServerError> {
-        let mut child = Process::new(&self.program)
-            .args(&request.arguments)
-            .env(&request.variable, &request.password)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| DatabaseServerError::Failed {
-                exit_code: 127,
-                stderr: error.to_string(),
-            })?;
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take().expect("piped stdout");
-        let stderr = child.stderr.take().expect("piped stderr");
-        // Write standard input while both outputs drain, so a large query cannot block on a full output pipe.
-        let (status, stdout, stderr) = std::thread::scope(|scope| {
-            scope.spawn(move || {
-                if let Some(mut stdin) = stdin {
-                    let _ = stdin.write_all(request.input.as_bytes());
-                }
-            });
-            let out = scope.spawn(|| stream(stdout));
-            let err = scope.spawn(|| stream(stderr));
-            (child.wait(), out.join(), err.join())
-        });
-        let failed = |error: io::Error| DatabaseServerError::Failed {
-            exit_code: 1,
+        let (status, stdout, stderr) = exchange(
+            Process::new(&self.program)
+                .args(&request.arguments)
+                .env(&request.variable, &request.password),
+            Stdio::piped(),
+            Some(request.input.as_bytes()),
+        )
+        .map_err(|error| DatabaseServerError::Failed {
+            exit_code: if error.kind() == io::ErrorKind::NotFound {
+                127
+            } else {
+                1
+            },
             stderr: error.to_string(),
-        };
-        let reader = || io::Error::other("the client output reader failed");
+        })?;
         Ok(Answer {
-            code: status.map_err(failed)?.code(),
-            stdout: stdout.map_err(|_| failed(reader()))?.map_err(failed)?,
-            stderr: stderr.map_err(|_| failed(reader()))?.map_err(failed)?,
+            code: status.code(),
+            stdout,
+            stderr,
         })
     }
 

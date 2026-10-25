@@ -157,6 +157,10 @@ fn publish(
     if version.is_empty() || !version.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(failed("the version is not a hexadecimal name"));
     }
+    // Read Caddy's state first, so a refusal leaves a fresh Node unchanged.
+    let active = runtime
+        .active()
+        .map_err(|_| failed("the Caddy service state is not readable"))?;
     let versions = paths.versions();
     if !paths.owned_versions()? {
         paths.create_directory(&versions, gid).map_err(failed)?;
@@ -185,9 +189,6 @@ fn publish(
             "the version is current with another Metrics certificate",
         ));
     }
-    let active = runtime
-        .active()
-        .map_err(|_| failed("the Caddy service state is not readable"))?;
     // A directory under this version that `current` does not select is left from an earlier attempt.
     match fs::remove_dir_all(&directory) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(failed(error)),

@@ -37,7 +37,9 @@ struct Native;
 
 impl Host for Native {
     fn curl(&mut self, arguments: &[&str]) -> bool {
-        Process::new("curl")
+        // `-q` must come first: it keeps the account's ~/.curlrc out of the check.
+        Process::new("/usr/bin/curl")
+            .arg("-q")
             .args(arguments)
             .stdin(Stdio::null())
             .stderr(Stdio::null())

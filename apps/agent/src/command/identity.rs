@@ -18,17 +18,24 @@ pub fn on_account_thread<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, AccountThreadError> {
     let (uid, gid, _) = account(user).map_err(|_| AccountThreadError::Identity)?;
-    if effective_uid() != 0 || uid == 0 {
+    // The thread never keeps root's user or primary group.
+    if effective_uid() != 0 || uid == 0 || gid == 0 {
         return Err(AccountThreadError::Identity);
     }
     let name = std::ffi::CString::new(user).map_err(|_| AccountThreadError::Identity)?;
-    let mut groups = vec![0 as libc::gid_t; 256];
-    let mut count = groups.len() as libc::c_int;
-    // SAFETY: getgrouplist writes at most count entries into this live buffer.
-    if unsafe { libc::getgrouplist(name.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0 {
-        return Err(AccountThreadError::Identity);
+    let mut groups = vec![0 as libc::gid_t; 64];
+    loop {
+        let mut count = groups.len() as libc::c_int;
+        // SAFETY: getgrouplist writes at most count entries into this live buffer, and reports the size it needs.
+        if unsafe { libc::getgrouplist(name.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } >= 0 {
+            groups.truncate(count as usize);
+            break;
+        }
+        if count as usize <= groups.len() || count > 65_536 {
+            return Err(AccountThreadError::Identity);
+        }
+        groups.resize(count as usize, 0);
     }
-    groups.truncate(count as usize);
     std::thread::spawn(move || {
         // SAFETY: all pointers are live; raw set* calls change only this thread's credentials.
         let dropped = unsafe {

@@ -48,7 +48,8 @@ impl Privilege {
 pub trait Command {
     const NAME: &'static str;
     const SUMMARY: &'static str;
-    /// A mutation runs under its own supervisor and target lock; a read takes no lock.
+    /// A mutation runs under its own supervisor and takes the target and resource locks it declares; a read takes no
+    /// lock.
     const MUTATES: bool;
     /// The longest the command may run. The envelope's remaining deadline can shorten it.
     const TIMEOUT: Duration;

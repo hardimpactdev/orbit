@@ -99,11 +99,6 @@ impl Host for Native {
     }
 }
 
-/// Where a host path lives under the [`Files`] root.
-fn at(files: &Files, path: &Path) -> PathBuf {
-    files.root.join(path.strip_prefix("/").unwrap_or(path))
-}
-
 /// An extension of the certificate on one line, as the Gateway compares it.
 fn extension(certificate: &str, name: &str) -> String {
     openssl(&["x509", "-in", certificate, "-noout", "-ext", name])
@@ -505,7 +500,8 @@ fn scope_roots(files: &Files, input: &ScopeInput) -> Result<(PathBuf, PathBuf), 
         return Err(failed("certificate-input"));
     }
     Ok((
-        at(files, &input.home)
+        files
+            .at(&input.home)
             .join(".orbit/certificates")
             .join(&input.scope),
         files.path(CADDY_ROOT).join(&input.scope),

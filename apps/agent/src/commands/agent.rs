@@ -594,7 +594,7 @@ mod tests {
                 &fixture.input(&same),
                 &fixture.target(),
                 &fixture.lock(),
-                Instant::now(),
+                Instant::now() + Duration::from_secs(1),
                 Instant::now(),
                 Observer::Fake(true),
             )

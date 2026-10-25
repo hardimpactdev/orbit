@@ -249,6 +249,17 @@ fn an_unreadable_caddy_state_refuses_before_the_version_changes() {
 }
 
 #[test]
+fn an_unreadable_caddy_state_on_a_fresh_node_creates_nothing() {
+    let mut fixture = Fixture::new();
+    fixture.caddy.active = None;
+    assert_eq!(
+        reason(fixture.publish("a1", &pair())),
+        "the Caddy service state is not readable"
+    );
+    assert!(!fixture.paths.versions().exists());
+}
+
+#[test]
 fn a_key_of_another_certificate_is_refused_without_a_change() {
     let mut fixture = Fixture::new();
     fixture.publish("a1", &pair()).unwrap();

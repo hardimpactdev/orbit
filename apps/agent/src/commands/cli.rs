@@ -315,7 +315,12 @@ pub fn install(input: &InstallInput, deadline: Instant) -> Result<Installed, Cli
                 Path::new(lock::UPDATE_LOCK_LINUX),
                 lock::answer_by(deadline).min(Instant::now() + UPDATE_WAIT),
             )
-            .map_err(|_| CliError::UpdateBusy {})?;
+            .map_err(|error| match error {
+                lock::LockError::Busy(_) => CliError::UpdateBusy {},
+                lock::LockError::Io(..) => CliError::Failed {
+                    step: "update lock".into(),
+                },
+            })?;
             // A self-update may have changed the path while this install waited.
             match inspect(link, &input.user) {
                 State::Present => None,

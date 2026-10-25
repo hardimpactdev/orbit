@@ -179,11 +179,6 @@ fn prune(releases: &Path, keep: &[&Path]) {
     }
 }
 
-/// Where the install path lives under the [`Files`] root.
-fn at(files: &Files, path: &Path) -> PathBuf {
-    files.root.join(path.strip_prefix("/").unwrap_or(path))
-}
-
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConvergeInput {
@@ -325,7 +320,7 @@ fn converge(
             check: "the managed account exists".into(),
         });
     };
-    let install = &at(files, &input.install_path);
+    let install = &files.at(&input.install_path);
     let parent = install.parent().expect("an absolute path below the root");
     fs::DirBuilder::new()
         .recursive(true)
@@ -447,7 +442,7 @@ fn remove(
     host.systemctl(&["daemon-reload"]);
     host.systemctl(&["reset-failed", "--", &format!("{SERVICE}.service")]);
     if input.purge {
-        let install = at(files, &input.install_path);
+        let install = files.at(&input.install_path);
         for path in [
             install.clone(),
             PathBuf::from(format!("{}.releases", install.display())),

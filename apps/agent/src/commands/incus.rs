@@ -95,7 +95,13 @@ pub(super) fn capture_input(command: &mut Process, input: Option<&str>) -> io::R
 pub(super) fn capture_file(command: &mut Process, file: std::fs::File) -> io::Result<Output> {
     capture_stdin(command, Stdio::from(file), None)
 }
-fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io::Result<Output> {
+/// Runs a child, writing `input` to its stdin from its own thread while both outputs drain, so a large input cannot
+/// block on a full output pipe. Each output keeps at most `MAX_OUTPUT` + 1 bytes.
+pub(super) fn exchange(
+    command: &mut Process,
+    stdin: Stdio,
+    input: Option<&[u8]>,
+) -> io::Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)> {
     let mut child = command
         .stdin(stdin)
         .stdout(Stdio::piped())
@@ -107,17 +113,21 @@ fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io
     let (status, stdout, stderr) = std::thread::scope(|scope| {
         scope.spawn(move || {
             if let (Some(mut stdin), Some(input)) = (stdin, input) {
-                let _ = stdin.write_all(input.as_bytes());
+                let _ = stdin.write_all(input);
             }
         });
         let out = scope.spawn(|| stream(stdout));
         let err = scope.spawn(|| stream(stderr));
         (child.wait(), out.join(), err.join())
     });
-    let stdout = stdout.map_err(|_| io::Error::other("Incus output reader failed"))??;
-    let stderr = stderr.map_err(|_| io::Error::other("Incus error reader failed"))??;
+    let stdout = stdout.map_err(|_| io::Error::other("the output reader failed"))??;
+    let stderr = stderr.map_err(|_| io::Error::other("the error reader failed"))??;
+    Ok((status?, stdout, stderr))
+}
+fn capture_stdin(command: &mut Process, stdin: Stdio, input: Option<&str>) -> io::Result<Output> {
+    let (status, stdout, stderr) = exchange(command, stdin, input.map(str::as_bytes))?;
     Ok(Output {
-        code: status?.code().unwrap_or(-1),
+        code: status.code().unwrap_or(-1),
         truncated: stdout.len() > MAX_OUTPUT
             || stderr.len() > MAX_OUTPUT
             || std::str::from_utf8(&stdout).is_err(),

@@ -45,7 +45,7 @@ fn load(files: &Files, unit: &str) -> Result<Start, Failure> {
 pub fn agent(files: &Files, input: &Input, deadline: Instant) -> Result<(), Failure> {
     let _lock = lock::acquire(
         &files.path(lock::UPDATE_LOCK_LINUX),
-        deadline.min(Instant::now() + Duration::from_secs(120)),
+        lock::answer_by(deadline).min(Instant::now() + Duration::from_secs(120)),
     )
     .map_err(|e| Failure::new("agent", format!("{e:?}")))?;
     let observed = file_sha256(&files.path("/usr/local/bin/orbit-agent"))

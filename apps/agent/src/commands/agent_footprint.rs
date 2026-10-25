@@ -55,13 +55,10 @@ impl Host for Native {
 }
 
 fn hold_update_lock(files: &Files, deadline: Instant) -> Result<lock::Held, FootprintError> {
-    lock::acquire(&files.path(lock::UPDATE_LOCK_LINUX), deadline)
-        .map_err(|_| FootprintError::UpdateBusy {})
-}
-
-/// Where a host path lives under the [`Files`] root.
-fn at(files: &Files, path: &Path) -> PathBuf {
-    files.root.join(path.strip_prefix("/").unwrap_or(path))
+    lock::acquire(&files.path(lock::UPDATE_LOCK_LINUX), deadline).map_err(|error| match error {
+        lock::LockError::Busy(_) => FootprintError::UpdateBusy {},
+        lock::LockError::Io(..) => failed("update lock"),
+    })
 }
 
 /// Writes a root-owned file with one rename when its content differs. Whether it changed.
@@ -93,7 +90,7 @@ fn publish(path: &Path, content: &str, mode: u32) -> Result<bool, FootprintError
 fn close_environments(files: &Files, checkouts: &[PathBuf]) -> Vec<String> {
     let mut failed = Vec::new();
     for named in checkouts {
-        let checkout = &at(files, named);
+        let checkout = &files.at(named);
         let real = fs::symlink_metadata(checkout).is_ok_and(|metadata| metadata.is_dir())
             && fs::canonicalize(checkout).ok().as_deref() == Some(checkout.as_path());
         if !real {

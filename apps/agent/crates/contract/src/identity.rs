@@ -25,84 +25,66 @@ fn text(pointer: *const libc::c_char) -> String {
         .into_owned()
 }
 
+/// Runs one reentrant lookup, growing its buffer while libc reports `ERANGE`, up to 1 MiB, so a large entry such as
+/// a group with many members is found rather than read as absent.
+fn reentrant<E, R>(
+    mut lookup: impl FnMut(&mut E, *mut libc::c_char, usize, *mut *mut E) -> libc::c_int,
+    read: impl FnOnce(&E) -> R,
+) -> Option<R> {
+    let mut size = 16 * 1024;
+    loop {
+        let mut buffer = vec![0 as libc::c_char; size];
+        // SAFETY: the C passwd and group entries are plain structs for which all-zero bytes are valid.
+        let mut entry: E = unsafe { std::mem::zeroed() };
+        let mut result = std::ptr::null_mut();
+        let status = lookup(&mut entry, buffer.as_mut_ptr(), buffer.len(), &mut result);
+        if status == libc::ERANGE && size < 1024 * 1024 {
+            size *= 2;
+            continue;
+        }
+        // The entry's string fields point into `buffer`, which lives until `read` returns.
+        return (status == 0 && !result.is_null()).then(|| read(&entry));
+    }
+}
+
 pub fn passwd(user: &str) -> Option<Passwd> {
     let name = std::ffi::CString::new(user).ok()?;
-    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
-    // SAFETY: an all-zero passwd is a valid value for getpwnam_r to fill.
-    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut result = std::ptr::null_mut();
-    // SAFETY: every pointer refers to live storage of the given size; the entry's fields point into `buffer`.
-    let status = unsafe {
-        libc::getpwnam_r(
-            name.as_ptr(),
-            &mut entry,
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    (status == 0 && !result.is_null()).then(|| Passwd {
-        uid: entry.pw_uid,
-        gid: entry.pw_gid,
-        home: text(entry.pw_dir),
-        shell: text(entry.pw_shell),
-    })
+    // SAFETY: every pointer refers to live storage of the given size.
+    reentrant(
+        |entry, buffer, size, result| unsafe { libc::getpwnam_r(name.as_ptr(), entry, buffer, size, result) },
+        |entry: &libc::passwd| Passwd {
+            uid: entry.pw_uid,
+            gid: entry.pw_gid,
+            home: text(entry.pw_dir),
+            shell: text(entry.pw_shell),
+        },
+    )
 }
 
 /// The gid of a group name, or the name of a gid, with the reentrant group lookups.
 pub fn group_id(group: &str) -> Option<u32> {
     let name = std::ffi::CString::new(group).ok()?;
-    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
-    // SAFETY: an all-zero group is a valid value for getgrnam_r to fill.
-    let mut entry: libc::group = unsafe { std::mem::zeroed() };
-    let mut result = std::ptr::null_mut();
     // SAFETY: every pointer refers to live storage of the given size.
-    let status = unsafe {
-        libc::getgrnam_r(
-            name.as_ptr(),
-            &mut entry,
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    (status == 0 && !result.is_null()).then_some(entry.gr_gid)
+    reentrant(
+        |entry, buffer, size, result| unsafe { libc::getgrnam_r(name.as_ptr(), entry, buffer, size, result) },
+        |entry: &libc::group| entry.gr_gid,
+    )
 }
 
 pub fn group_name(gid: u32) -> Option<String> {
-    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
-    // SAFETY: an all-zero group is a valid value for getgrgid_r to fill.
-    let mut entry: libc::group = unsafe { std::mem::zeroed() };
-    let mut result = std::ptr::null_mut();
-    // SAFETY: every pointer refers to live storage of the given size; the name points into `buffer`.
-    let status = unsafe {
-        libc::getgrgid_r(
-            gid,
-            &mut entry,
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    (status == 0 && !result.is_null()).then(|| text(entry.gr_name))
+    // SAFETY: every pointer refers to live storage of the given size.
+    reentrant(
+        |entry, buffer, size, result| unsafe { libc::getgrgid_r(gid, entry, buffer, size, result) },
+        |entry: &libc::group| text(entry.gr_name),
+    )
 }
 
 pub fn user_name(uid: u32) -> Option<String> {
-    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
-    // SAFETY: an all-zero passwd is a valid value for getpwuid_r to fill.
-    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut result = std::ptr::null_mut();
-    // SAFETY: every pointer refers to live storage of the given size; the name points into `buffer`.
-    let status = unsafe {
-        libc::getpwuid_r(
-            uid,
-            &mut entry,
-            buffer.as_mut_ptr(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    (status == 0 && !result.is_null()).then(|| text(entry.pw_name))
+    // SAFETY: every pointer refers to live storage of the given size.
+    reentrant(
+        |entry, buffer, size, result| unsafe { libc::getpwuid_r(uid, entry, buffer, size, result) },
+        |entry: &libc::passwd| text(entry.pw_name),
+    )
 }
 
 /// The uid, gid, and home of a user.
@@ -173,6 +155,37 @@ pub fn drop_to(command: &mut std::process::Command, user: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lookup_grows_its_buffer_on_erange_and_gives_up_after_one_mebibyte() {
+        let mut sizes = Vec::new();
+        let found = reentrant(
+            |entry: &mut libc::group, _, size, result| {
+                sizes.push(size);
+                if size < 64 * 1024 {
+                    return libc::ERANGE;
+                }
+                entry.gr_gid = 42;
+                // SAFETY: `result` points at the caller's live result slot.
+                unsafe { *result = entry };
+                0
+            },
+            |entry| entry.gr_gid,
+        );
+        assert_eq!(found, Some(42));
+        assert_eq!(sizes, [16 * 1024, 32 * 1024, 64 * 1024]);
+
+        let mut calls = 0;
+        let missing = reentrant(
+            |_: &mut libc::group, _, _, _| {
+                calls += 1;
+                libc::ERANGE
+            },
+            |entry| entry.gr_gid,
+        );
+        assert_eq!(missing, None);
+        assert_eq!(calls, 7);
+    }
 
     /// Runs as root through `drop_tests_as_root_and_keeps_the_target_groups`: drops to `nobody` and reports its identity.
     #[test]

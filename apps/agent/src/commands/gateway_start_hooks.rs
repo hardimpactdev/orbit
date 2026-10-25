@@ -53,7 +53,7 @@ pub(super) fn before_activation(input: Input, context: &Context) -> Result<Outpu
         &directory,
         Some(orbit_agent_contract::START_HOOK_TARGET),
         &[],
-        context.deadline(),
+        lock::answer_by(context.deadline()),
     )
     .map_err(|_| failed("lock"))?;
     let result = converge(

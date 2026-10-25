@@ -254,6 +254,19 @@ fn instance_environments_lose_only_their_world_bits() {
 }
 
 #[test]
+fn an_unopenable_update_lock_is_a_failure_not_a_busy_lock() {
+    let mut sandbox = Sandbox::new();
+    fs::create_dir_all(sandbox.path(lock::UPDATE_LOCK_LINUX)).unwrap();
+    assert_eq!(
+        sandbox.configure(&input(None)),
+        Err(FootprintError::Failed {
+            step: "update lock".into()
+        })
+    );
+    assert!(sandbox.host.calls.is_empty());
+}
+
+#[test]
 fn a_held_update_lock_refuses_before_any_change() {
     let mut sandbox = Sandbox::new();
     let _held = lock::acquire(&sandbox.path(lock::UPDATE_LOCK_LINUX), Instant::now()).unwrap();
