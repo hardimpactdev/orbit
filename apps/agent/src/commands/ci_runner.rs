@@ -2,15 +2,12 @@
 //! bridge with its egress ACL, and the project's default profile. It never creates, registers, changes, or deletes a
 //! runner. Removal refuses while the project holds any instance, stopped ones included.
 
+use super::incus::{bounded, Output};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::{
-    io::Write,
-    process::{Command as Process, Stdio},
-    time::Duration,
-};
+use std::time::{Duration, Instant};
 
 const PROJECT: &str = "orbit-ci";
 const NETWORK: &str = "orbitci0";
@@ -70,43 +67,53 @@ fn acl_rules() -> Value {
     ])
 }
 
+/// Each Incus call keeps its own bound inside the command's deadline.
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The one host boundary: an `incus` invocation with optional standard input.
+trait Host {
+    fn incus(&mut self, arguments: &[&str], input: Option<&str>) -> Output;
+}
+
+struct Native<'a>(&'a Context);
+
+impl Host for Native<'_> {
+    fn incus(&mut self, arguments: &[&str], input: Option<&str>) -> Output {
+        let deadline = self.0.deadline().min(Instant::now() + CALL_TIMEOUT);
+        bounded(
+            &Context::new(self.0.platform, deadline),
+            "/usr/bin/incus",
+            arguments,
+            input,
+        )
+    }
+}
+
 /// Runs `incus`; `query` carries its own scope, every other command runs in the default project.
-fn incus(arguments: &[&str], document: Option<&Value>) -> Result<String, CiHostError> {
-    let mut command = Process::new("timeout");
-    command.args(["30", "incus"]);
+fn incus(
+    host: &mut impl Host,
+    arguments: &[&str],
+    document: Option<&Value>,
+) -> Result<String, CiHostError> {
+    let mut argv = vec![];
     if arguments.first() != Some(&"query") {
-        command.args(["--project", "default"]);
+        argv.extend(["--project", "default"]);
     }
-    let mut child = command
-        .args(arguments)
-        .stdin(if document.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| failed(error.to_string()))?;
-    if let (Some(document), Some(mut stdin)) = (document, child.stdin.take()) {
-        let _ = stdin.write_all(document.to_string().as_bytes());
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| failed(error.to_string()))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    argv.extend(arguments);
+    let output = host.incus(&argv, document.map(Value::to_string).as_deref());
+    if output.code == 0 && !output.truncated {
+        Ok(output.stdout)
     } else {
         Err(failed(format!(
             "incus {}: {}",
             arguments.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
+            output.stderr.trim()
         )))
     }
 }
 
-fn query(path: &str) -> Result<Value, CiHostError> {
-    serde_json::from_str(&incus(&["query", path], None)?)
+fn query(host: &mut impl Host, path: &str) -> Result<Value, CiHostError> {
+    serde_json::from_str(&incus(host, &["query", path], None)?)
         .map_err(|_| failed("incus answered no JSON"))
 }
 
@@ -122,9 +129,9 @@ fn default_path(collection: &str, name: Option<&str>) -> String {
     }
 }
 
-fn exists(collection: &str, name: &str) -> Result<bool, CiHostError> {
+fn exists(host: &mut impl Host, collection: &str, name: &str) -> Result<bool, CiHostError> {
     let wanted = format!("/1.0/{collection}/{name}");
-    Ok(query(&default_path(collection, None))?
+    Ok(query(host, &default_path(collection, None))?
         .as_array()
         .is_some_and(|paths| {
             paths.iter().any(|path| {
@@ -160,21 +167,21 @@ fn rules(value: &Value) -> Value {
     )
 }
 
-pub fn matches() -> Result<bool, CiHostError> {
+fn matches(host: &mut impl Host) -> Result<bool, CiHostError> {
     for (collection, name) in [
         ("projects", PROJECT),
         ("networks", NETWORK),
         ("network-acls", ACL),
         ("storage-pools", POOL),
     ] {
-        if !exists(collection, name)? {
+        if !exists(host, collection, name)? {
             return Ok(false);
         }
     }
-    let project = query(&format!("/1.0/projects/{PROJECT}"))?;
-    let network = query(&default_path("networks", Some(NETWORK)))?;
-    let acl = query(&default_path("network-acls", Some(ACL)))?;
-    let profile_now = query(&format!("/1.0/profiles/default?project={PROJECT}"))?;
+    let project = query(host, &format!("/1.0/projects/{PROJECT}"))?;
+    let network = query(host, &default_path("networks", Some(NETWORK)))?;
+    let acl = query(host, &default_path("network-acls", Some(ACL)))?;
+    let profile_now = query(host, &format!("/1.0/profiles/default?project={PROJECT}"))?;
     let expected = profile();
     Ok(includes(&project["config"], &PROJECT_CONFIG)
         && network["type"] == "bridge"
@@ -192,11 +199,11 @@ pub fn matches() -> Result<bool, CiHostError> {
         && profile_now["devices"] == expected["devices"])
 }
 
-fn converge() -> Result<&'static str, CiHostError> {
-    if !exists("storage-pools", POOL)? {
-        incus(&["storage", "create", POOL, "dir"], None)?;
+fn converge(host: &mut impl Host) -> Result<&'static str, CiHostError> {
+    if !exists(host, "storage-pools", POOL)? {
+        incus(host, &["storage", "create", POOL, "dir"], None)?;
     }
-    if !exists("projects", PROJECT)? {
+    if !exists(host, "projects", PROJECT)? {
         let features: Vec<String> = PROJECT_CONFIG
             .iter()
             .filter(|(key, _)| key.starts_with("features."))
@@ -204,10 +211,10 @@ fn converge() -> Result<&'static str, CiHostError> {
             .collect();
         let mut arguments = vec!["project", "create", PROJECT];
         arguments.extend(features.iter().map(String::as_str));
-        incus(&arguments, None)?;
+        incus(host, &arguments, None)?;
     }
     // Existing setup.sh resources are adopted by their reserved names; a different isolation model is refused.
-    if query(&format!("/1.0/projects/{PROJECT}"))?["config"]
+    if query(host, &format!("/1.0/projects/{PROJECT}"))?["config"]
         .get("features.networks")
         .and_then(Value::as_str)
         != Some("false")
@@ -220,18 +227,20 @@ fn converge() -> Result<&'static str, CiHostError> {
         .collect();
     let mut arguments = vec!["project", "set", PROJECT];
     arguments.extend(settings.iter().map(String::as_str));
-    incus(&arguments, None)?;
-    if !exists("network-acls", ACL)? {
-        incus(&["network", "acl", "create", ACL], None)?;
+    incus(host, &arguments, None)?;
+    if !exists(host, "network-acls", ACL)? {
+        incus(host, &["network", "acl", "create", ACL], None)?;
     }
     incus(
+        host,
         &["network", "acl", "edit", ACL],
         Some(
             &json!({"description": "Orbit CI runner boundary", "egress": acl_rules(), "ingress": [], "config": {}}),
         ),
     )?;
-    if !exists("networks", NETWORK)? {
+    if !exists(host, "networks", NETWORK)? {
         incus(
+            host,
             &[
                 "network",
                 "create",
@@ -244,7 +253,7 @@ fn converge() -> Result<&'static str, CiHostError> {
             None,
         )?;
     }
-    let network = query(&default_path("networks", Some(NETWORK)))?;
+    let network = query(host, &default_path("networks", Some(NETWORK)))?;
     if network["type"] != "bridge" || network["managed"] != true {
         return Err(failed("orbitci0 must be a managed bridge"));
     }
@@ -254,20 +263,21 @@ fn converge() -> Result<&'static str, CiHostError> {
         .collect();
     let mut arguments = vec!["network", "set", NETWORK];
     arguments.extend(settings.iter().map(String::as_str));
-    incus(&arguments, None)?;
+    incus(host, &arguments, None)?;
     incus(
+        host,
         &["profile", "edit", "default", "--project", PROJECT],
         Some(&profile()),
     )?;
-    if !matches()? {
+    if !matches(host)? {
         return Err(failed("CI host projection did not converge"));
     }
     Ok("converged")
 }
 
-fn remove(purge: bool) -> Result<&'static str, CiHostError> {
-    if exists("projects", PROJECT)? {
-        if query(&format!("/1.0/instances?project={PROJECT}"))?
+fn remove(host: &mut impl Host, purge: bool) -> Result<&'static str, CiHostError> {
+    if exists(host, "projects", PROJECT)? {
+        if query(host, &format!("/1.0/instances?project={PROJECT}"))?
             .as_array()
             .is_some_and(|instances| !instances.is_empty())
         {
@@ -275,17 +285,17 @@ fn remove(purge: bool) -> Result<&'static str, CiHostError> {
         }
         if purge {
             // Incus refuses to delete a project that images, volumes, or other profiles still use.
-            incus(&["project", "delete", PROJECT], None)?;
+            incus(host, &["project", "delete", PROJECT], None)?;
         }
     }
     if !purge {
         return Ok("retained");
     }
-    if exists("networks", NETWORK)? {
-        incus(&["network", "delete", NETWORK], None)?;
+    if exists(host, "networks", NETWORK)? {
+        incus(host, &["network", "delete", NETWORK], None)?;
     }
-    if exists("network-acls", ACL)? {
-        incus(&["network", "acl", "delete", ACL], None)?;
+    if exists(host, "network-acls", ACL)? {
+        incus(host, &["network", "acl", "delete", ACL], None)?;
     }
     Ok("removed")
 }
@@ -293,10 +303,10 @@ fn remove(purge: bool) -> Result<&'static str, CiHostError> {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostInput {
-    Converge,
-    Inspect,
-    Remove,
-    Purge,
+    Converge {},
+    Inspect {},
+    Remove {},
+    Purge {},
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -305,18 +315,18 @@ pub struct HostOutcome {
     pub outcome: &'static str,
 }
 
-pub fn host(input: &HostInput) -> Result<HostOutcome, CiHostError> {
+fn act(host: &mut impl Host, input: &HostInput) -> Result<HostOutcome, CiHostError> {
     let outcome = match input {
-        HostInput::Converge => converge()?,
-        HostInput::Inspect => {
-            if matches()? {
+        HostInput::Converge {} => converge(host)?,
+        HostInput::Inspect {} => {
+            if matches(host)? {
                 "matches"
             } else {
                 "drift"
             }
         }
-        HostInput::Remove => remove(false)?,
-        HostInput::Purge => remove(true)?,
+        HostInput::Remove {} => remove(host, false)?,
+        HostInput::Purge {} => remove(host, true)?,
     };
     Ok(HostOutcome { outcome })
 }
@@ -342,44 +352,11 @@ impl Command for CiRunnerHost {
         Some("ci-runner-host".into())
     }
 
-    fn run(input: HostInput, _: &Context) -> Result<HostOutcome, CiHostError> {
-        host(&input)
+    fn run(input: HostInput, context: &Context) -> Result<HostOutcome, CiHostError> {
+        act(&mut Native(context), &input)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn acl_rules_compare_without_the_empty_fields_incus_adds() {
-        let answered = json!([
-            {"action": "reject", "destination": "0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16,198.18.0.0/15,224.0.0.0/3", "state": "enabled", "source": "", "description": ""},
-            {"action": "reject", "destination": "::/0", "state": "enabled", "protocol": ""},
-            {"action": "allow", "destination": "0.0.0.0/0", "state": "enabled"},
-        ]);
-        assert_eq!(rules(&answered), acl_rules());
-        assert_ne!(rules(&json!([])), acl_rules());
-    }
-
-    #[test]
-    fn config_matches_only_when_every_reserved_key_has_its_value() {
-        let mut config = Map::new();
-        for (key, value) in NETWORK_CONFIG {
-            config.insert(key.into(), Value::String(value.into()));
-        }
-        config.insert("ipv4.address".into(), json!("10.9.0.1/24"));
-        assert!(includes(&Value::Object(config.clone()), &NETWORK_CONFIG));
-        config.insert("security.acls".into(), json!("other"));
-        assert!(!includes(&Value::Object(config), &NETWORK_CONFIG));
-    }
-
-    #[test]
-    fn default_scope_applies_to_networks_and_acls_only() {
-        assert_eq!(
-            default_path("networks", Some(NETWORK)),
-            "/1.0/networks/orbitci0?project=default"
-        );
-        assert_eq!(default_path("projects", None), "/1.0/projects");
-    }
-}
+#[path = "ci_runner_tests.rs"]
+mod tests;
