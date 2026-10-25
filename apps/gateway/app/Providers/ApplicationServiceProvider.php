@@ -947,7 +947,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): NativeWireGuardPeerConverger => new NativeWireGuardPeerConverger(
                 configuration: app(VpnConfigurationRepository::class),
                 gatewayPeers: app(GatewayPeerProjectionManager::class),
-                ssh: app(SshExecutor::class),
+                agents: app(AdmissionAgentRunner::class),
             ),
         );
         $this->app->alias(NativeWireGuardPeerConverger::class, WireGuardPeerConverger::class);

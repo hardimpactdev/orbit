@@ -25,7 +25,7 @@ pub struct Host {
     pub dns_records: PathBuf,
     /// The lock every peer WireGuard and DNS change on the Node shares, shell programs included.
     pub peer_lock: PathBuf,
-    /// The directory of the tools, or `None` to find them on `PATH`.
+    /// The fixture tool directory, or `None` for fixed system executable paths.
     pub bin: Option<PathBuf>,
     pub root_uid: u32,
     pub root_gid: u32,
@@ -60,9 +60,17 @@ impl Host {
     }
 
     fn program(&self, name: &str) -> PathBuf {
-        self.bin
-            .as_ref()
-            .map_or_else(|| PathBuf::from(name), |bin| bin.join(name))
+        self.bin.as_ref().map_or_else(
+            || {
+                PathBuf::from(if name == "sysctl" {
+                    "/usr/sbin"
+                } else {
+                    "/usr/bin"
+                })
+                .join(name)
+            },
+            |bin| bin.join(name),
+        )
     }
 
     pub fn tool(&self, name: &str) -> Process {
@@ -100,7 +108,7 @@ impl Host {
         arguments: &[&str],
     ) -> Option<String> {
         captured(
-            Process::new("timeout")
+            Process::new("/usr/bin/timeout")
                 .arg(format!("--kill-after={kill}s"))
                 .arg(format!("{seconds}s"))
                 .arg(self.program(name))

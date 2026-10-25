@@ -109,6 +109,7 @@ mod vp_store;
 mod vpn_ordering;
 pub mod websocket_runtime;
 pub mod wireguard;
+mod wireguard_peer;
 
 use crate::command::registry::{entry, Entry};
 use crate::command::{Platform, Privilege};
@@ -420,6 +421,10 @@ pub fn all() -> Vec<Entry> {
         entry::<php_runtime::InspectPool>(),
         entry::<php_runtime::RefreshCache>(),
         entry::<wireguard::ProjectHub>(),
+        entry::<wireguard_peer::PrepareKey>(),
+        entry::<wireguard_peer::Publish>(),
+        entry::<wireguard_peer::Commit>(),
+        entry::<wireguard_peer::Rollback>(),
         entry::<wireguard::BootstrapHub>(),
         entry::<wireguard::InspectHub>(),
         entry::<peer_dns::InspectPeerDns>(),

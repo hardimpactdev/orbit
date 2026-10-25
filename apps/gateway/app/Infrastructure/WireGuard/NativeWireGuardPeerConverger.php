@@ -6,118 +6,69 @@ namespace App\Infrastructure\WireGuard;
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Closure;
+use Throwable;
 
 final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
 {
-    /** @var list<positive-int> */
-    private const array PEER_INSTALL_RETRY_DELAYS = [1_000_000, 2_000_000];
-
     public function __construct(
         private VpnConfigurationRepository $configuration,
         private GatewayPeerProjectionManager $gatewayPeers,
-        private SshExecutor $ssh,
-        private ?Closure $sleep = null,
+        private AdmissionAgentRunner $agents,
     ) {}
 
-    public function converge(
-        Node $node,
-        SshConnection $connection,
-        bool $rolelessOperator = false,
-    ): void {
+    public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
+    {
         $vpn = $this->configuration->forPeer($node);
         $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
-        $publicKey = $this->preflightPeerKey($node, $connection, 'new');
-        $this->publishPeer($node, $connection, $publicKey, 'finalize', $rolelessOperator, $vpn, $domains);
+        $publicKey = $this->preflightPeerKey($node, $connection, false);
+        $this->publishPeer($node, $connection, $publicKey, false, $rolelessOperator, $vpn, $domains);
     }
 
-    public function convergeRecoverably(
-        Node $node,
-        SshConnection $connection,
-        Closure $completion,
-        bool $rolelessOperator = false,
-    ): void {
+    public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion, bool $rolelessOperator = false): void
+    {
         $vpn = $this->configuration->forPeer($node);
         $domains = $rolelessOperator ? [$vpn->domain] : app(PeerDnsPolicy::class)->domains($node);
-        $publicKey = $this->preflightPeerKey($node, $connection, 'recoverable');
+        $publicKey = $this->preflightPeerKey($node, $connection, true);
+        // Publication restores its own failures. A lost result requires inspection, not another mutation.
+        $this->publishPeer($node, $connection, $publicKey, true, $rolelessOperator, $vpn, $domains);
         $finalize = $connection;
 
         try {
-            $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator, $vpn, $domains);
-            // The completion may hand back the verified tunnel connection: role
-            // convergence closes the public path that published the peer before
-            // the transaction can be finalized.
             $completion(static function (SshConnection $verified) use (&$finalize): void {
                 $finalize = $verified;
             });
-            $this->commitPeerTransaction($node, $finalize, $publicKey);
-        } catch (\Throwable $throwable) {
-            $this->rollbackPeerTransaction($node, $finalize);
+            $this->run($node, $finalize, 'wireguard.commit-peer', ['public_key' => $publicKey]);
+        } catch (Throwable $throwable) {
+            $this->run($node, $finalize, 'wireguard.rollback-peer');
 
             throw $throwable;
         }
     }
 
-    private function preflightPeerKey(Node $node, SshConnection $connection, string $mode): string
+    private function preflightPeerKey(Node $node, SshConnection $connection, bool $existing): string
     {
-        $recoverable = $mode === 'recoverable';
-        $keyResult = $this->ssh->execute(
-            $connection,
-            new RemoteCommand(
-                arguments: ['sudo', 'bash', '-seu', '--', $mode],
-                input: <<<'BASH'
-                    mode=$1
-                    exec 9>/run/lock/orbit-wireguard-peer.lock
-                    flock -w 30 9
-                    umask 077
-                    if [ "$mode" = recoverable ]; then
-                        if [ ! -s /etc/wireguard/orbit.key ]; then
-                            exit 44
-                        fi
-                        wg pubkey < /etc/wireguard/orbit.key
-                    else
-                        install -d -m 0700 /etc/wireguard
-                        if [ ! -s /etc/wireguard/orbit.key ]; then
-                            wg genkey > /etc/wireguard/orbit.key
-                        fi
-                        wg pubkey < /etc/wireguard/orbit.key > /etc/wireguard/orbit.public
-                        cat /etc/wireguard/orbit.public
-                    fi
-                    BASH,
-            ),
-        );
-        $publicKey = trim($keyResult->stdout);
+        $publicKey = $this->run($node, $connection, 'wireguard.prepare-peer-key', ['existing' => $existing])['public_key'] ?? null;
 
-        if (! $keyResult->succeeded() || preg_match('/^[A-Za-z0-9+\/]{43}=$/', $publicKey) !== 1) {
-            $errorCode = 'vpn.peer_key_failed';
-            $message = $recoverable
-                ? "Could not derive the existing WireGuard public key on node [{$node->name}]."
-                : "Could not generate a WireGuard key on node [{$node->name}].";
-
-            if ($recoverable && $keyResult->exitCode === 44) {
-                $errorCode = 'vpn.peer_key_missing';
-                $message = "Could not read the existing WireGuard key on node [{$node->name}].";
-            }
-
-            throw $this->failure(
+        if (! is_string($publicKey) || preg_match('/^[A-Za-z0-9+\/]{43}=$/D', $publicKey) !== 1) {
+            throw new NodeProvisioningException(
                 step: 'wireguard-peer-key',
-                errorCode: $errorCode,
-                message: $message,
-                result: $keyResult,
+                errorCode: 'vpn.peer_key_failed',
+                message: "The agent returned no valid WireGuard public key for node [{$node->name}].",
             );
         }
 
-        if ($recoverable && $node->wireguard_public_key !== $publicKey) {
-            throw $this->failure(
+        if ($existing && $node->wireguard_public_key !== $publicKey) {
+            throw new NodeProvisioningException(
                 step: 'wireguard-peer-key',
                 errorCode: 'vpn.peer_key_mismatch',
                 message: "The existing WireGuard key does not match node [{$node->name}].",
-                result: $keyResult,
             );
         }
 
@@ -125,848 +76,53 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     }
 
     /** @param non-empty-list<string> $domains */
-    private function publishPeer(
-        Node $node,
-        SshConnection $connection,
-        string $publicKey,
-        string $transactionMode,
-        bool $rolelessOperator,
-        VpnConfiguration $vpn,
-        array $domains,
-    ): void {
-        $retainTransaction = $transactionMode === 'retain';
+    private function publishPeer(Node $node, SshConnection $connection, string $publicKey, bool $retain, bool $rolelessOperator, VpnConfiguration $vpn, array $domains): void
+    {
         $this->configuration->assignPeerKey($node, $publicKey);
         $this->gatewayPeers->converge($node);
-        $dnsMode = match (true) {
-            $rolelessOperator => 'operator',
-            default => 'wireguard',
-        };
-        $gatewayWireGuardAddress = explode(
-            separator: '/',
-            string: $vpn->serverAddress,
-            limit: 2,
-        )[0];
-        $peerCommand = $this->peerCommand(
-            $vpn,
-            $publicKey,
-            [
-                'transactionMode' => $transactionMode,
-                'dnsMode' => $dnsMode,
-                'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
-                'domains' => $domains,
-            ],
-        );
-        $peerResult = $this->ssh->execute($connection, $peerCommand);
-        foreach (self::PEER_INSTALL_RETRY_DELAYS as $delay) {
-            if (
-                $peerResult->succeeded()
-                || $peerResult->exitCode !== 255
-                || ! str_starts_with($peerResult->stderr, 'ssh: connect to host ')
-            ) {
-                break;
-            }
-
-            ($this->sleep ?? usleep(...))($delay);
-            $peerResult = $this->ssh->execute($connection, $peerCommand);
-        }
-
-        if (! $peerResult->succeeded()) {
-            if ($retainTransaction && $peerResult->exitCode === 42) {
-                throw $this->failure(
-                    step: 'wireguard-peer-transaction',
-                    errorCode: 'vpn.peer_recovery_pending',
-                    message: "WireGuard peer recovery is still pending for node [{$node->name}].",
-                    result: $peerResult,
-                );
-            }
-
-            if ($peerResult->exitCode === 47) {
-                throw $this->failure(
-                    step: 'wireguard-peer-dns-uplink',
-                    errorCode: 'vpn.peer_dns_uplink_missing',
-                    message: "No usable non-Orbit DNS server is configured on node [{$node->name}].",
-                    result: $peerResult,
-                );
-            }
-
-            if ($peerResult->exitCode === 43) {
-                throw $this->failure(
-                    step: 'wireguard-peer-state',
-                    errorCode: 'vpn.peer_state_unsupported',
-                    message: "The existing WireGuard service state is not recoverable on node [{$node->name}].",
-                    result: $peerResult,
-                );
-            }
-
-            throw $this->failure(
-                step: 'wireguard-peer-install',
-                errorCode: 'vpn.peer_config_failed',
-                message: "Could not configure WireGuard on node [{$node->name}].",
-                result: $peerResult,
-            );
-        }
-    }
-
-    private function commitPeerTransaction(Node $node, SshConnection $connection, string $publicKey): void
-    {
-        $commitResult = $this->ssh->execute($connection, new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu', '--', $publicKey],
-            input: <<<'BASH'
-                active_public_key=$1
-                exec 9>/run/lock/orbit-wireguard-peer.lock
-                flock -w 30 9
-                backup=/etc/wireguard/.orbit.conf.rollback
-                dns_state_backup=/etc/wireguard/.orbit.dns-link.rollback
-                transaction=/etc/wireguard/.orbit.peer-transaction
-                candidate=/etc/wireguard/orbit-candidate.conf
-                dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate
-                transaction_candidate=/etc/wireguard/.orbit.peer-transaction.candidate
-                restore_candidate=/etc/wireguard/.orbit.conf.restore
-                dns_restore_candidate=/etc/wireguard/.orbit.dns-link.restore
-
-                if [ ! -f "$transaction" ]; then
-                    exit 0
-                fi
-
-                if ! current_public_key=$(wg show orbit public-key); then
-                    exit 1
-                fi
-
-                if [ "$current_public_key" != "$active_public_key" ]; then
-                    exit 1
-                fi
-
-                rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" \
-                    "$restore_candidate" "$dns_restore_candidate" "$backup" "$dns_state_backup" "$transaction"
-                if [ -e "$backup" ] || [ -L "$backup" ] \
-                    || [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ] \
-                    || [ -e "$transaction" ] || [ -L "$transaction" ]; then
-                    exit 1
-                fi
-                BASH,
-        ));
-
-        if (! $commitResult->succeeded()) {
-            throw $this->failure(
-                step: 'wireguard-peer-commit',
-                errorCode: 'vpn.peer_commit_failed',
-                message: "Could not finalize WireGuard recovery on node [{$node->name}].",
-                result: $commitResult,
-            );
-        }
-    }
-
-    private function rollbackPeerTransaction(Node $node, SshConnection $connection): void
-    {
-        $rollbackResult = $this->ssh->execute($connection, new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu'],
-            input: PeerDnsProgram::source().PHP_EOL.<<<'BASH'
-                exec 9>/run/lock/orbit-wireguard-peer.lock
-                flock -w 30 9
-                live=/etc/wireguard/orbit.conf
-                backup=/etc/wireguard/.orbit.conf.rollback
-                restore_candidate=/etc/wireguard/.orbit.conf.restore
-                dns_state=/etc/wireguard/orbit.dns-link
-                dns_state_backup=/etc/wireguard/.orbit.dns-link.rollback
-                dns_restore_candidate=/etc/wireguard/.orbit.dns-link.restore
-                transaction=/etc/wireguard/.orbit.peer-transaction
-                candidate=/etc/wireguard/orbit-candidate.conf
-                dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate
-                transaction_candidate=/etc/wireguard/.orbit.peer-transaction.candidate
-
-                read_resolver_setting() {
-                    local output
-                    output=$(resolvectl "$1" orbit) || return 1
-                    output=${output#*:}
-                    output=${output#"${output%%[![:space:]]*}"}
-                    printf '%s' "$output"
-                }
-                capture_resolver_state() {
-                    resolver_default_route=$(read_resolver_setting default-route) || return 1
-                    resolver_llmnr=$(read_resolver_setting llmnr) || return 1
-                    resolver_mdns=$(read_resolver_setting mdns) || return 1
-                    resolver_dnssec=$(read_resolver_setting dnssec) || return 1
-                    resolver_dnsovertls=$(read_resolver_setting dnsovertls) || return 1
-                    case "$resolver_default_route" in yes|no) ;; *) return 1 ;; esac
-                    case "$resolver_llmnr" in yes|no|resolve) ;; *) return 1 ;; esac
-                    case "$resolver_mdns" in yes|no|resolve) ;; *) return 1 ;; esac
-                    case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) return 1 ;; esac
-                    case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) return 1 ;; esac
-                    resolver_nta=()
-                    resolver_nta_output=$(resolvectl nta orbit) || return 1
-                    resolver_nta_output=${resolver_nta_output#*:}
-                    while IFS= read -r resolver_nta_domain; do
-                        resolver_nta_domain=${resolver_nta_domain#"${resolver_nta_domain%%[![:space:]]*}"}
-                        if [ -n "$resolver_nta_domain" ]; then
-                            resolver_nta+=("$resolver_nta_domain")
-                        fi
-                    done <<< "$resolver_nta_output"
-                }
-                apply_resolver_state() {
-                    resolvectl default-route orbit "$resolver_default_route" || return 1
-                    resolvectl llmnr orbit "$resolver_llmnr" || return 1
-                    resolvectl mdns orbit "$resolver_mdns" || return 1
-                    resolvectl dnssec orbit "$resolver_dnssec" || return 1
-                    resolvectl dnsovertls orbit "$resolver_dnsovertls" || return 1
-                    if [ "${#resolver_nta[@]}" -eq 0 ]; then
-                        resolvectl nta orbit '' || return 1
-                    else
-                        resolvectl nta orbit "${resolver_nta[@]}" || return 1
-                    fi
-                }
-                publish_restart_configuration() {
-                    rm -f -- "$restore_candidate" || return 1
-                    if [ "$live_present" = 1 ]; then
-                        cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                        mv -fT -- "$restore_candidate" "$live" || return 1
-                    else
-                        rm -f -- "$live" || return 1
-                    fi
-                }
-                restore_exact_configuration() {
-                    rm -f -- "$restore_candidate" || return 1
-                    if [ "$live_present" = 1 ]; then
-                        cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                        mv -fT -- "$restore_candidate" "$live" || return 1
-                    else
-                        rm -f -- "$live" || return 1
-                    fi
-                }
-
-                if [ ! -f "$transaction" ]; then
-                    exit 0
-                fi
-
-                mapfile -t transaction_state < "$transaction"
-                uplink_snapshot=
-                if [[ "${transaction_state[-1]}" = uplink-v1:* ]]; then
-                    uplink_snapshot=${transaction_state[-1]#uplink-v1:}
-                    unset 'transaction_state[-1]'
-                fi
-                active_state=${transaction_state[0]:-}
-                enabled_state=${transaction_state[1]:-}
-                live_present=${transaction_state[2]:-}
-                dns_state_present=${transaction_state[3]:-}
-
-                case "$active_state" in
-                    active|inactive) ;;
-                    *) exit 1 ;;
-                esac
-                case "$enabled_state" in
-                    enabled|enabled-runtime|disabled|masked|masked-runtime) ;;
-                    *) exit 1 ;;
-                esac
-                case "$live_present:$dns_state_present" in
-                    0:0|0:1|1:0|1:1) ;;
-                    *) exit 1 ;;
-                esac
-
-                resolver_snapshot=${transaction_state[4]:-}
-                if [ "$resolver_snapshot" = resolver-v1 ]; then
-                    resolver_default_route=${transaction_state[5]:-}
-                    resolver_llmnr=${transaction_state[6]:-}
-                    resolver_mdns=${transaction_state[7]:-}
-                    resolver_dnssec=${transaction_state[8]:-}
-                    resolver_dnsovertls=${transaction_state[9]:-}
-                    resolver_nta_count=${transaction_state[10]:-}
-                    if [[ ! "$resolver_nta_count" =~ ^[0-9]+$ ]] \
-                        || [ "$resolver_nta_count" -gt 256 ] \
-                        || [ "${#transaction_state[@]}" -ne "$((11 + resolver_nta_count))" ]; then
-                        exit 1
-                    fi
-                    resolver_nta=("${transaction_state[@]:11:resolver_nta_count}")
-                    case "$resolver_default_route" in yes|no) ;; *) exit 1 ;; esac
-                    case "$resolver_llmnr" in yes|no|resolve) ;; *) exit 1 ;; esac
-                    case "$resolver_mdns" in yes|no|resolve) ;; *) exit 1 ;; esac
-                    case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) exit 1 ;; esac
-                    case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) exit 1 ;; esac
-                elif [ -z "$resolver_snapshot" ] && [ "$active_state" = active ]; then
-                    capture_resolver_state
-                    resolver_snapshot=resolver-v1
-                elif [ "$resolver_snapshot" != resolver-none ]; then
-                    exit 1
-                fi
-                if [ "$live_present" = 1 ] && [ ! -f "$backup" ]; then
-                    exit 1
-                fi
-                if [ "$live_present" = 0 ] && { [ -e "$backup" ] || [ -L "$backup" ]; }; then
-                    exit 1
-                fi
-                if [ "$dns_state_present" = 1 ] && { [ ! -f "$dns_state_backup" ] && [ ! -L "$dns_state_backup" ]; }; then
-                    exit 1
-                fi
-                if [ "$dns_state_present" = 0 ] && { [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ]; }; then
-                    exit 1
-                fi
-
-                old_dns_link=
-                old_dns_server=
-                old_dns_domains=()
-                if [ -s "$dns_state_backup" ]; then
-                    mapfile -t old_dns_state < "$dns_state_backup"
-                    old_dns_link=${old_dns_state[0]:-}
-                    old_dns_server=${old_dns_state[1]:-}
-                    old_dns_domains=("${old_dns_state[@]:2}")
-                    if [[ ! "$old_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
-                        || [[ ! "$old_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
-                        || [ "${#old_dns_domains[@]}" -eq 0 ]; then
-                        exit 1
-                    fi
-                    for old_dns_domain in "${old_dns_domains[@]}"; do
-                        if [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
-                            exit 1
-                        fi
-                    done
-                fi
-
-                current_dns_link=
-                if [ -s "$dns_state" ]; then
-                    mapfile -t current_dns_state < "$dns_state"
-                    current_dns_link=${current_dns_state[0]:-}
-                fi
-
-                if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
-                    systemctl stop wg-quick@orbit
-                fi
-
-                publish_restart_configuration
-
-                rm -f -- "$dns_restore_candidate"
-                if [ "$dns_state_present" = 1 ]; then
-                    cp -a --no-dereference -- "$dns_state_backup" "$dns_restore_candidate"
-                    mv -fT -- "$dns_restore_candidate" "$dns_state"
-                else
-                    rm -f -- "$dns_state"
-                fi
-
-                systemctl unmask wg-quick@orbit
-                systemctl unmask --runtime wg-quick@orbit
-                systemctl disable wg-quick@orbit
-                systemctl disable --runtime wg-quick@orbit
-                case "$enabled_state" in
-                    enabled) systemctl enable wg-quick@orbit ;;
-                    enabled-runtime) systemctl enable --runtime wg-quick@orbit ;;
-                esac
-
-                service_failed=0
-                if [ "$active_state" = active ]; then
-                    systemctl restart wg-quick@orbit || service_failed=1
-                elif [ "$live_present" = 1 ]; then
-                    systemctl stop wg-quick@orbit || service_failed=1
-                fi
-                restore_exact_configuration
-                if [ "$service_failed" -ne 0 ]; then
-                    exit 1
-                fi
-
-                if [[ "$current_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
-                    resolvectl dns "$current_dns_link" ''
-                    resolvectl domain "$current_dns_link" ''
-                fi
-
-                if [ -n "$old_dns_link" ]; then
-                    resolvectl dns "$old_dns_link" "$old_dns_server"
-                    old_resolvectl_domains=()
-                    for old_dns_domain in "${old_dns_domains[@]}"; do
-                        old_resolvectl_domains+=("~$old_dns_domain")
-                    done
-                    resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}"
-                fi
-                peer_dns_restore_uplink all
-                if [ "$resolver_snapshot" = resolver-v1 ]; then
-                    apply_resolver_state
-                fi
-
-                case "$enabled_state" in
-                    masked) systemctl mask wg-quick@orbit ;;
-                    masked-runtime) systemctl mask --runtime wg-quick@orbit ;;
-                esac
-
-                rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" \
-                    "$restore_candidate" "$dns_restore_candidate" "$backup" "$dns_state_backup" "$transaction"
-                if [ -e "$backup" ] || [ -L "$backup" ] \
-                    || [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ] \
-                    || [ -e "$transaction" ] || [ -L "$transaction" ]; then
-                    exit 1
-                fi
-                BASH,
-        ));
-
-        if (! $rollbackResult->succeeded()) {
-            throw $this->failure(
-                step: 'wireguard-rollback',
-                errorCode: 'vpn.peer_rollback_failed',
-                message: "Could not restore the remote WireGuard peer for node [{$node->name}].",
-                result: $rollbackResult,
-            );
-        }
+        $this->run($node, $connection, 'wireguard.publish-peer', [
+            'server_public_key' => $vpn->serverPublicKey,
+            'peer_public_key' => $publicKey,
+            'endpoint' => $vpn->endpoint,
+            'address' => $vpn->peerAddress,
+            'subnet' => $vpn->subnet,
+            'dns_server' => $vpn->dnsServer,
+            'domains' => $domains,
+            'operator_dns' => $rolelessOperator ? explode('/', $vpn->serverAddress, 2)[0] : null,
+            'retain' => $retain,
+        ]);
     }
 
     /**
-     * @param  array{transactionMode: string, dnsMode: string, operatorDns: string, domains: non-empty-list<string>}  $dns
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
-    private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
+    private function run(Node $node, SshConnection $connection, string $command, array $input = []): array
     {
-        [
-            'transactionMode' => $transactionMode,
-            'dnsMode' => $dnsMode,
-            'operatorDns' => $operatorDns,
-            'domains' => $domains,
-        ] = $dns;
-        $cleanup = $transactionMode === 'retain'
-            ? 'trap - EXIT'
-            : 'rm -f -- "$backup" "$dns_state_backup" "$transaction"'
-            .PHP_EOL
-            .'                if [ -e "$backup" ] || [ -L "$backup" ] || [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ] || [ -e "$transaction" ] || [ -L "$transaction" ]; then'
-            .PHP_EOL
-            .'                    exit 1'
-            .PHP_EOL
-            .'                fi'
-            .PHP_EOL
-            .'                trap - EXIT';
+        [$step, $code] = match ($command) {
+            'wireguard.prepare-peer-key' => ['wireguard-peer-key', 'vpn.peer_key_failed'],
+            'wireguard.commit-peer' => ['wireguard-peer-commit', 'vpn.peer_commit_failed'],
+            'wireguard.rollback-peer' => ['wireguard-rollback', 'vpn.peer_rollback_failed'],
+            default => ['wireguard-peer-install', 'vpn.peer_config_failed'],
+        };
 
-        return new RemoteCommand(
-            arguments: [
-                'sudo',
-                'bash',
-                '-seu',
-                '--',
-                $vpn->serverPublicKey,
-                $peerPublicKey,
-                $vpn->endpoint,
-                $vpn->peerAddress,
-                $vpn->subnet,
-                $vpn->dnsServer,
-                $vpn->domain,
-                $dnsMode,
-                $operatorDns,
-                $transactionMode,
-            ],
-            input: PeerDnsProgram::source($domains).PHP_EOL.str_replace(
-                '__FINALIZE__',
-                $cleanup,
-                <<<'BASH_WRAP'
-                    server_public_key=$1
-                    peer_public_key=$2
-                    endpoint=$3
-                    address=$4
-                    subnet=$5
-                    dns_server=$6
-                    domain=$7
-                    dns_mode=$8
-                    operator_dns=$9
-                    transaction_mode=${10}
-                    exec 9>/run/lock/orbit-wireguard-peer.lock
-                    flock -w 30 9
-                    private_key=$(cat /etc/wireguard/orbit.key)
-                    candidate=/etc/wireguard/orbit-candidate.conf
-                    live=/etc/wireguard/orbit.conf
-                    backup=/etc/wireguard/.orbit.conf.rollback
-                    dns_state=/etc/wireguard/orbit.dns-link
-                    dns_state_candidate=/etc/wireguard/.orbit.dns-link.candidate
-                    dns_state_backup=/etc/wireguard/.orbit.dns-link.rollback
-                    transaction=/etc/wireguard/.orbit.peer-transaction
-                    transaction_candidate=/etc/wireguard/.orbit.peer-transaction.candidate
-                    restore_candidate=/etc/wireguard/.orbit.conf.restore
-                    dns_restore_candidate=/etc/wireguard/.orbit.dns-link.restore
+        try {
+            return $this->agents->runOver($node, $connection, $command, $input);
+        } catch (AgentCommandRefused $refusal) {
+            if ($command === 'wireguard.publish-peer' || $command === 'wireguard.prepare-peer-key') {
+                [$step, $code] = match ($refusal->errorCode) {
+                    'wireguard.peer_key_missing' => ['wireguard-peer-key', 'vpn.peer_key_missing'],
+                    'wireguard.peer_recovery_pending' => ['wireguard-peer-transaction', 'vpn.peer_recovery_pending'],
+                    'wireguard.peer_dns_uplink_missing' => ['wireguard-peer-dns-uplink', 'vpn.peer_dns_uplink_missing'],
+                    'wireguard.peer_state_unsupported' => ['wireguard-peer-state', 'vpn.peer_state_unsupported'],
+                    'wireguard.peer_rollback_failed' => ['wireguard-rollback', 'vpn.peer_rollback_failed'],
+                    default => [$step, $code],
+                };
+            }
 
-                    read_resolver_setting() {
-                        local output
-                        output=$(resolvectl "$1" orbit) || return 1
-                        output=${output#*:}
-                        output=${output#"${output%%[![:space:]]*}"}
-                        printf '%s' "$output"
-                    }
-                    capture_resolver_state() {
-                        resolver_default_route=$(read_resolver_setting default-route) || return 1
-                        resolver_llmnr=$(read_resolver_setting llmnr) || return 1
-                        resolver_mdns=$(read_resolver_setting mdns) || return 1
-                        resolver_dnssec=$(read_resolver_setting dnssec) || return 1
-                        resolver_dnsovertls=$(read_resolver_setting dnsovertls) || return 1
-                        case "$resolver_default_route" in yes|no) ;; *) return 1 ;; esac
-                        case "$resolver_llmnr" in yes|no|resolve) ;; *) return 1 ;; esac
-                        case "$resolver_mdns" in yes|no|resolve) ;; *) return 1 ;; esac
-                        case "$resolver_dnssec" in yes|no|allow-downgrade) ;; *) return 1 ;; esac
-                        case "$resolver_dnsovertls" in yes|no|opportunistic) ;; *) return 1 ;; esac
-                        resolver_nta=()
-                        resolver_nta_output=$(resolvectl nta orbit) || return 1
-                        resolver_nta_output=${resolver_nta_output#*:}
-                        while IFS= read -r resolver_nta_domain; do
-                            resolver_nta_domain=${resolver_nta_domain#"${resolver_nta_domain%%[![:space:]]*}"}
-                            if [ -n "$resolver_nta_domain" ]; then
-                                resolver_nta+=("$resolver_nta_domain")
-                            fi
-                        done <<< "$resolver_nta_output"
-                    }
-                    apply_resolver_state() {
-                        resolvectl default-route orbit "$resolver_default_route" || return 1
-                        resolvectl llmnr orbit "$resolver_llmnr" || return 1
-                        resolvectl mdns orbit "$resolver_mdns" || return 1
-                        resolvectl dnssec orbit "$resolver_dnssec" || return 1
-                        resolvectl dnsovertls orbit "$resolver_dnsovertls" || return 1
-                        if [ "${#resolver_nta[@]}" -eq 0 ]; then
-                            resolvectl nta orbit '' || return 1
-                        else
-                            resolvectl nta orbit "${resolver_nta[@]}" || return 1
-                        fi
-                    }
-                    publish_restart_configuration() {
-                        rm -f -- "$restore_candidate" || return 1
-                        if [ "$live_present" -eq 1 ]; then
-                            cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                            mv -fT -- "$restore_candidate" "$live" || return 1
-                        else
-                            rm -f -- "$live" || return 1
-                        fi
-                    }
-                    restore_exact_configuration() {
-                        rm -f -- "$restore_candidate" || return 1
-                        if [ "$live_present" -eq 1 ]; then
-                            cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
-                            mv -fT -- "$restore_candidate" "$live" || return 1
-                        else
-                            rm -f -- "$live" || return 1
-                        fi
-                    }
-                    live_present=0
-                    dns_state_present=0
-                    published=0
-                    transaction_owned=0
-                    cleanup_finalize() {
-                        rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" "$restore_candidate" "$dns_restore_candidate"
-                        if [ "$transaction_owned" -eq 1 ] && [ "$published" -eq 0 ]; then
-                            rm -f -- "$backup" "$dns_state_backup" "$transaction"
-                        fi
-                    }
-                    trap cleanup_finalize EXIT
-
-                    case "$dns_mode:$transaction_mode" in
-                        operator:retain|operator:finalize|wireguard:retain|wireguard:finalize) ;;
-                        *) exit 43 ;;
-                    esac
-                    if [ "${#dns_domains[@]}" -lt 1 ] || [ "${#dns_domains[@]}" -gt 512 ]; then
-                        exit 43
-                    fi
-                    for dns_domain in "${dns_domains[@]}"; do
-                        [[ "$dns_domain" =~ ^[A-Za-z0-9.-]+$ ]] && [ "$dns_domain" != . ] || exit 43
-                    done
-                    if [ -e "$backup" ] || [ -L "$backup" ] \
-                        || [ -e "$dns_state_backup" ] || [ -L "$dns_state_backup" ] \
-                        || [ -e "$transaction" ] || [ -L "$transaction" ]; then
-                        echo 'Existing peer recovery artifacts require manual recovery.' >&2
-                        exit 42
-                    fi
-                    transaction_owned=1
-                    if [ -L "$live" ] || { [ -e "$live" ] && [ ! -f "$live" ]; }; then
-                        exit 43
-                    fi
-                    if [ -e "$dns_state" ] && [ ! -f "$dns_state" ] && [ ! -L "$dns_state" ]; then
-                        exit 43
-                    fi
-
-                    active_state=$(systemctl is-active wg-quick@orbit 2>/dev/null || true)
-                    enabled_state=$(systemctl is-enabled wg-quick@orbit 2>/dev/null || true)
-                    case "$active_state" in
-                        active|inactive) ;;
-                        *) exit 43 ;;
-                    esac
-                    case "$enabled_state" in
-                        enabled|enabled-runtime|disabled|masked|masked-runtime) ;;
-                        *) exit 43 ;;
-                    esac
-
-                    resolver_snapshot=resolver-none
-                    resolver_default_route=
-                    resolver_llmnr=
-                    resolver_mdns=
-                    resolver_dnssec=
-                    resolver_dnsovertls=
-                    resolver_nta=()
-                    if [ "$active_state" = active ]; then
-                        capture_resolver_state || exit 43
-                        resolver_snapshot=resolver-v1
-                    fi
-
-                    uplink_snapshot=
-                    if [ "$dns_mode" = wireguard ] && [ -s "$dns_state" ]; then
-                        previous_link=$(head -n 1 "$dns_state")
-                        if [ "$previous_link" != orbit ]; then
-                            peer_dns_capture_uplink "$previous_link" || exit 43
-                        fi
-                    fi
-                    if [ -f "$live" ]; then
-                        live_present=1
-                        cp -a --no-dereference -- "$live" "$backup"
-                    fi
-                    if [ -e "$dns_state" ] || [ -L "$dns_state" ]; then
-                        dns_state_present=1
-                        cp -a --no-dereference -- "$dns_state" "$dns_state_backup"
-                    fi
-                    printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-                        "$active_state" "$enabled_state" "$live_present" "$dns_state_present" \
-                        "$resolver_snapshot" "$resolver_default_route" "$resolver_llmnr" "$resolver_mdns" \
-                        "$resolver_dnssec" "$resolver_dnsovertls" "${#resolver_nta[@]}" > "$transaction_candidate"
-                    if [ "${#resolver_nta[@]}" -gt 0 ]; then
-                        printf '%s\n' "${resolver_nta[@]}" >> "$transaction_candidate"
-                    fi
-                    if [ -n "$uplink_snapshot" ]; then
-                        printf 'uplink-v1:%s\n' "$uplink_snapshot" >> "$transaction_candidate"
-                    fi
-                    chmod 0600 "$transaction_candidate"
-                    mv -fT -- "$transaction_candidate" "$transaction"
-                    printf -v dns_server_escaped '%q' "$dns_server"
-                    printf -v operator_dns_escaped '%q' "$operator_dns"
-
-                    dns_domains_escaped=()
-                    for dns_domain in "${dns_domains[@]}"; do
-                        printf -v dns_domain_escaped '%q' "~$dns_domain"
-                        dns_domains_escaped+=("$dns_domain_escaped")
-                    done
-
-                    # No PreDown hook: the wg-quick AppArmor profile on Ubuntu 26.04 denies the
-                    # RevertLink call, and systemd-resolved drops the link configuration when
-                    # wg-quick deletes the interface.
-                    dns_hooks=
-                    if [ "$dns_mode" = wireguard ]; then
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"
-                    fi
-                    operator_dns_line=
-                    if [ -n "$operator_dns" ]; then
-                        operator_dns_line="DNS = $operator_dns_escaped"
-                    fi
-
-                    old_dns_link=
-                    old_dns_server=
-                    old_dns_domains=()
-                    if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then
-                        mapfile -t old_dns_state < "$dns_state"
-                        old_dns_link=${old_dns_state[0]:-}
-                        old_dns_server=${old_dns_state[1]:-$dns_server}
-                        old_dns_domains=("${old_dns_state[@]:2}")
-                        if [ "${#old_dns_domains[@]}" -eq 0 ] || [ -z "${old_dns_domains[0]}" ]; then
-                            old_dns_domains=("$domain")
-                        fi
-                        if [[ ! "$old_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
-                            || [[ ! "$old_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]]; then
-                            old_dns_link=
-                            old_dns_server=
-                            old_dns_domains=()
-                        fi
-                        for old_dns_domain in "${old_dns_domains[@]}"; do
-                            if [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
-                                old_dns_link=
-                                old_dns_server=
-                                old_dns_domains=()
-                                break
-                            fi
-                        done
-                    fi
-
-                    restore_dns_state() {
-                        rm -f -- "$dns_restore_candidate" || return 1
-                        if [ "$dns_state_present" -eq 1 ]; then
-                            cp -a --no-dereference -- "$dns_state_backup" "$dns_restore_candidate" || return 1
-                            mv -fT -- "$dns_restore_candidate" "$dns_state" || return 1
-                        else
-                            rm -f -- "$dns_state" || return 1
-                        fi
-                    }
-                    restore_enabled_state() {
-                        systemctl unmask wg-quick@orbit || return 1
-                        systemctl unmask --runtime wg-quick@orbit || return 1
-                        systemctl disable wg-quick@orbit || return 1
-                        systemctl disable --runtime wg-quick@orbit || return 1
-                        case "$enabled_state" in
-                            enabled) systemctl enable wg-quick@orbit || return 1 ;;
-                            enabled-runtime) systemctl enable --runtime wg-quick@orbit || return 1 ;;
-                        esac
-                    }
-
-                    cat > "$candidate" <<EOF
-                    [Interface]
-                    PrivateKey = $private_key
-                    Address = $address
-
-                    $operator_dns_line
-                    $dns_hooks
-
-                    [Peer]
-                    PublicKey = $server_public_key
-                    Endpoint = $endpoint
-                    AllowedIPs = $subnet
-                    PersistentKeepalive = 25
-                    EOF
-
-                    chown root:root "$candidate"
-                    chmod 0600 "$candidate"
-                    wg-quick strip "$candidate" >/dev/null
-                    restore_previous() {
-                        if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
-                            systemctl stop wg-quick@orbit || return 1
-                        fi
-                        publish_restart_configuration || return 1
-                        restore_dns_state || return 1
-                        restore_enabled_state || return 1
-                        service_failed=0
-                        if [ "$active_state" = active ]; then
-                            systemctl restart wg-quick@orbit || service_failed=1
-                        elif [ "$live_present" = 1 ]; then
-                            systemctl stop wg-quick@orbit || service_failed=1
-                        fi
-                        restore_exact_configuration || return 1
-                        if [ "$service_failed" -ne 0 ]; then
-                            return 1
-                        fi
-                        restore_dns || return 1
-                        peer_dns_restore_uplink all || return 1
-                        if [ "$resolver_snapshot" = resolver-v1 ]; then
-                            apply_resolver_state || return 1
-                        fi
-                        case "$enabled_state" in
-                            masked) systemctl mask wg-quick@orbit || return 1 ;;
-                            masked-runtime) systemctl mask --runtime wg-quick@orbit || return 1 ;;
-                        esac
-                        rm -f -- "$backup" "$dns_state_backup" "$transaction" || return 1
-                    }
-                    dns_link=
-                    restore_dns() {
-                        if [[ "$dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]]; then
-                            resolvectl dns "$dns_link" '' || return 1
-                            resolvectl domain "$dns_link" '' || return 1
-                        fi
-                        if [ -n "$old_dns_link" ]; then
-                            resolvectl dns "$old_dns_link" "$old_dns_server" || return 1
-                            old_resolvectl_domains=()
-                            for old_dns_domain in "${old_dns_domains[@]}"; do
-                                old_resolvectl_domains+=("~$old_dns_domain")
-                            done
-                            resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}" || return 1
-                        fi
-                    }
-                    restore_after_failure() {
-                        if [ "$transaction_mode" = retain ]; then
-                            return 0
-                        fi
-                        restore_previous || return 1
-                    }
-                    if [ "$dns_mode" = wireguard ] && { [ -z "$old_dns_link" ] || [ "$old_dns_link" = orbit ]; } && ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
-                        echo 'No non-Orbit per-link or global DNS server is configured.' >&2
-                        exit 47
-                    fi
-                    if [ "$dns_mode" = wireguard ] && [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
-                        network_state=$(timeout --kill-after=5s 10s networkctl --no-legend --no-pager --full list "$old_dns_link") || exit 43
-                        read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
-                        [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ] || exit 43
-                    fi
-                    if ! mv -f -- "$candidate" "$live"; then
-                        exit 1
-                    fi
-                    published=1
-                    if [ "$dns_mode" = wireguard ]; then
-                        dns_link=orbit
-                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
-                            if ! resolvectl revert "$old_dns_link" \
-                                || ! peer_dns_restore_uplink protocols; then
-                                restore_after_failure || exit 1
-                                exit 43
-                            fi
-                        fi
-                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != orbit ]; then
-                            if ! timeout --kill-after=5s 15s networkctl reconfigure "$old_dns_link"; then
-                                restore_after_failure || exit 1
-                                exit 43
-                            fi
-                            provider_usable=0
-                            provider_deadline=$((SECONDS + 15))
-                            while [ "$SECONDS" -lt "$provider_deadline" ]; do
-                                network_state=$(timeout --kill-after=2s 2s networkctl --no-legend --no-pager --full list "$old_dns_link") || network_state=
-                                read -r network_index network_name network_type network_operational network_setup <<< "$network_state"
-                                if peer_dns_has_uplink "$dns_server" "${old_dns_server:-}" && [ "$network_name" = "$old_dns_link" ] && [ "$network_setup" = configured ]; then
-                                    provider_usable=1
-                                fi
-                                [ "$provider_usable" = 0 ] || break
-                                sleep 0.25
-                            done
-                            if [ "$provider_usable" != 1 ] || ! peer_dns_has_uplink "$dns_server" "${old_dns_server:-}"; then
-                                restore_after_failure || exit 1
-                                exit 47
-                            fi
-                        fi
-                    fi
-                    case "$enabled_state" in
-                        masked)
-                            if ! systemctl unmask wg-quick@orbit; then
-                                restore_after_failure || exit 1
-                                exit 1
-                            fi
-                            ;;
-                        masked-runtime)
-                            if ! systemctl unmask --runtime wg-quick@orbit; then
-                                restore_after_failure || exit 1
-                                exit 1
-                            fi
-                            ;;
-                    esac
-                    if ! systemctl enable wg-quick@orbit; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    if ! systemctl restart wg-quick@orbit; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    if [ "$resolver_snapshot" = resolver-v1 ] && ! apply_resolver_state; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-
-                    if [ "$dns_mode" = wireguard ] && ! resolvectl default-route orbit no; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    if [ "$dns_mode" = operator ]; then
-                        rm -f -- "$dns_state"
-                    else
-                        dns_link=orbit
-                    fi
-
-                    if [ "$dns_mode" != operator ]; then
-                        if ! printf '%s\n' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"; then
-                            restore_after_failure || exit 1
-                            exit 1
-                        fi
-                        chmod 0600 "$dns_state_candidate"
-                        if ! mv -f -- "$dns_state_candidate" "$dns_state"; then
-                            restore_after_failure || exit 1
-                            exit 1
-                        fi
-                    fi
-                    if ! active_public_key=$(wg show orbit public-key); then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    if [ "$active_public_key" != "$peer_public_key" ]; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    __FINALIZE__
-                    printf '%s\n' "$active_public_key"
-                    BASH_WRAP,
-            ),
-        );
-    }
-
-    private function failure(
-        string $step,
-        string $errorCode,
-        string $message,
-        CommandResult $result,
-    ): NodeProvisioningException {
-        return new NodeProvisioningException(
-            step: $step,
-            errorCode: $errorCode,
-            message: $message,
-            result: $result,
-        );
+            throw new NodeProvisioningException($step, $code, "WireGuard peer step [{$step}] failed on node [{$node->name}].", previous: $refusal, result: AgentStep::output($refusal));
+        } catch (AgentRunnerFailure $failure) {
+            throw new NodeProvisioningException($step, $code, "WireGuard peer step [{$step}] could not finish on node [{$node->name}].", previous: $failure, result: $failure->result);
+        }
     }
 }

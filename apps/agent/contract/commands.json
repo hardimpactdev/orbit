@@ -5405,6 +5405,90 @@
       ]
     },
     {
+      "name": "wireguard.prepare-peer-key",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.prepare-peer-key.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.publish-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.publish-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.commit-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.commit-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
+      "name": "wireguard.rollback-peer",
+      "summary": "Manage the native WireGuard peer transaction: wireguard.rollback-peer.",
+      "mutates": true,
+      "timeout_seconds": 120,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "wireguard.peer_busy",
+        "wireguard.peer_key_missing",
+        "wireguard.peer_key_failed",
+        "wireguard.peer_state_unsupported",
+        "wireguard.peer_recovery_pending",
+        "wireguard.peer_dns_uplink_missing",
+        "wireguard.peer_config_failed",
+        "wireguard.peer_commit_failed",
+        "wireguard.peer_rollback_failed"
+      ]
+    },
+    {
       "name": "wireguard.bootstrap-hub",
       "summary": "Validate the Gateway hub, enable forwarding and restart WireGuard with configuration recovery.",
       "mutates": true,

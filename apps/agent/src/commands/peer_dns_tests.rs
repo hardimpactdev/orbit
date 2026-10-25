@@ -86,14 +86,14 @@ printf '198.51.100.53\n' > "$ROOT/state/resolver/eth0/dns"
 printf '~underlay.example\n' > "$ROOT/state/resolver/eth0/domain""#;
 
 #[derive(Debug, PartialEq)]
-struct Link {
+pub(crate) struct Link {
     dns: Vec<String>,
     domains: Vec<String>,
     unrelated: BTreeMap<String, String>,
 }
 
 #[derive(Debug, PartialEq)]
-struct State {
+pub(crate) struct State {
     live: String,
     dns: String,
     private_key: String,
@@ -102,9 +102,9 @@ struct State {
     artifacts: Vec<String>,
 }
 
-struct Fixture {
-    root: PathBuf,
-    host: Host,
+pub(crate) struct Fixture {
+    pub(crate) root: PathBuf,
+    pub(crate) host: Host,
 }
 
 impl Drop for Fixture {
@@ -118,7 +118,7 @@ fn domains(names: &[&str]) -> Vec<String> {
 }
 
 impl Fixture {
-    fn new(previous_underlay: bool, pre_down: bool) -> Self {
+    pub(crate) fn new(previous_underlay: bool, pre_down: bool) -> Self {
         let root = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!("orbit-peer-dns-{:016x}", rand::random::<u64>()));
@@ -210,19 +210,19 @@ impl Fixture {
         fixture
     }
 
-    fn write(&self, path: &str, content: &str) {
+    pub(crate) fn write(&self, path: &str, content: &str) {
         fs::write(self.root.join(path), content).unwrap();
     }
 
-    fn flag(&self, name: &str) {
+    pub(crate) fn flag(&self, name: &str) {
         self.write(&format!("state/{name}"), "1");
     }
 
-    fn clear(&self, name: &str) {
+    pub(crate) fn clear(&self, name: &str) {
         let _ = fs::remove_file(self.root.join("state").join(name));
     }
 
-    fn resolver(&self, link: &str, dns: &str, domain: &str, unrelated: [&str; 6]) {
+    pub(crate) fn resolver(&self, link: &str, dns: &str, domain: &str, unrelated: [&str; 6]) {
         self.write(&format!("state/resolver/{link}/dns"), dns);
         self.write(&format!("state/resolver/{link}/domain"), domain);
         for (setting, value) in [
@@ -243,7 +243,7 @@ impl Fixture {
         }
     }
 
-    fn read(&self, path: &str) -> String {
+    pub(crate) fn read(&self, path: &str) -> String {
         fs::read_to_string(self.root.join(path)).unwrap_or_default()
     }
 
@@ -276,7 +276,7 @@ impl Fixture {
         }
     }
 
-    fn state(&self) -> State {
+    pub(crate) fn state(&self) -> State {
         let mut artifacts: Vec<String> = fs::read_dir(self.root.join("wireguard"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())

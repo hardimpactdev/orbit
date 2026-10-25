@@ -3,7 +3,7 @@
 //! `wireguard.repair-peer-dns` moves the peer's DNS selection to the `orbit` link with the Gateway's routing domains.
 //!
 //! Repair runs as one transaction under the exclusive peer lock `/run/lock/orbit-wireguard-peer.lock`, which the
-//! shell programs of peer convergence also take. It backs up the configuration, the DNS state, the `orbit` default
+//! native peer convergence commands also take. It backs up the configuration, the DNS state, the `orbit` default
 //! route flag, and the old uplink's resolver settings in `/etc/wireguard/.orbit.peer-transaction`, owned by
 //! `dns-repair-v2`, before it publishes. A failure restores them. A failed restore leaves the transaction, and the
 //! next repair completes it first. The file formats are those that peer convergence and earlier repairs write.
@@ -50,6 +50,18 @@ const UPLINK_SETTINGS: [&str; 8] = [
 /// The owner line of a repair transaction.
 const OWNER: &str = "dns-repair-v2";
 
+/// wg-quick evaluates hooks in a shell. Escape the route marker so an account name cannot expand to its home.
+pub(super) fn post_up(server: &str, domains: &[String]) -> String {
+    let routed = domains
+        .iter()
+        .map(|domain| format!("\\~{domain}"))
+        .collect::<Vec<_>>();
+    format!(
+        "PostUp = resolvectl dns %i {server}; resolvectl domain %i {}",
+        routed.join(" ")
+    )
+}
+
 /// The lines of a file as `mapfile -t` reads them: a final newline ends the last line rather than starting one.
 fn lines(text: &str) -> Vec<&str> {
     let mut lines: Vec<&str> = text.split('\n').collect();
@@ -68,7 +80,7 @@ fn setting_value(output: &str) -> &str {
 }
 
 /// Holds a lock file for up to `wait`, exclusively or shared.
-fn hold(path: &Path, wait: Duration, exclusive: bool) -> io::Result<Option<fs::File>> {
+pub(super) fn hold(path: &Path, wait: Duration, exclusive: bool) -> io::Result<Option<fs::File>> {
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -138,13 +150,13 @@ pub fn usable_uplink(listing: &str, private: &str, previous: &str) -> bool {
     })
 }
 
-fn has_uplink(host: &Host, private: &str, previous: &str) -> bool {
+pub(super) fn has_uplink(host: &Host, private: &str, previous: &str) -> bool {
     host.read_bounded(5, 2, "resolvectl", &["dns"])
         .is_some_and(|listing| usable_uplink(&listing, private, previous))
 }
 
 /// The first line of `networkctl list <link>`: whether networkd names the link and has configured it.
-fn configured(host: &Host, seconds: u32, kill: u32, link: &str) -> Option<bool> {
+pub(super) fn configured(host: &Host, seconds: u32, kill: u32, link: &str) -> Option<bool> {
     let state = host.read_bounded(
         seconds,
         kill,
@@ -158,7 +170,7 @@ fn configured(host: &Host, seconds: u32, kill: u32, link: &str) -> Option<bool> 
 
 /// The resolver settings of an uplink in the encoded form a transaction keeps: base64 of the link and one `v:` line
 /// per setting, each base64 of its value.
-fn capture_uplink(host: &Host, link: &str) -> Option<String> {
+pub(super) fn capture_uplink(host: &Host, link: &str) -> Option<String> {
     if !LINK.is_match(link) || link == "orbit" {
         return None;
     }
@@ -174,7 +186,7 @@ fn capture_uplink(host: &Host, link: &str) -> Option<String> {
 }
 
 /// Puts an uplink snapshot back: every setting, or with `protocols` only those other than its DNS selection.
-fn restore_uplink(host: &Host, snapshot: &str, protocols: bool) -> bool {
+pub(super) fn restore_uplink(host: &Host, snapshot: &str, protocols: bool) -> bool {
     if snapshot.is_empty() {
         return true;
     }
@@ -610,16 +622,7 @@ impl Repair<'_> {
             })
             .ok_or(RepairError::StateUnsupported {})?;
 
-        let routed: Vec<String> = input
-            .domains
-            .iter()
-            .map(|domain| format!("\\~{domain}"))
-            .collect();
-        let hook = format!(
-            "PostUp = resolvectl dns %i {}; resolvectl domain %i {}\n",
-            input.dns_server,
-            routed.join(" ")
-        );
+        let hook = format!("{}\n", post_up(&input.dns_server, &input.domains));
 
         if old.link != "orbit" && configured(self.host, 10, 5, &old.link) != Some(true) {
             return Err(RepairError::StateUnsupported {});
@@ -801,4 +804,4 @@ impl Command for RepairPeerDns {
 
 #[cfg(test)]
 #[path = "peer_dns_tests.rs"]
-mod tests;
+pub(crate) mod tests;

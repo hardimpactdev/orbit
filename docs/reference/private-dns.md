@@ -59,7 +59,7 @@ Read the saved state first to find the resolver link, server, and routing domain
 | `getent ahostsv4 example.com` | An ordinary name resolves through the provider or DHCP resolver. |
 | `ip route` | Application routes do not depend on the DNS selection. |
 
-Peer convergence runs a Bash program over the bootstrap SSH path, because it builds the tunnel that the agent's transport needs. Repair and inspection are agent commands. Neither needs PHP on the peer. Routing domains travel on standard input, in the script input or the agent's envelope, so the SSH command line stays small at the 512-domain cap.
+Peer convergence uses the agent's `wireguard.prepare-peer-key`, `wireguard.publish-peer`, `wireguard.commit-peer`, and `wireguard.rollback-peer` commands. Admission carries them over the pinned bootstrap SSH connection until the tunnel is verified, then uses the verified connection to finish the transaction. Repair and inspection use the same agent. Routing domains travel in the standard-input envelope, so the SSH command line stays small at the 512-domain cap.
 
 The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it. Native peer DNS repair refuses unmanaged targets with `vpn.peer_dns_unmanaged`. Explicit repair also refuses the Gateway. AppDev TLD convergence reports the refusal and leaves its bootstrap resolver unchanged.
 
@@ -242,7 +242,11 @@ Each failure reports one code without remote command output. The agent refuses w
 | `vpn.peer_dns_uplink_missing` | The previous DNS state stays or is restored. Configure a non-Orbit per-link or global DNS server, then retry. |
 | `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The command reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
 
-Peer convergence and repair save the live WireGuard configuration, DNS state, and service state before they publish. A failed change restores that state without resetting unrelated link settings. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
+Peer convergence and repair save the live WireGuard configuration, DNS state, and service state before they publish. The native publication command restores that state when it fails, without resetting unrelated link settings. Recoverable admission retains a successful publication until its continuation commits; a failed continuation requests rollback over its last verified connection. A lost publication result fails for inspection and is not retried. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
+
+Peer publication keeps its complete snapshot in the root-owned, mode-0600 `/etc/wireguard/.orbit.peer-transaction` JSON record. Commit removes that single record after verifying the live public key. Rollback stops the current tunnel before restoring the saved files, then restores its active and enabled state, live DNS servers, routing domains, resolver flags, and DNS symlink if present. This also restores an operator's DNS selection when no saved DNS-link file exists.
+
+The record must fit the same 2 MiB limit used to read it; an oversized snapshot refuses before publication. DNS repair refuses a peer publication record. Peer publication and rollback leave older or unrecognized recovery artifacts in place for inspection.
 
 ## Why it works this way
 
