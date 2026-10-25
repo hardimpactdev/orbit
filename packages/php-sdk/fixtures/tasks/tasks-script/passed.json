@@ -1,0 +1,71 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest",
+    "route": "GET /api/v1/operations/{operation}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "tasks.script",
+            "target_type": "task_group",
+            "target_id": 1,
+            "input": {
+                "subtask": 2,
+                "script": "scripts/dependencies",
+                "args": [
+                    "routine"
+                ]
+            },
+            "status": "succeeded",
+            "sequence": 13,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": {
+                "outcome": "passed",
+                "exit_code": 0,
+                "output": "",
+                "output_truncated": false,
+                "changed": false,
+                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "cancel_requested": false,
+            "attempts": 1,
+            "triggered_by": "tick-node",
+            "created_at": "2026-10-25T12:00:00+00:00",
+            "started_at": "2026-10-25T12:00:00+00:00",
+            "finished_at": "2026-10-25T12:00:10+00:00",
+            "poll_after_seconds": null,
+            "steps": [
+                {
+                    "name": "workspace_ready",
+                    "position": 1,
+                    "status": "succeeded",
+                    "resumable": true,
+                    "sequence": 5,
+                    "started_at": "2026-10-25T12:00:00+00:00",
+                    "finished_at": "2026-10-25T12:00:00+00:00",
+                    "error_code": null,
+                    "output": null,
+                    "output_truncated": false
+                },
+                {
+                    "name": "script",
+                    "position": 2,
+                    "status": "succeeded",
+                    "resumable": true,
+                    "sequence": 12,
+                    "started_at": "2026-10-25T12:00:00+00:00",
+                    "finished_at": "2026-10-25T12:00:10+00:00",
+                    "error_code": null,
+                    "output": null,
+                    "output_truncated": false
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

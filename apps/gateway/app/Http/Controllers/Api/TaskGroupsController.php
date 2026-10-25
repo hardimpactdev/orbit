@@ -17,6 +17,7 @@ use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
+use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\StoreTaskGroupCommentAction;
@@ -43,6 +44,7 @@ use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskAnalysisRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
+use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\StoreTaskGroupCommentRequest;
@@ -108,6 +110,16 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksAnalyze, requiresKey: true, maxJsonBytes: TaskAnalysisPlan::RequestBytes)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function analyze(StartTaskAnalysisRequest $request, Task $group, StartTaskAnalysisAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+    }
+
+    #[StartsOperation(OperationKinds::TasksScript, requiresKey: true)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function script(StartTaskScriptRequest $request, Task $group, StartTaskScriptAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
