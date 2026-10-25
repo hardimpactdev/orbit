@@ -22,7 +22,7 @@ command_errors! {
     }
 }
 
-const MAX_OUTPUT: usize = 1_048_576;
+pub(super) const MAX_OUTPUT: usize = 1_048_576;
 pub(super) struct Output {
     pub(super) code: i32,
     pub(super) stdout: String,
@@ -67,7 +67,7 @@ fn unavailable() -> Output {
         truncated: false,
     }
 }
-fn stream(mut reader: impl Read) -> io::Result<Vec<u8>> {
+pub(super) fn stream(mut reader: impl Read) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader
         .by_ref()

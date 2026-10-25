@@ -2,11 +2,13 @@
 //! `docker container exec`. The root password reaches the client through one environment variable, never an argument
 //! or a file; the SQL goes on its standard input. A copy dumps and loads inside the container, so data never leaves it.
 
+use super::incus::{stream, MAX_OUTPUT};
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
-    io::Write,
+    io::{self, Write},
+    path::PathBuf,
     process::{Command as Process, Stdio},
     time::{Duration, Instant},
 };
@@ -18,9 +20,6 @@ command_errors! {
         NotReady {} => "databases.server_not_ready", "The server did not accept a query before the deadline.";
     }
 }
-
-/// The most output a query may answer.
-const MAX_OUTPUT: usize = 1_048_576;
 
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -83,16 +82,92 @@ fn checked(container: &str, variable: &str, client: &[String]) -> Result<(), Dat
     Ok(())
 }
 
-/// Runs `docker container exec` with the password in `variable` and `input` on standard input.
+/// One `docker container exec` call: the arguments after `docker`, the password variable, and standard input.
+#[derive(Debug, Clone, PartialEq)]
+struct Request {
+    arguments: Vec<String>,
+    variable: String,
+    password: String,
+    input: String,
+}
+
+/// What the client answered: its exit code and its output, which the reader bounds just past one MiB.
+struct Answer {
+    code: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// The process and clock seam: production runs Docker and sleeps, tests record calls and move a fake clock.
+trait Host {
+    fn exec(&mut self, request: &Request) -> Result<Answer, DatabaseServerError>;
+    fn now(&mut self) -> Instant;
+    fn sleep(&mut self, delay: Duration);
+}
+
+struct Native {
+    program: PathBuf,
+}
+
+impl Host for Native {
+    fn exec(&mut self, request: &Request) -> Result<Answer, DatabaseServerError> {
+        let mut child = Process::new(&self.program)
+            .args(&request.arguments)
+            .env(&request.variable, &request.password)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| DatabaseServerError::Failed {
+                exit_code: 127,
+                stderr: error.to_string(),
+            })?;
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        // Write standard input while both outputs drain, so a large query cannot block on a full output pipe.
+        let (status, stdout, stderr) = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                if let Some(mut stdin) = stdin {
+                    let _ = stdin.write_all(request.input.as_bytes());
+                }
+            });
+            let out = scope.spawn(|| stream(stdout));
+            let err = scope.spawn(|| stream(stderr));
+            (child.wait(), out.join(), err.join())
+        });
+        let failed = |error: io::Error| DatabaseServerError::Failed {
+            exit_code: 1,
+            stderr: error.to_string(),
+        };
+        let reader = || io::Error::other("the client output reader failed");
+        Ok(Answer {
+            code: status.map_err(failed)?.code(),
+            stdout: stdout.map_err(|_| failed(reader()))?.map_err(failed)?,
+            stderr: stderr.map_err(|_| failed(reader()))?.map_err(failed)?,
+        })
+    }
+
+    fn now(&mut self) -> Instant {
+        Instant::now()
+    }
+
+    fn sleep(&mut self, delay: Duration) {
+        std::thread::sleep(delay);
+    }
+}
+
+/// Runs the client with the password in `variable` and `input` on standard input.
 fn exec(
+    host: &mut impl Host,
     container: &str,
     password: &str,
     variable: &str,
     arguments: &[&str],
     input: &str,
 ) -> Result<String, DatabaseServerError> {
-    let mut child = Process::new("docker")
-        .args([
+    let request = Request {
+        arguments: [
             "container",
             "exec",
             "-i",
@@ -100,30 +175,20 @@ fn exec(
             variable,
             "--",
             container,
-        ])
-        .args(arguments)
-        .env(variable, password)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| DatabaseServerError::Failed {
-            exit_code: 127,
-            stderr: error.to_string(),
-        })?;
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes());
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| DatabaseServerError::Failed {
-            exit_code: 1,
-            stderr: error.to_string(),
-        })?;
-    if !output.status.success() {
+        ]
+        .into_iter()
+        .chain(arguments.iter().copied())
+        .map(String::from)
+        .collect(),
+        variable: variable.into(),
+        password: password.into(),
+        input: input.into(),
+    };
+    let output = host.exec(&request)?;
+    if output.code != Some(0) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(DatabaseServerError::Failed {
-            exit_code: output.status.code().unwrap_or(1),
+            exit_code: output.code.unwrap_or(1),
             stderr: stderr
                 .chars()
                 .rev()
@@ -140,7 +205,10 @@ fn exec(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-pub fn admin(input: &DatabaseServerInput) -> Result<DatabaseServerOutput, DatabaseServerError> {
+fn admin(
+    host: &mut impl Host,
+    input: &DatabaseServerInput,
+) -> Result<DatabaseServerOutput, DatabaseServerError> {
     match input {
         DatabaseServerInput::Ready {
             container,
@@ -151,9 +219,10 @@ pub fn admin(input: &DatabaseServerInput) -> Result<DatabaseServerOutput, Databa
         } => {
             checked(container, password_variable, client)?;
             let arguments: Vec<&str> = client.iter().map(String::as_str).collect();
-            let deadline = Instant::now() + Duration::from_secs(*timeout_seconds);
+            let deadline = host.now() + Duration::from_secs(*timeout_seconds);
             loop {
                 if exec(
+                    host,
                     container,
                     password,
                     password_variable,
@@ -164,10 +233,10 @@ pub fn admin(input: &DatabaseServerInput) -> Result<DatabaseServerOutput, Databa
                 {
                     return Ok(DatabaseServerOutput::Done {});
                 }
-                if Instant::now() >= deadline {
+                if host.now() >= deadline {
                     return Err(DatabaseServerError::NotReady {});
                 }
-                std::thread::sleep(Duration::from_secs(2));
+                host.sleep(Duration::from_secs(2));
             }
         }
         DatabaseServerInput::Execute {
@@ -179,8 +248,15 @@ pub fn admin(input: &DatabaseServerInput) -> Result<DatabaseServerOutput, Databa
         } => {
             checked(container, password_variable, client)?;
             let arguments: Vec<&str> = client.iter().map(String::as_str).collect();
-            exec(container, password, password_variable, &arguments, sql)
-                .map(|output| DatabaseServerOutput::Rows { output })
+            exec(
+                host,
+                container,
+                password,
+                password_variable,
+                &arguments,
+                sql,
+            )
+            .map(|output| DatabaseServerOutput::Rows { output })
         }
         DatabaseServerInput::Copy {
             container,
@@ -193,6 +269,7 @@ pub fn admin(input: &DatabaseServerInput) -> Result<DatabaseServerOutput, Databa
             }
             checked(container, "MYSQL_PWD", &["mysql".into()])?;
             exec(
+                host,
                 container,
                 password,
                 "MYSQL_PWD",
@@ -234,20 +311,15 @@ impl Command for DatabaseServerAdmin {
         input: DatabaseServerInput,
         _: &Context,
     ) -> Result<DatabaseServerOutput, DatabaseServerError> {
-        admin(&input)
+        admin(
+            &mut Native {
+                program: "docker".into(),
+            },
+            &input,
+        )
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn requests_name_a_container_a_client_and_identifier_databases() {
-        assert_eq!(checked("orbit-db", "MYSQL_PWD", &["mysql".into()]), Ok(()));
-        assert!(checked("-x", "MYSQL_PWD", &["mysql".into()]).is_err());
-        assert!(checked("orbit-db", "PATH", &["mysql".into()]).is_err());
-        assert!(checked("orbit-db", "PGPASSWORD", &["sh".into()]).is_err());
-        assert!(identifier("app_1") && !identifier("app;drop") && !identifier(""));
-    }
-}
+#[path = "database_server_tests.rs"]
+mod tests;
