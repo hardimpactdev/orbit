@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Console\InterruptIntent;
 use App\Support\Operations\OperationFollower;
 use App\Support\Operations\OperationOutputLine;
 use App\Support\Operations\OperationOutputTail;
@@ -38,7 +39,8 @@ it('hands each live output line of the channel to onOutput and stays connected',
         },
     );
 
-    $follower->next(follower_operation(3, 'running'));
+    // A command follows inside its own interrupt scope, so a signal another test recorded cannot reach it.
+    InterruptIntent::run(static fn (): OperationResponse => $follower->next(follower_operation(3, 'running')));
 
     expect($lines)->toBe(['migrate: Migrating'])
         ->and($subscriber->state())->toBe(RealtimeState::Connected);

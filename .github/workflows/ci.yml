@@ -30,6 +30,8 @@ env:
   # in its cache keys and change bases. The changes job selects projects; selected suites always run in full.
   HANDOFF_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
   CHANGE_RUN: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') }}
+  # Pest fits test names to the terminal width; a wide log names a failed or aborted test in full.
+  COLUMNS: '200'
 
 jobs:
   changes:
