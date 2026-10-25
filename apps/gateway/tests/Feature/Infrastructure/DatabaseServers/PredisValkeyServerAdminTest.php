@@ -56,6 +56,8 @@ final class ValkeyDockerTestSeed
         $image = DatabaseServerProcess::valkeyImage(self::TAG);
         valkey_docker(['pull', $image]);
         $entrypoint = json_decode(valkey_docker(['image', 'inspect', '--format', '{{json .Config.Entrypoint}}', $image]), true, flags: JSON_THROW_ON_ERROR);
+        // Start the image once here, so Docker's first container start on a fresh host is not timed in the first test.
+        valkey_docker(['run', '--rm', '--network', 'none', '--entrypoint', 'valkey-server', $image, '--version']);
 
         return new self($acl, $entrypoint);
     }
