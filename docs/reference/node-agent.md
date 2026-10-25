@@ -142,6 +142,10 @@ The Gateway runs every Node action through one runner, `AgentCommandRunner`. The
 
 Standard input carries one JSON envelope. Standard output carries one JSON result. Redacted logs go to standard error.
 
+Read commands can declare bounded binary output before their result. The runner streams each chunk to a private sink, then requires the final typed result. It rejects partial chunks, excess bytes, and output after that result. A mismatch precedes all binary data; a partial transfer is never retried. See the [binary output framing](/decisions/0225-make-node-changes-through-agent-commands#one-typed-command).
+
+A binary producer enforces its deadline and stops its children before returning the final result. The dispatcher cannot write a timeout result over an unfinished binary frame. If the consumer stops reading, the final write gets at most one second to drain before the agent exits with a transport failure.
+
 | Envelope field | Meaning |
 | --- | --- |
 | `agent_sha256` | The SHA-256 of the binary that the Gateway pins for this Node |
@@ -188,6 +192,8 @@ These errors can come from any command:
 | `agent.supervisor_failed` | A mutation's service ended without a result |
 
 A transport loss, a missing result, a malformed result, a timeout, and an undeclared error code are runner failures: `agent.runner_failed` with a `kind`. A lost result never proves that no change happened, so the runner sends a mutation once.
+
+Binary output also reports `output_limit` when it exceeds its declared or caller limit, and `output_write_failed` when its private sink cannot accept bytes. Binary contents never appear in the diagnostic result.
 
 ### Transports
 

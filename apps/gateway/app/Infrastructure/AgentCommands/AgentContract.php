@@ -69,6 +69,9 @@ final class AgentContract
             if ($spec === null) {
                 throw new LogicException("The agent contract [{$this->path}] has an invalid command.");
             }
+            if ($spec->outputMaxBytes > 0 && ($document['output_chunk_bytes'] ?? null) !== AgentOutputDecoder::ChunkBytes) {
+                throw new LogicException('The agent binary chunk contract does not match the runner.');
+            }
             $commands[$spec->name] = $spec;
         }
 
@@ -84,13 +87,15 @@ final class AgentContract
         $errors = self::strings($command['errors'] ?? null);
         $linux = is_array($privilege) ? ($privilege['linux'] ?? null) : null;
         $macos = is_array($privilege) ? ($privilege['macos'] ?? null) : null;
+        $outputMax = $command['output_max_bytes'] ?? 0;
 
         if (! is_string($command['name'] ?? null) || ! is_bool($command['mutates'] ?? null) || ! is_int($command['timeout_seconds'] ?? null)
-            || $errors === null || ($linux !== null && ! is_string($linux)) || ($macos !== null && ! is_string($macos))) {
+            || $errors === null || ! is_int($outputMax) || $outputMax < 0 || ($outputMax > 0 && $command['mutates'])
+            || ($linux !== null && ! is_string($linux)) || ($macos !== null && ! is_string($macos))) {
             return null;
         }
 
-        return new AgentCommandSpec($command['name'], $command['mutates'], $command['timeout_seconds'], $linux, $macos, $errors);
+        return new AgentCommandSpec($command['name'], $command['mutates'], $command['timeout_seconds'], $linux, $macos, $errors, $outputMax);
     }
 
     /** @return list<string>|null */

@@ -1,11 +1,12 @@
 //! Command mode: `orbit-agent command <name>` runs one named Node action (ADR 0225).
 //!
-//! Standard input carries one JSON envelope, standard output one JSON result, and redacted logs go to
+//! Standard input carries one JSON envelope; standard output carries declared binary chunks and one JSON result. Redacted logs go to
 //! standard error. Three things never change across agent versions, so every command-mode agent answers a
 //! newer Gateway with a mismatch it can act on: the envelope's `agent_sha256` field, the check of the
 //! executing binary against it, and the shape of the `agent.version_mismatch` result. The check runs
 //! first, before the command name is looked up or the input is parsed.
 
+pub mod binary_output;
 pub mod identity;
 pub mod lock;
 pub mod registry;
@@ -87,8 +88,11 @@ pub fn main(arguments: &[String]) -> i32 {
         return 74;
     }
     let outcome = run::execute(name, &envelope, &run::Host::current());
-    let mut stdout = std::io::stdout().lock();
     let line = serde_json::to_string(&outcome.to_json()).expect("a result serializes");
+    if registry::find(name).is_some_and(|entry| entry.output_max_bytes > 0) {
+        return binary_output::finish(&line);
+    }
+    let mut stdout = std::io::stdout().lock();
     if writeln!(stdout, "{line}")
         .and_then(|()| stdout.flush())
         .is_err()

@@ -92,6 +92,7 @@ mod sqlite_query;
 pub mod sqlite_seed;
 pub mod storage_root;
 pub mod task_git;
+pub mod task_git_export;
 pub(crate) mod task_topology;
 mod task_vm_hub;
 pub mod tls_check;
@@ -343,6 +344,7 @@ pub fn all() -> Vec<Entry> {
         entry::<http_check::VerifyHttp>(),
         entry::<topology_evidence::ReadTopologyEvidence>(),
         entry::<task_git::ReadRefs>(),
+        entry::<task_git_export::ExportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
         entry::<caddy_publication::Publish>(),

@@ -44,6 +44,8 @@ Three things never change across agent versions: the envelope's expected-hash fi
 
 Standard output contains one result: `{ "ok": true, "data": ... }` or `{ "ok": false, "error": { "code": ..., "message": ..., "details": ... } }`. Error codes and details have declared types. A valid result exits 0, including a refusal. Redacted logs go to standard error. A panic, missing result, malformed result, undeclared error, transport loss, and timeout are distinct runner failures.
 
+A command can declare bounded binary output before that result. Each chunk has one JSON header line, `{"stream_bytes":N}`, followed by exactly `N` raw bytes. A chunk is at most 64 KiB; the command's exported contract sets the total limit. The final result ends the stream. The runner writes chunks to the caller's private sink as they arrive and retains only bounded framing and diagnostic buffers. A partial chunk, missing final result, extra output, or excess bytes fails the call. Binary bytes never enter result diagnostics or operation logs. A mismatch must precede all chunks, so a partial transfer is never installed and replayed. This leaves the request envelope and old agents' mismatch reply unchanged.
+
 One Gateway `AgentCommandRunner` owns encoding, transport, and decoding. Rust definitions own the contract. PHP types and Rust types pass the same JSON fixtures. A domain action maps a command error to its public error once. No source, interpreter, module path, executable path, or caller-selected environment selects an implementation. A migrated caller has no script path to try after failure.
 
 ### Transport adapters

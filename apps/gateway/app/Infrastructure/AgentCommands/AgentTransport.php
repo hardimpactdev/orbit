@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProtectedInput;
 
 /**
@@ -25,8 +26,11 @@ interface AgentTransport
     /** The absolute path of the installed agent on Linux, or the path below the login home on macOS. */
     public function binaryPath(): string;
 
-    /** @param  non-empty-list<string>  $arguments */
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult;
+    /**
+     * @param  non-empty-list<string>  $arguments
+     * @param  (\Closure(ProcessOutput): void)|null  $output  Streaming retains no raw diagnostic bytes.
+     */
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?\Closure $output = null): CommandResult;
 
     /** Copies a local, verified candidate to a new private path on the Node and returns that path. */
     public function stage(string $localFile): string;

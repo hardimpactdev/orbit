@@ -7,10 +7,7 @@ use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessOutput;
-use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -173,7 +170,7 @@ describe('publish from the VM', function (): void {
     });
 
     it('skips an identical remote tip without invoking push for checked publication', function (): void {
-        $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+        $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
         $runner = new class(app(ProcessRunner::class)) implements ProcessRunner
         {
             public int $pushes = 0;
@@ -191,7 +188,7 @@ describe('publish from the VM', function (): void {
         };
         $git = new TaskVmGit($runner, app(WorkspaceAgentCommandRunner::class), $this->mirrors, ['https', 'file']);
 
-        $git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
+        $git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
 
         expect($runner->pushes)->toBe(0);
         expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved);
@@ -204,7 +201,7 @@ describe('publish from the VM', function (): void {
         $this->git->fetch($this->project, ['task-7'], $this->access, 'tasks.push_failed');
 
         try {
-            $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
+            $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', checkedPublish: true);
             $this->fail('A divergent branch must fail.');
         } catch (RuntimeConvergenceException $exception) {
             expect($exception->errorCode)->toBe('tasks.not_fast_forward');
@@ -214,7 +211,7 @@ describe('publish from the VM', function (): void {
     });
 
     it('takes the approved commit into the mirror and pushes exactly that commit to GitHub', function (): void {
-        $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+        $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
 
         expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved)
             ->and(tvm_git($this->root.'/origin.git', ['fsck', '--no-dangling']))->toBe('')
@@ -225,18 +222,23 @@ describe('publish from the VM', function (): void {
         tvm_git_expect_no_token();
     });
 
+    it('refuses a pack with a mismatched byte count before promotion or push', function (): void {
+        app(WorkspaceAgentCommandRunner::class)->reportedBytes = 0;
+
+        expect(fn () => $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed'))
+            ->toThrow(RuntimeConvergenceException::class, 'The task VM pack byte count did not match its result.');
+        expect(tvm_git($this->root.'/origin.git', ['for-each-ref', 'refs/heads/task-7']))->toBe('')
+            ->and(glob($this->mirrors.'/tmp/*'))->toBe([]);
+    });
+
     it('keeps the objects of a pack that fails verification out of the mirror', function (): void {
         // A whole, valid pack of another commit: index-pack accepts it, but it lacks the approved commit.
         tvm_git($this->root.'/vm', ['checkout', '--quiet', '--orphan', 'other']);
         $other = tvm_git_commit($this->root.'/vm', 'other.php');
         $pack = (string) (new Process(['git', '-C', $this->root.'/vm', 'pack-objects', '--revs', '--stdout', '--quiet'], null, null, $other."\n"))->mustRun()->getOutput();
-        $forged = function (RemoteCommand $command) use ($pack): CommandResult {
-            ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, $pack));
+        app(WorkspaceAgentCommandRunner::class)->pack = $pack;
 
-            return new CommandResult(0, '', '', 1, false);
-        };
-
-        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, $forged, 'tasks.push_failed'))
+        expect(fn () => $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed'))
             ->toThrow(RuntimeConvergenceException::class, 'The task VM did not send the approved commit with its whole history.');
         $probe = new Process(['git', '--git-dir='.$this->mirrors.'/'.$this->project->id.'.git', 'cat-file', '-e', $other]);
         expect($probe->run())->not->toBe(0)
@@ -246,31 +248,17 @@ describe('publish from the VM', function (): void {
 
     it('stops a VM that sends more than the limit and fails with the limit', function (): void {
         $git = new TaskVmGit(app(ProcessRunner::class), app(WorkspaceAgentCommandRunner::class), $this->mirrors, ['https', 'file'], maxPackBytes: 1024);
-        $flood = function (RemoteCommand $command): CommandResult {
-            // As the process runner does: output in chunks, then the cancel check stops the command.
-            for ($chunk = 0; $chunk < 8; $chunk++) {
-                ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, str_repeat('p', 512)));
-                if (($command->cancelled)()) {
-                    throw new ProcessCancelledException;
-                }
-            }
+        app(WorkspaceAgentCommandRunner::class)->pack = str_repeat('p', 4096);
 
-            return new CommandResult(0, '', '', 1, false);
-        };
-
-        expect(fn () => $git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, $flood, 'tasks.push_failed'))
+        expect(fn () => $git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed'))
             ->toThrow(RuntimeConvergenceException::class, 'The task VM sent a pack over 1024 bytes.');
         expect(glob($this->mirrors.'/tmp/*'))->toBe([]);
     });
 
     it('refuses a pack that does not hold the approved commit and its history, and pushes nothing', function (string $stdout): void {
-        $forged = function (RemoteCommand $command) use ($stdout): CommandResult {
-            ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, $stdout));
+        app(WorkspaceAgentCommandRunner::class)->pack = $stdout;
 
-            return new CommandResult(0, '', '', 1, false);
-        };
-
-        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, $forged, 'tasks.push_failed'))
+        expect(fn () => $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed'))
             ->toThrow(RuntimeConvergenceException::class);
         expect(tvm_git($this->root.'/origin.git', ['for-each-ref', 'refs/heads/task-7']))->toBe('');
     })->with([
@@ -279,7 +267,7 @@ describe('publish from the VM', function (): void {
     ]);
 
     it('refuses an approved commit that is not a commit ID', function (): void {
-        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', 'HEAD', 'task-7', [], $this->access, tvm_git_vm(), 'tasks.push_failed'))
+        expect(fn () => $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', 'HEAD', 'task-7', [], $this->access, tvm_git_vm(), 'tasks.push_failed'))
             ->toThrow(RuntimeConvergenceException::class, 'The approved commit or its branch is invalid.');
         expect($this->sent)->toHaveCount(0);
     });
@@ -290,13 +278,13 @@ describe('publish from the VM', function (): void {
         tvm_git($this->root.'/upstream', ['push', '--quiet', '--force', $this->root.'/origin.git', 'HEAD:task-7']);
         $this->git->fetch($this->project, ['main', 'task-7'], $this->access, 'tasks.push_failed');
 
-        $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true);
+        $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true);
 
         expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved);
 
         // Someone else moved the branch after the fetch: the lease refuses the replacement.
         tvm_git($this->root.'/upstream', ['push', '--quiet', '--force', $this->root.'/origin.git', 'HEAD:task-7']);
-        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true))
+        expect(fn () => $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed', replace: true))
             ->toThrow(RuntimeConvergenceException::class);
     });
 
@@ -306,7 +294,7 @@ describe('publish from the VM', function (): void {
         tvm_git($this->root.'/upstream', ['push', '--quiet', '--force', $this->root.'/origin.git', 'HEAD:task-7']);
 
         try {
-            $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+            $this->git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
             $this->fail('The push was not refused.');
         } catch (RuntimeConvergenceException $exception) {
             expect($exception->step)->toBe('task-pull-request-push')
@@ -348,7 +336,7 @@ describe('garbage collection', function (): void {
         $tips = $git->fetch($this->project, ['main'], $this->access, 'tasks.push_failed');
         $git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, tvm_git_vm(), 'tasks.push_failed');
         tvm_git($this->root.'/vm', ['checkout', '--quiet', '-B', 'task-7', 'refs/remotes/origin/main']);
-        $git->publish($this->project, $this->root.'/vm', tvm_git_commit($this->root.'/vm', 'export.php'), 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+        $git->publish($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', tvm_git_commit($this->root.'/vm', 'export.php'), 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
         $mirrorRuns = array_filter($runs->getArrayCopy(), static fn (array $arguments): bool => ! in_array('init', $arguments, true));
 
         expect($mirrorRuns)->not->toBeEmpty();

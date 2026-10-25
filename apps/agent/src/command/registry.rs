@@ -14,17 +14,23 @@ pub struct Entry {
     pub summary: &'static str,
     pub mutates: bool,
     pub timeout: Duration,
+    pub output_max_bytes: u64,
     pub privilege: fn(Platform) -> Option<Privilege>,
     pub errors: &'static [&'static str],
     pub run: fn(Value, &Context) -> Outcome,
 }
 
 pub fn entry<C: Command>() -> Entry {
+    assert!(
+        !C::MUTATES || C::OUTPUT_MAX_BYTES == 0,
+        "binary output is read-only"
+    );
     Entry {
         name: C::NAME,
         summary: C::SUMMARY,
         mutates: C::MUTATES,
         timeout: C::TIMEOUT,
+        output_max_bytes: C::OUTPUT_MAX_BYTES,
         privilege: C::privilege,
         errors: <C::Error as CommandError>::CODES,
         run: run::<C>,
@@ -216,7 +222,7 @@ pub fn contract() -> Value {
     let commands: Vec<Value> = all()
         .iter()
         .map(|entry| {
-            json!({
+            let mut definition = json!({
                 "name": entry.name,
                 "summary": entry.summary,
                 "mutates": entry.mutates,
@@ -226,10 +232,14 @@ pub fn contract() -> Value {
                     "macos": (entry.privilege)(Platform::Macos),
                 },
                 "errors": entry.errors,
-            })
+            });
+            if entry.output_max_bytes > 0 {
+                definition["output_max_bytes"] = entry.output_max_bytes.into();
+            }
+            definition
         })
         .collect();
-    json!({"common_errors": COMMON_ERRORS, "commands": commands})
+    json!({"common_errors": COMMON_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
 }
 
 #[cfg(test)]

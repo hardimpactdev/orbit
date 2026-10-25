@@ -3924,6 +3924,23 @@
       ]
     },
     {
+      "name": "task-vms.export-git-pack",
+      "summary": "Stream a thin pack of the approved checkout commit to the Gateway.",
+      "mutates": false,
+      "timeout_seconds": 1800,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_export_invalid",
+        "task_vm.git_commit_missing",
+        "task_vm.git_export_failed",
+        "task_vm.git_pack_too_large"
+      ],
+      "output_max_bytes": 2147483648
+    },
+    {
       "name": "caddy.install-certificate",
       "summary": "Atomically publish an owned Caddy certificate pair, restoring it if reload fails.",
       "mutates": true,
@@ -5608,5 +5625,6 @@
         "ai-router.source_remove_failed"
       ]
     }
-  ]
+  ],
+  "output_chunk_bytes": 65536
 }

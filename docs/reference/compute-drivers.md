@@ -626,11 +626,14 @@ The job records its start on the row. A job that has not finished 40 minutes aft
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The VM writes the pack to standard output, and the Gateway streams it to one file. A pack over 2 GiB stops the VM's command and fails the push with `The task VM sent a pack over 2 GiB`.
+3. The Gateway calls `task-vms.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/decisions/0225-make-node-changes-through-agent-commands#one-typed-command).
+
 4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
 5. It checks that the approved commit is a commit there, and that its history is complete.
 6. Only then does the verified pack move into the mirror. A pack that fails a check leaves nothing behind.
 7. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
+
+Pack export accepts one approved commit and at most 1,000 known object IDs. It runs Git as the checkout account, uses only locally available commits to reduce the pack, and keeps the 2 GiB pack limit. A partial transfer, a missing final result, or an oversized pack fails publication before quarantine promotion or a push. The Gateway verifies the reported byte count against the received file.
 
 The job and each of its Git commands end within 1600 seconds. Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
 

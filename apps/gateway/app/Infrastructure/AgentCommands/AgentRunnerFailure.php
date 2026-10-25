@@ -30,6 +30,10 @@ final class AgentRunnerFailure extends RuntimeException implements RendersApiErr
 
     public const string RepeatedMismatch = 'repeated_mismatch';
 
+    public const string OutputLimit = 'output_limit';
+
+    public const string OutputWrite = 'output_write_failed';
+
     /** @param  array<string, mixed>  $details */
     public function __construct(
         public readonly string $command,

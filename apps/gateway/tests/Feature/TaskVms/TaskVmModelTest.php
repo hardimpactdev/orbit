@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -126,7 +127,7 @@ it('keeps the destroyed row when its Node is removed', function (): void {
     expect($vm->fresh()?->node_id)->toBeNull();
 });
 
-it('lists every task VM error code of the Gateway in TaskVmError', function (): void {
+it('declares every task VM error code in TaskVmError or the native command contract', function (): void {
     $codes = [];
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
     foreach ($files as $file) {
@@ -135,7 +136,13 @@ it('lists every task VM error code of the Gateway in TaskVmError', function (): 
         }
     }
 
+    $declared = array_column(TaskVmError::cases(), 'value');
+    $contract = app(AgentContract::class);
+    foreach ($contract->names() as $name) {
+        array_push($declared, ...$contract->command($name)->errors);
+    }
+
     expect($codes)->not->toBeEmpty()
-        ->and(array_values(array_diff(array_unique($codes), array_column(TaskVmError::cases(), 'value'))))->toBe([])
+        ->and(array_values(array_diff(array_unique($codes), $declared)))->toBe([])
         ->and(new TaskVmException(TaskVmError::Parked)->errorCode)->toBe('task_vm.parked');
 });

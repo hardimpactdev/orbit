@@ -22,7 +22,7 @@ use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\HostPathGuardedProcessRunner;
-use Tests\Support\LocalGitRefAgent;
+use Tests\Support\LocalTaskGitAgent;
 use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
@@ -58,7 +58,7 @@ abstract class TestCase extends BaseTestCase
         // Tests point GitHub URLs at local repositories, so a credentialed checkout fetch may use them.
         $app['config']->set('orbit.git.checkout_protocols', ['https', 'file']);
         // Each test gets its own task VM mirrors in the test's ORBIT_HOME, and tests point GitHub URLs at local repositories.
-        $app->singleton(WorkspaceAgentCommandRunner::class, LocalGitRefAgent::class);
+        $app->singleton(WorkspaceAgentCommandRunner::class, LocalTaskGitAgent::class);
         $app->singleton(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
             $app->make(ProcessRunner::class),
             $app->make(WorkspaceAgentCommandRunner::class),

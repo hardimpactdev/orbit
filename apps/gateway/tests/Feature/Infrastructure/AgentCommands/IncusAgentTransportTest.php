@@ -28,7 +28,7 @@ final class IncusCarrierFixture implements AgentTransport
         return '/usr/local/bin/orbit-agent';
     }
 
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?Closure $output = null): CommandResult
     {
         $this->calls[] = [$arguments, stream_get_contents($envelope->stream()), $timeout];
 

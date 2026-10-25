@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 /**
- * Every stable `task_vm.*` error code, in one place. Rows, `tasks:status`, logs, and the API carry the value.
- * {@see TaskVmException} takes a case; a test checks that every `task_vm.*` code in the Gateway is a case here.
+ * Stable Gateway `task_vm.*` error codes. Rows, `tasks:status`, logs, and the API carry the value.
+ * {@see TaskVmException} takes a case. Native command refusals belong to the exported agent contract.
  */
 enum TaskVmError: string
 {

@@ -23,7 +23,7 @@ final readonly class IncusAgentTransport implements AgentTransport
         return SshAgentTransport::LinuxBinary;
     }
 
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?\Closure $output = null): CommandResult
     {
         $root = array_slice($arguments, 0, 2) === ['sudo', '-n'];
         // Incus supplies root directly. Name the fixed guest account for account-level supervision,
@@ -35,7 +35,7 @@ final readonly class IncusAgentTransport implements AgentTransport
         return $this->host->run([
             'sudo', '-n', '/usr/bin/incus', '--project', $this->project, 'exec', '--mode=non-interactive',
             ...$identity, '--', $this->vm, ...($root ? array_slice($arguments, 2) : ['/usr/sbin/runuser', '--user', 'orbit', '--', ...$arguments]),
-        ], $envelope, $timeout);
+        ], $envelope, $timeout, $output);
     }
 
     public function stage(string $localFile): string

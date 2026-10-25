@@ -52,6 +52,8 @@ pub trait Command {
     const MUTATES: bool;
     /// The longest the command may run. The envelope's remaining deadline can shorten it.
     const TIMEOUT: Duration;
+    /// A read may emit framed binary bytes before its result. Zero means JSON output only.
+    const OUTPUT_MAX_BYTES: u64 = 0;
     type Input: DeserializeOwned;
     type Output: Serialize;
     type Error: CommandError;

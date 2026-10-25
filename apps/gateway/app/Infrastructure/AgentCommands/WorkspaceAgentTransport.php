@@ -25,12 +25,13 @@ final readonly class WorkspaceAgentTransport implements AgentTransport
         return $this->transport->binaryPath();
     }
 
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?Closure $output = null): CommandResult
     {
         return ($this->execute)(new RemoteCommand(
             arguments: $arguments,
             protectedInput: $envelope,
-            maxOutputBytes: self::ResultBytes,
+            maxOutputBytes: $output === null ? self::ResultBytes : 0,
+            output: $output,
             timeout: $timeout,
         ));
     }

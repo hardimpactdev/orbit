@@ -17,5 +17,5 @@ interface WorkspaceAgentCommandRunner
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null): array;
+    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null): array;
 }

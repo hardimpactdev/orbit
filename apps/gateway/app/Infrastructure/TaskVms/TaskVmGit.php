@@ -10,14 +10,13 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessOutput;
-use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -86,24 +85,6 @@ final readonly class TaskVmGit
         if [ -n "$head" ] && git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
             git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$head"
         fi
-        BASH;
-
-    /** Writes a pack of the commit to stdout, without the history of those of the following commits it has. */
-    private const string Emit = <<<'BASH'
-        set -euo pipefail
-        checkout=$1
-        commit=$2
-        shift 2
-        git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" "$@"; }
-        git cat-file -e "$commit^{commit}"
-        {
-            printf '%s\n' "$commit"
-            for have in "$@"; do
-                if git cat-file -e "$have^{commit}" 2>/dev/null; then
-                    printf '^%s\n' "$have"
-                fi
-            done
-        } | git pack-objects --revs --thin --stdout --delta-base-offset --quiet
         BASH;
 
     /**
@@ -330,7 +311,7 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $checkedPublish = false): void
+    public function publish(Project $project, Node $node, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null, bool $replace = false, bool $checkedPublish = false): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
@@ -344,7 +325,7 @@ final readonly class TaskVmGit
         $scratch = $this->scratch($errorCode);
         try {
             $pack = $scratch.'/receive.pack';
-            $this->receive($checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
+            $this->receive($node, $checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
             $quarantine = $scratch.'/objects';
             File::ensureDirectoryExists($quarantine.'/pack', 0700);
             $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
@@ -394,36 +375,29 @@ final readonly class TaskVmGit
      * @param  list<string>  $haves
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function receive(string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
+    private function receive(Node $node, string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
     {
         $file = fopen($pack, 'xb');
         if ($file === false) {
             throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The pack file could not be created.');
         }
-        $size = 0;
-        $max = $this->maxPackBytes;
         try {
-            $run(new RemoteCommand(
-                arguments: ['bash', '-c', self::Emit, '--', $checkout, $commit, ...$haves],
-                maxOutputBytes: 65_536,
-                output: static function (ProcessOutput $output) use ($file, $max): void {
-                    if ($output->stream === ProcessOutputStream::Stdout && ftell($file) <= $max) {
-                        fwrite($file, $output->value);
-                    }
-                },
-                cancelled: static fn (): bool => ftell($file) > $max,
-                timeout: $this->timeout($deadline, 1800.0, $errorCode),
-            ));
-        } catch (ProcessCancelledException $exception) {
-            if (ftell($file) <= $max) {
-                throw $exception;
+            $sink = new AgentBinaryOutput($file, $this->maxPackBytes);
+            $result = $this->agents->runInWorkspace($node, $run, 'task-vms.export-git-pack', [
+                'checkout' => $checkout, 'commit' => $commit, 'haves' => $this->commitIds($haves),
+            ], $this->timeout($deadline, 1800.0, $errorCode), $sink);
+            if (($result['bytes'] ?? null) !== $sink->bytes()) {
+                throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM pack byte count did not match its result.');
             }
+        } catch (AgentRunnerFailure|AgentCommandRefused $exception) {
+            $limit = $exception instanceof AgentRunnerFailure
+                ? $exception->kind === AgentRunnerFailure::OutputLimit
+                : $exception->errorCode === 'task_vm.git_pack_too_large';
+            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode,
+                $limit ? 'The task VM sent a pack over '.self::size($this->maxPackBytes).'.' : 'The task VM Git pack could not be received.',
+                previous: $exception);
         } finally {
-            $size = (int) ftell($file);
             fclose($file);
-        }
-        if ($size > $max) {
-            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM sent a pack over '.self::size($max).'.');
         }
     }
 

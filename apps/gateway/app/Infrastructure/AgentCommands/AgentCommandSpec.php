@@ -15,6 +15,7 @@ final readonly class AgentCommandSpec
         public ?string $linuxPrivilege,
         public ?string $macosPrivilege,
         public array $errors,
+        public int $outputMaxBytes = 0,
     ) {}
 
     /** The privilege on a Node platform, or null where the command does not run. */

@@ -224,6 +224,17 @@ pub fn execute(name: &str, envelope: &[u8], host: &Host) -> Outcome {
 }
 
 fn run_in_process(entry: &'static Entry, input: Value, context: Context) -> Outcome {
+    // A binary producer owns stdout until it has stopped its children. Returning a timeout from
+    // another thread would interleave the final JSON result with unfinished binary frames.
+    if entry.output_max_bytes > 0 {
+        return std::panic::catch_unwind(|| (entry.run)(input, &context)).unwrap_or_else(|_| {
+            Outcome::refused(
+                "agent.supervisor_failed",
+                "The command ended without a result.",
+                json!({}),
+            )
+        });
+    }
     let deadline = context.deadline();
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
@@ -249,6 +260,27 @@ mod tests {
     use super::*;
 
     const PIN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn binary_producer_finishes_before_dispatch_returns_its_result() {
+        let entry = Box::leak(Box::new(Entry {
+            run: |_, context| {
+                std::thread::sleep(context.remaining() + Duration::from_millis(10));
+                Outcome::refused(
+                    "producer.stopped",
+                    "The producer stopped its children.",
+                    json!({}),
+                )
+            },
+            ..registry::entry::<crate::commands::task_git_export::ExportPack>()
+        }));
+        let result = run_in_process(
+            entry,
+            json!({}),
+            Context::new(Platform::Linux, Instant::now() + Duration::from_millis(10)),
+        );
+        assert_eq!(code(&result), "producer.stopped");
+    }
 
     fn host(euid: u32) -> Host {
         Host {

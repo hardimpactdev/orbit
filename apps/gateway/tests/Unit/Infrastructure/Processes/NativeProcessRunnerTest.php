@@ -124,6 +124,21 @@ it('captures bounded command output and exit state', function (): void {
         ->toBeGreaterThanOrEqual(0);
 });
 
+it('streams output without retaining any bytes when the diagnostic bound is zero', function (): void {
+    $seen = ['stdout' => '', 'stderr' => ''];
+    $result = new NativeProcessRunner()->run(new ProcessInvocation(
+        [PHP_BINARY, '-r', 'fwrite(STDOUT, "private-pack"); fwrite(STDERR, "diagnostic");'],
+        maxOutputBytes: 0,
+        output: static function (ProcessOutput $output) use (&$seen): void {
+            $seen[$output->stream->value] .= $output->value;
+        },
+    ));
+
+    expect($seen)->toBe(['stdout' => 'private-pack', 'stderr' => 'diagnostic'])
+        ->and([$result->stdout, $result->stderr])->toBe(['', ''])
+        ->and($result->truncated)->toBeTrue();
+});
+
 it('streams protected input and removes its local file after the process exits', function (): void {
     $sensitiveValue = 'ALPHA=opaque-value';
     $input = ProtectedInput::fromString($sensitiveValue);

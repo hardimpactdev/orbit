@@ -28,7 +28,7 @@ pub struct Refs {
     head: Option<String>,
 }
 
-fn object_id(value: &str) -> bool {
+pub(super) fn object_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64)
         && value
             .bytes()

@@ -47,13 +47,13 @@ final readonly class SshAgentTransport implements AgentTransport
     }
 
     #[\Override]
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?\Closure $output = null): CommandResult
     {
         if ($this->connection($timeout)->user === 'root' && array_slice($arguments, 0, 2) === ['sudo', '-n']) {
             $arguments = array_slice($arguments, 2);
         }
 
-        return $this->ssh->execute($this->connection($timeout), new RemoteCommand($arguments, protectedInput: $envelope, timeout: $timeout, maxOutputBytes: self::ResultBytes));
+        return $this->ssh->execute($this->connection($timeout), new RemoteCommand($arguments, protectedInput: $envelope, timeout: $timeout, maxOutputBytes: $output === null ? self::ResultBytes : 0, output: $output));
     }
 
     /** A fixed probe used only to select the first candidate binary during admission. */

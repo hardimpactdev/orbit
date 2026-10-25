@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentCommands\AgentBinaryOutput;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -15,6 +16,8 @@ use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\AgentCommands\SshAgentTransport;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessOutput;
+use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -44,13 +47,18 @@ class ScriptedAgentTransport implements AgentTransport
         return '/usr/local/bin/orbit-agent';
     }
 
-    public function run(array $arguments, ProtectedInput $envelope, float $timeout): CommandResult
+    public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?Closure $output = null): CommandResult
     {
         $decoded = json_decode((string) stream_get_contents($envelope->stream()), true, flags: JSON_THROW_ON_ERROR);
         $this->calls[] = ['arguments' => $arguments, 'envelope' => $decoded, 'credential' => $envelope->carriesGitCredential()];
         $result = array_shift($this->results) ?? throw new LogicException('No scripted result left.');
 
-        return $result instanceof Closure ? $result($decoded) : $result;
+        $result = $result instanceof Closure ? $result($decoded) : $result;
+        if ($output !== null) {
+            $output(new ProcessOutput(ProcessOutputStream::Stdout, $result->stdout));
+        }
+
+        return $result;
     }
 
     public function stage(string $localFile): string
@@ -147,6 +155,52 @@ it('does not bypass a workspace executor refusal or dispatch another command', f
         ->and($base->calls)->toBeEmpty()
         ->and($base->staged)->toBeEmpty();
 });
+
+it('streams a pack after an old agent mismatch without buffering its body in results', function (): void {
+    $base = new ScriptedAgentTransport([]);
+    $wire = "{\"stream_bytes\":6}\nPACK\0\xff{\"ok\":true,\"data\":{\"bytes\":6}}\n";
+    $transport = new ScriptedAgentTransport([
+        agentRefusal('agent.version_mismatch'),
+        agentResult(['ok' => true, 'data' => ['replaced' => true]]),
+        new CommandResult(0, $wire, '', 1, false),
+    ]);
+    $bounds = [];
+    $execute = static function (RemoteCommand $command) use ($transport, &$bounds): CommandResult {
+        $bounds[] = $command->maxOutputBytes;
+
+        return $transport->run($command->arguments, $command->protectedInput, $command->timeout, $command->output);
+    };
+    $file = tmpfile();
+    $sink = new AgentBinaryOutput($file, 100);
+    $result = agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.export-git-pack', ['checkout' => '/home/orbit/repo', 'commit' => str_repeat('a', 40), 'haves' => []], output: $sink);
+    rewind($file);
+
+    expect($result)->toBe(['bytes' => 6])
+        ->and(stream_get_contents($file))->toBe("PACK\0\xff")
+        ->and($bounds)->toBe([0, AgentTransport::ResultBytes, 0])
+        ->and($base->calls)->toBeEmpty()
+        ->and($base->staged)->toHaveCount(1);
+    fclose($file);
+});
+
+it('never installs or replays an interrupted or oversized binary transfer', function (string $wire, int $bound, string $kind): void {
+    $base = new ScriptedAgentTransport([]);
+    $transport = new ScriptedAgentTransport([new CommandResult(0, $wire, '', 1, false)]);
+    $execute = static fn (RemoteCommand $command): CommandResult => $transport->run($command->arguments, $command->protectedInput, $command->timeout, $command->output);
+    $file = tmpfile();
+    $sink = new AgentBinaryOutput($file, $bound);
+
+    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.export-git-pack', [], output: $sink))
+        ->toThrow(fn (AgentRunnerFailure $error): bool => $error->kind === $kind && $error->result?->stdout !== 'PACK')
+        ->and($transport->calls)->toHaveCount(1)
+        ->and($base->staged)->toBeEmpty();
+    fclose($file);
+})->with([
+    'lost result' => ["{\"stream_bytes\":4}\nPACK", 100, AgentRunnerFailure::MissingResult],
+    'partial frame' => ["{\"stream_bytes\":4}\nPA", 100, AgentRunnerFailure::MalformedResult],
+    'mismatch after data' => ["{\"stream_bytes\":4}\nPACK".json_encode(['ok' => false, 'error' => ['code' => 'agent.version_mismatch']])."\n", 100, AgentRunnerFailure::MalformedResult],
+    'sink limit' => ["{\"stream_bytes\":4}\nPACK", 3, AgentRunnerFailure::OutputLimit],
+]);
 
 it('sends the command name and an envelope with the pin, its deadline, and the typed input, and returns the data', function (): void {
     $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => ['version' => '0.5.0']])]);

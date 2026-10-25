@@ -41,9 +41,9 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     }
 
     #[\Override]
-    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null, ?AgentBinaryOutput $output = null): array
     {
-        return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds);
+        return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds, $output);
     }
 
     #[\Override]
@@ -80,9 +80,12 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds): array
+    private function runWith(AgentTransport $transport, Node|AgentGuest $node, string $command, array $input, ?float $deadlineSeconds, ?AgentBinaryOutput $output = null): array
     {
         $spec = $this->contract->command($command);
+        if (($spec->outputMaxBytes > 0) !== ($output !== null) || ($output !== null && $output->bytes() !== 0)) {
+            throw new \LogicException('A binary output command requires a fresh private sink.');
+        }
         if ($spec->privilege($transport->platform()) === null) {
             throw new AgentCommandRefused($command, 'agent.platform_unsupported', "The command [{$command}] does not run on {$transport->platform()}.", ['platform' => $transport->platform()]);
         }
@@ -93,10 +96,10 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         $deadline = $deadlineSeconds === null ? null : microtime(true) + $deadlineSeconds;
-        $outcome = $this->send($transport, $spec, $pin, $input, $deadline);
+        $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output);
         if (($outcome['error']['code'] ?? null) === self::VersionMismatch) {
             $this->installPin($node, $transport, $pin, $deadline);
-            $outcome = $this->send($transport, $spec, $pin, $input, $deadline);
+            $outcome = $this->send($transport, $spec, $pin, $input, $deadline, output: $output);
             if (($outcome['error']['code'] ?? null) === self::VersionMismatch) {
                 throw new AgentRunnerFailure($command, AgentRunnerFailure::RepeatedMismatch, "Node [{$node->name}] still runs another agent after a passing installation.", $outcome['error']['details']);
             }
@@ -164,7 +167,7 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
      * @param  array<string, mixed>  $input
      * @return array{ok: true, data: array<string, mixed>}|array{ok: false, error: array{code: string, message: string, details: array<string, mixed>}}
      */
-    private function send(AgentTransport $transport, AgentCommandSpec $spec, string $pin, array $input, ?float $deadline, ?string $executable = null): array
+    private function send(AgentTransport $transport, AgentCommandSpec $spec, string $pin, array $input, ?float $deadline, ?string $executable = null, ?AgentBinaryOutput $output = null): array
     {
         $budget = (float) $spec->timeoutSeconds;
         if ($deadline !== null) {
@@ -189,13 +192,20 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
             }
         }
         $envelope = AgentInvocation::envelope($pin, $budget, $input);
+        $decoder = $output === null ? null : new AgentOutputDecoder($spec->name, $output, $spec->outputMaxBytes);
+        $consume = null;
+        if ($decoder !== null) {
+            $consume = $decoder->consume(...);
+        }
 
         try {
             $result = $transport->run(
                 $arguments,
                 $credential ? ProtectedInput::gitCredential($envelope) : ProtectedInput::fromString($envelope),
                 $budget + self::TransportGraceSeconds,
+                $consume,
             );
+            $result = $decoder?->finish($result) ?? $result;
         } catch (ProcessTimedOutException) {
             throw new AgentRunnerFailure($spec->name, AgentRunnerFailure::Timeout, "The command [{$spec->name}] did not answer before its deadline.");
         }

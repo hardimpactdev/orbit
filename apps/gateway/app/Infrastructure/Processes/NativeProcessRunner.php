@@ -188,6 +188,11 @@ final readonly class NativeProcessRunner implements ProcessRunner
 
     private function appendBounded(string $current, string $buffer, bool &$truncated, int $maxOutputBytes): string
     {
+        if ($maxOutputBytes <= 0) {
+            $truncated = $truncated || $buffer !== '';
+
+            return '';
+        }
         $combined = $current.$buffer;
 
         if (strlen($combined) <= $maxOutputBytes) {
