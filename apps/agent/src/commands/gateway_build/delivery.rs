@@ -225,7 +225,7 @@ impl Command for Install {
     const SUMMARY: &'static str =
         "Validate and atomically install the immutable agent manifest in a release checkout.";
     const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(30);
+    const TIMEOUT: Duration = Duration::from_secs(60);
     type Input = InstallInput;
     type Output = Changed;
     type Error = Error;

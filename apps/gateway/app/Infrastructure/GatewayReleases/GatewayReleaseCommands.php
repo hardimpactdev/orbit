@@ -416,7 +416,7 @@ final readonly class GatewayReleaseCommands implements GatewayReleaseObserver
                 'gateway.release_snapshot_unavailable', 'gateway.release_snapshot_failed', 'gateway.release_migrate_failed', 'gateway.release_handoff_failed' => 500,
                 default => 409,
             };
-            if (in_array($command, ['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.finish-release'], true)) {
+            if (in_array($command, ['gateway.inspect-release-preparation', 'gateway.prepare-release', 'gateway.install-release-agent-delivery', 'gateway.finish-release'], true)) {
                 $step = match ($refused->errorCode) {
                     'gateway.release_commit_invalid' => 'resolve',
                     'gateway.release_layout_invalid', 'gateway.release_layout_missing', 'gateway.release_path_conflict' => 'layout',

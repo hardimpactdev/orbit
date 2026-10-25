@@ -41,7 +41,7 @@ final readonly class LocalAgentTransport implements AgentTransport
     }
 
     #[\Override]
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
         $directory = "{$this->orbitHome}/agent-candidates";
         if (! is_dir($directory) && ! @mkdir($directory, 0o700, true) && ! is_dir($directory)) {

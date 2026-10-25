@@ -18,6 +18,8 @@ const UPDATE_WAIT: Duration = Duration::from_secs(120);
 const INSTALL_RESERVE: Duration = Duration::from_secs(30);
 /// The observer must stay active this long after a restart.
 const HEALTH_WINDOW: Duration = Duration::from_secs(5);
+/// The time the copies and renames of one replacement need.
+const COPY_RESERVE: Duration = Duration::from_secs(5);
 
 #[path = "agent_services.rs"]
 mod services;
@@ -147,6 +149,7 @@ command_errors! {
         UpdateBusy { lock: String } => "agent.update_busy", "Another installation holds the update lock.";
         InstallFailed { step: &'static str, reason: String } => "agent.replace_failed", "The agent binary could not be replaced.";
         HealthCheckFailed { observer: &'static str } => "agent.health_check_failed", "The new binary failed its observer or service checks; the kept binary is back.";
+        TimeShort { remaining_ms: u64 } => "agent.install_time_short", "Too little time is left to replace the binary and check it; nothing changed.";
     }
 }
 
@@ -181,6 +184,7 @@ impl Command for Install {
             &target,
             &update_lock(context.platform),
             wait,
+            context.deadline(),
             observer,
         )
     }
@@ -204,6 +208,15 @@ pub enum Observer {
     Fake(bool),
 }
 impl Observer {
+    /// The time a replacement needs before its deadline: the copies, the health window, and a rollback's window.
+    fn reserve(self) -> Duration {
+        match self {
+            Self::Absent => COPY_RESERVE,
+            #[cfg(test)]
+            Self::Fake(_) => COPY_RESERVE,
+            Self::Systemd => COPY_RESERVE + HEALTH_WINDOW * 2,
+        }
+    }
     fn label(self) -> &'static str {
         match self {
             Self::Absent => "absent",
@@ -245,12 +258,14 @@ impl Observer {
     }
 }
 
-/// Installs the candidate under the update lock, then removes the candidate whatever the outcome.
+/// Installs the candidate under the update lock, then removes the candidate whatever the outcome. A replacement
+/// that cannot finish its health check by `finish_by` is refused before it changes anything.
 pub fn install(
     input: &InstallInput,
     target: &Path,
     update_lock: &Path,
     wait: Instant,
+    finish_by: Instant,
     observer: Observer,
 ) -> Result<InstallOutput, InstallError> {
     let candidate = &input.candidate;
@@ -261,7 +276,7 @@ pub fn install(
     if !candidate.is_file() {
         return Err(InstallError::CandidateMissing { candidate: shown });
     }
-    let result = replace(input, target, update_lock, wait, observer);
+    let result = replace(input, target, update_lock, wait, finish_by, observer);
     let _ = std::fs::remove_file(candidate);
     result
 }
@@ -271,6 +286,7 @@ fn replace(
     target: &Path,
     update_lock: &Path,
     wait: Instant,
+    finish_by: Instant,
     observer: Observer,
 ) -> Result<InstallOutput, InstallError> {
     let candidate = &input.candidate;
@@ -297,6 +313,12 @@ fn replace(
             sha256: observed,
             previous_sha256,
             observer: "unchanged",
+        });
+    }
+    let left = finish_by.saturating_duration_since(Instant::now());
+    if left < observer.reserve() {
+        return Err(InstallError::TimeShort {
+            remaining_ms: left.as_millis() as u64,
         });
     }
 
@@ -422,6 +444,7 @@ mod tests {
                 &self.target(),
                 &self.lock(),
                 Instant::now() + Duration::from_secs(2),
+                Instant::now() + Duration::from_secs(60),
                 observer,
             )
         }
@@ -536,12 +559,49 @@ mod tests {
             &fixture.target(),
             &fixture.lock(),
             Instant::now() + Duration::from_millis(200),
+            Instant::now() + Duration::from_secs(60),
             Observer::Fake(true),
         )
         .unwrap_err();
         assert!(matches!(error, InstallError::UpdateBusy { .. }));
         assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
         assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn refuses_a_replacement_that_cannot_finish_its_health_check_before_the_deadline() {
+        let fixture = Fixture::new();
+        fixture.write("bin/orbit-agent", "old");
+        let candidate = fixture.write("candidate-6", "new");
+        let error = install(
+            &fixture.input(&candidate),
+            &fixture.target(),
+            &fixture.lock(),
+            Instant::now() + Duration::from_secs(1),
+            Instant::now() + Duration::from_secs(1),
+            Observer::Fake(true),
+        )
+        .unwrap_err();
+        assert!(matches!(error, InstallError::TimeShort { .. }));
+        assert_eq!(std::fs::read_to_string(fixture.target()).unwrap(), "old");
+        assert!(!fixture.directory.join("bin/orbit-agent.previous").exists());
+        assert!(!candidate.exists());
+        // A pin already in place needs no time to stay.
+        fixture.write("bin/orbit-agent", "same");
+        let same = fixture.write("candidate-7", "same");
+        assert!(
+            !install(
+                &fixture.input(&same),
+                &fixture.target(),
+                &fixture.lock(),
+                Instant::now(),
+                Instant::now(),
+                Observer::Fake(true),
+            )
+            .unwrap()
+            .replaced
+        );
+        assert!(Observer::Systemd.reserve() >= HEALTH_WINDOW * 2);
     }
 
     #[test]

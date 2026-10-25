@@ -33,5 +33,5 @@ interface AgentTransport
     public function run(array $arguments, ProtectedInput $envelope, float $timeout, ?\Closure $output = null): CommandResult;
 
     /** Copies a local, verified candidate to a new private path on the Node and returns that path. */
-    public function stage(string $localFile): string;
+    public function stage(string $localFile, float $timeoutSeconds): string;
 }

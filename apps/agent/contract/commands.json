@@ -403,7 +403,7 @@
       "name": "gateway.install-release-agent-delivery",
       "summary": "Validate and atomically install the immutable agent manifest in a release checkout.",
       "mutates": true,
-      "timeout_seconds": 30,
+      "timeout_seconds": 60,
       "privilege": {
         "linux": "account",
         "macos": null
@@ -2926,7 +2926,8 @@
         "agent.candidate_digest_mismatch",
         "agent.update_busy",
         "agent.replace_failed",
-        "agent.health_check_failed"
+        "agent.health_check_failed",
+        "agent.install_time_short"
       ]
     },
     {
@@ -3730,7 +3731,7 @@
       "mutates": true,
       "timeout_seconds": 60,
       "privilege": {
-        "linux": "account",
+        "linux": "owner",
         "macos": null
       },
       "errors": [

@@ -37,7 +37,7 @@ final class IncusCarrierFixture implements AgentTransport
         return new CommandResult($this->failPush && in_array('push', $arguments, true) ? 1 : 0, '{"ok":true,"data":{}}', '', 1, false);
     }
 
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
         $this->staged[] = $localFile;
 
@@ -64,8 +64,8 @@ it('stages distinct candidates and removes only their host copies', function ():
     $host = new IncusCarrierFixture;
     $transport = new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check');
 
-    $first = $transport->stage('/local/agent');
-    $second = $transport->stage('/local/agent');
+    $first = $transport->stage('/local/agent', 180.0);
+    $second = $transport->stage('/local/agent', 180.0);
 
     expect($first)->toStartWith('/var/tmp/orbit-agent-candidate-')->not->toBe($second);
     expect($host->staged)->toBe(['/local/agent', '/local/agent']);
@@ -78,7 +78,7 @@ it('removes the host candidate even when guest staging fails', function (): void
     $host = new IncusCarrierFixture;
     $host->failPush = true;
 
-    expect(fn () => new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check')->stage('/local/agent'))->toThrow(function (AgentRunnerFailure $error): void {
+    expect(fn () => new IncusAgentTransport($host, 'orbit-tasks', 'tvm-image-check')->stage('/local/agent', 180.0))->toThrow(function (AgentRunnerFailure $error): void {
         expect($error->kind)->toBe(AgentRunnerFailure::Transport)
             ->and($error->result?->exitCode)->toBe(1);
     });

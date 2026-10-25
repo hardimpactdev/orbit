@@ -81,7 +81,8 @@ final class AgentDelivery
     }
 
     /** A verified local copy of the pinned binary for a Node. */
-    public function localFile(Node|AgentGuest $node): string
+    /** The pinned binary for this host, downloaded within `$timeoutSeconds` when the manifest names only a URL. */
+    public function localFile(Node|AgentGuest $node, float $timeoutSeconds = 120.0): string
     {
         $key = self::key($node);
         $artifact = $this->artifact($key);
@@ -90,7 +91,7 @@ final class AgentDelivery
             ? (str_starts_with($path, '/') ? $path : dirname($this->manifestPath).'/'.$path)
             : null;
         if ($file === null || (! file_exists($file) && ! is_link($file))) {
-            $file = $this->download($key, $artifact['url'] ?? '', $artifact['sha256']);
+            $file = $this->download($key, $artifact['url'] ?? '', $artifact['sha256'], $timeoutSeconds);
         }
 
         if (@hash_file('sha256', $file) !== $artifact['sha256']) {
@@ -106,7 +107,7 @@ final class AgentDelivery
         return $this->artifacts()[$key] ?? throw new RuntimeException("The agent delivery has no build for [{$key}].");
     }
 
-    private function download(string $key, string $url, string $sha256): string
+    private function download(string $key, string $url, string $sha256, float $timeoutSeconds): string
     {
         $target = "{$this->cacheDirectory}/{$sha256}";
         if (is_file($target) && hash_file('sha256', $target) === $sha256) {
@@ -120,7 +121,7 @@ final class AgentDelivery
         }
 
         $partial = "{$target}.".bin2hex(random_bytes(6)).'.partial';
-        $response = Http::timeout(120)->connectTimeout(20)->sink($partial)->get($url);
+        $response = Http::timeout(max(1, (int) ceil(min(120.0, $timeoutSeconds))))->connectTimeout(max(1, (int) ceil(min(20.0, $timeoutSeconds))))->sink($partial)->get($url);
         if (! $response->successful() || hash_file('sha256', $partial) !== $sha256) {
             @unlink($partial);
 

@@ -73,25 +73,27 @@ final readonly class SshAgentTransport implements AgentTransport
     }
 
     #[\Override]
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
+        $stageBy = microtime(true) + $timeoutSeconds;
+        $left = static fn (float $limit): float => max(1.0, min($limit, $stageBy - microtime(true)));
         $directory = $this->platform() === 'macos' ? '/tmp' : '/var/tmp';
         $path = "{$directory}/orbit-agent-candidate-".bin2hex(random_bytes(8));
         $arguments = ['install', '-m', '0700', '/dev/stdin', $path];
         if ($this->platform() === 'macos') {
             // BSD install refuses a pipe as its source. Prepare the private file, then stream only candidate bytes.
-            $prepared = $this->ssh->execute($this->connection(10.0), new RemoteCommand(
-                ['/usr/bin/install', '-m', '0700', '/dev/null', $path], timeout: 10.0,
+            $prepared = $this->ssh->execute($this->connection($left(10.0)), new RemoteCommand(
+                ['/usr/bin/install', '-m', '0700', '/dev/null', $path], timeout: $left(10.0),
             ));
             if (! $prepared->succeeded()) {
                 throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, 'The Mac agent candidate could not be prepared.', result: $prepared);
             }
             $arguments = ['/bin/dd', 'of='.$path, 'bs=65536'];
         }
-        $result = $this->ssh->execute($this->connection(180.0), new RemoteCommand(
+        $result = $this->ssh->execute($this->connection($left(180.0)), new RemoteCommand(
             $arguments,
             protectedInput: ProtectedInput::openFile($localFile),
-            timeout: 180.0,
+            timeout: $left(180.0),
         ));
         if (! $result->succeeded()) {
             throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, "The agent candidate could not be staged on Node [{$this->node->name}]: ".trim($result->stderr), result: $result);

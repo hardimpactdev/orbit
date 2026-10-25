@@ -36,6 +36,11 @@ class ScriptedAgentTransport implements AgentTransport
     /** @var list<string> */
     public array $staged = [];
 
+    /** @var list<float> */
+    public array $stageTimeouts = [];
+
+    public float $stageSeconds = 0.0;
+
     /** @param  list<CommandResult|Closure(array<string, mixed>): CommandResult>  $results */
     public function __construct(public array $results, private string $platform = 'linux') {}
 
@@ -64,9 +69,11 @@ class ScriptedAgentTransport implements AgentTransport
         return $result;
     }
 
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
         $this->staged[] = $localFile;
+        $this->stageTimeouts[] = $timeoutSeconds;
+        usleep((int) ($this->stageSeconds * 1_000_000));
 
         return '/var/tmp/orbit-agent-candidate-'.count($this->staged);
     }
@@ -350,13 +357,51 @@ it('does not record a failed pin when another installation holds the update lock
     expect($node->fresh()?->agent_failed_pin)->toBeNull();
 });
 
+it('keeps one install deadline through staging and never starts the installer after it', function (): void {
+    $node = agentRunnerNode();
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.version_mismatch')]);
+    $transport->stageSeconds = 0.3;
+
+    expect(fn () => agentRunner($transport)->run($node, 'agent.status', [], 0.2))
+        ->toThrow(fn (AgentRunnerFailure $failure): bool => $failure->kind === AgentRunnerFailure::Timeout);
+    expect($transport->calls)->toHaveCount(1)
+        ->and($transport->stageTimeouts[0])->toBeLessThanOrEqual(0.2)
+        ->and($node->fresh()?->agent_failed_pin)->toBeNull();
+});
+
+it('passes the remaining deadline, not a renewed one, to the installer', function (): void {
+    $transport = new ScriptedAgentTransport([
+        agentRefusal('agent.version_mismatch'),
+        static function (array $envelope): CommandResult {
+            expect($envelope['deadline_ms'])->toBeLessThanOrEqual(1_000);
+
+            return agentResult(['ok' => true, 'data' => ['replaced' => true]]);
+        },
+        agentResult(['ok' => true, 'data' => ['version' => '0.5.0']]),
+    ]);
+
+    expect(agentRunner($transport)->run(agentRunnerNode(), 'agent.status', [], 1.0))->toBe(['version' => '0.5.0']);
+});
+
+it('records no failed pin for a common error or an installer that had too little time', function (string $code): void {
+    $node = agentRunnerNode();
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.version_mismatch'), agentRefusal($code)]);
+
+    expect(fn () => agentRunner($transport)->run($node, 'agent.status'))
+        ->toThrow(fn (AgentCommandRefused $refused): bool => $refused->errorCode === $code);
+    expect($node->fresh()?->agent_failed_pin)->toBeNull();
+
+    $next = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => ['version' => '0.5.0']])]);
+    expect(agentRunner($next)->run($node->fresh() ?? $node, 'agent.status'))->toBe(['version' => '0.5.0']);
+})->with(['agent.deadline_exceeded', 'agent.supervisor_failed', 'agent.lock_unavailable', 'agent.install_time_short']);
+
 // Only a refusal from agent.install proves the pin cannot install; a lost connection or a failed copy may pass next time.
 it('records no failed pin when the candidate cannot be staged or the installer gives no answer', function (string $failure): void {
     $node = agentRunnerNode();
     $transport = $failure === 'staging'
         ? new class([agentRefusal('agent.version_mismatch')]) extends ScriptedAgentTransport
         {
-            public function stage(string $localFile): string
+            public function stage(string $localFile, float $timeoutSeconds): string
             {
                 throw new RuntimeException('disk full');
             }
@@ -459,7 +504,7 @@ it('installs a guest on mismatch and resends once through the same runner', func
 it('fails an unenrolled guest installation without changing host pin state or adding a Node', function (): void {
     $host = agentRunnerNode();
     $guest = AgentGuest::incus($host, 'orbit-tasks', 'tvm-image-1');
-    $transport = new ScriptedAgentTransport([agentRefusal('agent.health_failed')]);
+    $transport = new ScriptedAgentTransport([agentRefusal('agent.health_check_failed')]);
     $count = Node::query()->count();
 
     expect(fn () => agentRunner($transport)->installGuest($guest))->toThrow(fn (AgentCommandRefused $error) => expect($error->errorCode)->toBe('agent.install_failed'));
@@ -482,7 +527,7 @@ it('classifies failed SSH candidate staging with its transport result', function
     $file = tempnam(sys_get_temp_dir(), 'agent-stage-');
     file_put_contents($file, 'candidate bytes');
     try {
-        expect(fn () => new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys)->stage($file))->toThrow(function (AgentRunnerFailure $error) use ($result): void {
+        expect(fn () => new SshAgentTransport(agentRunnerNode(), $ssh, $keys, $keys)->stage($file, 180.0))->toThrow(function (AgentRunnerFailure $error) use ($result): void {
             expect($error->kind)->toBe(AgentRunnerFailure::Transport)
                 ->and($error->command)->toBe('agent.install')
                 ->and($error->result)->toBe($result);
@@ -569,7 +614,7 @@ it('stages a Mac candidate at an absolute path without an existing Orbit directo
     $file = tempnam(sys_get_temp_dir(), 'agent-stage-');
     file_put_contents($file, 'candidate bytes');
     try {
-        expect(new SshAgentTransport($node, $ssh, $keys, $keys)->stage($file))->toStartWith('/tmp/orbit-agent-candidate-');
+        expect(new SshAgentTransport($node, $ssh, $keys, $keys)->stage($file, 180.0))->toStartWith('/tmp/orbit-agent-candidate-');
     } finally {
         unlink($file);
     }

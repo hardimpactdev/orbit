@@ -25,8 +25,11 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     /** Transport time on top of the command's own deadline: connection setup and result delivery. */
     private const float TransportGraceSeconds = 15.0;
 
-    /** An installation after a mismatch waits at most this long, or the call's remaining deadline. */
-    private const float InstallWaitSeconds = 120.0;
+    /** An installation, with its download and staging, takes at most this long, or the call's remaining deadline. */
+    private const float InstallWaitSeconds = 300.0;
+
+    /** Installer refusals that change nothing and say nothing about the pin itself. */
+    private const array RetryableInstallRefusals = ['agent.update_busy', 'agent.install_time_short'];
 
     public function __construct(
         private AgentContract $contract,
@@ -126,15 +129,32 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         return $this->installPin($node, $this->transports->for($node), $this->delivery->pin($node), null);
     }
 
-    /** Installs the pinned binary from a staged candidate, which runs the installer itself. */
+    /**
+     * Installs the pinned binary from a staged candidate, which runs the installer itself. Download, staging, and the
+     * installer share one deadline. Only a refusal the installer declares, other than a busy lock or too little time,
+     * marks the pin as failed; any other outcome lets the next command try again.
+     */
     private function installPin(Node|AgentGuest $node, AgentTransport $transport, string $pin, ?float $deadline): bool
     {
-        $remaining = $deadline === null ? self::InstallWaitSeconds : max(1.0, min(self::InstallWaitSeconds, $deadline - microtime(true)));
+        $installBy = microtime(true) + self::InstallWaitSeconds;
+        if ($deadline !== null) {
+            $installBy = min($installBy, $deadline);
+        }
+        $left = function () use ($installBy, $node): float {
+            $left = $installBy - microtime(true);
+            if ($left <= 0.0) {
+                throw new AgentRunnerFailure(self::Install, AgentRunnerFailure::Timeout, "No time was left to install the pinned agent on Node [{$node->name}].");
+            }
+
+            return $left;
+        };
         $spec = $this->contract->command(self::Install);
 
         try {
-            $candidate = $transport->stage($this->delivery->localFile($node));
-            $outcome = $this->send($transport, $spec, $pin, ['candidate' => $candidate, 'sha256' => $pin], microtime(true) + $remaining, $candidate);
+            $file = $this->delivery->localFile($node, $left());
+            $candidate = $transport->stage($file, $left());
+            $left();
+            $outcome = $this->send($transport, $spec, $pin, ['candidate' => $candidate, 'sha256' => $pin], $installBy, $candidate);
         } catch (AgentRunnerFailure $failure) {
             // No answer proves the pin cannot install, so the next command tries again.
             throw $failure;
@@ -143,15 +163,15 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
         }
 
         if (! $outcome['ok']) {
-            // An unavailable precondition changed nothing and does not mark this pin as failed.
-            if (in_array($outcome['error']['code'], ['agent.update_busy', 'agent.supervisor_not_ready'], true)) {
-                throw new AgentCommandRefused(self::Install, $outcome['error']['code'], $outcome['error']['message'], $outcome['error']['details']);
+            $code = $outcome['error']['code'];
+            if (! $spec->declares($code) || in_array($code, self::RetryableInstallRefusals, true)) {
+                throw new AgentCommandRefused(self::Install, $code, $outcome['error']['message'], $outcome['error']['details']);
             }
             if ($node instanceof Node) {
                 $this->recordFailedPin($node, $pin);
             }
 
-            throw new AgentCommandRefused(self::Install, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}].", ['pin' => $pin, 'cause' => $outcome['error']['code'], ...$outcome['error']['details']]);
+            throw new AgentCommandRefused(self::Install, self::InstallFailed, "The pinned agent failed to install on Node [{$node->name}].", ['pin' => $pin, 'cause' => $code, ...$outcome['error']['details']]);
         }
 
         if ($node instanceof Node && $node->agent_failed_pin !== null) {

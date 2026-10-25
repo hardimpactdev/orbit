@@ -36,8 +36,8 @@ final readonly class WorkspaceAgentTransport implements AgentTransport
         ));
     }
 
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
-        return $this->transport->stage($localFile);
+        return $this->transport->stage($localFile, $timeoutSeconds);
     }
 }

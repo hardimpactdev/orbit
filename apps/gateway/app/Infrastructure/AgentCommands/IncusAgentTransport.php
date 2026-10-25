@@ -42,15 +42,16 @@ final readonly class IncusAgentTransport implements AgentTransport
         ], $envelope, $timeout, $output);
     }
 
-    public function stage(string $localFile): string
+    public function stage(string $localFile, float $timeoutSeconds): string
     {
-        $hostPath = $this->host->stage($localFile);
+        $stageBy = microtime(true) + $timeoutSeconds;
+        $hostPath = $this->host->stage($localFile, $timeoutSeconds);
         $guestPath = '/var/tmp/orbit-agent-candidate-'.bin2hex(random_bytes(8));
         try {
             $result = $this->host->run([
                 'sudo', '-n', '/usr/bin/incus', '--project', $this->project, 'file', 'push',
                 '--mode', '0700', '--uid', '0', '--gid', '0', '--', $hostPath, $this->vm.$guestPath,
-            ], ProtectedInput::fromString(''), 180.0);
+            ], ProtectedInput::fromString(''), max(1.0, min(180.0, $stageBy - microtime(true))));
             if (! $result->succeeded()) {
                 throw new AgentRunnerFailure('agent.install', AgentRunnerFailure::Transport, "The agent candidate could not be staged in guest [{$this->vm}]: ".trim($result->stderr), result: $result);
             }

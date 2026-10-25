@@ -222,6 +222,20 @@ it('fetches the target agent delivery and installs it before finishing a new ado
     Http::assertSentCount(1);
 });
 
+it('reports a delivery install that waits on another release step as a lock failure', function (): void {
+    $agentCommit = str_repeat('b', 40);
+    $base = 'https://github.com/hardimpactdev/orbit/releases/download/agent-v'.$agentCommit;
+    $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $agentCommit, 'version' => '0.5.0', 'installed' => false])
+        ->answer('gateway.inspect-release-source', ['origin' => 'git@github.com:hardimpactdev/orbit.git'])
+        ->refuse('gateway.install-release-agent-delivery', 'gateway.release_in_progress');
+    Http::fake([$base.'/manifest.json' => Http::response(['commit' => $agentCommit, 'version' => '0.5.0', 'artifacts' => []])]);
+
+    $error = release_failure(fn () => $this->builder->prepare($this->sha, withWeb: false));
+
+    expect($error->errorCode)->toBe('gateway.release_in_progress')->and($error->step)->toBe('lock')->and($error->status)->toBe(409);
+    expect($this->steps)->toBe(['prepare']);
+});
+
 it('refuses to finish a new release when its published delivery is absent or belongs to another source', function (mixed $body, int $status): void {
     $this->agents->answer('gateway.inspect-release-agent-delivery', ['commit' => $this->sha, 'version' => '0.5.0', 'installed' => false])
         ->answer('gateway.inspect-release-source', ['origin' => 'https://github.com/hardimpactdev/orbit.git']);
