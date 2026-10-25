@@ -30,11 +30,14 @@ pub fn answer_by(deadline: Instant) -> Instant {
 }
 
 fn pause_until(deadline: Instant) {
-    thread::sleep(
-        deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_millis(100)),
-    );
+    thread::sleep(pause(deadline, Instant::now()));
+}
+
+/// One retry pause: 100 ms, or less when the deadline comes first.
+fn pause(deadline: Instant, now: Instant) -> Duration {
+    deadline
+        .saturating_duration_since(now)
+        .min(Duration::from_millis(100))
 }
 
 /// Creates the lock directory of one account under `root`: `<root>/<uid>`, owned by that account with mode 0700, so no
@@ -340,14 +343,21 @@ mod tests {
     }
 
     #[test]
-    fn a_busy_wait_ends_at_its_deadline_not_a_whole_pause_later() {
+    fn a_busy_wait_pauses_no_longer_than_the_time_left() {
+        let now = Instant::now();
+        assert_eq!(
+            pause(now + Duration::from_secs(5), now),
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            pause(now + Duration::from_millis(30), now),
+            Duration::from_millis(30)
+        );
+        assert_eq!(pause(now, now + Duration::from_millis(5)), Duration::ZERO);
         let directory = temporary();
         let path = path_for(&directory, "target");
         let _first = acquire(&path, Instant::now()).unwrap();
-        // An unclipped 100 ms pause would end about 99 ms late; the margin allows a slow scheduler's oversleep.
-        let deadline = Instant::now() + Duration::from_millis(101);
-        assert!(acquire(&path, deadline).is_err());
-        assert!(Instant::now() < deadline + Duration::from_millis(60));
+        assert!(acquire(&path, Instant::now() + Duration::from_millis(30)).is_err());
     }
 
     #[test]
