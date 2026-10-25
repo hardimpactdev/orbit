@@ -2786,7 +2786,7 @@
     },
     {
       "name": "agent.install",
-      "summary": "Install a staged, pinned agent binary and restart the observer on it.",
+      "summary": "Install a staged, pinned agent binary and restart its running services.",
       "mutates": true,
       "timeout_seconds": 180,
       "privilege": {

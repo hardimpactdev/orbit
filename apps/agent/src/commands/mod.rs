@@ -76,6 +76,7 @@ pub mod php_runtime;
 mod php_shared;
 pub mod pi_artifact;
 pub mod pi_runtime;
+pub mod plausible;
 pub mod processes;
 pub mod production;
 pub mod production_home;

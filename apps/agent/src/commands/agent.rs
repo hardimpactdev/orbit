@@ -146,14 +146,14 @@ command_errors! {
         CandidateDigestMismatch { expected: String, observed: String } => "agent.candidate_digest_mismatch", "The staged candidate is not the pinned binary.";
         UpdateBusy { lock: String } => "agent.update_busy", "Another installation holds the update lock.";
         InstallFailed { step: &'static str, reason: String } => "agent.replace_failed", "The agent binary could not be replaced.";
-        HealthCheckFailed { observer: &'static str } => "agent.health_check_failed", "The observer did not stay active on the new binary; the kept binary is back.";
+        HealthCheckFailed { observer: &'static str } => "agent.health_check_failed", "The new binary failed its observer or service checks; the kept binary is back.";
     }
 }
 
 impl Command for Install {
     const NAME: &'static str = "agent.install";
     const SUMMARY: &'static str =
-        "Install a staged, pinned agent binary and restart the observer on it.";
+        "Install a staged, pinned agent binary and restart its running services.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(180);
     type Input = InstallInput;
@@ -313,6 +313,18 @@ fn replace(
     } else {
         Vec::new()
     };
+    let containers = if cfg!(target_os = "linux") && target == Path::new(LINUX_BINARY) {
+        services::containers(
+            LINUX_BINARY,
+            &crate::command::registry::services()
+                .iter()
+                .map(|service| service.name)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| failed("inspect compiled container services", error))?
+    } else {
+        Vec::new()
+    };
 
     let directory = target
         .parent()
@@ -333,11 +345,11 @@ fn replace(
         return Err(failed("replace", error));
     }
 
-    if !observer.restart_and_check() || !services::restart(&services) {
+    if !observer.restart_and_check() || !services::restart(&services, &containers) {
         if previous_sha256.is_some() {
             let _ = std::fs::rename(&kept, target);
             observer.restart_and_check();
-            services::restart(&services);
+            services::restart(&services, &containers);
         }
         return Err(InstallError::HealthCheckFailed {
             observer: observer.label(),

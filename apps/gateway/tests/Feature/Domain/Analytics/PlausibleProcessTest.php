@@ -38,9 +38,9 @@ describe('PlausibleProcess', function (): void {
             ->and($data->name)->toBe('plausible')
             ->and($data->runtime)->toBe(ProcessRuntime::Docker)
             ->and($data->image)->toBe('ghcr.io/plausible/community-edition:v3.2.1')
-            ->and($data->command)->toBe(['sh', '-c', '/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run'])
+            ->and($data->command)->toBe(['/usr/local/bin/orbit-agent', 'service', 'plausible'])
             ->and($data->ports)->toBe(['10.44.0.3:8000:8000/tcp'])
-            ->and($data->volumes)->toBe([])
+            ->and($data->volumes)->toBe([['source' => '/usr/local/bin/orbit-agent', 'target' => '/usr/local/bin/orbit-agent', 'read_only' => true]])
             ->and($data->restartPolicy)->toBe('unless-stopped')
             ->and($data->start)->toBeTrue()
             ->and($data->environment)->toBe([
