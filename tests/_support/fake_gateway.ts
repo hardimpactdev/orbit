@@ -1,3 +1,4 @@
+import { WEBSITE_PROJECT } from "./dependency_projects.ts";
 // An in-memory fake of the Orbit Gateway task routes for routing tests.
 // Each group follows a scenario. Operations are terminal at once; a start
 // answers 202 with poll_after_seconds 1, so the client reads it on a later tick.
@@ -5,6 +6,7 @@ import { analysisFixture, HEAD, TREE } from "./analysis_fixture.ts";
 import { sha256 } from "../../extensions/behaviors/_lib/repository_analysis.ts";
 
 export interface Scenario {
+  projectId?: number;
   prStaysOpen?: boolean;
   scriptNoChange?: boolean;
   scriptFails?: boolean;
@@ -53,11 +55,15 @@ interface Group {
 }
 
 export function startFakeGateway(scenarios: Record<number, Scenario>) {
+  const projects = new Map([[20, {
+    id: 20, repository_url: WEBSITE_PROJECT.repository,
+    task_check: WEBSITE_PROJECT.check, default_branch: WEBSITE_PROJECT.defaultBranch,
+  }]]);
   const groups = new Map<number, Group>();
   for (const [id, scenario] of Object.entries(scenarios)) {
     const gid = Number(id);
     groups.set(gid, {
-      project_id: 20, taskable_id: null, vm_power: null, id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
+      project_id: scenario.projectId ?? 20, taskable_id: null, vm_power: null, id: gid, title: `Group ${gid}`, brief: "Routing test.", status: "backlog", watched_pr_state: null, scenario, counts: {}, head: HEAD, tree: TREE,
       orchestration: "external", assistance_requested: false, assistance_kind: null, assistance_reason: null, assistance_question: null,
       tasks: Array.from({ length: scenario.subtasks ?? 1 }, (_, i) => ({
         id: gid * 100 + i + 1, position: i + 1, title: `Subtask ${i + 1}`, brief: "Do it.", status: "todo", deliverables: [], assistance_requested: false, assistance_kind: null, assistance_question: null, assistance_reason: null,
@@ -151,6 +157,8 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     const body = req.method === "GET" ? {} : await req.json().catch(() => ({}));
     const json = (status: number, data: unknown) =>
       new Response(JSON.stringify(status < 400 ? { data, meta: {} } : data), { status, headers: { "content-type": "application/json" } });
+    const project = /^\/api\/v1\/projects\/(\d+)$/.exec(p);
+    if (req.method === "GET" && project && projects.has(Number(project[1]))) return json(200, projects.get(Number(project[1])));
     const m = /^\/api\/v1\/task-groups\/(\d+)(\/.*)?$/.exec(p);
     if (m) {
       const g = groups.get(Number(m[1]));
@@ -253,6 +261,7 @@ export function startFakeGateway(scenarios: Record<number, Scenario>) {
     url: `http://127.0.0.1:${(server.addr as Deno.NetAddr).port}`,
     starts,
     groups,
+    projects,
     operations: ops,
     comments,
     commentsOf: (gid: number) => comments.filter((c) => c.group === gid),

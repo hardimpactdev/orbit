@@ -5,6 +5,6 @@ name: orbit-driver-routine
 version: 1
 tags: {}
 globalArguments:
-  factory: website-routine
+  factory: dependency-routine
   assistanceModel: orbit-gateway
 methods: {}

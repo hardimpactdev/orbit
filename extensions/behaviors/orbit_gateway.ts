@@ -1,3 +1,4 @@
+import { DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "./_lib/package_target.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
@@ -8,6 +9,7 @@ import { type AssistanceRecord, type Http, type Job, runStage, STAGES, syncAssis
 import { type StageArgs } from "./_lib/gateway_stage.ts";
 
 const GlobalArgsSchema = z.object({
+  dependencyProjects: DependencyProjectsSchema.default([]),
   gatewayUrl: z.string().default("https://gateway.orbit"),
   caFile: z.string().default("/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"),
   timeoutSeconds: z.number().int().default(60),
@@ -36,7 +38,7 @@ const JobSchema = z.object({
 });
 
 /** HTTP through curl, which trusts the Orbit root CA without Deno's unstable client flags. */
-export function curlHttp(g: GlobalArgs): Http {
+export function curlHttp(g: Pick<GlobalArgs, "gatewayUrl" | "caFile" | "timeoutSeconds">): Http {
   return async (method, path, body, idempotencyKey) => {
     const args = [
       "-sS", "--max-time", String(g.timeoutSeconds), "--cacert", g.caFile, "-X", method,
@@ -68,7 +70,7 @@ export function curlHttp(g: GlobalArgs): Http {
 
 export const behavior = {
   type: "@nckrtl/orbit-gateway",
-  version: "2026.10.25.5",
+  version: "2026.10.25.6",
   globalArguments: GlobalArgsSchema,
   resources: {
     packageTarget: { description: "Immutable single-package selection per admitted group", schema: PackageTargetSchema, lifetime: "infinite", garbageCollection: 10 },
@@ -94,17 +96,23 @@ export const behavior = {
   },
   methods: {
     admit_package: {
-      description: "Admit one unused website group after all earlier packages merged and completed; never creates a group",
+      description: "Admit one unused configured project group after its earlier packages merged and completed; never creates a group",
       arguments: PackageTargetSchema.strip(), // Swamp merges global args into method validation.
       execute: async (target: PackageTarget, context: StageContext & { runModel: (args: { definition: string; method: string; arguments: Record<string, unknown> }) => Promise<{ ok: boolean; error?: { message: string } }> }) => {
         let handle: { name: string } | null = null;
+        // The official overview loads by stable factory ID, including records
+        // written before the factory rename. Name-filtering old state loses it.
+        const overview = await context.runModel({ definition: "dependency-package", method: "status", arguments: {} });
+        if (!overview.ok) throw new Error(overview.error?.message ?? "cannot read package factory");
+        const runs = (await context.queryData('modelName == "dependency-package" && name == "status-_factory"', "attributes.runs"))[0] as { workItem: string; stageId: string; status: string }[];
         await admitPackage(target, {
           http: curlHttp(context.globalArgs),
+          projects: context.globalArgs.dependencyProjects,
           targets: await context.queryData(`modelName == "${context.definition.name}" && name.startsWith("package-")`, "attributes") as PackageTarget[],
-          runState: async (workItem) => ((await context.queryData(`modelName == "website-package" && name == "state-${workItem}"`, "attributes")) as { stageId: string; status: string }[])[0] ?? null,
+          runState: (workItem) => Promise.resolve(runs.find((run) => run.workItem === workItem) ?? null),
           save: async (value) => { handle = await context.writeResource("packageTarget", `package-${target.workItem}`, value); },
           start: async (workItem) => {
-            const r = await context.runModel({ definition: "website-package", method: "start", arguments: { workItem } });
+            const r = await context.runModel({ definition: "dependency-package", method: "start", arguments: { workItem } });
             if (!r.ok) throw new Error(r.error?.message ?? "cannot start package factory");
           },
         });
@@ -162,10 +170,10 @@ export const behavior = {
       },
     },
     routine: {
-      description: "Routine website update: the tracked script, one repair turn, checks, publication and cleanup through existing keyed jobs",
+      description: "Routine project update: the tracked script, one repair turn, checks, publication and cleanup through existing keyed jobs",
       arguments: z.object({ workItem: z.string(), stage: z.enum(["provision", "script", "repair", "handoff", "publish", "merged", "finish"]),
         key: z.string(), handoff: z.unknown().optional(), change: z.unknown().optional(), script: z.unknown().optional() }),
-      execute: async (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true }, context),
+      execute: (args: StageArgs, context: StageContext) => executeStage({ ...args, routine: true }, context),
     },
     stage: {
       description: "Ensure the Gateway operation of one stage entry: start it once, then report its result",
@@ -198,6 +206,7 @@ async function executeStage(args: StageArgs, context: StageContext) {
   let handle: { name: string } | null = null;
   const job = await runStage(args, {
     http: curlHttp(context.globalArgs),
+    projects: context.globalArgs.dependencyProjects,
     readJob: async () => {
       const rows = (await context.queryData(
         `modelName == "${context.definition.name}" && name == "job-${args.key}"`, "attributes",

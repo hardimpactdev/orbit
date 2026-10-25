@@ -5,6 +5,6 @@ name: orbit-driver-package
 version: 1
 tags: {}
 globalArguments:
-  factory: website-package
+  factory: dependency-package
   assistanceModel: orbit-gateway
 methods: {}

@@ -1,3 +1,4 @@
+import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { admitPackage, PackageTargetSchema, type PackageTarget } from "../extensions/behaviors/_lib/package_target.ts";
 import { runStage, type Http, type Job, type StageArgs } from "../extensions/behaviors/_lib/gateway_stage.ts";
@@ -16,7 +17,7 @@ function fixture() {
   const states = new Map<string, { stageId: string; status: string }>();
   let starts = 0;
   const admission = {
-    http, targets,
+    http, targets, projects: [WEBSITE_PROJECT],
     runState: (item: string) => Promise.resolve(states.get(item) ?? null),
     save: (t: PackageTarget) => { if (!targets.some((x) => x.workItem === t.workItem)) targets.push(structuredClone(t)); return Promise.resolve(); },
     start: (item: string) => { starts++; states.set(item, { stageId: "provision", status: "active" }); return Promise.resolve(); },
@@ -24,7 +25,7 @@ function fixture() {
   const jobs = new Map<string, Job>();
   let now = Date.now();
   const args = (stage: StageArgs["stage"], extra = {}): StageArgs => ({ workItem: target.workItem, key: `${target.workItem}.${stage}.c1`, stage, routine: true, packageTarget: target, ...extra });
-  const stageDeps = (key: string, transport = http) => ({ http: transport, readJob: () => Promise.resolve(jobs.get(key) ?? null), writeJob: (j: Job) => { jobs.set(key, structuredClone(j)); return Promise.resolve(); }, now: () => now });
+  const stageDeps = (key: string, transport = http) => ({ http: transport, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(jobs.get(key) ?? null), writeJob: (j: Job) => { jobs.set(key, structuredClone(j)); return Promise.resolve(); }, now: () => now });
   return { fake, http, calls, admission, jobs, states, args, stageDeps, get starts() { return starts; }, tick: () => { now += 60000; } };
 }
 
@@ -134,7 +135,7 @@ Deno.test("post-repair script keeps prior changed-tree evidence without claiming
   try {
     const args: StageArgs = { workItem: "tg-7", stage: "script", key: "tg-7.script.c2", routine: true, packageTarget: target,
       script: { payload: { subtask: 701, changed: true, tree: "c".repeat(40) }, recordedAt: "2026-10-25T20:00:00Z" } };
-    const deps = { http, readJob: () => Promise.resolve(job), writeJob: (j: Job) => { job = structuredClone(j); return Promise.resolve(); }, now: () => now };
+    const deps = { http, projects: [WEBSITE_PROJECT], readJob: () => Promise.resolve(job), writeJob: (j: Job) => { job = structuredClone(j); return Promise.resolve(); }, now: () => now };
     await runStage(args, deps); now += 60000;
     const done = await runStage(args, deps);
     assertEquals(done.artifacts.script.changed, true);

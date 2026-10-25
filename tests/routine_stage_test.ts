@@ -1,3 +1,4 @@
+import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   type Http,
@@ -50,6 +51,7 @@ async function fixture(scenario = {}) {
   };
   const deps = {
     http,
+    projects: [WEBSITE_PROJECT],
     readJob: () => Promise.resolve(job),
     writeJob: (j: Job) => {
       job = structuredClone(j);

@@ -1,3 +1,4 @@
+import { dependencyProject, type DependencyProject } from "./dependency_projects.ts";
 import { z } from "npm:zod@4";
 import { type Http } from "./gateway_stage.ts";
 import { canonical } from "./repository_analysis.ts";
@@ -33,17 +34,20 @@ async function group(http: Http, item: string) {
 /** Called under the existing orbit-gateway behavior lock. No Gateway writes or group creation. */
 export async function admitPackage(target: PackageTarget, deps: {
   http: Http;
+  projects: DependencyProject[];
   targets: PackageTarget[];
   runState: (workItem: string) => Promise<{ stageId: string; status: string } | null>;
   save: (target: PackageTarget) => Promise<void>;
   start: (workItem: string) => Promise<void>;
 }): Promise<void> {
   target = PackageTargetSchema.parse(target);
+  const project = await dependencyProject(deps.http, Number(target.workItem.slice(3)), deps.projects);
   const existing = deps.targets.find((x) => x.workItem === target.workItem);
   if (existing && canonical(existing) !== canonical(target)) throw new Error("package target is immutable; use a new group");
   if (existing && await deps.runState(target.workItem)) return;
   for (const previous of deps.targets.filter((x) => x.workItem !== target.workItem)) {
     const g = await group(deps.http, previous.workItem);
+    if (g.project_id !== project.projectId) continue;
     const state = await deps.runState(previous.workItem);
     const completed = g.status === "completed" && state?.stageId === "completed" &&
       (!(g.pr_url || g.watched_pr_url) || g.watched_pr_state === "merged");
@@ -54,8 +58,8 @@ export async function admitPackage(target: PackageTarget, deps: {
   }
   const g = await group(deps.http, target.workItem);
   const tasks = g.tasks as Record<string, unknown>[];
-  if (g.project_id !== 20 || g.orchestration !== "external" || g.status !== "backlog" || g.taskable_id != null || g.vm_power != null || unsafe(g) ||
-    !Array.isArray(tasks) || tasks.length !== 1 || tasks[0].status !== "todo" || unsafe(tasks[0])) throw new Error("package admission requires one unused external website backlog group with one child");
+  if (g.project_id !== project.projectId || g.orchestration !== "external" || g.status !== "backlog" || g.taskable_id != null || g.vm_power != null || unsafe(g) ||
+    !Array.isArray(tasks) || tasks.length !== 1 || tasks[0].status !== "todo" || unsafe(tasks[0])) throw new Error("package admission requires one unused external configured project backlog group with one child");
   // Persist before start. A lost response resumes the same immutable selection/run.
   await deps.save(target);
   await deps.start(target.workItem);

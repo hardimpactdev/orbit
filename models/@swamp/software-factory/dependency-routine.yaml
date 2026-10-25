@@ -1,7 +1,7 @@
 type: '@swamp/software-factory'
 typeVersion: 2026.06.24.1
 id: 8955ebae-e23e-4a88-ae8e-97ba530b9c47
-name: website-routine
+name: dependency-routine
 version: 1
 tags: {}
 # One existing external group with one child; no schedule or group creation.

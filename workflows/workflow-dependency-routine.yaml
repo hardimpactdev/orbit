@@ -1,7 +1,7 @@
 id: a3a8f33b-7430-4053-a392-47c6a674dc03
-name: website-routine
+name: dependency-routine
 tags: {}
-description: One manual tick for one explicitly started website routine; never creates a group.
+description: One manual tick for one explicitly started project routine; never creates a group.
 inputs:
   properties:
     workItem: { type: string, description: 'Existing routine work item tg-<group id>' }

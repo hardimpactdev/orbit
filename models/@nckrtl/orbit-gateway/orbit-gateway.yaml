@@ -1,5 +1,5 @@
 type: '@nckrtl/orbit-gateway'
-typeVersion: 2026.10.25.5
+typeVersion: 2026.10.25.6
 id: f5fa45d6-6307-48b6-a094-9aae8f79febc
 name: orbit-gateway
 version: 1
@@ -10,4 +10,10 @@ globalArguments:
   gatewayUrl: https://gateway.orbit
   caFile: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
   timeoutSeconds: 60
+  dependencyProjects:
+    - projectId: 20
+      repository: git@github.com:nckrtl/website.git
+      script: scripts/dependencies
+      check: composer check
+      defaultBranch: main
 methods: {}

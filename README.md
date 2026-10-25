@@ -6,13 +6,13 @@ upgrades as the test case. The current routine uses repo-owned commands and
 Gateway operations in task VMs. Authoring and fixture validation change no live
 Gateway or task records.
 
-The [website routine workflow](docs/website-routine.md) adds task-VM dependency
-updates through the generic `tasks.script` operation. The website owns the
+The [dependency routine workflow](docs/website-routine.md) adds task-VM dependency
+updates through the generic `tasks.script` operation. Each repo owns the
 commands and allowed versions. One failed update/check gets one repair turn;
 a second failure parks for assistance. Green work publishes a PR; unchanged
 work completes without one. Start only after the Orbit operation and website
 script merge and the Gateway release is verified. Nick owns the first live run.
-The [single-package workflow](docs/website-packages.md) handles one explicit major or security target per new group. It waits for merge and cleanup before admitting another package, with one repair turn and a fresh script/audit rerun before publication. Detection and version policy remain in the website. This package workflow has not been applied to live Swamp.
+The [single-package workflow](docs/website-packages.md) handles one explicit major or security target per new group. It waits for merge and cleanup before admitting another package, with one repair turn and a fresh script/audit rerun before publication. Detection and version policy remain in each repo. Add repositories with one [project config entry](docs/dependency-projects.md).
 
 The earlier [dependency planner](docs/dependency-workflow-adoption.md) remains
 historical and is not part of this flow. External review-and-merge/topology

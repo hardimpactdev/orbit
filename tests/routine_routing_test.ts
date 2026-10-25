@@ -1,3 +1,4 @@
+import { SECOND_PROJECT } from "./_support/dependency_projects.ts";
 // Real official factory and existing driver, isolated from live state and Gateway.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
@@ -19,7 +20,7 @@ async function swamp(cwd: string, ...args: string[]): Promise<string> {
   return text;
 }
 async function copyRepo(url: string) {
-  const dir = await Deno.makeTempDir({ prefix: "website-routine-routing-" });
+  const dir = await Deno.makeTempDir({ prefix: "dependency-routine-routing-" });
   const ls = await new Deno.Command("git", {
     args: ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
     cwd: REPO,
@@ -49,14 +50,19 @@ async function copyRepo(url: string) {
     (await Deno.readTextFile(def)).replace(
       /gatewayUrl: .*/,
       `gatewayUrl: ${url}`,
-    ),
+    ).replace("methods: {}", `    - projectId: ${SECOND_PROJECT.projectId}
+      repository: ${SECOND_PROJECT.repository}
+      script: ${SECOND_PROJECT.script}
+      check: ${SECOND_PROJECT.check}
+      defaultBranch: ${SECOND_PROJECT.defaultBranch}
+methods: {}`),
   );
   return dir;
 }
 
 Deno.test({
   name:
-    "website routine real factory routes green, one repair, no-change, infrastructure failure and explicit publish retry",
+    "dependency routine real factory routes two projects, green, one repair, no-change, infrastructure failure and explicit publish retry",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -70,8 +76,10 @@ Deno.test({
       807: { handoffFailOnce: true, repairBlocked: true },
       808: { publishFailOnce: true },
       809: { scriptInterrupted: true },
+      810: { projectId: SECOND_PROJECT.projectId },
     };
     const fake = startFakeGateway(scenarios);
+    fake.projects.set(SECOND_PROJECT.projectId, { id: SECOND_PROJECT.projectId, repository_url: SECOND_PROJECT.repository, task_check: SECOND_PROJECT.check, default_branch: SECOND_PROJECT.defaultBranch });
     const dir = await copyRepo(fake.url);
     let passed = false;
     try {
@@ -82,7 +90,7 @@ Deno.test({
           "model",
           "method",
           "run",
-          "website-routine",
+          "dependency-routine",
           "start",
           "--input",
           `workItem=${workItem}`,
@@ -93,7 +101,7 @@ Deno.test({
         dir,
         "workflow",
         "run",
-        "website-routine",
+        "dependency-routine",
         "--input",
         "workItem=tg-801",
       );
@@ -112,6 +120,7 @@ Deno.test({
         807: "assistance",
         808: "publish",
         809: "assistance",
+        810: "completed",
       };
       const done = () =>
         Object.entries(expected).every(([id, stage]) =>
@@ -179,9 +188,12 @@ Deno.test({
         assertEquals(fake.startsOf(id, "handoff"), checks, `checks ${id}`);
         assertEquals(
           fake.startsOf(id, "publish"),
-          [801, 802, 804, 808].includes(id) ? 1 : 0,
+          [801, 802, 804, 808, 810].includes(id) ? 1 : 0,
         );
       }
+      const secondScript = [...fake.operations.values()].find((op) => op.target_id === 810 && op.kind === "tasks.script")!;
+      assertEquals(secondScript.input, { subtask: 81001, script: SECOND_PROJECT.script, args: ["routine"] });
+      assertEquals(fake.groups.get(810)!.vm_power, "destroyed");
       assertEquals(fake.groups.get(805)!.status, "completed");
       assertEquals(fake.groups.get(803)!.tasks[0].assistance_requested, true);
       assertEquals(
