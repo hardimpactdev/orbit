@@ -25,7 +25,7 @@ The desired fleet state names what every machine should run for the Gateway's co
 | --- | --- |
 | `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
 | `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
-| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version` and one asset per Linux architecture |
+| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit` its release is tagged with, and one asset per Linux architecture |
 
 Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
 
@@ -49,12 +49,13 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
     ]
   },
   "agent": {
-    "version": "0.3.0",
+    "version": "0.5.0",
+    "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
     "assets": [
       {
         "platform": "linux-x86_64",
-        "name": "orbit-agent-0.3.0-linux-x86_64",
-        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64",
+        "name": "orbit-agent-linux-x86_64",
+        "url": "https://github.com/hardimpactdev/orbit/releases/download/agent-v1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d/orbit-agent-linux-x86_64",
         "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
       }
     ]
@@ -136,8 +137,8 @@ The Gateway names which release to install. It never names where to download it.
 | --- | --- |
 | CLI binary | `<location>/cli-v<version>/orbit-<version>-<platform>` |
 | CLI checksums | `<location>/cli-v<version>/SHA256SUMS` |
-| Agent binary | `<location>/agent-v<version>/orbit-agent-<version>-<platform>` |
-| Agent checksums | `<location>/agent-v<version>/SHA256SUMS` |
+| Agent binary | `<location>/agent-v<commit>/orbit-agent-<platform>` |
+| Agent checksums | `<location>/agent-v<commit>/SHA256SUMS` |
 
 The Gateway's asset `name` and `url` must equal what the CLI builds, or the step fails with `self_update.release_mismatch` or `agent.release_mismatch` before any download. The CLI downloads `SHA256SUMS` itself and reads the binary's line. That digest must equal the Gateway's `sha256`, and the download must match both. A compromised Gateway can therefore only ask for a published Orbit release. `ORBIT_SELF_UPDATE_RELEASES` on the machine itself changes the location, for a mirror you trust.
 

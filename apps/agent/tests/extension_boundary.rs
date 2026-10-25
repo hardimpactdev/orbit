@@ -45,3 +45,23 @@ fn core_references_each_extension_only_at_its_composition_line() {
         assert_eq!(count, 1, "{name} must have one registration");
     }
 }
+#[test]
+fn core_never_pulls_extension_source_in_by_path() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    sources(&root.join("src"), &mut files);
+    sources(&root.join("crates"), &mut files);
+    for path in &files {
+        for line in fs::read_to_string(path).unwrap().lines() {
+            let loads = line.contains("#[path")
+                || line.contains("include!")
+                || line.contains("include_str!")
+                || line.contains("include_bytes!");
+            assert!(
+                !(loads && line.contains("extensions/")),
+                "{} loads extension source by path: {line}",
+                path.display()
+            );
+        }
+    }
+}

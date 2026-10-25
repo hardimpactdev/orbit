@@ -69,7 +69,9 @@ it('installs OpenTelemetry only in app-dev image profiles', function (string $pr
     $payload = $agents->calls[1]['input']['recipe'];
     expect($payload['php']['opentelemetry'])->toBe($enabled);
     foreach (['8.4', '8.5'] as $version) {
-        expect(in_array("php{$version}-opentelemetry", array_column($payload['php']['versions'][$version]['packages'], 'name'), true))->toBe($enabled)
+        // The PHP installer owns every PHP package, so the general tool list never carries it.
+        expect($payload['recipe']['tools'])->not->toHaveKey("php{$version}-opentelemetry")
+            ->and(in_array("php{$version}-opentelemetry", array_column($payload['php']['versions'][$version]['packages'], 'name'), true))->toBe($enabled)
             ->and($payload['php']['versions'][$version]['extensions'])->not->toContain('opentelemetry');
     }
 })->with(['app-dev' => ['app-dev', true], 'app-prod' => ['app-prod', false], 'base' => ['base', false], 'ci-runner' => ['ci-runner', false]]);
