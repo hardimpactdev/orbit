@@ -80,7 +80,7 @@ errors! {
     Timeout => "metrics.remote_command_timed_out", 502, "A Metrics runtime command timed out.";
     Credentials => "metrics.credentials_reset_failed", 502, "Grafana credential reset did not complete.";
 }
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Service {
     Prometheus,
@@ -125,13 +125,13 @@ impl Service {
     }
 }
 const SERVICES: [Service; 2] = [Service::Prometheus, Service::Grafana];
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     address: String,
     action: Operation,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum Operation {
     Converge {
@@ -142,18 +142,18 @@ enum Operation {
         purge_data: bool,
     },
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthInput {
     service: Service,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialInput {
     address: String,
     action: CredentialAction,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum CredentialAction {
     Verify {
@@ -164,7 +164,7 @@ enum CredentialAction {
         pending_password: String,
     },
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 #[serde(untagged)]
 pub enum Output {
     Changed { changed: bool },

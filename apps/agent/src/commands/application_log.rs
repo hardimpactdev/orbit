@@ -19,7 +19,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogInput {
     /// The application directory, which holds `storage/logs`.
@@ -29,7 +29,7 @@ pub struct LogInput {
     pub max_bytes: u64,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Log {
     pub text: String,
 }

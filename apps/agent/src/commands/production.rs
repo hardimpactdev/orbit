@@ -59,7 +59,7 @@ pub fn valid_name(name: &str) -> bool {
 }
 
 /// A Route web root that the Instance serves besides its own root, and the application directory under it.
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServedRoot {
     pub web_root: String,
@@ -67,7 +67,7 @@ pub struct ServedRoot {
 }
 
 /// The production home of an Instance and what each release in it must be.
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseHome {
     pub repository: String,
@@ -579,7 +579,7 @@ pub(super) fn setfacl(arguments: &[&str], path: &Path) -> Result<(), ReleaseErro
     )
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Release {
     pub name: String,
     pub commit: String,
@@ -591,7 +591,7 @@ pub struct Release {
 /// paths, and leaves `current` alone.
 pub struct PrepareRelease;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareInput {
     #[serde(flatten)]
@@ -900,7 +900,7 @@ fn selected_release(home: &ReleaseHome, layout: &Layout) -> Result<PathBuf, Rele
     Ok(home.release(&name))
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServedInput {
     #[serde(flatten)]
@@ -1002,7 +1002,7 @@ impl Command for CheckServedWebRoots {
 /// Checks a prepared release, grants Caddy its web roots, and points `current` at it in one rename.
 pub struct ActivateRelease;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActivateInput {
     #[serde(flatten)]
@@ -1091,7 +1091,7 @@ impl Command for ActivateRelease {
 /// Reads the selected release, or a named retained one, after every check.
 pub struct InspectRelease;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     #[serde(flatten)]
@@ -1101,7 +1101,7 @@ pub struct InspectInput {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InspectOutput {
     /// `None` when no release is selected.
     pub release: Option<Release>,
@@ -1145,14 +1145,14 @@ impl Command for InspectRelease {
 /// Lists the releases that pass every check, and the selected one.
 pub struct ListReleases;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListInput {
     #[serde(flatten)]
     pub home: ReleaseHome,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct ListOutput {
     pub selected: Option<String>,
     pub releases: Vec<Release>,
@@ -1208,7 +1208,7 @@ impl Command for ListReleases {
 /// Removes releases beyond the retained count, never the selected one, the previous one, or one a process uses.
 pub struct PruneReleases;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PruneInput {
     #[serde(flatten)]
@@ -1219,7 +1219,7 @@ pub struct PruneInput {
     pub previous: Option<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct PruneOutput {
     pub removed: Vec<String>,
     pub in_use: Vec<String>,
@@ -1413,7 +1413,7 @@ impl Command for PruneReleases {
 /// Reads which repository URL each root-owned marker and each release records, for a Project URL change.
 pub struct InspectRepositoryBinding;
 
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BindingHome {
     pub user: String,
@@ -1421,7 +1421,7 @@ pub struct BindingHome {
     pub instance: u64,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct BindingOutput {
     /// The content of each marker that exists, by kind, base64-encoded because it holds NUL separators.
     pub markers: BTreeMap<String, String>,
@@ -1531,7 +1531,7 @@ impl Command for InspectRepositoryBinding {
 /// any other value is refused, so a repeated rebind converges and a concurrent change is never overwritten.
 pub struct RebindRepository;
 
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BindingChange {
     /// `release`, `initial-clone`, or `release-layout`.
@@ -1543,7 +1543,7 @@ pub struct BindingChange {
     pub target: String,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RebindInput {
     #[serde(flatten)]
@@ -1552,7 +1552,7 @@ pub struct RebindInput {
     pub changes: Vec<BindingChange>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct RebindOutput {}
 
 fn marker_content(kind: &str, repository: &str, binding: &BindingHome) -> Vec<u8> {

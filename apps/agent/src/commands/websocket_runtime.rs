@@ -184,7 +184,7 @@ fn at(files: &Files, path: &Path) -> PathBuf {
     files.root.join(path.strip_prefix("/").unwrap_or(path))
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConvergeInput {
     pub user: String,
@@ -199,7 +199,7 @@ pub struct ConvergeInput {
     pub unit: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Converged {
     pub release: String,
 }
@@ -414,7 +414,7 @@ fn converge(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {
     pub install_path: PathBuf,
@@ -422,7 +422,7 @@ pub struct RemoveInput {
     pub purge: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Removed {}
 
 fn remove(
@@ -463,11 +463,11 @@ fn remove(
     Ok(Removed {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActiveInput {}
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Active {
     pub active: bool,
 }

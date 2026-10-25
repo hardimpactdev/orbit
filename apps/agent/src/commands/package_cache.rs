@@ -31,7 +31,7 @@ fn failed(operation: &str, path: &Path, reason: impl ToString) -> Error {
         reason: reason.to_string().chars().take(1200).collect(),
     }
 }
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
     manager: String,
@@ -41,7 +41,7 @@ pub struct Artifact {
     integrity: Option<String>,
     key: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
     Initialize {},
@@ -51,7 +51,7 @@ pub enum Input {
         github_token: Option<String>,
     },
 }
-#[derive(Debug, Default, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Default, Serialize, PartialEq)]
 pub struct Filled {
     hashes: BTreeMap<String, String>,
     failures: BTreeMap<String, String>,

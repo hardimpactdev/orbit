@@ -2,19 +2,19 @@
 use super::*;
 use serde_json::Value;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     package: String,
     architecture: Option<Architecture>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct CandidateOutput {
     version: Option<String>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Done {}
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct AdoptionOutput {
     installed_version: Option<String>,
     block: Option<Block>,

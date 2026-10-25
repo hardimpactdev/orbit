@@ -15,14 +15,14 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     host: String,
     port: u16,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct HostKey {
     r#type: String,
     value: String,

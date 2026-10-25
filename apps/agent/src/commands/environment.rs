@@ -30,7 +30,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Debug)]
+#[derive(schemars::JsonSchema, Deserialize, Clone, Copy, PartialEq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum Operation {
     ReadCheck,
@@ -40,7 +40,7 @@ pub enum Operation {
     Merge,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentInput {
     pub mode: Operation,
@@ -68,7 +68,7 @@ fn default_file() -> String {
 }
 
 /// One outcome, as the Python program printed it.
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Ok,
@@ -83,7 +83,7 @@ pub enum State {
     Failed,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Outcome {
     pub state: State,
     /// The file's content in base64, for a read.
@@ -561,7 +561,7 @@ fn write(
     result
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SyncInput {
     pub base: String,
@@ -571,7 +571,7 @@ pub struct SyncInput {
     pub required_capacity: u64,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct SyncInspection {
     pub preflight: Outcome,
     pub existing: Option<Outcome>,

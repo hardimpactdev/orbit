@@ -42,7 +42,7 @@ fn failed(step: &str) -> CliError {
     CliError::Failed { step: step.into() }
 }
 
-#[derive(Debug, Serialize, PartialEq, Clone, Copy)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Missing,
@@ -150,18 +150,18 @@ pub fn inspect(link: &Path, user: &str) -> State {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub user: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Inspected {
     pub state: State,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Release {
     pub version: String,
@@ -169,7 +169,7 @@ pub struct Release {
     pub sha256: String,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub user: String,
@@ -179,7 +179,7 @@ pub struct InstallInput {
     pub profile: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Installed {
     /// The version installed, or null when the Node keeps its CLI.
     pub installed: Option<String>,

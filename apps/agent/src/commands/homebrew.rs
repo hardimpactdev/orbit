@@ -38,7 +38,7 @@ impl From<homebrew_scope::Error> for Error {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Block {
     UnsupportedSource,
@@ -49,22 +49,22 @@ pub(super) enum Block {
     BottleUnavailable,
     AuthorizationRequired,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Clone, Copy, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Copy, Deserialize)]
 pub enum Architecture {
     #[serde(rename = "arm64")]
     Arm64,
     #[serde(rename = "x86_64")]
     X86_64,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BottleInput {
     architecture: Option<Architecture>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct VersionOutput {
     version: String,
 }
@@ -72,13 +72,13 @@ pub struct VersionOutput {
 pub struct BottleOutput {
     tag: String,
 }
-#[derive(Debug, Default, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Default, PartialEq, Serialize)]
 pub struct Package {
     name: String,
     versions: Vec<String>,
     unverifiable: bool,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct InventoryOutput {
     packages: Vec<Package>,
 }

@@ -2,20 +2,20 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Managed {
     shape: Shape,
     replace_port: bool,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RulesInput {
     desired: Vec<Managed>,
     remove: Vec<Shape>,
     enable: bool,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Reconciled {
     matches: bool,
 }
@@ -307,7 +307,7 @@ fn restore(host: &mut impl Host, snapshot: &[Shape]) -> Result<(), Error> {
     }
     Ok(())
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RouterInput {
     desired: Vec<Shape>,

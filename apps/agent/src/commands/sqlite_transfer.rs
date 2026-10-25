@@ -22,14 +22,14 @@ command_errors! {
         Failed {} => "instances.sqlite_transfer_failed", "The SQLite snapshot transfer failed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadInput {
     path: PathBuf,
     bytes: u64,
     sha256: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiveInput {
     path: PathBuf,
@@ -37,7 +37,7 @@ pub struct ReceiveInput {
     bytes: u64,
     sha256: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     bytes: u64,
     sha256: String,

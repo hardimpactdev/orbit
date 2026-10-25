@@ -16,7 +16,7 @@ fn failed(stage: &str, reason: impl Into<String>) -> Error {
         reason: reason.into(),
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     project: String,
@@ -25,7 +25,7 @@ pub struct Input {
     pool: String,
     zfs_dataset: Option<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Prepared {
     ready: bool,
 }

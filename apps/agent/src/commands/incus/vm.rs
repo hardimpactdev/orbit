@@ -7,30 +7,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{net::Ipv4Addr, time::Duration};
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Location {
     project: String,
     name: String,
     cidr: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Observation {
     running: bool,
     address: Option<Ipv4Addr>,
     image_fingerprint: Option<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct State {
     observation: Option<Observation>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     vm: Location,
     operation: Operation,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Operation {
     Create {
@@ -61,7 +61,7 @@ enum Operation {
         pool: String,
     },
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Changed {
     ready: bool,
 }

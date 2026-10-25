@@ -73,14 +73,14 @@ fn bindable(port: u16) -> io::Result<bool> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PortInput {
     pub preferred: u16,
     pub excluded: Vec<u16>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Port {
     pub port: u16,
 }
@@ -99,7 +99,7 @@ pub fn select_port(input: &PortInput) -> Result<Port, ViteError> {
     Err(ViteError::Exhausted {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListenerInput {
     pub unit: String,
@@ -109,7 +109,7 @@ pub struct ListenerInput {
     pub probe: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Listener {
     pub owned: bool,
     pub ready: bool,
@@ -214,7 +214,7 @@ pub fn check_listener(input: &ListenerInput) -> Result<Listener, ViteError> {
     Ok(Listener { owned: true, ready })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MarkerInput {
     /// Removes the awake marker, so the Instance's traffic waits.
@@ -231,7 +231,7 @@ pub enum MarkerInput {
     },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 
 fn remove(path: &Path) -> io::Result<()> {

@@ -24,7 +24,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueueInput {
     pub user: String,
@@ -34,7 +34,7 @@ pub struct QueueInput {
     pub limit: u8,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct QueueReport {
     pub report: Value,
 }

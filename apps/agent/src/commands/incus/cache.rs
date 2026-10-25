@@ -15,13 +15,13 @@ command_errors! {
   Failed {operation:String,reason:String} => "task_vm.package_cache_failed", "The package cache mount operation failed.";
  }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     project: String,
     name: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Mounted {
     ready: bool,
 }

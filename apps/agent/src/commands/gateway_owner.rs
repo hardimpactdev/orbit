@@ -17,7 +17,7 @@ command_errors! {
         Invalid {} => "gateway.release_owner_invalid", "Run as the non-root Gateway account with matching owned shared state and cached configuration. No permissions were changed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     checkout: String,
@@ -27,7 +27,7 @@ pub struct Input {
     sha: Option<String>,
     runtime_cache: Option<PathBuf>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     caches: Vec<PathBuf>,
 }

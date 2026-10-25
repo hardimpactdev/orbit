@@ -64,7 +64,7 @@ impl CommandError for Failure {
         report
     }
 }
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     recipe: String,
@@ -78,7 +78,7 @@ pub struct Input {
     #[serde(default)]
     fallback: bool,
 }
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProcessSpec {
     name: String,

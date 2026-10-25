@@ -17,7 +17,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub user: String,
@@ -26,7 +26,7 @@ pub struct Input {
     pub cli_version: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Verified {
     pub identity: String,
     pub agent_sha256: String,

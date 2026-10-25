@@ -19,13 +19,13 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     checkout: PathBuf,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Output {
     /// Encoding bounds the JSON result even when the file contains non-text bytes.
     content_base64: Option<String>,

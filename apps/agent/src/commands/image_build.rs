@@ -23,20 +23,20 @@ fn failed(operation: &str, reason: impl ToString) -> Error {
         reason: reason.to_string(),
     }
 }
-#[derive(Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Marker {
     identity: String,
     profile: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Log {
     profile: String,
     phase: String,
     text: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Ready {
     ready: bool,
 }

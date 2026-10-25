@@ -15,7 +15,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     address: IpAddr,
@@ -23,7 +23,7 @@ pub struct Input {
     domain: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Verified {}
 
 fn request(input: &Input) -> Result<Process, Error> {

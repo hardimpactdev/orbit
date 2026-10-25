@@ -98,7 +98,7 @@ fn write_marker(directory: &Path, path: &Path, content: &[u8]) -> Result<(), Rel
 }
 
 /// The repository, user, and home of a production Instance, for the commands before a release exists.
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Home {
     pub repository: String,
@@ -140,14 +140,14 @@ impl Home {
 
 // ---- the account -------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserInput {
     pub user: String,
     pub home: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Prepared {}
 
 /// Creates the system account and its private home, or checks that an existing one is Orbit's.
@@ -224,7 +224,7 @@ impl Command for PrepareUser {
 
 // ---- the initial clone -------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceInput {
     #[serde(flatten)]
@@ -421,7 +421,7 @@ impl Command for PrepareSource {
 
 // ---- the branch of the initial release ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveInput {
     #[serde(flatten)]
@@ -433,7 +433,7 @@ pub struct ResolveInput {
     pub git_read: GitRead,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Resolved {
     pub branch: String,
     pub commit: String,
@@ -579,7 +579,7 @@ impl Command for ResolveSource {
 
 // ---- the Composer profile ------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileInput {
     pub user: String,
@@ -590,7 +590,7 @@ pub struct ProfileInput {
     pub entry_point: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileKind {
     /// No `composer.json` and no entry point.
@@ -602,7 +602,7 @@ pub enum ProfileKind {
     Composer,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Profile {
     pub kind: ProfileKind,
     /// `absent`, `regular`, or `unsafe`, with `composer`.
@@ -710,7 +710,7 @@ impl Command for InspectProfile {
 
 // ---- Caddy's access ------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaddyInput {
     pub user: String,
@@ -857,7 +857,7 @@ impl Command for GrantCaddy {
 
 // ---- the current selection -----------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayoutInput {
     #[serde(flatten)]
@@ -913,7 +913,7 @@ fn check_layout(home: &ReleaseHome, layout: &Layout) -> Result<Option<String>, R
     Ok(Some(name))
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Selection {
     pub current: Option<String>,
 }
@@ -986,7 +986,7 @@ impl Command for ClearCurrent {
 
 // ---- the APP_URL of a served directory ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DirectoryUrlInput {
     pub user: String,
@@ -1002,7 +1002,7 @@ pub struct DirectoryUrlInput {
     pub app_name_stored: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Written {
     pub written: bool,
 }
@@ -1200,7 +1200,7 @@ impl Command for WriteDirectoryUrl {
 
 // ---- the configuration cache --------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigCacheInput {
     pub user: String,
@@ -1210,7 +1210,7 @@ pub struct ConfigCacheInput {
     pub application: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigOutcome {
     ConfigCached,
@@ -1218,7 +1218,7 @@ pub enum ConfigOutcome {
     NoCurrentRelease,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct ConfigCache {
     pub outcome: ConfigOutcome,
 }
@@ -1325,7 +1325,7 @@ fn runs_processes(uid: u32, proc_root: &Path) -> bool {
     })
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Removed {
     pub removed: bool,
 }

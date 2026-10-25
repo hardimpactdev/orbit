@@ -18,7 +18,7 @@ command_errors! {
         Unit {record: u64} => "gateway.release_unit_failed", "The requested Gateway release unit could not be started or observed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Retention {
     pub journal_max_mb: u64,
@@ -28,7 +28,7 @@ pub struct Retention {
     pub log_rotate_mb: u64,
     pub log_rotate_keep: u64,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub application: String,
@@ -36,16 +36,16 @@ pub struct Input {
     pub user: String,
     pub retention: Retention,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunInput {
     pub record: u64,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct State {
     state: String,
 }

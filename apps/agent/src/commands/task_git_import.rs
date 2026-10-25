@@ -11,20 +11,20 @@ command_errors! {
         Failed {} => "task_vm.git_import_failed", "The checkout's approved refs could not be updated.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Update {
     reference: String,
     commit: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     checkout: PathBuf,
     default_branch: Option<String>,
     updates: Vec<Update>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Output {
     imported: bool,
 }

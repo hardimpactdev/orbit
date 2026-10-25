@@ -24,14 +24,14 @@ command_errors! {
         TooLarge {} => "task_vm.git_pack_too_large", "The task VM pack exceeds 2 GiB.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     checkout: PathBuf,
     commit: String,
     haves: Vec<String>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Output {
     bytes: u64,
 }

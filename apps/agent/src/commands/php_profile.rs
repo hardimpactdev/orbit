@@ -11,14 +11,14 @@ crate::command_errors! {
         Failed { reason: String, restored: bool } => "php.runtime_configuration_failed", "The PHP runtime module could not be configured.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub version: String,
     pub runtime_ini: String,
     pub release: build::Release,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Configured {
     pub changed: bool,
     pub reloaded: bool,

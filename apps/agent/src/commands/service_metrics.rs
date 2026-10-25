@@ -43,7 +43,7 @@ fn ownership(path: &Path) -> ServiceMetricsError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct State {
     pub config: Option<String>,
@@ -54,14 +54,14 @@ pub struct State {
     pub binary: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
     Snapshot {},
     Apply { state: State },
 }
 
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 #[serde(untagged)]
 pub enum Output {
     Snapshot(State),

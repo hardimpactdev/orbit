@@ -15,13 +15,13 @@ command_errors! {
         Failed {} => "doctor.role_inspection_failed", "Role prerequisites could not be inspected.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     packages: Vec<String>,
     services: Vec<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Observation {
     packages: bool,
     services: bool,

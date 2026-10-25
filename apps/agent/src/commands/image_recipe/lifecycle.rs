@@ -36,7 +36,7 @@ fn unknown(reason: impl ToString) -> Error {
         reason: recipe::diagnostic(&reason.to_string()),
     }
 }
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Phase {
     AptSource,
@@ -58,7 +58,7 @@ impl Phase {
         }
     }
 }
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Key {
     pub identity: String,
@@ -104,13 +104,13 @@ impl Key {
         files.path(STATE).join(format!("{}.json", self.unit()))
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Observe {
     pub key: Key,
     pub boot_id: Option<String>,
 }
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Start {
     pub key: Key,
@@ -127,14 +127,14 @@ impl Start {
         Ok(())
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Restart {
     pub key: Key,
     pub boot_id: String,
     pub invocation_id: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Missing,
@@ -142,7 +142,7 @@ pub enum State {
     Complete,
     Failed,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Observation {
     pub boot_id: String,
     pub unit: String,

@@ -53,7 +53,7 @@ fn conflict(files: &Files, path: &Path) -> PrerequisiteError {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrerequisiteInput {
     pub user: String,
@@ -68,7 +68,7 @@ pub struct PrerequisiteInput {
     pub composer_home: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Prerequisites {}
 
 /// A finished program: whether it succeeded, and its output.

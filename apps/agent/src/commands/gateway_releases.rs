@@ -32,39 +32,39 @@ impl From<gateway_adoption::Error> for Error {
         }
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SwitchInput {
     pub checkout: String,
     pub release: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForwardInput {
     pub checkout: String,
     pub sha: Option<String>,
     pub force: bool,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceInput {
     pub checkout: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SwitchOutput {
     previous: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct ForwardOutput {
     source: Option<String>,
     source_sha: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SourceOutput {
     origin: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InventoryOutput {
     current: Option<String>,
     state: &'static str,
@@ -74,7 +74,7 @@ pub struct InventoryOutput {
     retained: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InventoryInput {
     pub checkout: String,

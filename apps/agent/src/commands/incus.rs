@@ -174,15 +174,15 @@ fn project(input: &Project) -> Result<(), Error> {
     }
     Ok(())
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Project {
     project: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Images {
     images: BTreeMap<String, Vec<String>>,
 }
@@ -233,7 +233,7 @@ fn images(host: &mut impl Host, input: &Project) -> Result<Images, Error> {
     }
     Ok(Images { images })
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Instances {
     names: Vec<String>,
 }
@@ -275,18 +275,18 @@ fn instances(host: &mut impl Host, input: &Project) -> Result<Instances, Error> 
     }
     Ok(Instances { names })
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Resource {
     project: String,
     name: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Volume {
     project: String,
     pool: String,
     name: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Inventory {
     instances: Vec<Resource>,
     volumes: Vec<Volume>,

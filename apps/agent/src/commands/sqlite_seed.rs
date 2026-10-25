@@ -270,7 +270,7 @@ fn available(path: &Path) -> Result<(u64, bool)> {
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceInput {
     /// `prepare` or `cleanup`.
@@ -284,7 +284,7 @@ pub struct SourceInput {
     pub snapshot_path: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum SourceOutput {
     Ready {
@@ -492,7 +492,7 @@ fn prepare_source(input: &SourceInput) -> Result<SourceOutput> {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetInput {
     /// `prepare`, `install`, or `cleanup`.
@@ -509,7 +509,7 @@ pub struct TargetInput {
     pub relative_path: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum TargetOutput {
     /// The transport account writes the snapshot to `incoming`.

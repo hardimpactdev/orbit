@@ -38,7 +38,7 @@ impl From<recipe::Failure> for Error {
         failed(e.reason)
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Chunk {
     pub sha256: String,
@@ -46,22 +46,22 @@ pub struct Chunk {
     pub total: u64,
     pub bytes: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub user: String,
     pub sha256: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Received {
     pub received_bytes: u64,
     pub verified: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Installed {
     pub changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     pub current: bool,
 }

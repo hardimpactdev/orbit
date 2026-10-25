@@ -100,7 +100,7 @@ impl From<gateway_releases::Error> for Error {
         .into()
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub checkout: String,
@@ -108,7 +108,7 @@ pub struct InspectInput {
     pub minimum_free_bytes: u64,
     pub reserved_bytes: u64,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareInput {
     pub checkout: String,
@@ -118,27 +118,27 @@ pub struct PrepareInput {
     pub git_read: Option<GitRead>,
     pub step_lock: PathBuf,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinishInput {
     pub checkout: String,
     pub sha: String,
     pub step_lock: PathBuf,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseInput {
     pub checkout: String,
     pub release: String,
     pub step_lock: PathBuf,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffPhase {
     Serve,
     Schedule,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HandoffInput {
     pub checkout: String,
@@ -146,35 +146,35 @@ pub struct HandoffInput {
     pub step_lock: PathBuf,
     pub phase: HandoffPhase,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct HandoffReport {
     succeeded: bool,
     report: serde_json::Map<String, Value>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepInput {
     pub step_lock: PathBuf,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     sha: Option<String>,
     origin: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Preparation {
     sha: String,
     reused: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct StepState {
     busy: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SchemaState {
     complete: bool,
 }

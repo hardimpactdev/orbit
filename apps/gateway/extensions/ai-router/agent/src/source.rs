@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::{io, path::Path, time::Duration};
 
 pub struct RemoveSource;
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub retired: bool,
 }
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Debug, PartialEq)]
 pub struct Output {
     pub removed: bool,
 }

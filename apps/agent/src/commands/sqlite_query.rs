@@ -19,14 +19,14 @@ command_errors! {
         Failed {} => "database.query_failed", "Database query failed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     owner: String,
     path: String,
     sql: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     columns: Vec<String>,
     rows: Vec<Map<String, Value>>,

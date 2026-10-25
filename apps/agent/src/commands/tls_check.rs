@@ -17,7 +17,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CertificateInput {
     pub address: IpAddr,
@@ -25,7 +25,7 @@ pub struct CertificateInput {
     pub domain: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Verified {}
 
 pub fn verify(input: &CertificateInput) -> Result<Verified, CertificateError> {

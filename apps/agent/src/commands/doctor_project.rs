@@ -18,13 +18,13 @@ command_errors! {
         Invalid {} => "doctor.project_input_invalid", "The Project observation input is invalid.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     repository: String,
     checkouts: Vec<Checkout>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Checkout {
     instance_id: u64,
@@ -33,11 +33,11 @@ struct Checkout {
     user: String,
     production: bool,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     checkouts: Vec<Observation>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 struct Observation {
     instance_id: u64,
     matches: Option<bool>,
@@ -320,7 +320,7 @@ command_errors! {
         Unavailable {} => "doctor.source_inspection_failed", "The Instance source could not be observed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceInput {
     repository: String,
@@ -331,7 +331,7 @@ pub struct SourceInput {
     layout: String,
     starting_commit: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct SourceOutput {
     checkout: bool,
     layout: bool,

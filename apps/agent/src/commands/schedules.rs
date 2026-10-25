@@ -195,7 +195,7 @@ fn runnable(user: &str, directory: &Path) -> Result<(), ScheduleError> {
     Ok(())
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub id: String,
@@ -212,7 +212,7 @@ pub struct InstallInput {
     pub timeout_seconds: u32,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 
 /// What an install replaces, so a failure can put it back.
@@ -377,7 +377,7 @@ fn install_at(host: &Host, input: &InstallInput) -> Result<Done, ScheduleError> 
     result.map(|()| Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetInput {
     pub id: String,
@@ -428,7 +428,7 @@ fn run_at(host: &Host, input: &TargetInput) -> Result<Done, ScheduleError> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogsInput {
     pub id: String,
@@ -436,7 +436,7 @@ pub struct LogsInput {
     pub max_bytes: usize,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Logs {
     /// The newest entries, oldest first.
     pub output: String,
@@ -489,7 +489,7 @@ pub fn logs(input: &LogsInput) -> Result<Logs, ScheduleError> {
     Ok(Logs { output, truncated })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {
     pub id: String,

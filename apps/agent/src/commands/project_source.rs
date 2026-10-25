@@ -20,7 +20,7 @@ fn failed(step: &str) -> ProjectSourceError {
     ProjectSourceError::Failed { step: step.into() }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProjectSourceInput {
     /// The checkout is a plain Git checkout at `current`; with `git_read`, the proposed repository answers.
@@ -56,7 +56,7 @@ pub enum ProjectSourceInput {
     },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 
 /// Git in `path` without a credential environment.

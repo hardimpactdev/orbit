@@ -36,39 +36,39 @@ impl From<super::Error> for Error {
         }
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepositoryInput {
     pub checkout: String,
     pub sha: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetInput {
     pub checkout: String,
     pub target: String,
     pub source: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct HeadOutput {
     pub sha: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct OriginOutput {
     pub sha: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct RepositoryOutput {
     pub repository: &'static str,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct EnvironmentOutput {
     pub env: &'static str,
     pub env_link: &'static str,
     pub app_version_removed: bool,
     pub env_backups: Vec<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct RestoreOutput {
     pub environment: &'static str,
 }

@@ -30,45 +30,45 @@ command_errors! {
         Receipt {} => "gateway.release_restore_required", "The original private staged receipt is missing, unsafe or differs from the requested receipt. Keep the hold.";
     }
 }
-#[derive(Clone, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
     orbit_home: PathBuf,
     record: u64,
     sha: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProtectInput {
     identity: Identity,
     source: PathBuf,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerifyInput {
     identity: Identity,
     sha256: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiptInput {
     identity: Identity,
     attributes: Map<String, Value>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Recovery {
     path: PathBuf,
     sha256: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Receipt {
     attributes: Map<String, Value>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Verified {
     verified: bool,
 }

@@ -22,24 +22,24 @@ command_errors! {
         RecoveryFailed {} => "php.shared_pool_recovery_failed", "The previous shared PHP pools or service state could not be restored.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub configurations: BTreeMap<String, String>,
 }
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, PartialEq, Serialize)]
 pub struct MissingPool {
     pub pool: String,
     pub version: String,
     pub directory: String,
     pub installed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     pub versions: Vec<String>,
     pub missing_pools: Vec<MissingPool>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
     pub missing_pools: Vec<MissingPool>,

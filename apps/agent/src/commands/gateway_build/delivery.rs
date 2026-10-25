@@ -10,13 +10,13 @@ const PLATFORMS: [&str; 4] = [
     "macos-x86_64",
 ];
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub checkout: String,
     pub sha: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub checkout: String,
@@ -24,21 +24,21 @@ pub struct InstallInput {
     pub step_lock: PathBuf,
     pub manifest: Manifest,
 }
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub commit: String,
     pub version: String,
     pub artifacts: BTreeMap<String, Artifact>,
 }
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
     pub sha256: String,
     pub path: String,
     pub url: String,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Inspection {
     pub commit: String,
     pub version: String,

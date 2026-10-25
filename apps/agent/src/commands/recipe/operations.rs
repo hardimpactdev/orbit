@@ -35,7 +35,7 @@ impl CommandError for Failure {
         details
     }
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Plan {
     #[serde(flatten)]
     pub tools: Report,
@@ -72,7 +72,7 @@ pub fn plan(
     )?;
     Ok(Plan { tools, actions })
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Applied {
     pub changed_packages: Vec<String>,
     pub restarted_services: Vec<String>,
@@ -360,7 +360,7 @@ impl Command for Inspect {
         plan(&mut host, &files, &input, Some(&account)).map_err(|e| e.at("inventory"))
     }
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Ready {
     ready: bool,
 }

@@ -45,7 +45,7 @@ fn git_failed(step: &str) -> DevSourceError {
 }
 
 /// What every command knows about the checkout it works on.
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
     /// The Project repository, as the checkout's `origin` must name it.
@@ -192,7 +192,7 @@ fn run_git(arguments: &[&OsStr], environment: &GitRead, step: &str) -> Result<()
 /// whose branches the Gateway sends to a task VM. An existing checkout must already be the prepared one.
 pub struct PrepareDevelopmentSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareInput {
     #[serde(flatten)]
@@ -206,7 +206,7 @@ pub struct PrepareInput {
     pub git_read: GitRead,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct PrepareOutput {
     /// Whether this call created the checkout.
     pub created: bool,
@@ -329,7 +329,7 @@ impl Command for PrepareDevelopmentSource {
 /// Reads a prepared checkout: its origin, the branch at `HEAD`, and the commit there.
 pub struct InspectDevelopmentSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     #[serde(flatten)]
@@ -341,7 +341,7 @@ pub struct InspectInput {
     pub require_idle: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InspectOutput {
     pub origin: String,
     /// The branch at `HEAD`, or `None` when it is detached.
@@ -405,7 +405,7 @@ impl Command for InspectDevelopmentSource {
 /// origin's default branch.
 pub struct ResolveDevelopmentSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveInput {
     #[serde(flatten)]
@@ -423,7 +423,7 @@ pub struct ResolveInput {
     pub git_read: GitRead,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct ResolveOutput {
     pub branch: String,
     pub commit: String,

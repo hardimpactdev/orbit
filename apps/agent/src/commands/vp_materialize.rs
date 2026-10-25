@@ -31,7 +31,7 @@ const BINARIES: [&str; 5] = ["vp", "node", "pnpm", "npm", "npx"];
 fn failed(_: impl std::fmt::Debug) -> Error {
     Error::Failed {}
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Output {
     pub binary: PathBuf,
     pub changed: bool,

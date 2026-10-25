@@ -18,13 +18,13 @@ command_errors! {
         Failed {} => "cli.self_update_failed", "The CLI self-update returned no bounded execution result.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     user: String,
     downgrade_to: Option<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     Updated,
@@ -33,7 +33,7 @@ pub enum Outcome {
     Incomplete,
     Failed,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     outcome: Outcome,
     report: Option<Map<String, Value>>,

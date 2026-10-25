@@ -52,7 +52,7 @@ fn ensure_directory(directory: &Path, mode: u32, owner: (u32, u32)) -> std::io::
     fs::set_permissions(directory, fs::Permissions::from_mode(mode))
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DirectoriesInput {
     pub marker_directory: PathBuf,
@@ -97,7 +97,7 @@ fn prepare_directories(
     Ok(Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MarkerInput {
     /// Prepares the marker and access log directories, then creates the marker readable by Caddy.
@@ -111,7 +111,7 @@ pub enum MarkerInput {
     },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 
 pub fn marker(input: &MarkerInput) -> Result<Done, HibernationError> {
@@ -167,13 +167,13 @@ fn marker_with_owner(
     Ok(Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TimesInput {
     pub paths: Vec<PathBuf>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Times {
     /// Each path's modification time in Unix seconds, or null when it does not exist.
     pub times: BTreeMap<String, Option<u64>>,
@@ -197,7 +197,7 @@ pub fn times(input: &TimesInput) -> Times {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckoutInput {
     /// The Instance's checkout, whose newest source file dates its last activity.
@@ -206,7 +206,7 @@ pub struct CheckoutInput {
     pub checkout: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Checkout {
     pub composer_json: bool,
     pub composer_lock: bool,
@@ -286,7 +286,7 @@ pub fn inspect(input: &CheckoutInput) -> Result<Checkout, HibernationError> {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PruneInput {
     pub checkout: PathBuf,
@@ -312,7 +312,7 @@ pub fn prune(input: &PruneInput) -> Result<Done, HibernationError> {
     Ok(Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestoreInput {
     pub user: String,

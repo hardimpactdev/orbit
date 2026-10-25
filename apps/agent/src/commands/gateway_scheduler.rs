@@ -22,27 +22,27 @@ command_errors! {
         Failed {stage: String} => "gateway.release_scheduler_failed", "A Gateway scheduler handoff step failed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub process_id: u64,
     pub name: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrainInput {
     pub process_id: u64,
     pub name: String,
     pub drain_seconds: u64,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Outcome {
     Drained,
     Forced,
     NotRunning,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct DrainResult {
     outcome: Outcome,
     waited_ms: u64,
@@ -52,7 +52,7 @@ pub struct DrainResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<&'static str>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Done {}
 trait Host: recipe::Host {
     fn now(&self) -> Instant;

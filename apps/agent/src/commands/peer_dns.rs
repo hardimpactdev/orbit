@@ -235,14 +235,14 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     /// The VPN DNS server the peer should use. It never counts as an uplink.
     pub server: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct PeerDnsState {
     /// `/etc/wireguard/orbit.dns-link`: the link, the server, then one routing domain per line.
     pub state: String,
@@ -322,13 +322,13 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueryInput {
     pub names: Vec<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Answers {
     /// `resolvectl query --cache=no --type=A` of each name, or `None` when the lookup failed.
     pub answers: Vec<Option<String>>,
@@ -395,7 +395,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepairInput {
     /// The VPN DNS server.
@@ -406,7 +406,7 @@ pub struct RepairInput {
     pub domains: Vec<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Repaired {}
 
 struct DnsState {

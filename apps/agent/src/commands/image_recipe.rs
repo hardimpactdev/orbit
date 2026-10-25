@@ -27,7 +27,7 @@ use std::{
 pub const APT: &str = "/var/tmp/orbit-image-apt";
 pub const RUST: [&str; 5] = ["rust", "cargo", "rust-std", "clippy", "rustfmt"];
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub identity: String,

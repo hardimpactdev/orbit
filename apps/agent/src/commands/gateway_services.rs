@@ -19,14 +19,14 @@ command_errors! {
         Start {} => "gateway.fleet_start_failed", "The fleet rollout could not be started or scheduled.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     application: String,
     orbit_home: String,
     user: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HibernatorInput {
     application: String,
@@ -34,16 +34,16 @@ pub struct HibernatorInput {
     user: String,
     sweep_seconds: u64,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartInput {
     deferred: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Started {
     accepted: bool,
 }

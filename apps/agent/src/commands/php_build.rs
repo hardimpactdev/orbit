@@ -150,7 +150,7 @@ impl CommandError for Failure {
     }
 }
 pub type Result<T> = std::result::Result<T, Failure>;
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pin {
     pub name: String,
@@ -159,32 +159,32 @@ pub struct Pin {
     pub url: String,
     pub sha256: String,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Build {
     pub packages: Vec<Pin>,
     pub extensions: BTreeSet<String>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repack {
     pub package: String,
     pub version: String,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Release {
     pub id: String,
     pub codenames: Vec<String>,
 }
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Extras {
     Refuse,
     Keep,
     Purge,
 }
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Fpm {
     None,
@@ -192,7 +192,7 @@ pub enum Fpm {
     All,
     Disabled,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub versions: BTreeMap<String, Build>,

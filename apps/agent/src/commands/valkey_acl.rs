@@ -30,7 +30,7 @@ fn invalid(check: &str) -> ValkeyAclError {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AclInput {
     pub volume: String,
@@ -38,7 +38,7 @@ pub struct AclInput {
     pub acl: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Written {}
 
 fn volume(name: &str) -> bool {

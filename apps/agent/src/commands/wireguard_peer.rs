@@ -148,12 +148,12 @@ fn wg_public(host: &Host, private: &[u8]) -> Result<String> {
     }
     Ok(public.into())
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyInput {
     existing: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct PublicKey {
     public_key: String,
 }
@@ -199,7 +199,7 @@ fn prepare_key(input: KeyInput, host: &Host) -> Result<PublicKey> {
     Ok(PublicKey { public_key: public })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     server_public_key: String,
@@ -578,7 +578,7 @@ fn rollback(host: &Host) -> Result<()> {
     }
     Ok(())
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommitInput {
     public_key: String,
@@ -740,10 +740,10 @@ fn publish_peer(input: Input, host: &Host) -> Result<PublicKey> {
     let _ = remove(&host.path(CANDIDATE));
     result
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Done {}
 pub struct PrepareKey;
 pub struct Publish;

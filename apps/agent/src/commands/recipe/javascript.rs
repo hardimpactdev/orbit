@@ -71,7 +71,7 @@ pub fn converge(
     Ok(true)
 }
 
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Installed {
     pub changed: bool,
     pub retired: Vec<String>,

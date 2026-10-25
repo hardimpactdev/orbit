@@ -31,7 +31,7 @@ fn failed(stage: &str) -> Error {
         stage: stage.into(),
     }
 }
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartInput {
     run: String,
@@ -40,14 +40,14 @@ pub struct StartInput {
     nodes: Vec<String>,
     vpn_subnet: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StatusInput {
     run: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Started {}
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum State {
     Ready,
@@ -56,7 +56,7 @@ enum State {
     Lost,
     Stale,
 }
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Status {
     state: State,
     #[serde(skip_serializing_if = "Option::is_none")]

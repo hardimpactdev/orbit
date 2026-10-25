@@ -14,14 +14,14 @@ command_errors! {
         Bootstrap { errors:String } => "task_vm.bootstrap_failed", "Cloud-init failed in the guest.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {}
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Ready {
     ready: bool,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Fingerprint {
     pub(super) fingerprint: String,
 }

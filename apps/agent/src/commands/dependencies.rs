@@ -358,7 +358,7 @@ fn bounded_output(mut command: Process, timeout: Duration) -> Option<Vec<u8>> {
 
 // ---- the update probe --------------------------------------------------------------------------------------------
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Debug)]
+#[derive(schemars::JsonSchema, Deserialize, Clone, Copy, PartialEq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum Ecosystem {
     Composer,
@@ -368,7 +368,7 @@ pub enum Ecosystem {
     Yarn,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProbeInput {
     pub directory: String,
@@ -533,7 +533,7 @@ impl Command for ProbeUpdate {
 
 // ---- the update --------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateInput {
     pub directory: String,
@@ -543,7 +543,7 @@ pub struct UpdateInput {
     pub vp: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Updated {
     /// The package manager's exit status: 124 when it passed its deadline.
     pub exit_code: i32,
@@ -931,7 +931,7 @@ fn list(fd: &OwnedFd) -> Checked<Vec<String>> {
     Ok(names)
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FilesInput {
     pub path: String,

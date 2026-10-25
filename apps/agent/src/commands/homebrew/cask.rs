@@ -38,17 +38,17 @@ const UNINSTALL_KEYS: &[&str] = &[
     "kext",
     "launchctl",
 ];
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     package: String,
     architecture: Architecture,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct CandidateOutput {
     version: Option<String>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct AdoptionOutput {
     installed_version: Option<String>,
     block: Option<Block>,
@@ -59,7 +59,7 @@ pub(super) struct Discovery {
     pub(super) installed_version: Option<String>,
     pub(super) block: Option<Block>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Done {}
 #[derive(Clone, Copy)]
 enum Operation {

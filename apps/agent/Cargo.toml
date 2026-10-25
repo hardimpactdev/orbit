@@ -12,6 +12,7 @@ name = "orbit-agent"
 path = "src/main.rs"
 
 [dependencies]
+schemars = "1.2"
 orbit-agent-contract = { path = "crates/contract" }
 orbit-documents-agent = { path = "../gateway/extensions/documents/agent" }
 orbit-ai-router-agent = { path = "../gateway/extensions/ai-router/agent" }

@@ -41,7 +41,7 @@ fn check(condition: bool, what: &str) -> Result<(), DeployStepError> {
 
 pub struct RunDeployStep;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunDeployStepInput {
     pub user: String,
@@ -62,13 +62,13 @@ pub struct RunDeployStepInput {
     pub secrets: Vec<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Chunk {
     pub stream: &'static str,
     pub value: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct RunDeployStepOutput {
     pub exit_code: i32,
     /// Whether the step's own bound stopped it.

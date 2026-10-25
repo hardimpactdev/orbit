@@ -26,7 +26,7 @@ fn unusable(reason: &str) -> StorageRootError {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageRootInput {
     pub root: PathBuf,
@@ -36,7 +36,7 @@ pub struct StorageRootInput {
     pub create_missing: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct StorageRoot {}
 
 fn user_id(name: &str) -> Option<u32> {

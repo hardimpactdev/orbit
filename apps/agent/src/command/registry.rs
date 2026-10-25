@@ -19,6 +19,15 @@ pub struct Entry {
     pub privilege: fn(Platform) -> Option<Privilege>,
     pub errors: &'static [&'static str],
     pub run: fn(Value, &Context) -> Outcome,
+    /// The JSON Schemas of the input and the output.
+    pub schemas: fn() -> Value,
+}
+
+fn schemas<C: Command>() -> Value {
+    json!({
+        "input": schemars::schema_for!(C::Input),
+        "output": schemars::schema_for!(C::Output),
+    })
 }
 
 pub fn entry<C: Command>() -> Entry {
@@ -41,6 +50,7 @@ pub fn entry<C: Command>() -> Entry {
         privilege: C::privilege,
         errors: <C::Error as CommandError>::CODES,
         run: run::<C>,
+        schemas: schemas::<C>,
     }
 }
 
@@ -265,6 +275,15 @@ pub fn contract() -> Value {
     json!({"common_errors": COMMON_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
 }
 
+/// The input and output JSON Schema of every command. Gateway test fakes validate against them.
+pub fn schemas_document() -> Value {
+    let commands: serde_json::Map<String, Value> = all()
+        .iter()
+        .map(|entry| (entry.name.to_owned(), (entry.schemas)()))
+        .collect();
+    json!({"commands": commands})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,10 +384,14 @@ mod tests {
         }
         assert!(std::time::Instant::now() < deadline);
         drop(held);
-        assert!(matches!(
-            with_locks::<ResourceOnly>(json!({}), &context, resource_locks),
-            Outcome::Ok(_)
-        ));
+        let context = Context::new(
+            Platform::Linux,
+            std::time::Instant::now() + Duration::from_secs(2),
+        );
+        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks) {
+            Outcome::Ok(_) => {}
+            other => panic!("expected the released resource to be taken, got {other:?}"),
+        }
     }
 
     #[test]
@@ -411,6 +434,86 @@ mod tests {
                 entry.name
             );
         }
+    }
+
+    /// Every input object refuses unknown fields, so a misspelled field fails instead of being ignored.
+    #[test]
+    fn every_input_object_refuses_unknown_fields() {
+        fn walk(
+            schema: &Value,
+            root: &Value,
+            path: &str,
+            seen: &mut BTreeSet<String>,
+            loose: &mut Vec<String>,
+        ) {
+            let Some(object) = schema.as_object() else {
+                return;
+            };
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                let name = reference.trim_start_matches("#/$defs/");
+                if seen.insert(name.to_owned()) {
+                    walk(
+                        &root["$defs"][name],
+                        root,
+                        &format!("{path}/{name}"),
+                        seen,
+                        loose,
+                    );
+                }
+            }
+            if object.contains_key("properties")
+                && object.get("additionalProperties") != Some(&Value::Bool(false))
+            {
+                loose.push(path.to_owned());
+            }
+            for (name, child) in object
+                .get("properties")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
+                walk(child, root, &format!("{path}.{name}"), seen, loose);
+            }
+            for key in ["oneOf", "anyOf", "allOf"] {
+                for child in object
+                    .get(key)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    walk(child, root, path, seen, loose);
+                }
+            }
+            for key in ["items", "additionalProperties"] {
+                if let Some(child) = object.get(key) {
+                    walk(child, root, &format!("{path}[]"), seen, loose);
+                }
+            }
+        }
+        let mut loose = Vec::new();
+        for entry in all() {
+            let input = &(entry.schemas)()["input"];
+            walk(input, input, entry.name, &mut BTreeSet::new(), &mut loose);
+        }
+        assert!(
+            loose.is_empty(),
+            "inputs that accept unknown fields: {loose:?}"
+        );
+    }
+
+    /// Gateway tests read `contract/schemas.json`. The same variable rewrites it.
+    #[test]
+    fn schemas_file_matches_the_compiled_commands() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/schemas.json");
+        let expected = serde_json::to_string(&schemas_document()).unwrap() + "\n";
+        if std::env::var_os("ORBIT_AGENT_WRITE_CONTRACT").is_some() {
+            std::fs::write(path, &expected).unwrap();
+        }
+        let actual = std::fs::read_to_string(path).unwrap_or_default();
+        assert!(
+            actual == expected,
+            "contract/schemas.json is stale; run ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file schemas_file"
+        );
     }
 
     /// The Gateway and its tests read `contract/commands.json`. Rewrite it with

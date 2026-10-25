@@ -44,7 +44,7 @@ impl From<IncusError> for Error {
         }
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     project: String,
@@ -53,7 +53,7 @@ pub struct Input {
     size: String,
     fingerprint: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Built {
     ready: bool,
     seconds: BTreeMap<String, f64>,

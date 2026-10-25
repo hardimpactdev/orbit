@@ -28,7 +28,7 @@ fn failed(step: &str) -> TransferError {
     TransferError::Failed { step: step.into() }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TransferInput {
     Capture {
@@ -46,7 +46,7 @@ pub enum TransferInput {
     },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum TransferOutput {
     Captured {
@@ -400,12 +400,12 @@ fn validate_archive(file: &mut fs::File, context: &Context) -> Result<(), Transf
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveInput {
     archive: PathBuf,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct ArchiveOutput {
     bytes: u64,
 }
@@ -486,7 +486,7 @@ impl Command for ReadArchive {
         )
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaterializeInput {
     destination: PathBuf,

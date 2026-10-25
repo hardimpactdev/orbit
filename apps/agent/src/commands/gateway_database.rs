@@ -26,12 +26,12 @@ command_errors! {
         Busy {} => "gateway.release_in_progress", "A command from an earlier Gateway release step still runs.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub database: PathBuf,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotInput {
     pub database: PathBuf,
@@ -41,11 +41,11 @@ pub struct SnapshotInput {
     pub minimum_free_bytes: u64,
     pub step_lock: PathBuf,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Size {
     bytes: u64,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Snapshot {
     path: PathBuf,
 }

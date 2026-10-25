@@ -21,7 +21,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DatabaseServerInput {
     /// Repeats `SELECT 1` through the client until it answers or `timeout_seconds` pass.
@@ -48,7 +48,7 @@ pub enum DatabaseServerInput {
     },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum DatabaseServerOutput {
     Rows { output: String },

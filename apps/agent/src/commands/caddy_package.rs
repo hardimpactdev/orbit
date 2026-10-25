@@ -23,7 +23,7 @@ fn failed(reason: impl ToString) -> PackageError {
         reason: reason.to_string(),
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackageInput {
     pub release: String,
@@ -33,7 +33,7 @@ pub struct PackageInput {
     pub minimum_version: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Package {
     pub changed: bool,
     pub version: String,

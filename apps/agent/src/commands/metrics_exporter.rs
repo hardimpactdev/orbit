@@ -128,14 +128,14 @@ pub struct Error {
 }
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct State {
     pub configuration: Option<String>,
     pub service_active: bool,
     pub firewall_source: Option<Ipv4Addr>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(schemars::JsonSchema, Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
     Snapshot {},
@@ -144,14 +144,14 @@ pub enum Operation {
     Restore { state: State },
     Actual {},
 }
-#[derive(Debug, Deserialize)]
+#[derive(schemars::JsonSchema, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     address: String,
     metrics_address: String,
     action: Operation,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 #[serde(untagged)]
 pub enum Output {
     State(State),

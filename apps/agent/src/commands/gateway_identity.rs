@@ -26,22 +26,22 @@ command_errors! {
         SelfAccess {} => "gateway.self_access_failed", "The Gateway SSH self-access could not be prepared.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     orbit_home: PathBuf,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     wireguard_public_key: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccessInput {
     user: String,
     public_key: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct HostKey {
     key_type: String,
     value: String,

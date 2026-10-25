@@ -22,14 +22,14 @@ command_errors! {
         RecoveryFailed {} => "gateway.certificate_recovery_failed", "The prior Gateway certificate or service could not be restored.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub certificate: String,
     pub key: String,
     pub root_certificate: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
 }

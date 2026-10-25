@@ -2,7 +2,7 @@
 use super::*;
 use std::{collections::BTreeSet, net::Ipv4Addr};
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
     Converge {
@@ -21,7 +21,7 @@ impl Input {
         }
     }
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     matches: bool,
 }

@@ -626,7 +626,7 @@ fn converge_monitoring_pool(
 
 // ---- converge ----------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// Publish the whole runtime, restarting the master when a file changed.
@@ -636,7 +636,7 @@ pub enum Mode {
 }
 
 /// The configuration the Gateway renders for one runtime.
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Configuration {
     pub main: String,
@@ -648,7 +648,7 @@ pub struct Configuration {
     pub initial_pool: String,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConvergeInput {
     pub mode: Mode,
@@ -662,7 +662,7 @@ pub struct ConvergeInput {
     pub initial_application: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Converged {
     /// Whether the master restarted or started with new files.
     pub published: bool,
@@ -1233,7 +1233,7 @@ impl Command for ConvergeRuntime {
 
 // ---- remove ------------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {
     pub user: String,
@@ -1241,7 +1241,7 @@ pub struct RemoveInput {
     pub marker: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Removed {
     /// Whether a runtime existed.
     pub removed: bool,
@@ -1353,7 +1353,7 @@ impl Command for RemoveRuntime {
 
 // ---- inspect the pool --------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectPoolInput {
     pub user: String,
@@ -1361,7 +1361,7 @@ pub struct InspectPoolInput {
     pub marker: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Pool {
     pub pool: String,
     /// The hash of the main configuration, the pool, and `local.conf`: it changes with any of them.
@@ -1422,7 +1422,7 @@ impl Command for InspectPool {
 
 // ---- refresh the cache -------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RefreshCacheInput {
     pub user: String,
@@ -1433,7 +1433,7 @@ pub struct RefreshCacheInput {
     pub deadline_seconds: u64,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Refreshed {
     pub complete: bool,
 }

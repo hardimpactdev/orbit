@@ -25,48 +25,48 @@ const FLAGS: [&str; 5] = [
 ];
 const MAX_STREAM: usize = 65_536;
 const MAX_CANDIDATE: usize = 32_768;
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     package: String,
 }
-#[derive(Clone, Copy, Deserialize)]
+#[derive(schemars::JsonSchema, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateOperation {
     Install,
     Update,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CandidateInput {
     package: String,
     operation: CandidateOperation,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct VersionOutput {
     version: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct CandidateOutput {
     version: Option<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Package {
     name: String,
     version: Option<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InventoryOutput {
     packages: Vec<Package>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct PlanOutput {
     packages: Vec<String>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 trait Host {
     fn run(&mut self, args: &[&str]) -> Result<incus::Output>;

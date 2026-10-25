@@ -43,7 +43,7 @@ impl From<Failure> for Error {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Environment {
     pub store: PathBuf,
@@ -53,33 +53,33 @@ pub struct Environment {
     #[serde(default)]
     pub package_manager_hash: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub environments: Vec<Environment>,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Inspected {
     pub installed: Vec<bool>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     pub environment: Environment,
     #[serde(default)]
     pub npmrc: String,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Installed {
     pub verified: BTreeMap<String, String>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PruneInput {
     pub store: PathBuf,
     pub references: Vec<Environment>,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Pruned {
     pub removed: Vec<String>,
 }

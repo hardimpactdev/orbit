@@ -29,25 +29,25 @@ fn failed(stage: &str) -> Error {
         stage: stage.into(),
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageInput {
     pub checkout: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SwitchInput {
     pub checkout: String,
     pub release: String,
     pub stamp: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinishInput {
     pub checkout: String,
     pub stamp: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct StorageOutput {
     storage: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,18 +55,18 @@ pub struct StorageOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     storage_gap_us: Option<u64>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct SwitchOutput {
     method: &'static str,
     gap_us: u64,
     from: String,
     to: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct RestoreOutput {
     changed: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct FinishOutput {
     path: Option<String>,
 }

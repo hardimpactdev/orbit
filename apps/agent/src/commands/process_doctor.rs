@@ -8,7 +8,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     process_id: u64,
@@ -17,13 +17,13 @@ pub struct Input {
     desired: Desired,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Observation {
     active_state: String,
     sub_state: String,
     restarts: Option<u32>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Active,
@@ -33,7 +33,7 @@ pub enum Status {
     Exited,
     Other,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Observed {
     present: bool,
     status: Option<Status>,

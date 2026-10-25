@@ -176,14 +176,14 @@ impl Node<System> {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Runtime {
     Systemd,
     Docker,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Desired {
     Running,
@@ -400,14 +400,14 @@ impl<P: Programs> Node<P> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseInput {
     /// The selected production release, through `current`.
     pub directory: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Release {
     pub available: bool,
 }
@@ -418,7 +418,7 @@ pub fn check_release(input: &ReleaseInput) -> Release {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactInput {
     pub process_id: u64,
@@ -427,7 +427,7 @@ pub struct ArtifactInput {
     pub name: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Status {
     pub state: String,
 }
@@ -442,7 +442,7 @@ pub fn status<P: Programs>(
     })
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
     Start,
@@ -450,7 +450,7 @@ pub enum Operation {
     Restart,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlInput {
     pub operation: Operation,
@@ -461,7 +461,7 @@ pub struct ControlInput {
     pub on_demand: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 
 pub fn control<P: Programs>(
@@ -507,7 +507,7 @@ pub fn control<P: Programs>(
     Ok(Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViteEnvironment {
     /// `/etc/orbit/vite/app-instance-<instance_id>.env`.
@@ -515,7 +515,7 @@ pub struct ViteEnvironment {
     pub instance_id: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {
     pub process_id: u64,
@@ -629,7 +629,7 @@ pub fn remove<P: Programs>(node: &mut Node<P>, input: &RemoveInput) -> Result<Do
     Ok(Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageInput {
     pub process_id: u64,
@@ -638,7 +638,7 @@ pub struct StageInput {
     pub content: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Staged {
     /// A candidate waits for `processes.activate-unit`; without one the unit already has this content.
     pub staged: bool,
@@ -711,7 +711,7 @@ pub fn stage<P: Programs>(node: &mut Node<P>, input: &StageInput) -> Result<Stag
     })
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Change {
     /// Publish the candidate over the Process's unit, keeping a backup.
@@ -722,7 +722,7 @@ pub enum Change {
     Reload,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActivateInput {
     pub process_id: u64,
@@ -732,7 +732,7 @@ pub struct ActivateInput {
     pub on_demand: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Activated {
     /// The backup of a replaced unit could not be deleted.
     pub backup_left: bool,
@@ -857,7 +857,7 @@ pub fn activate<P: Programs>(
     Ok(Activated { backup_left })
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Mount {
     /// An absolute host path binds it; a name mounts that volume.
@@ -866,7 +866,7 @@ pub struct Mount {
     pub read_only: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContainerInput {
     pub process_id: u64,
@@ -1360,7 +1360,7 @@ pub fn converge_container<P: Programs>(
     .map(|()| Done {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogsInput {
     pub process_id: u64,
@@ -1370,7 +1370,7 @@ pub struct LogsInput {
     pub max_bytes: usize,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Logs {
     /// A unit's entries newest first, cut after `max_bytes`; a container's last lines, of which the last
     /// `max_bytes` stay.

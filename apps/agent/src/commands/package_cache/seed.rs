@@ -3,12 +3,12 @@ use std::{
     ffi::OsString,
     path::{Component, PathBuf},
 };
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     artifacts: Vec<Artifact>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Seeded {
     ready: bool,
 }

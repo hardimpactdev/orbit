@@ -300,7 +300,7 @@ fn remove(host: &mut impl Host, purge: bool) -> Result<&'static str, CiHostError
     Ok("removed")
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostInput {
     Converge {},
@@ -309,7 +309,7 @@ pub enum HostInput {
     Purge {},
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct HostOutcome {
     /// `converged`, `matches`, `drift`, `occupied`, `retained`, or `removed`.
     pub outcome: &'static str,

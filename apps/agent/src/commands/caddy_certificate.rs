@@ -31,7 +31,7 @@ fn failed(stage: &str) -> Error {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     directory: PathBuf,
@@ -41,16 +41,16 @@ pub struct InstallInput {
     key: String,
     service: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {
     directory: PathBuf,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Installed {
     changed: bool,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Removed {}
 
 fn stem(value: &str) -> bool {

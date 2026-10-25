@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Linux,
@@ -56,8 +56,10 @@ pub trait Command {
     const OUTPUT_MAX_BYTES: u64 = 0;
     /// Maximum raw bytes after the envelope line. Zero means JSON input only.
     const INPUT_MAX_BYTES: u64 = 0;
-    type Input: DeserializeOwned;
-    type Output: Serialize;
+    /// The input and output shapes are exported as JSON Schemas in the contract, so Gateway tests send and expect
+    /// only what the agent accepts and returns.
+    type Input: DeserializeOwned + schemars::JsonSchema;
+    type Output: Serialize + schemars::JsonSchema;
     type Error: CommandError;
 
     /// The identity the command runs as on each platform, or `None` where it is unsupported.

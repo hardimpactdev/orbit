@@ -21,10 +21,10 @@ command_errors! {
         RecoveryFailed {} => "services.ordering_recovery_failed", "Service ordering failed and its prior state could not be restored.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {}
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
 }

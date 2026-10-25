@@ -253,7 +253,7 @@ pub fn verify(
     // Finish under the same update lock as binary delivery, after all other verification.
     super::worker::agent(files, input, deadline)
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Ready {
     ready: bool,
 }

@@ -8,7 +8,7 @@ command_errors! {
         Unavailable {} => "doctor.production_inspection_failed", "The production Instance could not be observed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub user: String,
@@ -20,7 +20,7 @@ pub struct Input {
     pub association: bool,
     pub runtime: Option<ExpectedRuntime>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExpectedRuntime {
     pub version: String,
@@ -29,7 +29,7 @@ pub struct ExpectedRuntime {
     pub application: PathBuf,
     pub initial_application: PathBuf,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     pub home: bool,
     pub selection: bool,

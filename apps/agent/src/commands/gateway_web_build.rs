@@ -26,13 +26,13 @@ command_errors! {
         Publish {} => "gateway.release_web_publish_failed", "The web app link could not be safely switched.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseInput {
     web_root: PathBuf,
     release: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     web_root: PathBuf,
@@ -40,33 +40,33 @@ pub struct InstallInput {
     archive: PathBuf,
     sha256: String,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestoreInput {
     web_root: PathBuf,
     release: String,
     previous: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PruneInput {
     web_root: PathBuf,
     retained: Vec<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Status {
     installed: bool,
     archive_limit: u64,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Installed {
     reused: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Published {
     previous: Option<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Changed {
     changed: bool,
 }

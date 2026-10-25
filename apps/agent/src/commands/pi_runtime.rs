@@ -34,7 +34,7 @@ impl From<recipe::Failure> for Error {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub user: String,
@@ -43,7 +43,7 @@ pub struct Input {
     pub token: String,
     pub models: Vec<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
     pub binary: std::path::PathBuf,

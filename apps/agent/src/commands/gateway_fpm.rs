@@ -42,13 +42,13 @@ fn failed(stage: &str) -> Error {
         stage: stage.into(),
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub pool: String,
     pub hooks: Vec<HookInput>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
     pub activated: bool,
@@ -242,10 +242,10 @@ impl Command for Converge {
         })
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct ConnectionCount {
     pub connections: usize,
 }

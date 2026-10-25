@@ -15,7 +15,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HealthInput {
     pub url: String,
@@ -23,7 +23,7 @@ pub struct HealthInput {
     pub interval_seconds: u64,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Healthy {}
 
 /// The process and clock seam: production runs curl and sleeps, tests record the calls.

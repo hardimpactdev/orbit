@@ -22,12 +22,12 @@ command_errors! {
         RecoveryFailed {} => "gateway.checkout_recovery_failed", "Prior Gateway checkout permissions could not be restored.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub path: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {
     pub changed: bool,
 }

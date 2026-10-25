@@ -65,7 +65,7 @@ fn head_commit(directory: &Path, quiet: bool) -> Option<Vec<u8>> {
 /// Reads a source's evidence for Instance removal. It changes nothing.
 pub struct InspectSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectSourceInput {
     pub checkout: PathBuf,
@@ -83,7 +83,7 @@ pub struct InspectSourceInput {
 }
 
 /// Each value in base64, because paths, branches, and the worktree listing are bytes.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct InspectSourceOutput {
     pub top: String,
     pub common: String,
@@ -284,7 +284,7 @@ impl Command for InspectSource {
 /// Checks an active checkout again at the destructive boundary and deletes it in the same run.
 pub struct RemoveSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveSourceInput {
     pub checkout: PathBuf,
@@ -301,7 +301,7 @@ pub struct RemoveSourceInput {
     pub git_read: GitRead,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Empty {}
 
 /// Counts the live entries of a `git worktree list --porcelain -z` listing. Each must be the checkout itself. A
@@ -504,7 +504,7 @@ impl RemoveSource {
 /// Records the removal journal in `<root>/.orbit-removals` before finalization. A retry with the same digest succeeds.
 pub struct PrepareRemoval;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareRemovalInput {
     pub root: PathBuf,
@@ -645,7 +645,7 @@ impl Command for PrepareRemoval {
 /// resumes from the quarantine or the receipt.
 pub struct FinalizeRemoval;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FinalizeRemovalInput {
     pub checkout: PathBuf,
@@ -672,7 +672,7 @@ pub struct FinalizeRemovalInput {
     pub git_read: GitRead,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct FinalizeRemovalOutput {
     /// `finalized`, or `cross_device` when the checkout is on another filesystem than the removal state, so it stays.
     pub state: String,
@@ -1102,7 +1102,7 @@ impl FinalizeRemoval {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiptInput {
     pub checkout: PathBuf,
@@ -1120,7 +1120,7 @@ pub struct ReceiptInput {
     pub grouping_directory: Option<PathBuf>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct StateOutput {
     pub state: String,
 }
@@ -1417,7 +1417,7 @@ impl Command for ReadReceipt {
 /// repository.
 pub struct CleanReceipt;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct ReceiptOutput {
     pub receipt: String,
 }
@@ -1578,7 +1578,7 @@ impl Command for CleanReceipt {
 /// atomic.
 pub struct ReadRemovalState;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadRemovalStateInput {
     pub checkout: PathBuf,
@@ -1735,7 +1735,7 @@ impl Command for ReadRemovalState {
 /// Checks whether a current branch or tag of the origin contains the commit, through a temporary repository.
 pub struct CheckPublication;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckPublicationInput {
     pub origin: String,
@@ -1743,7 +1743,7 @@ pub struct CheckPublicationInput {
     pub git_read: GitRead,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct PublicationOutput {
     pub published: bool,
 }
@@ -1774,7 +1774,7 @@ impl Command for CheckPublication {
 /// `php artisan route:list` as the production user and changes nothing.
 pub struct InspectLaravelRoutes;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectLaravelRoutesInput {
     /// The production user that owns the release.
@@ -1787,7 +1787,7 @@ pub struct InspectLaravelRoutesInput {
     pub php_version: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Deserialize, Debug, PartialEq)]
 pub struct LaravelRoutesOutput {
     pub collision: bool,
 }
@@ -1960,13 +1960,13 @@ mod tests;
 /// Whether nothing, not even a dangling link, occupies a path where an Instance's source will go.
 pub struct CheckPathFree;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PathInput {
     pub path: PathBuf,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(schemars::JsonSchema, Serialize, Debug, PartialEq)]
 pub struct PathFree {
     pub free: bool,
 }

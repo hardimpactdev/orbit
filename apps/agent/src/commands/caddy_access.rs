@@ -42,7 +42,7 @@ fn check(condition: bool, what: &str) -> Result<(), AccessError> {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Site {
     pub checkout: PathBuf,
@@ -52,7 +52,7 @@ pub struct Site {
     pub application: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccessInput {
     /// The managed account that owns the checkouts.
@@ -60,7 +60,7 @@ pub struct AccessInput {
     pub sites: Vec<Site>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Granted {
     /// Served entries whose mode hides them from Caddy, at most 100 and a marker when there are more.
     pub unreadable: Vec<String>,

@@ -52,11 +52,11 @@ fn update_lock(platform: Platform) -> PathBuf {
 /// Reports the running binary, so the Gateway can see which pin a Node runs.
 pub struct Status;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StatusInput {}
 
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct StatusOutput {
     pub version: &'static str,
     pub sha256: String,
@@ -125,7 +125,7 @@ fn observer_state(platform: Platform) -> &'static str {
 /// secret, and a failed health check restores the kept binary.
 pub struct Install;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallInput {
     /// The absolute path of the staged candidate.
@@ -133,7 +133,7 @@ pub struct InstallInput {
     pub sha256: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InstallOutput {
     pub replaced: bool,
     pub sha256: String,

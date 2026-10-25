@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::BTreeSet;
 
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     artifacts_present: bool,
     permissions_match: bool,
@@ -114,12 +114,12 @@ pub(super) fn inspect_at(host: &Host, input: &InstallInput) -> Result<Inspection
     Ok(result)
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OrphanInput {
     known_ids: Vec<String>,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Orphans {
     pub ids: Vec<String>,
 }

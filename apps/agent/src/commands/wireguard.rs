@@ -211,14 +211,14 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectInput {
     /// The rendered hub configuration, private key included.
     pub config: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Projected {}
 
 const SERVICE: &str = "wg-quick@orbit";
@@ -448,11 +448,11 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectHubInput {}
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct HubState {
     pub active: bool,
     /// The SHA-256 of `/etc/wireguard/orbit.conf`, or `None` when it is not a file.

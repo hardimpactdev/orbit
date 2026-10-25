@@ -20,7 +20,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     domain: String,
@@ -29,7 +29,7 @@ pub struct Input {
     forwarding: Vec<SocketAddr>,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Observed {
     ingress: bool,
     forwarding: bool,

@@ -22,13 +22,13 @@ command_errors! {
         Failed { stage: String } => "documents.cleanup_start_failed", "Document cleanup startup invalidation failed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub checkout: String,
     pub orbit_home: String,
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Output {}
 pub struct PrepareCleanup;
 impl StartHook for PrepareCleanup {

@@ -106,7 +106,7 @@ fn plain_group(group: &str) -> bool {
             !part.is_empty() && part != "." && !part.bytes().any(|b| b.is_ascii_control())
         })
 }
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
     process_id: u64,
@@ -126,14 +126,14 @@ struct Manifest {
     #[serde(default)]
     unrelated_processes: Vec<Declaration>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HoldInput {
     checkout: String,
     target_sha: String,
     caller_pid: u32,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Hold {
     unrelated_processes: Vec<Declaration>,
 }

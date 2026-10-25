@@ -140,7 +140,7 @@ fn hash_tree(root: &Path, directory: &Path, hash: &mut Sha256) -> std::io::Resul
 /// Reads a checkout, or with `include_worktrees` its whole worktree set, for registration.
 pub struct InspectRegistrationSource;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub path: PathBuf,
@@ -149,7 +149,7 @@ pub struct InspectInput {
     pub group: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct SourceRow {
     pub path: String,
     pub layout: &'static str,
@@ -165,7 +165,7 @@ pub struct SourceRow {
     pub source_digest: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InspectOutput {
     pub rows: Vec<SourceRow>,
 }
@@ -325,7 +325,7 @@ impl Command for InspectRegistrationSource {
 /// Adopts a source set in place, or moves it into the apps directory, in the step the Gateway recorded.
 pub struct RelocateRegistrationSource;
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(schemars::JsonSchema, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum Operation {
     Adopt,
@@ -334,7 +334,7 @@ pub enum Operation {
     Cleanup,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(schemars::JsonSchema, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Member {
     pub id: u64,
@@ -360,21 +360,21 @@ impl Member {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelocateInput {
     pub operation: Operation,
     pub members: Vec<Member>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Identity {
     pub id: u64,
     pub source_device: Option<u64>,
     pub source_inode: Option<u64>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct RelocateOutput {
     /// The identity of each original that `prepare` left in place, for cleanup to check.
     pub identities: Vec<Identity>,
@@ -709,7 +709,7 @@ impl Command for RelocateRegistrationSource {
 /// cached configuration, with the times of the directories that hold them.
 pub struct LaravelRegistrationReceipt;
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(schemars::JsonSchema, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReceiptOperation {
     Prepare,
@@ -717,7 +717,7 @@ pub enum ReceiptOperation {
     Discard,
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiptInput {
     pub checkout: PathBuf,
@@ -726,7 +726,7 @@ pub struct ReceiptInput {
     pub application: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct ReceiptOutput {}
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

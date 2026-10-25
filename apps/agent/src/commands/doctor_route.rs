@@ -16,14 +16,14 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectionInput {
     domain: String,
     certificates: PathBuf,
     projection: Projection,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Projection {
     Workload {
@@ -34,13 +34,13 @@ enum Projection {
         upstreams: Vec<String>,
     },
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Laravel {
     Skip {},
     Check { environment: PathBuf, url: String },
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Observed {
     caddy: bool,
     tls: bool,
@@ -190,19 +190,19 @@ impl Command for InspectPrivateRoute {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApplicationUrlsInput {
     checkout: PathBuf,
     applications: Vec<ApplicationUrl>,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ApplicationUrl {
     directory: String,
     url: String,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct ApplicationUrls {
     matches: Vec<bool>,
 }
@@ -248,7 +248,7 @@ impl Command for InspectApplicationUrls {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyInput {
     domain: String,
@@ -256,7 +256,7 @@ pub struct ProxyInput {
     upstream: std::net::SocketAddr,
     dns_address: Option<Ipv4Addr>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct ProxyObserved {
     caddy: bool,
     tls: bool,
@@ -306,13 +306,13 @@ impl Command for InspectCustomProxy {
         inspect_proxy(&input, Path::new("/etc/caddy/Caddyfile"), &mut Native)
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DnsInput {
     domain: String,
     address: Ipv4Addr,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct DnsObserved {
     matches: bool,
 }

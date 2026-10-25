@@ -19,7 +19,7 @@ const PROPERTIES: &[&str] = &[
     "NeedDaemonReload",
     "Transient",
 ];
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessInput {
     pub checkout: String,
@@ -32,7 +32,7 @@ pub struct ProcessInput {
     pub command: Vec<String>,
     pub rendered: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct ProcessIdentity {
     pub source_sha: String,
     pub unit_sha256: String,

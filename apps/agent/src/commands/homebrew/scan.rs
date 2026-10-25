@@ -2,26 +2,26 @@
 use super::*;
 use serde_json::Value;
 use std::collections::BTreeSet;
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum State {
     Complete,
     Incomplete,
     Unsupported,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Observation {
     name: String,
     installed_version: Option<String>,
     dependency: bool,
     block: Option<Block>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Inventory {
     state: State,
     packages: Vec<Observation>,
 }
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
 pub struct Output {
     formulae: Inventory,
     casks: Inventory,

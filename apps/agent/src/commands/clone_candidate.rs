@@ -29,7 +29,7 @@ command_errors! {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CandidateInput {
     /// `development` reads the checkout at `base`; `production` reads the release that `base/current` selects.
@@ -46,7 +46,7 @@ pub struct CandidateInput {
     pub git_read: GitRead,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Candidate {
     pub source: PathBuf,
     pub commit: String,

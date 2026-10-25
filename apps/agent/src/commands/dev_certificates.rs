@@ -238,7 +238,7 @@ fn trust(
     .ok_or_else(|| failed(step))
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LeafInput {
     pub scope: String,
@@ -249,7 +249,7 @@ pub struct LeafInput {
     pub home: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Requested {
     Current {},
@@ -338,7 +338,7 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
     Ok(Requested::Request { request })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublishInput {
     #[serde(flatten)]
@@ -347,7 +347,7 @@ pub struct PublishInput {
     pub root_certificate: String,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Published {}
 
 /// Points `link` at `target` with one rename, so a reader sees the old or the new target.
@@ -488,14 +488,14 @@ fn publish(
     Ok(Published {})
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScopeInput {
     pub scope: String,
     pub home: PathBuf,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Presence {
     pub present: bool,
 }

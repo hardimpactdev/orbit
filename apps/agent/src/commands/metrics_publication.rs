@@ -26,20 +26,20 @@ command_errors! {
     }
 }
 type Result<T> = std::result::Result<T, Error>;
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     address: Ipv4Addr,
     action: Action,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum Action {
     Converge { gateway: Ipv4Addr },
     Remove { gateway: Ipv4Addr },
     Abandon {},
 }
-#[derive(Serialize)]
+#[derive(schemars::JsonSchema, Serialize)]
 pub struct Output {
     changed: bool,
 }

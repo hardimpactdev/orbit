@@ -31,7 +31,7 @@ const VERSIONS: &str = "/etc/caddy/orbit-metrics-cert-versions";
 const CURRENT: &str = "/etc/caddy/orbit-metrics-cert-current";
 const OWNER_MARK: &str = "metrics-certificate\n";
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MetricsCertificateInput {
     Publish {
@@ -47,7 +47,7 @@ pub enum MetricsCertificateInput {
     Remove {},
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum MetricsCertificateOutput {
     /// `unchanged`, `created`, or `replaced` with the link target it replaced.

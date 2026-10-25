@@ -28,7 +28,7 @@ command_errors! {
 const EXPORT_PREFIX: &str = "/tmp/orbit-sqlite-clone-";
 const FICLONE: libc::c_ulong = 0x4004_9409;
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CopyInput {
     /// Copies `source` in `checkout` to `target` in `target_checkout`, on this Node.
@@ -64,7 +64,7 @@ pub enum CopyInput {
     Remove { checkout: PathBuf, path: PathBuf },
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Copied {
     pub bytes: u64,
     pub sha256: String,
@@ -73,7 +73,7 @@ pub struct Copied {
     pub copy: &'static str,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum CopyOutput {
     Copied(Copied),

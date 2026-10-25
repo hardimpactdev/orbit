@@ -122,7 +122,7 @@ fn kept(installed: Option<&[u8]>, recorded: Option<&str>) -> bool {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigureInput {
     /// The hash of the secret the Gateway recorded, if any; a file that matches it is kept.
@@ -136,7 +136,7 @@ pub struct ConfigureInput {
     pub binary_changed: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Configured {
     pub secret_hash: String,
     pub restarted: bool,
@@ -189,11 +189,11 @@ fn configure(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveInput {}
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Removed {}
 
 /// Stops the observer and removes the agent's unit, binary, and files. The running command keeps its open binary.

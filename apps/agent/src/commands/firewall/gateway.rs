@@ -14,13 +14,13 @@ command_errors! {
         Remove {} => "vpn.firewall_recovery_remove_failed", "The public SSH recovery rule could not be removed.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     desired: Vec<Shape>,
     recovery: Shape,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     matches: bool,
 }

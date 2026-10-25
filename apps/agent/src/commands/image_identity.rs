@@ -40,10 +40,10 @@ fn failed(stage: &str, reason: impl ToString) -> Error {
         reason: reason.to_string(),
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {}
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Cleaned {
     ready: bool,
 }

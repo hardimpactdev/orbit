@@ -78,14 +78,14 @@ fn change(host: &mut impl Host, args: Vec<String>, error: Error) -> Result<(), E
     }
 }
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectInput {
     pub expected: Vec<Shape>,
     pub exclusive_families: Vec<String>,
     pub stored: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Inspection {
     backend: Backend,
     ownerships: Vec<Ownership>,
@@ -158,13 +158,13 @@ impl Command for Inspect {
     }
 }
 
-#[derive(Deserialize, PartialEq)]
+#[derive(schemars::JsonSchema, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum Operation {
     Converge,
     Remove,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleInput {
     node_id: u64,
@@ -175,7 +175,7 @@ pub struct RuleInput {
     protocol: String,
     operation: Operation,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct RuleOutput {
     backend: Backend,
 }

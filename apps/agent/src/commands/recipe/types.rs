@@ -2,7 +2,7 @@ use super::Failure;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Architecture {
     Amd64,
@@ -16,13 +16,13 @@ impl Architecture {
         }
     }
 }
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     Ubuntu,
     Artifact,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
     #[serde(default)]
@@ -36,7 +36,7 @@ pub struct Artifact {
     #[serde(default)]
     pub sha512: Option<String>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
     pub source: Source,
@@ -51,7 +51,7 @@ pub struct Tool {
     pub source_commit: Option<String>,
 }
 pub type Tools = BTreeMap<String, Tool>;
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub user: String,
@@ -184,7 +184,7 @@ impl Tool {
                 .any(|a| a.url.as_deref().is_some_and(|u| u.ends_with(".deb")))
     }
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Current,
@@ -194,7 +194,7 @@ pub enum Status {
     NewerThanRecipe,
     UnsupportedNewer,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Assessment {
     pub source: Source,
     pub version: String,

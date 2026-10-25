@@ -55,7 +55,7 @@ pub(super) fn put(text: &[u8], found: &[std::ops::Range<usize>], line: &[u8]) ->
 
 // ---- the Composer profile ------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileInput {
     pub application: PathBuf,
@@ -102,7 +102,7 @@ impl Command for InspectProfile {
 
 // ---- the URL -----------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UrlInput {
     pub directory: PathBuf,
@@ -119,7 +119,7 @@ pub struct UrlInput {
     pub require_artisan: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Written {
     pub written: bool,
 }

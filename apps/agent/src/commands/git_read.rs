@@ -3,7 +3,9 @@ use base64::Engine;
 use serde::{Deserialize, Deserializer};
 use std::{collections::BTreeMap, process::Command};
 
-#[derive(Default, Clone)]
+/// The schema mirrors the hand-written deserializer below, which refuses unknown fields.
+#[derive(schemars::JsonSchema, Default, Clone)]
+#[schemars(deny_unknown_fields)]
 pub struct GitRead {
     github_token: Option<String>,
 }

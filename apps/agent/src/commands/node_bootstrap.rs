@@ -22,13 +22,13 @@ command_errors! {
         Recovery {} => "nodes.bootstrap_dns_recovery_failed", "Could not restore Orbit bootstrap DNS.";
     }
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsPolicy {
     Managed,
     Preserve,
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     pub user: String,
@@ -37,7 +37,7 @@ pub struct Input {
     pub packages: Vec<String>,
     pub dns_policy: DnsPolicy,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Output {}
 fn failed(stage: &str) -> Error {
     Error::Failed {

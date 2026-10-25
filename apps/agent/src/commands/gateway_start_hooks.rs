@@ -29,7 +29,7 @@ command_errors! {
         HookFailed { hook: String, cause: String } => "gateway.start_hook_failed", "A Gateway startup hook failed before pool activation.";
     }
 }
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(schemars::JsonSchema, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookInput {
     pub command: String,

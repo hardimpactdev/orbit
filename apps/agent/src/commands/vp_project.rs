@@ -21,13 +21,13 @@ type Result<T> = std::result::Result<T, Error>;
 fn invalid(_: impl std::fmt::Display) -> Error {
     Error::Invalid {}
 }
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     path: PathBuf,
     user: String,
 }
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Output {
     package: Map<String, Value>,
     #[serde(rename = ".node-version")]

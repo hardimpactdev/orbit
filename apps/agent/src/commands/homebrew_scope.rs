@@ -24,20 +24,20 @@ const ORIGIN: &str = "https://github.com/Homebrew/brew";
 const REVISION: &str = "d79ef822ab8136e393ed5f86e2b56afc68d04874";
 const TAG: &str = "7.0.0";
 pub(super) const VERSION: &str = "Homebrew 7.0.0";
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     user: String,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     pub(super) prefix: PathBuf,
     pub(super) home: PathBuf,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Done {}
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
     match fs::symlink_metadata(path) {

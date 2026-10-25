@@ -2,7 +2,7 @@ use super::*;
 use crate::command::{Command, Context, Platform, Privilege};
 use std::time::Duration;
 
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Planned {
     pub pending: Vec<String>,
     pub repair: Vec<String>,
@@ -106,7 +106,7 @@ pub fn prepare(host: &mut impl RecipeHost, files: &Files, input: &Input) -> Resu
         },
     })
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Applied {
     pub changed: Vec<String>,
     pub repaired: Vec<String>,
@@ -118,13 +118,13 @@ pub struct Applied {
     pub stale_masters: Vec<String>,
     pub fpm_disabled: bool,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Outcome {
     Current,
     Applied,
 }
-#[derive(Debug, Serialize)]
+#[derive(schemars::JsonSchema, Debug, Serialize)]
 pub struct Report {
     pub outcome: Outcome,
     pub data: Applied,

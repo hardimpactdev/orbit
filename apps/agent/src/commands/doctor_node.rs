@@ -20,13 +20,13 @@ command_errors! {
     }
 }
 type Result<T> = std::result::Result<T, Error>;
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
     user: String,
     address: Ipv4Addr,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Disk {
     location: &'static str,
     available_kib: u64,
@@ -34,7 +34,7 @@ pub struct Disk {
     free_inodes: Option<u64>,
     total_inodes: Option<u64>,
 }
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     platform: String,
     architecture: String,

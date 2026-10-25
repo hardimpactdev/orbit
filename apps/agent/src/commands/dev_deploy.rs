@@ -54,7 +54,7 @@ fn full_commit(commit: &str) -> bool {
 }
 
 /// The default Instance's checkout, its origin, and the Instance.
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Checkout {
     pub home: PathBuf,
@@ -128,7 +128,7 @@ fn lifecycle_lock(home: &Path) -> Result<fs::File, DevDeployError> {
 
 // ---- target ------------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetInput {
     #[serde(flatten)]
@@ -143,7 +143,7 @@ pub struct TargetInput {
     pub git_read: GitRead,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Target {
     pub commit: String,
 }
@@ -220,7 +220,7 @@ impl Command for ResolveTarget {
 
 // ---- checkout ----------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckoutInput {
     #[serde(flatten)]
@@ -369,7 +369,7 @@ impl Command for CheckoutDefault {
 
 // ---- a step ------------------------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepInput {
     #[serde(flatten)]
@@ -458,7 +458,7 @@ impl Command for RunStep {
 
 // ---- a setup or teardown step ------------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LifecycleInput {
     /// Any Instance checkout of this account, by its canonical path.
@@ -472,7 +472,7 @@ pub struct LifecycleInput {
 }
 
 /// A Project shell command, or a built-in operation implemented in Rust.
-#[derive(Deserialize)]
+#[derive(schemars::JsonSchema, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum StepProgram {
     Command(String),
