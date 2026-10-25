@@ -33,10 +33,10 @@ use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -50,12 +50,6 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -69,8 +63,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeRoleFirewallManager;
-use Tests\Support\SshCommandAgents;
-use Tests\Support\SshNodeCaddyBuilds;
+use Tests\Support\RouteProjectionAgentAnswers;
 
 /*
  * ADR 0141: removal saves the state change, builds, and only then removes the certificate. Caddy
@@ -433,27 +426,6 @@ function certificate_order_bind_projectors(
     CertificateOrderDnsRunner $dnsRuns,
     CertificateOrderPhpFpm $php,
 ): void {
-    $keys = new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/tmp/orbit-test-key';
-        }
-
-        public function publicKey(): string
-        {
-            return 'ssh-ed25519 AAAA';
-        }
-    };
-    $knownHosts = new class implements KnownHostsStore
-    {
-        public function path(): string
-        {
-            return '/tmp/orbit-test-known-hosts';
-        }
-
-        public function put(string $host, int $port, HostKey $key): void {}
-    };
     app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()
         ->answer('doctor.resolve-route-dns', ['matches' => true])
         ->answer('routes.verify-certificate', [])
@@ -465,7 +437,6 @@ function certificate_order_bind_projectors(
 
             return [];
         }));
-    $executor = new DevelopmentSshExecutor($nodes, $keys, $knownHosts);
     $liveFirewall = new FakeAgentCommandRunner()->answer('firewall.inspect', static function (array $input, Node $node) use ($nodes): array {
         $host = $node->wireguard_ip;
         $nodes->firewallReads[] = $host;
@@ -481,9 +452,10 @@ function certificate_order_bind_projectors(
     });
     app()->instance(NativeLiveUfwReader::class, new NativeLiveUfwReader($liveFirewall, app(AgentContract::class)));
     $sites = new DevelopmentSiteRepository;
-    $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]));
+    $nodeAgents = $nodes->answer(new FakeAgentCommandRunner()->answer('caddy.order-after-vpn', ['changed' => false]));
+    $caddy = new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($nodeAgents), $nodeAgents);
     $certificates = new RemoteAppDevCertificateManager(
-        new SshCommandAgents($nodes),
+        $nodeAgents,
         new class implements LeafCertificateSigner
         {
             public function sign(string $domain, string $certificateRequest): string
@@ -520,7 +492,6 @@ function certificate_order_bind_projectors(
 
         return ['matches' => true];
     }));
-    app()->instance(DevelopmentSshExecutor::class, $executor);
     app()->instance(DnsmasqPrivateDnsManager::class, $dns);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
     app()->instance(RemoteAppDevRouteFirewallManager::class, $firewall);
@@ -605,10 +576,11 @@ function certificate_order_certificates(): RemoteAppDevCertificateManager
 }
 
 /**
- * Nodes keyed by WireGuard address. Each keeps its live `app-dev.caddy` and its certificates, and
- * refuses a Caddy publish that names a missing certificate.
+ * Nodes keyed by WireGuard address behind the agent's leaf certificate and Caddy publication commands.
+ * Each keeps its live Caddyfile and its certificates, and refuses a publication that names a missing
+ * certificate, as `caddy validate` does.
  */
-final class CertificateOrderNodes implements SshExecutor
+final class CertificateOrderNodes
 {
     /** @var list<array{string, string, string}> */
     public array $forwarding = [];
@@ -629,7 +601,7 @@ final class CertificateOrderNodes implements SshExecutor
     public array $lanRules = [];
 
     /**
-     * Hosts whose SSH does not connect.
+     * Hosts the agent cannot reach.
      *
      * @var list<string>
      */
@@ -645,44 +617,40 @@ final class CertificateOrderNodes implements SshExecutor
 
     public bool $failHttp = false;
 
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    public function answer(FakeAgentCommandRunner $agents): FakeAgentCommandRunner
     {
-        $host = $connection->host;
+        return $agents
+            ->answer('caddy.publish', function (array $input, Node $node): array {
+                $host = $this->reach($node, 'caddy.publish');
+                if ($host === $this->failCaddy || ! $this->allNamedExist($host, $input['content'])) {
+                    throw new AgentCommandRefused('caddy.publish', 'caddy.publication_failed', 'The Caddy publication failed.', ['stage' => 'validate', 'message' => 'caddy validate failed']);
+                }
+                $this->live[$host] = $input['content'];
 
-        $input = is_string($command->input) ? $command->input : '';
+                return ['result' => 'published'];
+            })
+            ->answer('certificates.request-leaf', function (array $input, Node $node): array {
+                return $this->hasCertificate($this->reach($node, 'certificates.request-leaf'), $input['scope'])
+                    ? ['state' => 'current']
+                    : ['state' => 'request', 'request' => RouteProjectionAgentAnswers::CERTIFICATE_REQUEST];
+            })
+            ->answer('certificates.publish-leaf', function (array $input, Node $node): array {
+                $this->issue($this->reach($node, 'certificates.publish-leaf'), $input['scope']);
 
-        if (in_array($host, $this->down, true)) {
-            return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
-        }
+                return [];
+            })
+            ->answer('certificates.inspect-leaf', function (array $input, Node $node): array {
+                return ['present' => $this->hasCertificate($this->reach($node, 'certificates.inspect-leaf'), $input['scope'])];
+            })
+            ->answer('certificates.remove-leaf', function (array $input, Node $node): array {
+                $host = $this->reach($node, 'certificates.remove-leaf');
+                if ($this->names($host, $input['scope'])) {
+                    $this->removedWhileNamed[] = "{$host}:{$input['scope']}";
+                }
+                unset($this->certificates[$host][$input['scope']]);
 
-        $configuration = SshNodeCaddyBuilds::pushed($command);
-        if ($configuration !== null) {
-            if ($host === $this->failCaddy || ! $this->allNamedExist($host, $configuration)) {
-                return new CommandResult(1, '', 'caddy validate failed', 1, false);
-            }
-
-            $this->live[$host] = $configuration;
-
-            return new CommandResult(0, '', '', 1, false);
-        }
-
-        if (str_contains($input, "printf 'CURRENT\\n'")) {
-            $this->issue($host, (string) $command->arguments[3]);
-
-            return new CommandResult(0, "CURRENT\n", '', 1, false);
-        }
-
-        if (str_contains($input, 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"')) {
-            $scope = (string) $command->arguments[3];
-
-            if ($this->names($host, $scope)) {
-                $this->removedWhileNamed[] = "{$host}:{$scope}";
-            }
-
-            unset($this->certificates[$host][$scope]);
-        }
-
-        return new CommandResult(0, '', '', 1, false);
+                return [];
+            });
     }
 
     public function issue(string $host, string $scope): void
@@ -719,6 +687,16 @@ final class CertificateOrderNodes implements SshExecutor
         }
 
         return true;
+    }
+
+    private function reach(Node $node, string $command): string
+    {
+        $host = (string) $node->wireguard_ip;
+        if (in_array($host, $this->down, true)) {
+            throw new AgentRunnerFailure($command, AgentRunnerFailure::Transport, "ssh: connect to host {$host} port 22: Connection timed out");
+        }
+
+        return $host;
     }
 
     /** @return list<string> */
@@ -758,7 +736,7 @@ final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
     }
 }
 
-/** The probe sees a Node as unreachable exactly when its simulated SSH does not connect. */
+/** The probe sees a Node as unreachable exactly when the simulated agent cannot reach it. */
 final readonly class CertificateOrderReachability implements NodeReachabilityProbe
 {
     public function __construct(private CertificateOrderNodes $nodes) {}
