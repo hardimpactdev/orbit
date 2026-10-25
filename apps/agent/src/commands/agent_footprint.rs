@@ -5,6 +5,7 @@
 //! `agent.install` and `orbit self-update` hold.
 
 use super::agent::{LINUX_BINARY, OBSERVER_UNIT};
+use super::recipe::Files;
 use crate::command::{lock, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use crate::{CA_PATH, CONFIG_PATH, LOCK_PATH, SECRET_PATH};
@@ -34,22 +35,33 @@ fn failed(step: &str) -> FootprintError {
     FootprintError::Failed { step: step.into() }
 }
 
-fn systemctl(arguments: &[&str]) -> bool {
-    Process::new("systemctl")
-        .args(arguments)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+/// The host boundary: systemd. Paths stay in [`Files`].
+trait Host {
+    fn systemctl(&mut self, arguments: &[&str]) -> bool;
 }
 
-fn hold_update_lock() -> Result<lock::Held, FootprintError> {
-    lock::acquire(
-        Path::new(lock::UPDATE_LOCK_LINUX),
-        Instant::now() + UPDATE_WAIT,
-    )
-    .map_err(|_| FootprintError::UpdateBusy {})
+struct Native;
+
+impl Host for Native {
+    fn systemctl(&mut self, arguments: &[&str]) -> bool {
+        Process::new("systemctl")
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+}
+
+fn hold_update_lock(files: &Files, deadline: Instant) -> Result<lock::Held, FootprintError> {
+    lock::acquire(&files.path(lock::UPDATE_LOCK_LINUX), deadline)
+        .map_err(|_| FootprintError::UpdateBusy {})
+}
+
+/// Where a host path lives under the [`Files`] root.
+fn at(files: &Files, path: &Path) -> PathBuf {
+    files.root.join(path.strip_prefix("/").unwrap_or(path))
 }
 
 /// Writes a root-owned file with one rename when its content differs. Whether it changed.
@@ -78,9 +90,10 @@ fn publish(path: &Path, content: &str, mode: u32) -> Result<bool, FootprintError
 }
 
 /// Removes the world bits from each checkout's `.env`. Returns the checkouts it could not close.
-fn close_environments(checkouts: &[PathBuf]) -> Vec<String> {
+fn close_environments(files: &Files, checkouts: &[PathBuf]) -> Vec<String> {
     let mut failed = Vec::new();
-    for checkout in checkouts {
+    for named in checkouts {
+        let checkout = &at(files, named);
         let real = fs::symlink_metadata(checkout).is_ok_and(|metadata| metadata.is_dir())
             && fs::canonicalize(checkout).ok().as_deref() == Some(checkout.as_path());
         if !real {
@@ -95,7 +108,7 @@ fn close_environments(checkouts: &[PathBuf]) -> Vec<String> {
         }
         let mode = metadata.permissions().mode() & !0o007;
         if fs::set_permissions(&environment, fs::Permissions::from_mode(mode)).is_err() {
-            failed.push(checkout.display().to_string());
+            failed.push(named.display().to_string());
         }
     }
     failed
@@ -131,8 +144,13 @@ pub struct Configured {
     pub unclosed: Vec<String>,
 }
 
-pub fn configure(input: &ConfigureInput) -> Result<Configured, FootprintError> {
-    let directory = Path::new(LOCK_PATH);
+fn configure(
+    files: &Files,
+    host: &mut impl Host,
+    input: &ConfigureInput,
+    deadline: Instant,
+) -> Result<Configured, FootprintError> {
+    let directory = &files.path(LOCK_PATH);
     if !directory.is_dir() {
         fs::DirBuilder::new()
             .mode(0o700)
@@ -142,26 +160,26 @@ pub fn configure(input: &ConfigureInput) -> Result<Configured, FootprintError> {
     }
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
         .map_err(|_| failed("agent-directory"))?;
-    let _lock = hold_update_lock()?;
-    let installed = fs::read(SECRET_PATH).ok();
+    let _lock = hold_update_lock(files, deadline)?;
+    let installed = fs::read(files.path(SECRET_PATH)).ok();
     let keep = kept(installed.as_deref(), input.secret_hash.as_deref());
     let secret_hash = if let (true, Some(recorded)) = (keep, &input.secret_hash) {
         recorded.clone()
     } else {
         let bytes: [u8; 32] = rand::random();
         let secret: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-        publish(Path::new(SECRET_PATH), &secret, 0o600)?;
+        publish(&files.path(SECRET_PATH), &secret, 0o600)?;
         format!("{:x}", Sha256::digest(secret.as_bytes()))
     };
     let mut changed = !keep || input.binary_changed;
-    changed |= publish(Path::new(CONFIG_PATH), &input.configuration, 0o644)?;
-    changed |= publish(Path::new(CA_PATH), &input.certificate, 0o644)?;
-    changed |= publish(Path::new(UNIT_PATH), &input.unit, 0o644)?;
-    let unclosed = close_environments(&input.checkouts);
-    if !systemctl(&["daemon-reload"]) || !systemctl(&["enable", "--now", OBSERVER_UNIT]) {
+    changed |= publish(&files.path(CONFIG_PATH), &input.configuration, 0o644)?;
+    changed |= publish(&files.path(CA_PATH), &input.certificate, 0o644)?;
+    changed |= publish(&files.path(UNIT_PATH), &input.unit, 0o644)?;
+    let unclosed = close_environments(files, &input.checkouts);
+    if !host.systemctl(&["daemon-reload"]) || !host.systemctl(&["enable", "--now", OBSERVER_UNIT]) {
         return Err(failed("agent-unit"));
     }
-    if changed && !systemctl(&["restart", OBSERVER_UNIT]) {
+    if changed && !host.systemctl(&["restart", OBSERVER_UNIT]) {
         return Err(failed("agent-restart"));
     }
     Ok(Configured {
@@ -179,23 +197,28 @@ pub struct RemoveInput {}
 pub struct Removed {}
 
 /// Stops the observer and removes the agent's unit, binary, and files. The running command keeps its open binary.
-pub fn remove() -> Result<Removed, FootprintError> {
-    let _lock = hold_update_lock()?;
+fn remove(
+    files: &Files,
+    host: &mut impl Host,
+    deadline: Instant,
+) -> Result<Removed, FootprintError> {
+    let _lock = hold_update_lock(files, deadline)?;
     let mut complete = true;
-    if Path::new(UNIT_PATH).is_file() {
-        complete &= systemctl(&["stop", OBSERVER_UNIT]);
-        complete &= systemctl(&["disable", OBSERVER_UNIT]);
+    if files.path(UNIT_PATH).is_file() {
+        complete &= host.systemctl(&["stop", OBSERVER_UNIT]);
+        complete &= host.systemctl(&["disable", OBSERVER_UNIT]);
     }
-    for file in [UNIT_PATH, LINUX_BINARY] {
-        if fs::remove_file(file).is_err() && Path::new(file).exists() {
+    for file in [UNIT_PATH, LINUX_BINARY].map(|path| files.path(path)) {
+        if fs::remove_file(&file).is_err() && file.exists() {
             complete = false;
         }
     }
-    if fs::remove_dir_all(LOCK_PATH).is_err() && Path::new(LOCK_PATH).exists() {
+    let directory = files.path(LOCK_PATH);
+    if fs::remove_dir_all(&directory).is_err() && directory.exists() {
         complete = false;
     }
-    complete &= systemctl(&["daemon-reload"]);
-    systemctl(&["reset-failed", OBSERVER_UNIT]);
+    complete &= host.systemctl(&["daemon-reload"]);
+    host.systemctl(&["reset-failed", OBSERVER_UNIT]);
     if complete {
         Ok(Removed {})
     } else {
@@ -221,7 +244,12 @@ impl Command for ConfigureAgent {
     }
 
     fn run(input: ConfigureInput, _: &Context) -> Result<Configured, FootprintError> {
-        configure(&input)
+        configure(
+            &Files::system(),
+            &mut Native,
+            &input,
+            Instant::now() + UPDATE_WAIT,
+        )
     }
 }
 
@@ -243,56 +271,10 @@ impl Command for RemoveAgent {
     }
 
     fn run(_: RemoveInput, _: &Context) -> Result<Removed, FootprintError> {
-        remove()
+        remove(&Files::system(), &mut Native, Instant::now() + UPDATE_WAIT)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_a_secret_that_matches_the_record_is_kept() {
-        let hash = format!("{:x}", Sha256::digest(b"secret"));
-        assert!(kept(Some(b"secret"), Some(&hash)));
-        assert!(!kept(Some(b"edited"), Some(&hash)));
-        assert!(!kept(None, Some(&hash)));
-        assert!(!kept(Some(b"secret"), None));
-    }
-
-    #[test]
-    fn publish_writes_only_a_changed_file_with_its_mode() {
-        let file =
-            std::env::temp_dir().join(format!("orbit-agent-file-{:016x}", rand::random::<u64>()));
-        assert_eq!(publish(&file, "one", 0o600), Ok(true));
-        assert_eq!(publish(&file, "one", 0o600), Ok(false));
-        assert_eq!(
-            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert_eq!(publish(&file, "two", 0o600), Ok(true));
-        assert_eq!(fs::read_to_string(&file).unwrap(), "two");
-        let _ = fs::remove_file(&file);
-    }
-
-    #[test]
-    fn closing_environments_removes_only_the_world_bits_of_real_checkouts() {
-        let root = fs::canonicalize(std::env::temp_dir())
-            .unwrap()
-            .join(format!("orbit-agent-env-{:016x}", rand::random::<u64>()));
-        fs::create_dir_all(&root).unwrap();
-        fs::write(root.join(".env"), "SECRET=1").unwrap();
-        fs::set_permissions(root.join(".env"), fs::Permissions::from_mode(0o664)).unwrap();
-
-        assert!(close_environments(std::slice::from_ref(&root)).is_empty());
-        assert_eq!(
-            fs::metadata(root.join(".env"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o660
-        );
-        let _ = fs::remove_dir_all(&root);
-    }
-}
+#[path = "agent_footprint_tests.rs"]
+mod tests;
