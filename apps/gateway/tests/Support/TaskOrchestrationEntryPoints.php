@@ -29,6 +29,7 @@ use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
+use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -120,6 +121,7 @@ use App\Domain\Tasks\TaskReviewTrust;
 use App\Domain\Tasks\TaskRubricReminder;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskScriptOperation;
 use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -238,6 +240,8 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        StartTaskScriptAction::class => ['execute' => 'Explicit external tracked-script operation through shared TaskOperations admission; TaskScriptOperationTest exercises the boundary.'],
+        TaskScriptOperation::class => ['read' => 'Dispatches only the tracked script under its group operation hold and workspace lease.'],
         StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis through shared TaskOperations admission; TaskAnalysisOperationTest exercises the boundary.'],
         TaskAnalysisOperation::class => ['read' => 'Dispatches only the fixed read-only analysis under its owning operation and workspace lease.'],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
@@ -315,6 +319,14 @@ final class TaskOrchestrationEntryPoints
             'read' => 'Reads the existing publish job record after queueing the approval push.',
             'stop' => 'Invalidates an unstarted job or waits for a started push to finish.',
             'abandon' => 'Removes queued workspace ownership without retries.',
+        ],
+        StartTaskScriptAction::class => ['execute' => 'Explicit external tracked-script start through shared admission.'],
+        TaskScriptOperation::class => [
+            'run' => 'Runs the tracked-script operation without advancing task lifecycle.',
+            'waitingStep' => 'Supplies the script receipt waiting hooks.',
+            'read' => 'Reconciles receipts and dispatches the pinned script under its own workspace lease.',
+            'stop' => 'Stops only the owned script and retains fencing until terminal proof.',
+            'abandon' => 'Reconciles terminal evidence before releasing queued or held script ownership.',
         ],
         StartTaskCheckAction::class => ['execute' => 'Explicit external check start through shared admission.'],
         TaskCheckedCandidate::class => [
