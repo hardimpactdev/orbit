@@ -127,7 +127,9 @@ fn desired() -> State {
 #[test]
 fn installs_once_reorders_isolation_then_removes_owned_state() {
     let mut runtime = fixture();
-    assert!(matches!(runtime.run(Input::Snapshot).unwrap(), Output::Snapshot(s) if s == empty()));
+    assert!(
+        matches!(runtime.run(Input::Snapshot {}).unwrap(), Output::Snapshot(s) if s == empty())
+    );
     assert!(!runtime.root.exists());
     let state = desired();
     runtime
@@ -318,7 +320,7 @@ fn keeps_failed_recovery_for_the_next_snapshot_to_finish() {
     assert!(journal.exists());
     assert_eq!(fs::metadata(&journal).unwrap().mode() & 0o777, 0o600);
     assert!(
-        matches!(runtime.run(Input::Snapshot).unwrap(), Output::Snapshot(state) if state == prior)
+        matches!(runtime.run(Input::Snapshot {}).unwrap(), Output::Snapshot(state) if state == prior)
     );
     assert!(!journal.exists());
 }

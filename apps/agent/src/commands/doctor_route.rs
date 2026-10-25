@@ -37,7 +37,7 @@ enum Projection {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Laravel {
-    Skip,
+    Skip {},
     Check { environment: PathBuf, url: String },
 }
 #[derive(Debug, PartialEq, Serialize)]
@@ -160,7 +160,7 @@ fn inspect(
         } => {
             result.dns = dns_address.map(|expected| runtime.dns(&input.domain) == Some(expected));
             result.laravel = laravel.as_ref().map(|check| match check {
-                Laravel::Skip => true,
+                Laravel::Skip {} => true,
                 Laravel::Check { environment, url } => url_matches(environment, url),
             });
         }

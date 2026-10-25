@@ -44,7 +44,7 @@ pub enum MetricsCertificateInput {
         change: String,
         previous: Option<PathBuf>,
     },
-    Remove,
+    Remove {},
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -343,7 +343,7 @@ impl Command for MetricsCertificate {
             MetricsCertificateInput::Restore { change, previous } => {
                 restore(&paths, &mut Native, &change, previous.as_deref())
             }
-            MetricsCertificateInput::Remove => remove(&paths),
+            MetricsCertificateInput::Remove {} => remove(&paths),
         }
     }
 }

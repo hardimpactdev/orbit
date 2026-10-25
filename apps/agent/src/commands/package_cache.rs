@@ -44,7 +44,7 @@ pub struct Artifact {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
-    Initialize,
+    Initialize {},
     Fill {
         artifacts: Vec<Artifact>,
         max_bytes: u64,
@@ -449,7 +449,7 @@ impl Command for HostCache {
     }
     fn run(input: Input, context: &Context) -> Result<Filled, Error> {
         match input {
-            Input::Initialize => {
+            Input::Initialize {} => {
                 initialize(Path::new(HOST))?;
                 Ok(Filled::default())
             }

@@ -252,7 +252,7 @@ pub struct LeafInput {
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Requested {
-    Current,
+    Current {},
     Request { request: String },
 }
 
@@ -294,7 +294,7 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
             &input.root_hash,
             &current.join("cert.pem"),
         )?;
-        return Ok(Requested::Current);
+        return Ok(Requested::Current {});
     }
     let versions = root.join("versions");
     let versions_text = versions.to_string_lossy().into_owned();

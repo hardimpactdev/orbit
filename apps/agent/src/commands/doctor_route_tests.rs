@@ -156,7 +156,7 @@ fn unavailable_intent_stays_unknown_and_non_laravel_checks_are_skipped() {
     assert_eq!((result.dns, result.laravel, runtime.calls), (None, None, 1));
     fixture.input.projection = Projection::Workload {
         dns_address: None,
-        laravel: Some(Laravel::Skip),
+        laravel: Some(Laravel::Skip {}),
     };
     assert_eq!(
         inspect(&fixture.input, &fixture.live, &mut runtime)

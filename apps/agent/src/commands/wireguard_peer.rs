@@ -249,7 +249,7 @@ fn validate(input: &Input) -> Result<()> {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 enum SavedFile {
-    Absent,
+    Absent {},
     File {
         bytes: Vec<u8>,
         mode: u32,
@@ -266,7 +266,7 @@ impl SavedFile {
     fn capture(host: &Host, name: &str, allow_link: bool) -> Result<Self> {
         let path = host.path(name);
         let Some(meta) = metadata(&path)? else {
-            return Ok(Self::Absent);
+            return Ok(Self::Absent {});
         };
         require(meta.uid() == host.root_uid)?;
         if meta.is_symlink() && allow_link {
@@ -289,7 +289,7 @@ impl SavedFile {
         let temp = host.path(&format!(".{name}.restore"));
         remove(&temp).map_err(|_| Error::Recovery {})?;
         match self {
-            Self::Absent => remove(&path).map_err(|_| Error::Recovery {}),
+            Self::Absent {} => remove(&path).map_err(|_| Error::Recovery {}),
             Self::File {
                 bytes,
                 mode,

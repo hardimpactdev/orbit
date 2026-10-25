@@ -395,7 +395,7 @@ impl Sandbox {
         input.root_hash = "0".repeat(64);
         match request(&self.files, &mut self.host, &input).unwrap() {
             Requested::Request { request } => request,
-            Requested::Current => panic!("a fresh leaf was expected"),
+            Requested::Current {} => panic!("a fresh leaf was expected"),
         }
     }
 
@@ -519,7 +519,7 @@ fn a_valid_current_leaf_is_reused_without_a_change() {
     sandbox.host.calls.clear();
     let current = fs::read_link(sandbox.user_tree().join("current")).unwrap();
 
-    assert_eq!(sandbox.request("two"), Ok(Requested::Current));
+    assert_eq!(sandbox.request("two"), Ok(Requested::Current {}));
     assert!(sandbox.host.calls.is_empty(), "{:?}", sandbox.host.calls);
     assert!(!sandbox.user_tree().join("versions/two.candidate").exists());
     assert_eq!(
@@ -529,7 +529,7 @@ fn a_valid_current_leaf_is_reused_without_a_change() {
 
     // A changed trust anchor is installed again before the reuse is confirmed.
     fs::write(sandbox.path(TRUST_ANCHOR), "stale").unwrap();
-    assert_eq!(sandbox.request("three"), Ok(Requested::Current));
+    assert_eq!(sandbox.request("three"), Ok(Requested::Current {}));
     assert_eq!(sandbox.host.calls, ["update-ca-certificates"]);
     assert_eq!(
         fs::read_to_string(sandbox.path(TRUST_ANCHOR)).unwrap(),
@@ -556,7 +556,7 @@ fn a_leaf_for_another_root_or_with_a_stale_caddy_copy_is_replaced() {
         fs::read_link(sandbox.caddy_tree().join("current")).unwrap(),
         sandbox.caddy_tree().join("versions/two")
     );
-    assert_eq!(sandbox.request("three"), Ok(Requested::Current));
+    assert_eq!(sandbox.request("three"), Ok(Requested::Current {}));
 }
 
 #[test]

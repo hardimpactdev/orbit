@@ -57,7 +57,7 @@ pub struct State {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
-    Snapshot,
+    Snapshot {},
     Apply { state: State },
 }
 
