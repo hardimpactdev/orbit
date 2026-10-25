@@ -2,6 +2,7 @@
 // Orbit monorepo. `scan` records an inventory; `plan` compares it with
 // Packagist and the npm registry and records a typed upgrade plan.
 import { z } from "npm:zod@4";
+import semver from "npm:semver@7.7.2";
 import { buildInventory, fetchGatewayInventory, git, type SubProjectInventory } from "./_lib/inventory.ts";
 import {
   type Ecosystem,
@@ -108,14 +109,47 @@ interface RegistryInfo {
   latest: string | null;
 }
 
+// A missing/partial registry document is not evidence that no release exists.
+// Keep diagnostic rows, but fail the method and the existing workflow closed.
+const PackagistResponse = z.object({ packages: z.record(z.string(), z.array(z.object({ version: z.string().min(1) }))) });
+const NpmResponse = z.object({ name: z.string(), versions: z.record(z.string(), z.object({ version: z.string() })), "dist-tags": z.object({ latest: z.string().optional() }).optional() });
+
+function composerRegistryVersion(raw: string): string | null {
+  if (raw.startsWith("dev-") || raw.endsWith("-dev")) return null;
+  // normaliseVersion also handles old lockfile shorthand. Registry evidence
+  // must not coerce arbitrary text containing digits into a successful release.
+  if (!/^v?\d+(?:\.\d+){0,3}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/i.test(raw) ||
+    (!/^v?\d+\.\d+\.\d+/i.test(raw) && /[-+]/.test(raw))) throw new Error("Unsupported registry version");
+  const parts = raw.replace(/^v/i, "").split(/(?=[-+])/)[0].split(".");
+  const suffix = raw.replace(/^v/i, "").slice(parts.join(".").length);
+  // Preserve the earlier numeric shorthand/four-part Composer policy, but
+  // validate prereleases strictly instead of dropping an invalid suffix.
+  const value = semver.valid([...parts.slice(0, 3), ...Array(Math.max(0, 3 - parts.length)).fill("0")].join(".") + suffix);
+  if (value === null) throw new Error("Invalid registry version");
+  return isStable(value) ? value : null;
+}
+
+function npmRegistryVersion(raw: string): string {
+  // Validate the whole npm version before any stable filtering. Composer's
+  // shorthand, fourth numeric component and dev branches do not apply here.
+  const value = semver.valid(raw);
+  if (value === null) throw new Error("Invalid npm registry version");
+  return value;
+}
+
 async function fetchRegistry(ecosystem: Ecosystem, name: string): Promise<RegistryInfo> {
+  const json = async (response: Response): Promise<unknown> => {
+    try { return await response.json(); } catch { throw new Error("Registry returned invalid JSON"); }
+  };
   if (ecosystem === "composer") {
     const res = await fetch(`https://repo.packagist.org/p2/${name}.json`);
     if (!res.ok) throw new Error(`Packagist ${res.status}`);
-    const body = await res.json();
-    const versions = ((body.packages?.[name] ?? []) as { version: string }[])
-      .map((v) => normaliseVersion(v.version))
-      .filter((v): v is string => v !== null && isStable(v));
+    const parsed = PackagistResponse.safeParse(await json(res));
+    if (!parsed.success) throw new Error("Packagist returned malformed package metadata");
+    const rows = parsed.data.packages[name];
+    if (!rows?.length) throw new Error("Packagist omitted the requested package releases");
+    const versions = rows.map((v) => composerRegistryVersion(v.version)).filter((v): v is string => v !== null);
+    if (!versions.length) throw new Error("Packagist supplied no supported stable releases");
     const latest = versions.reduce<string | null>((a, v) => (a === null || gt(v, a) ? v : a), null);
     return { versions, latest };
   }
@@ -123,11 +157,25 @@ async function fetchRegistry(ecosystem: Ecosystem, name: string): Promise<Regist
     headers: { Accept: "application/vnd.npm.install-v1+json" },
   });
   if (!res.ok) throw new Error(`npm registry ${res.status}`);
-  const body = await res.json();
-  const versions = Object.keys(body.versions ?? {}).filter((v) => isStable(v));
-  const tagged = body["dist-tags"]?.latest as string | undefined;
-  const latest = tagged && isStable(tagged)
-    ? tagged
+  const parsed = NpmResponse.safeParse(await json(res));
+  if (!parsed.success || parsed.data.name !== name) throw new Error("npm returned malformed or foreign package metadata");
+  const body = parsed.data;
+  const entries = Object.entries(body.versions);
+  if (!entries.length) throw new Error("npm returned incomplete release metadata");
+  const releases = entries.map(([version, value]) => {
+    const parsedVersion = npmRegistryVersion(version);
+    npmRegistryVersion(value.version);
+    if (value.version !== version) throw new Error("npm returned inconsistent release metadata");
+    return parsedVersion;
+  });
+  const tagged = body["dist-tags"]?.latest;
+  const taggedVersion = tagged === undefined ? null : npmRegistryVersion(tagged);
+  if (tagged !== undefined && !Object.hasOwn(body.versions, tagged)) throw new Error("npm latest tag names a missing release");
+  const versions = releases.filter(isStable);
+  if (!versions.length) throw new Error("npm supplied no supported stable releases");
+  const stableTag = taggedVersion !== null && isStable(taggedVersion) ? taggedVersion : null;
+  const latest = stableTag !== null
+    ? stableTag
     : versions.reduce<string | null>((a, v) => (a === null || gt(v, a) ? v : a), null);
   return { versions, latest };
 }
@@ -150,7 +198,7 @@ function slug(s: string): string {
 
 export const behavior = {
   type: "@nckrtl/orbit-deps",
-  version: "2026.10.22.1",
+  version: "2026.10.25.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     inventory: {
@@ -233,7 +281,11 @@ export const behavior = {
         const keys = new Map<string, { ecosystem: Ecosystem; name: string }>();
         for (const sp of inv.subProjects) {
           for (const e of sp.ecosystems) {
-            for (const d of e.direct) keys.set(`${e.ecosystem}:${d.registryName}`, { ecosystem: e.ecosystem, name: d.registryName });
+            for (const d of e.direct) {
+              // Unsupported constraints remain explicit skips, not registry
+              // lookups whose failures could be ignored by that later branch.
+              if (toRange(e.ecosystem, d.constraint) !== null) keys.set(`${e.ecosystem}:${d.registryName}`, { ecosystem: e.ecosystem, name: d.registryName });
+            }
           }
         }
         const entries = [...keys.entries()];
@@ -357,6 +409,7 @@ export const behavior = {
           majors: plan.counts.majors,
         });
         const handle = await context.writeResource("upgradePlan", "upgrade-plan", plan);
+        if (plan.counts.unknown > 0) throw new Error(`Registry evidence unavailable for ${plan.counts.unknown} package(s); upgrade-plan is diagnostic only`);
         return { dataHandles: [handle] };
       },
     },
