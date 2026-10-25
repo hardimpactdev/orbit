@@ -32,9 +32,6 @@ use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -42,8 +39,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\SshCommandAgents;
-use Tests\Support\SshNodeCaddyBuilds;
+use Tests\Support\RouteProjectionAgentAnswers;
 
 it('creates an Instance Route with the native production projector on a separate Router', function (): void {
     [$source, $oldRoute] = orb199_production_route_models(workloadLan: '10.10.0.10', routerLan: '10.10.0.20');
@@ -67,7 +63,7 @@ it('creates an Instance Route with the native production projector on a separate
         'production_php_socket' => $source->production_php_socket,
         'status' => InstanceState::Active,
     ]);
-    [$projector, $ssh, , , , $agents] = orb199_production_route_projector();
+    [$projector, $agents] = orb199_production_route_projector();
     app()->instance(ProductionRouteProjector::class, $projector);
     app()->instance(ProductionCloneRouteProjector::class, $projector);
 
@@ -77,15 +73,15 @@ it('creates an Instance Route with the native production projector on a separate
         instanceId: $instance->id,
     ))['route'];
 
-    $commands = collect($ssh->commands)->pluck('command');
-    $routerCertificateIndex = $commands->search(static fn (RemoteCommand $command): bool => in_array("route-{$route->id}-router", $command->arguments, true));
-    $routerSiteIndex = $commands->search(static fn (RemoteCommand $command): bool => str_contains(SshNodeCaddyBuilds::pushed($command) ?? '', "route-{$route->id}-router/current/cert.pem"));
+    $calls = collect($agents->calls);
+    $routerCertificateIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'certificates.publish-leaf' && $call['input']['scope'] === "route-{$route->id}-router");
+    $routerSiteIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'caddy.publish' && str_contains($call['input']['content'], "route-{$route->id}-router/current/cert.pem"));
     expect($route->status)->toBe(RouteStatus::Active)
         ->and($route->targets->sole()->instance_id)->toBe($instance->id)
         ->and($routerCertificateIndex)->not->toBeFalse()
         ->and($routerSiteIndex)->not->toBeFalse()
         ->and($routerCertificateIndex)->toBeLessThan($routerSiteIndex)
-        ->and($agents->commands())->toBe(['firewall.route-lan', 'routes.verify-certificate']);
+        ->and(orb199_route_checks($agents))->toBe(['firewall.route-lan', 'routes.verify-certificate']);
 });
 
 it('refuses to project production without its dedicated PHP-FPM service', function (): void {
@@ -113,7 +109,7 @@ it('projects a production workload through a remote Router over LAN without publ
         workloadLan: '10.10.0.10',
         routerLan: '10.10.0.20',
     );
-    [$projector, $ssh, $processes, $productionPhp, $firewall, $agents] = orb199_production_route_projector();
+    [$projector, $agents, $processes, $productionPhp, $firewall] = orb199_production_route_projector();
 
     $projector->prepareRuntime($instance, $route);
     $projector->prepareCertificate($instance, $route);
@@ -125,20 +121,18 @@ it('projects a production workload through a remote Router over LAN without publ
     $projector->prepareRouterCaddy($instance, $route);
     $projector->prepareDns($route);
 
-    $arguments = collect($ssh->commands)->flatMap(
-        static fn (array $entry): array => $entry['command']->arguments,
-    );
     $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
     $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
     $dnsConfiguration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository, hostnames: app()->tagged(ContributedPrivateHostnames::class))->render();
-    $pushed = collect($ssh->commands)
-        ->map(static fn (array $entry): ?string => SshNodeCaddyBuilds::pushed($entry['command']))
-        ->filter();
+    $pushed = collect(RouteProjectionAgentAnswers::publications($agents));
 
     expect($productionPhp->converged)->toBe([$instance->id])
         ->and($firewall->converged)->toBe([[$workload->id, RoleName::AppProd, 'orbit']])
-        ->and($arguments)->toContain("app-instance-{$instance->id}", "route-{$route->id}-router")
-        ->and($agents->calls)->toBe([
+        ->and(RouteProjectionAgentAnswers::scopes($agents, 'certificates.publish-leaf'))->toBe([
+            ['node' => $workload->name, 'scope' => "app-instance-{$instance->id}"],
+            ['node' => $router->name, 'scope' => "route-{$route->id}-router"],
+        ])
+        ->and(collect($agents->calls)->whereIn('command', ['firewall.route-lan', 'routes.verify-certificate'])->values()->all())->toBe([
             ['node' => $workload->name, 'command' => 'firewall.route-lan', 'input' => [
                 'operation' => 'converge', 'route_id' => $route->id, 'router' => '10.10.0.20', 'workload' => '10.10.0.10',
             ]],
@@ -157,19 +151,16 @@ it('projects a production workload through a remote Router over LAN without publ
             "tls_server_name {$route->domain}",
             "tls /etc/caddy/orbit-certificates/route-{$route->id}-router/current/cert.pem",
         )
-        ->and($pushed->contains($workloadConfiguration))->toBeTrue()
-        ->and($pushed->contains($routerConfiguration))->toBeTrue()
-        ->and(collect($ssh->commands)->pluck('command')->contains(
-            static fn (RemoteCommand $command): bool => str_contains((string) $command->input, 'fragments/*.caddy') || str_contains((string) $command->input, 'app-dev.caddy'),
-        ))->toBeFalse()
+        ->and($pushed)->toContain(['node' => $workload->name, 'content' => $workloadConfiguration])
+        ->and($pushed)->toContain(['node' => $router->name, 'content' => $routerConfiguration])
         ->and($dnsConfiguration)->toContain("host-record={$route->domain},{$router->wireguard_ip}")
         ->and($processes->invocations)->toHaveCount(1)
-        ->and(json_encode($ssh->commands, JSON_THROW_ON_ERROR))->not->toContain('ingress', 'acme');
+        ->and(json_encode($agents->calls, JSON_THROW_ON_ERROR))->not->toContain('ingress', 'acme');
 });
 
 it('uses WireGuard without a Route-specific firewall rule when workload LAN is absent', function (): void {
     [$instance, $route] = orb199_production_route_models();
-    [$projector, $ssh, , , , $agents] = orb199_production_route_projector();
+    [$projector, $agents] = orb199_production_route_projector();
 
     $projector->prepareRouteFirewall($instance, $route);
     $projector->verifyWorkload($instance, $route);
@@ -180,7 +171,7 @@ it('uses WireGuard without a Route-specific firewall rule when workload LAN is a
 
 it('uses one local production site when Router and workload share a Node', function (): void {
     [$instance, $route, $node] = orb199_production_route_models(coLocated: true);
-    [$projector, $ssh, $processes, , , $agents] = orb199_production_route_projector();
+    [$projector, $agents, $processes] = orb199_production_route_projector();
 
     $projector->prepareRouterCertificate($instance, $route);
     $projector->prepareRouteFirewall($instance, $route);
@@ -191,14 +182,10 @@ it('uses one local production site when Router and workload share a Node', funct
 
     $sites = new DevelopmentSiteRepository()->forNode($node, $route);
     $configuration = new DevelopmentCaddyConfigRenderer()->render($sites);
-    $arguments = collect($ssh->commands)->flatMap(
-        static fn (array $entry): array => $entry['command']->arguments,
-    );
     expect($sites)->toHaveCount(1)
         ->and($sites->sole()->isProxy())->toBeFalse()
         ->and($configuration)->toContain('resolve_root_symlink')->not->toContain('reverse_proxy')
-        ->and($arguments)->not->toContain("route-{$route->id}-router")
-        ->and($agents->calls)->toBeEmpty()
+        ->and($agents->commands())->toBe(['caddy.publish'])
         ->and($processes->invocations)->toHaveCount(1);
 });
 
@@ -222,7 +209,7 @@ it('refuses incompatible LAN and missing Router placement with bounded errors', 
 
 it('refuses an invalid workload leaf before Router Caddy and DNS publication', function (): void {
     [$instance, $route] = orb199_production_route_models();
-    [$projector, $ssh, $processes, , , $agents] = orb199_production_route_projector();
+    [$projector, $agents, $processes] = orb199_production_route_projector();
     $agents->refuse('routes.verify-certificate', 'routes.certificate_invalid', ['stderr' => 'untrusted']);
 
     expect(function () use ($projector, $instance, $route): void {
@@ -237,12 +224,8 @@ it('refuses an invalid workload leaf before Router Caddy and DNS publication', f
             ->toBe(['workload-certificate', 'app-dev.workload_certificate_invalid']);
     });
 
-    $caddyPublications = collect($ssh->commands)->filter(
-        static fn (array $entry): bool => SshNodeCaddyBuilds::pushed($entry['command']) !== null,
-    );
     expect($processes->invocations)->toBeEmpty()
-        ->and($caddyPublications)->toHaveCount(1)
-        ->and($caddyPublications->sole()['connection']->host)->toBe('10.44.0.10');
+        ->and(array_column(RouteProjectionAgentAnswers::publications($agents), 'node'))->toBe([$instance->node->name]);
 });
 
 /** @return array{Instance, Route, Node, Node} */
@@ -329,18 +312,18 @@ function orb199_production_route_models(
 }
 
 /**
+ * One agent runner answers every Node command of the projection, in call order.
+ *
  * @return array{
  *     NativeProductionRouteProjector,
- *     Orb199ProductionRouteSshExecutor,
+ *     FakeAgentCommandRunner,
  *     Orb199ProductionRouteProcessRunner,
  *     Orb199ProductionPhpRuntime,
- *     Orb199ProductionFirewall,
- *     FakeAgentCommandRunner
+ *     Orb199ProductionFirewall
  * }
  */
 function orb199_production_route_projector(): array
 {
-    $ssh = new Orb199ProductionRouteSshExecutor;
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = new class($account) implements ManagedUserAccountResolver
     {
@@ -369,31 +352,24 @@ function orb199_production_route_projector(): array
     $processes = new Orb199ProductionRouteProcessRunner;
     $productionPhp = new Orb199ProductionPhpRuntime;
     $firewall = new Orb199ProductionFirewall;
-    $agents = new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true])->answer('routes.verify-certificate', []);
+    $agents = RouteProjectionAgentAnswers::register(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true]));
     $projector = new NativeProductionRouteProjector(
         $productionPhp,
-        new RemoteAppDevCertificateManager(new SshCommandAgents($ssh), $signer, $accounts),
+        new RemoteAppDevCertificateManager($agents, $signer, $accounts),
         $firewall,
-        new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), new FakeAgentCommandRunner),
+        new RemoteAppDevCaddyManager(RouteProjectionAgentAnswers::builds($agents), new FakeAgentCommandRunner),
         new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
         new Orb199ProductionReleaseLayout,
         $agents,
     );
 
-    return [$projector, $ssh, $processes, $productionPhp, $firewall, $agents];
+    return [$projector, $agents, $processes, $productionPhp, $firewall];
 }
 
-final class Orb199ProductionRouteSshExecutor implements SshExecutor
+/** @return list<string> The Route firewall and workload TLS commands, in order. */
+function orb199_route_checks(FakeAgentCommandRunner $agents): array
 {
-    /** @var list<array{connection: SshConnection, command: RemoteCommand}> */
-    public array $commands = [];
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        $this->commands[] = ['connection' => $connection, 'command' => $command];
-
-        return new CommandResult(0, '', '', 1, false);
-    }
+    return array_values(array_intersect($agents->commands(), ['firewall.route-lan', 'routes.verify-certificate']));
 }
 
 final class Orb199ProductionRouteProcessRunner implements ProcessRunner
