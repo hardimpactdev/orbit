@@ -15,36 +15,10 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
-
-function start_hook_runner(?Closure $answer = null): ProcessRunner
-{
-    return new class($answer) implements ProcessRunner
-    {
-        /** @var list<ProcessInvocation> */
-        public array $calls = [];
-
-        public function __construct(private readonly ?Closure $answer) {}
-
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $this->calls[] = $invocation;
-            $arguments = $invocation->arguments;
-            // The Gateway certificate publisher compares the key and the certificate by their public keys.
-            if (($arguments[1] ?? null) === 'openssl' && array_intersect(['-pubout', '-pubkey'], $arguments) !== []) {
-                return new CommandResult(0, "PUBLIC KEY\n", '', 2, false);
-            }
-
-            return ($this->answer === null ? null : ($this->answer)($invocation)) ?? new CommandResult(0, '', '', 2, false);
-        }
-    };
-}
 
 describe('production wiring', function (): void {
     beforeEach(function (): void {
@@ -55,8 +29,6 @@ describe('production wiring', function (): void {
         file_put_contents($home.'/ca/root.pem', 'ROOT CERTIFICATE');
         config(['orbit.home' => $home, 'orbit.gateway_checkout' => '/home/orbit/orbit-gateway', 'orbit.gateway_web' => '/home/orbit/web']);
         $this->home = $home;
-        $this->runner = start_hook_runner();
-        $this->app->instance(ProcessRunner::class, $this->runner);
         $this->app->instance(GatewayCertificateIssuer::class, new readonly class($home) implements GatewayCertificateIssuer
         {
             public function __construct(private string $home) {}

@@ -8,11 +8,16 @@ use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Metrics\MetricsPublicationReceipt;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\TestOrbitHome;
+
+afterEach(function (): void {
+    TestOrbitHome::clearScratch();
+});
 
 function metrics_publication_certificate(): GatewayCertificatePaths
 {
-    $directory = sys_get_temp_dir().'/orbit-metrics-publication-'.bin2hex(random_bytes(4));
-    mkdir($directory);
+    $directory = TestOrbitHome::scratch('metrics-publication');
+    mkdir($directory, 0o700, true);
     file_put_contents("{$directory}/metrics.pem", "CERTIFICATE\n");
     file_put_contents("{$directory}/metrics.key", "KEY\n");
 
