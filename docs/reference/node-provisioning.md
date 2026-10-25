@@ -435,7 +435,7 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `
 
 ### Role prerequisites
 
-Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`. A healthy Docker CE installation replaces `docker.io`.
+Each role installs its prerequisites through the agent's `roles.install-prerequisites`. The role guard first reads `ID` and `VERSION_CODENAME` with `nodes.os-release` and refuses a release the role does not support. The command checks the release again and installs the role's packages with `apt-get`, which waits up to 300 seconds for the dpkg locks. A healthy Docker CE installation replaces `docker.io`.
 
 For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev` and `app-prod`, it prepares the shared Composer home, `/opt/orbit/composer`, and the Vite+, Node, and Bun launchers in `/usr/local/bin`. A launcher that Orbit did not write fails the step with `roles.prerequisite_conflict` before any change. A failed version check after publication restores the launchers it replaced.
 

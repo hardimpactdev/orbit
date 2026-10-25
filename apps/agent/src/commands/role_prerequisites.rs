@@ -4,6 +4,7 @@
 
 use super::caddy::{chown, group_id};
 use super::os_release;
+use super::recipe::Files;
 use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ const BUN_HOME: &str = "/opt/orbit/bun";
 const COMPOSER_HOME: &str = "/opt/orbit/composer";
 const BIN: &str = "/usr/local/bin";
 const LAUNCHERS: [&str; 5] = ["vp", "node", "pnpm", "npm", "npx"];
+/// apt waits this long for the dpkg locks, as every other agent package command does.
+const DPKG_LOCK: &str = "DPkg::Lock::Timeout=300";
 
 command_errors! {
     pub enum PrerequisiteError {
@@ -42,9 +45,14 @@ fn failed(step: &str, stderr: impl Into<String>) -> PrerequisiteError {
     }
 }
 
-fn conflict(path: &Path) -> PrerequisiteError {
+/// Names the host path, never the sandbox root a test uses.
+fn conflict(files: &Files, path: &Path) -> PrerequisiteError {
+    let logical = path.strip_prefix(&files.root).map_or_else(
+        |_| path.to_path_buf(),
+        |relative| Path::new("/").join(relative),
+    );
     PrerequisiteError::Conflict {
-        path: path.display().to_string(),
+        path: logical.display().to_string(),
     }
 }
 
@@ -66,42 +74,92 @@ pub struct PrerequisiteInput {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Prerequisites {}
 
+/// A finished program: whether it succeeded, and its output.
+struct Ran {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+/// The host boundary: account lookup and fixed programs. Paths stay in [`Files`].
+trait Host {
+    fn account(&self, user: &str, group: &str) -> Option<(u32, u32)>;
+    fn run(
+        &mut self,
+        program: &str,
+        arguments: &[&str],
+        environment: &[(&str, &str)],
+    ) -> io::Result<Ran>;
+}
+
+struct Native;
+
+impl Host for Native {
+    fn account(&self, user: &str, group: &str) -> Option<(u32, u32)> {
+        let uid = crate::command::identity::passwd(user)?.uid;
+        Some((uid, group_id(group)?))
+    }
+
+    fn run(
+        &mut self,
+        program: &str,
+        arguments: &[&str],
+        environment: &[(&str, &str)],
+    ) -> io::Result<Ran> {
+        let output = Process::new(program)
+            .args(arguments)
+            .envs(environment.iter().copied())
+            .stdin(Stdio::null())
+            .output()?;
+        Ok(Ran {
+            success: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
+}
+
 struct Account {
     user: String,
     uid: u32,
     gid: u32,
+    /// The host path of the managed user's home.
     home: PathBuf,
 }
 
-fn user_id(name: &str) -> Option<u32> {
-    crate::command::identity::passwd(name).map(|entry| entry.uid)
+/// Where a host path lives under the [`Files`] root.
+fn at(files: &Files, path: &Path) -> PathBuf {
+    files.root.join(path.strip_prefix("/").unwrap_or(path))
 }
 
 /// Runs a program and fails the step with its standard error.
 fn run(
+    host: &mut impl Host,
     step: &str,
     program: &str,
     arguments: &[&str],
     environment: &[(&str, &str)],
 ) -> Result<(), PrerequisiteError> {
-    let output = Process::new(program)
-        .args(arguments)
-        .envs(environment.iter().copied())
-        .stdin(Stdio::null())
-        .output()
+    let ran = host
+        .run(program, arguments, environment)
         .map_err(|error| failed(step, error.to_string()))?;
-    if output.status.success() {
+    if ran.success {
         Ok(())
     } else {
-        Err(failed(step, String::from_utf8_lossy(&output.stderr)))
+        Err(failed(step, ran.stderr))
     }
 }
 
 /// Runs a command as the managed user with its home, as `sudo -u <user> -H` does.
-fn as_user(step: &str, account: &Account, arguments: &[&str]) -> Result<(), PrerequisiteError> {
+fn as_user(
+    host: &mut impl Host,
+    step: &str,
+    account: &Account,
+    arguments: &[&str],
+) -> Result<(), PrerequisiteError> {
     let mut all = vec!["-u", account.user.as_str(), "-H"];
     all.extend_from_slice(arguments);
-    run(step, "sudo", &all, &[])
+    run(host, step, "sudo", &all, &[])
 }
 
 /// One Docker CE prerequisite rule for convergence and Doctor.
@@ -119,17 +177,10 @@ pub(super) fn docker_ce_matches(
         && run("systemctl", &["is-active", "--quiet", "docker"]).is_ok_and(|(ok, _)| ok)
 }
 
-fn docker_ce_healthy() -> bool {
-    docker_ce_matches(Path::new("/usr/bin/docker"), &mut |program, args| {
-        let output = Process::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()?;
-        Ok((
-            output.status.success(),
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-        ))
+fn docker_ce_healthy(files: &Files, host: &mut impl Host) -> bool {
+    docker_ce_matches(&files.path("/usr/bin/docker"), &mut |program, args| {
+        host.run(program, args, &[])
+            .map(|ran| (ran.success, ran.stdout))
     })
 }
 
@@ -158,44 +209,49 @@ fn directory(path: &Path, uid: u32, gid: u32, step: &str) -> Result<(), Prerequi
 }
 
 /// Refuses an existing path that is a symlink, no directory, or another owner's.
-fn owned_directory_or_absent(path: &Path, uid: u32, gid: u32) -> Result<(), PrerequisiteError> {
+fn owned_directory_or_absent(
+    files: &Files,
+    path: &Path,
+    uid: u32,
+    gid: u32,
+) -> Result<(), PrerequisiteError> {
     match present(path) {
         Some(metadata) if !metadata.is_dir() || !owned_by(&metadata, uid, gid) => {
-            Err(conflict(path))
+            Err(conflict(files, path))
         }
         _ => Ok(()),
     }
 }
 
-fn composer_home(account: &Account) -> Result<(), PrerequisiteError> {
-    directory(Path::new(ORBIT_OPT), 0, 0, "composer-home")?;
-    directory(
-        Path::new(COMPOSER_HOME),
-        account.uid,
-        account.gid,
-        "composer-home",
-    )?;
-    let manifest = Path::new(COMPOSER_HOME).join("composer.json");
+fn composer_home(
+    files: &Files,
+    host: &mut impl Host,
+    account: &Account,
+) -> Result<(), PrerequisiteError> {
+    let opt = files.path(ORBIT_OPT);
+    let home = files.path(COMPOSER_HOME);
+    directory(&opt, files.uid, files.gid, "composer-home")?;
+    directory(&home, account.uid, account.gid, "composer-home")?;
+    let manifest = home.join("composer.json");
     let usable = |metadata: &fs::Metadata| {
         metadata.is_file() && owned_by(metadata, account.uid, account.gid)
     };
     match present(&manifest) {
-        Some(metadata) if !usable(&metadata) => return Err(conflict(&manifest)),
+        Some(metadata) if !usable(&metadata) => return Err(conflict(files, &manifest)),
         Some(_) => {}
         None => {
-            let candidate =
-                Path::new(ORBIT_OPT).join(format!(".composer.json.{:016x}", rand::random::<u64>()));
+            let candidate = opt.join(format!(".composer.json.{:016x}", rand::random::<u64>()));
             let written = fs::write(&candidate, "{\"require\":{}}\n")
                 .and_then(|()| fs::set_permissions(&candidate, fs::Permissions::from_mode(0o644)))
                 .and_then(|()| chown(&candidate, account.uid, account.gid));
             let linked = written.and_then(|()| fs::hard_link(&candidate, &manifest));
             let _ = fs::remove_file(&candidate);
             if linked.is_err() && !present(&manifest).is_some_and(|metadata| usable(&metadata)) {
-                return Err(conflict(&manifest));
+                return Err(conflict(files, &manifest));
             }
         }
     }
-    let vendor = Path::new(COMPOSER_HOME).join("vendor");
+    let vendor = home.join("vendor");
     directory(&vendor, account.uid, account.gid, "composer-home")?;
     directory(
         &vendor.join("bin"),
@@ -204,6 +260,7 @@ fn composer_home(account: &Account) -> Result<(), PrerequisiteError> {
         "composer-home",
     )?;
     as_user(
+        host,
         "composer-home",
         account,
         &[
@@ -217,19 +274,22 @@ fn composer_home(account: &Account) -> Result<(), PrerequisiteError> {
 }
 
 /// The Vite+ home: the first candidate that holds a `vp`, or that is anything but the managed user's empty directory.
+/// Candidates and the result are host paths.
 fn vite_plus_home(
+    files: &Files,
     candidates: &[PathBuf],
     uid: u32,
     gid: u32,
 ) -> Result<PathBuf, PrerequisiteError> {
     for candidate in candidates {
-        let Some(metadata) = present(candidate) else {
+        let path = at(files, candidate);
+        let Some(metadata) = present(&path) else {
             continue;
         };
-        let holds_vp = present(&candidate.join("bin/vp")).is_some();
+        let holds_vp = present(&path.join("bin/vp")).is_some();
         if metadata.is_dir() && !holds_vp {
             if !owned_by(&metadata, uid, gid) {
-                return Err(conflict(candidate));
+                return Err(conflict(files, &path));
             }
             continue;
         }
@@ -260,13 +320,13 @@ fn legacy_launcher(vp_home: &Path, binary: &str) -> String {
 }
 
 /// Whether an existing launcher is one Orbit wrote: root's regular `0755` file with a known content.
-fn launcher_ours(path: &Path, vp_home: &Path, binary: &str) -> bool {
+fn launcher_ours(files: &Files, path: &Path, vp_home: &Path, binary: &str) -> bool {
     let Some(metadata) = present(path) else {
         return true;
     };
     let content = fs::read_to_string(path).unwrap_or_default();
     metadata.is_file()
-        && owned_by(&metadata, 0, 0)
+        && owned_by(&metadata, files.uid, files.gid)
         && metadata.mode() & 0o7777 == 0o755
         && (content == launcher(vp_home, binary) || content == legacy_launcher(vp_home, binary))
 }
@@ -290,12 +350,12 @@ fn undo(published: &[Published]) {
     }
 }
 
-fn write_launcher(path: &Path, content: &str) -> io::Result<()> {
+fn write_launcher(files: &Files, path: &Path, content: &str) -> io::Result<()> {
     let candidate =
         path.with_file_name(format!(".orbit-js-runtime.{:016x}", rand::random::<u64>()));
     let result = fs::write(&candidate, content)
         .and_then(|()| fs::set_permissions(&candidate, fs::Permissions::from_mode(0o755)))
-        .and_then(|()| chown(&candidate, 0, 0))
+        .and_then(|()| chown(&candidate, files.uid, files.gid))
         .and_then(|()| fs::rename(&candidate, path));
     if result.is_err() {
         let _ = fs::remove_file(&candidate);
@@ -303,21 +363,24 @@ fn write_launcher(path: &Path, content: &str) -> io::Result<()> {
     result
 }
 
-fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
-    let opt = Path::new(ORBIT_OPT);
-    if present(opt).is_some_and(|metadata| !metadata.is_dir() || !owned_by(&metadata, 0, 0)) {
-        return Err(conflict(opt));
+fn javascript_runtime(
+    files: &Files,
+    host: &mut impl Host,
+    account: &Account,
+) -> Result<(), PrerequisiteError> {
+    let opt = files.path(ORBIT_OPT);
+    if present(&opt)
+        .is_some_and(|metadata| !metadata.is_dir() || !owned_by(&metadata, files.uid, files.gid))
+    {
+        return Err(conflict(files, &opt));
     }
-    owned_directory_or_absent(Path::new(BUN_HOME), account.uid, account.gid)?;
-    directory(opt, 0, 0, "javascript-runtime")?;
-    directory(
-        Path::new(BUN_HOME),
-        account.uid,
-        account.gid,
-        "javascript-runtime",
-    )?;
+    let bun_home = files.path(BUN_HOME);
+    owned_directory_or_absent(files, &bun_home, account.uid, account.gid)?;
+    directory(&opt, files.uid, files.gid, "javascript-runtime")?;
+    directory(&bun_home, account.uid, account.gid, "javascript-runtime")?;
     let ownership = format!("{}:{}", account.uid, account.gid);
     run(
+        host,
         "javascript-runtime",
         "chown",
         &["-R", "--no-dereference", &ownership, BUN_HOME],
@@ -325,6 +388,7 @@ fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
     )?;
 
     let vp_home = vite_plus_home(
+        files,
         &[
             PathBuf::from("/opt/orbit/vite-plus"),
             account.home.join(".vite-plus"),
@@ -333,14 +397,15 @@ fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
         account.uid,
         account.gid,
     )?;
-    if present(&vp_home).is_some_and(|metadata| !metadata.is_dir()) {
-        return Err(conflict(&vp_home));
+    if present(&at(files, &vp_home)).is_some_and(|metadata| !metadata.is_dir()) {
+        return Err(conflict(files, &at(files, &vp_home)));
     }
     let vp_environment = format!("VP_HOME={}", vp_home.display());
     let vp = vp_home.join("bin/vp");
     let vp_binary = vp.display().to_string();
-    if !executable(&vp) {
+    if !executable(&at(files, &vp)) {
         as_user(
+            host,
             "vite-plus",
             account,
             &[
@@ -363,14 +428,15 @@ fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
         ] {
             let mut all = vec!["env", vp_environment.as_str(), vp_binary.as_str()];
             all.extend_from_slice(arguments);
-            as_user("vite-plus", account, &all)?;
+            as_user(host, "vite-plus", account, &all)?;
         }
     }
-    if !executable(&vp) || !executable(&vp_home.join("bin/pnpm")) {
+    if !executable(&at(files, &vp)) || !executable(&at(files, &vp_home.join("bin/pnpm"))) {
         return Err(failed("vite-plus", "Vite+ did not install vp and pnpm"));
     }
 
     as_user(
+        host,
         "bun",
         account,
         &[
@@ -384,36 +450,36 @@ fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
         ],
     )?;
     let bun = Path::new(BUN_HOME).join("bin/bun");
-    if !executable(&bun) {
+    if !executable(&at(files, &bun)) {
         return Err(failed("bun", "Bun did not install"));
     }
-    run("bun", "chmod", &["-R", "a+rX", BUN_HOME], &[])?;
+    run(host, "bun", "chmod", &["-R", "a+rX", BUN_HOME], &[])?;
 
     for binary in LAUNCHERS {
-        if !executable(&vp_home.join("bin").join(binary)) {
+        if !executable(&at(files, &vp_home.join("bin").join(binary))) {
             return Err(failed(
                 "javascript-runtime",
                 format!("Vite+ has no {binary}"),
             ));
         }
-        let path = Path::new(BIN).join(binary);
-        if !launcher_ours(&path, &vp_home, binary) {
-            return Err(conflict(&path));
+        let path = files.path(BIN).join(binary);
+        if !launcher_ours(files, &path, &vp_home, binary) {
+            return Err(conflict(files, &path));
         }
     }
-    let bun_link = Path::new(BIN).join("bun");
+    let bun_link = files.path(BIN).join("bun");
     if let Some(metadata) = present(&bun_link) {
         if !metadata.file_type().is_symlink()
-            || !owned_by(&metadata, 0, 0)
+            || !owned_by(&metadata, files.uid, files.gid)
             || fs::read_link(&bun_link).ok().as_deref() != Some(bun.as_path())
         {
-            return Err(conflict(&bun_link));
+            return Err(conflict(files, &bun_link));
         }
     }
 
     let mut published = Vec::new();
-    let result = publish_launchers(&vp_home, &bun, &bun_link, &mut published)
-        .and_then(|()| verify_runtime(account));
+    let result = publish_launchers(files, &vp_home, &bun, &bun_link, &mut published)
+        .and_then(|()| verify_runtime(host, account));
     if result.is_err() {
         undo(&published);
     }
@@ -421,19 +487,20 @@ fn javascript_runtime(account: &Account) -> Result<(), PrerequisiteError> {
 }
 
 fn publish_launchers(
+    files: &Files,
     vp_home: &Path,
     bun: &Path,
     bun_link: &Path,
     published: &mut Vec<Published>,
 ) -> Result<(), PrerequisiteError> {
     for binary in LAUNCHERS {
-        let path = Path::new(BIN).join(binary);
+        let path = files.path(BIN).join(binary);
         let content = launcher(vp_home, binary);
         let previous = fs::read(&path).ok();
         if previous.as_deref() == Some(content.as_bytes()) {
             continue;
         }
-        write_launcher(&path, &content)
+        write_launcher(files, &path, &content)
             .map_err(|error| failed("javascript-runtime", error.to_string()))?;
         published.push(match previous {
             Some(previous) => Published::Replaced(path, previous),
@@ -447,15 +514,17 @@ fn publish_launchers(
     Ok(())
 }
 
-fn verify_runtime(account: &Account) -> Result<(), PrerequisiteError> {
+fn verify_runtime(host: &mut impl Host, account: &Account) -> Result<(), PrerequisiteError> {
     for binary in LAUNCHERS {
         as_user(
+            host,
             "javascript-runtime",
             account,
             &[&format!("{BIN}/{binary}"), "--version"],
         )?;
     }
     as_user(
+        host,
         "javascript-runtime",
         account,
         &[
@@ -467,8 +536,12 @@ fn verify_runtime(account: &Account) -> Result<(), PrerequisiteError> {
     )
 }
 
-pub fn install(input: &PrerequisiteInput) -> Result<Prerequisites, PrerequisiteError> {
-    let release = fs::read_to_string("/etc/os-release")
+fn install(
+    files: &Files,
+    host: &mut impl Host,
+    input: &PrerequisiteInput,
+) -> Result<Prerequisites, PrerequisiteError> {
+    let release = fs::read_to_string(files.path("/etc/os-release"))
         .ok()
         .and_then(|text| os_release::parse(&text).ok());
     match release {
@@ -486,7 +559,7 @@ pub fn install(input: &PrerequisiteInput) -> Result<Prerequisites, PrerequisiteE
             })
         }
     }
-    let (Some(uid), Some(gid)) = (user_id(&input.user), group_id(&input.group)) else {
+    let Some((uid, gid)) = host.account(&input.user, &input.group) else {
         return Err(failed("account", "the managed account does not exist"));
     };
     let account = Account {
@@ -496,7 +569,7 @@ pub fn install(input: &PrerequisiteInput) -> Result<Prerequisites, PrerequisiteE
         home: input.home.clone(),
     };
 
-    let docker = docker_ce_healthy();
+    let docker = docker_ce_healthy(files, host);
     let packages: Vec<&str> = input
         .packages
         .iter()
@@ -504,8 +577,16 @@ pub fn install(input: &PrerequisiteInput) -> Result<Prerequisites, PrerequisiteE
         .filter(|package| !(docker && *package == "docker.io"))
         .collect();
     let noninteractive = [("DEBIAN_FRONTEND", "noninteractive")];
-    run("packages", "apt-get", &["update"], &noninteractive)?;
+    run(
+        host,
+        "packages",
+        "apt-get",
+        &["-o", DPKG_LOCK, "update"],
+        &noninteractive,
+    )?;
     let mut install = vec![
+        "-o",
+        DPKG_LOCK,
         "install",
         "--yes",
         "--no-install-recommends",
@@ -513,14 +594,19 @@ pub fn install(input: &PrerequisiteInput) -> Result<Prerequisites, PrerequisiteE
         "--",
     ];
     install.extend(packages);
-    run("packages", "apt-get", &install, &noninteractive)?;
+    run(host, "packages", "apt-get", &install, &noninteractive)?;
 
     if input.apps_directory {
-        directory(&account.home.join("apps"), uid, gid, "apps-directory")?;
+        directory(
+            &at(files, &account.home.join("apps")),
+            uid,
+            gid,
+            "apps-directory",
+        )?;
     }
     if input.application_runtime {
-        composer_home(&account)?;
-        javascript_runtime(&account)?;
+        composer_home(files, host, &account)?;
+        javascript_runtime(files, host, &account)?;
     }
     Ok(Prerequisites {})
 }
@@ -548,83 +634,10 @@ impl Command for InstallPrerequisites {
     }
 
     fn run(input: PrerequisiteInput, _: &Context) -> Result<Prerequisites, PrerequisiteError> {
-        install(&input)
+        install(&Files::system(), &mut Native, &input)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scratch() -> PathBuf {
-        let path = fs::canonicalize(std::env::temp_dir())
-            .unwrap()
-            .join(format!(
-                "orbit-prerequisites-{:016x}",
-                rand::random::<u64>()
-            ));
-        fs::create_dir_all(&path).unwrap();
-        path
-    }
-
-    #[test]
-    fn launchers_name_their_vite_plus_home() {
-        let home = Path::new("/home/orbit/.local/share/vite-plus");
-        assert_eq!(
-            launcher(home, "node"),
-            "#!/bin/sh\nexport VP_HOME=\"/home/orbit/.local/share/vite-plus\"\nexec \"/home/orbit/.local/share/vite-plus/bin/node\" \"$@\"\n"
-        );
-        assert_eq!(
-            legacy_launcher(home, "node"),
-            "#!/bin/sh\nexec \"/home/orbit/.local/share/vite-plus/bin/node\" \"$@\"\n"
-        );
-        assert!(legacy_launcher(Path::new("/opt/orbit/vite-plus"), "vp")
-            .contains("export VP_HOME=/opt/orbit/vite-plus\n"));
-    }
-
-    #[test]
-    fn the_vite_plus_home_is_the_first_candidate_that_holds_vp() {
-        let base = scratch();
-        let (uid, gid) = (
-            rustix::process::getuid().as_raw(),
-            rustix::process::getgid().as_raw(),
-        );
-        let candidates = [base.join("a"), base.join("b"), base.join("c")];
-
-        assert_eq!(vite_plus_home(&candidates, uid, gid), Ok(base.join("c")));
-        fs::create_dir_all(base.join("a")).unwrap();
-        fs::create_dir_all(base.join("b/bin")).unwrap();
-        fs::write(base.join("b/bin/vp"), "").unwrap();
-        assert_eq!(vite_plus_home(&candidates, uid, gid), Ok(base.join("b")));
-        assert!(vite_plus_home(&candidates, uid + 1, gid).is_err());
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn only_a_launcher_orbit_wrote_counts_as_ours() {
-        let base = scratch();
-        let path = base.join("node");
-        let home = Path::new("/opt/orbit/vite-plus");
-
-        assert!(launcher_ours(&path, home, "node"));
-        fs::write(&path, "#!/bin/sh\necho mine\n").unwrap();
-        assert!(!launcher_ours(&path, home, "node"));
-        let _ = fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn undo_removes_created_files_and_restores_replaced_ones() {
-        let base = scratch();
-        fs::write(base.join("kept"), "new").unwrap();
-        fs::write(base.join("created"), "new").unwrap();
-
-        undo(&[
-            Published::Replaced(base.join("kept"), b"old".to_vec()),
-            Published::Created(base.join("created")),
-        ]);
-
-        assert_eq!(fs::read_to_string(base.join("kept")).unwrap(), "old");
-        assert!(!base.join("created").exists());
-        let _ = fs::remove_dir_all(&base);
-    }
-}
+#[path = "role_prerequisites_tests.rs"]
+mod tests;
