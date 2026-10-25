@@ -19,7 +19,7 @@ check snapshot CHECKOUT         print HEAD, its parent, its tree, and the workin
 check analysis-base CHECKOUT START
                                 read the merge base of the full starting commit and local origin/main, or an empty base
 
-The detached `run` process removes its allocated TMPDIR when it ends, including on INT, TERM, HUP, or cancel.
+Detached check and script processes remove their allocated TMPDIR when they end, including on INT, TERM, HUP, or cancel.
 It only removes a non-empty directory it owns that sits directly under the host temp root and matches
 `orbit-check-<euid>-*`. A leftover after SIGKILL is removed on a later cancel, not on status polls. A cleanup
 failure does not change the check's exit status. Status and snapshot keep working until the check finishes
@@ -438,6 +438,8 @@ def run_script(checkout, head, tree, request):
     signal.signal(signal.SIGTERM, cancelled)
     signal.signal(signal.SIGINT, cancelled)
     signal.signal(signal.SIGHUP, cancelled)
+    record_allocated_tmpdir()
+    atexit.register(_release_allocated_tmpdir)
     started = time.monotonic()
     exit_code = 127
     total = 0

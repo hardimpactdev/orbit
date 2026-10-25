@@ -114,3 +114,53 @@ it('refuses altered, untracked, nonexecutable and symlinked repository scripts',
         ->toBe(['unavailable' => true]);
     expect(file_exists($instance->checkout_path.'/.git/script-invocations'))->toBeFalse();
 })->with(['altered', 'untracked', 'nonexecutable', 'symlink', 'parent symlink']);
+
+it('removes the allocated script TMPDIR and its contents on every completed exit', function (int $exitCode): void {
+    $instance = script_runner_instance();
+    $checkout = $instance->checkout_path;
+    file_put_contents($checkout.'/scripts/dependencies', <<<'SCRIPT'
+#!/bin/sh
+printf artifact > "$TMPDIR/artifact"
+exit "$1"
+SCRIPT
+    );
+    new Process(['git', 'add', 'scripts/dependencies'], $checkout)->mustRun();
+    new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'temporary artifact'], $checkout)->mustRun();
+    $runner = check_runner(new LocalShellSshExecutor);
+    $input = [...$runner->inspectScript($instance, 'scripts/dependencies'), 'script' => 'scripts/dependencies', 'args' => [(string) $exitCode]];
+    $allocate = new Process(['python3', resource_path('tasks/metadata'), $checkout, 'tmpdir']);
+    $allocate->setInput('{}');
+    $tmpdir = trim($allocate->mustRun()->getOutput());
+    $script = $checkout.'/.git/orbit/check';
+    $programs = new ForkedPythonPrograms;
+    try {
+        $capture = $programs->run(<<<'PYTHON'
+import json, os, sys
+source, options = sys.stdin.buffer.read().split(b'\0', 1)
+options = json.loads(options)
+scope = {'__name__': 'check', '__file__': options['script']}
+exec(compile(source, sys.argv[1], 'exec'), scope)
+request = options['input']
+scope['run_script'](options['checkout'], request['head'], request['tree'], json.dumps(request))
+with open(scope['RESULT']) as result:
+    output = json.load(result)
+output['artifact'] = open(os.path.join(os.environ['TMPDIR'], 'artifact')).read()
+output['recorded_tmpdir'] = open(scope['TMPDIR_RECORD']).read() if os.path.isfile(scope['TMPDIR_RECORD']) else None
+print(json.dumps(output))
+PYTHON, 'script-tmpdir-cleanup', TaskUnitProgram::read('tasks/check')."\0".json_encode([
+            'script' => $script, 'checkout' => $checkout, 'input' => $input,
+        ], JSON_THROW_ON_ERROR), ['TMPDIR' => $tmpdir]);
+
+        expect($capture->exitCode)->toBe(0, $capture->stderr);
+        $result = json_decode($capture->stdout, true, flags: JSON_THROW_ON_ERROR);
+        expect($result['exit_code'])->toBe($exitCode)
+            ->and($result['artifact'])->toBe('artifact')
+            ->and(is_dir($tmpdir))->toBeFalse()
+            ->and(file_exists($tmpdir.'/artifact'))->toBeFalse()
+            ->and($result['recorded_tmpdir'])->toBe($tmpdir)
+            ->and(file_exists(dirname($script).'/check-tmpdir'))->toBeFalse();
+    } finally {
+        $programs->close();
+        File::deleteDirectory($tmpdir);
+    }
+})->with(['success' => 0, 'failure' => 23]);
