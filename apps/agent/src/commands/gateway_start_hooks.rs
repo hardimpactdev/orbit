@@ -54,7 +54,7 @@ pub(super) fn before_activation(input: Input, context: &Context) -> Result<Outpu
     let directory = lock::lock_directory().map_err(|_| failed("lock-directory"))?;
     let held = lock::acquire_all(
         &directory,
-        orbit_agent_contract::START_HOOK_TARGET,
+        Some(orbit_agent_contract::START_HOOK_TARGET),
         &[],
         context.deadline(),
     )

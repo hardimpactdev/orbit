@@ -126,7 +126,7 @@ fn run(unit: &str) -> Result<(), (i32, Failure)> {
         lock::prepare(Path::new(lock::LOCK_ROOT_LINUX), 0, 0).map_err(|e| fail(e.to_string()))?;
     let _resources = lock::acquire_all(
         &directory,
-        "machine-image-recipe",
+        Some("machine-image-recipe"),
         &["packages", "pi-runtime"],
         deadline,
     )

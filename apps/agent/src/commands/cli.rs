@@ -304,7 +304,7 @@ fn configure(directory: &Path, path: &Path, profile: &str) -> Result<bool, CliEr
     Ok(true)
 }
 
-pub fn install(input: &InstallInput) -> Result<Installed, CliError> {
+pub fn install(input: &InstallInput, deadline: Instant) -> Result<Installed, CliError> {
     let link = Path::new(LINK);
     let installed = match inspect(link, &input.user) {
         State::Present => None,
@@ -313,7 +313,7 @@ pub fn install(input: &InstallInput) -> Result<Installed, CliError> {
             let release = input.release.as_ref().ok_or(CliError::ReleaseNeeded {})?;
             let _held = lock::acquire(
                 Path::new(lock::UPDATE_LOCK_LINUX),
-                Instant::now() + UPDATE_WAIT,
+                lock::answer_by(deadline).min(Instant::now() + UPDATE_WAIT),
             )
             .map_err(|_| CliError::UpdateBusy {})?;
             // A self-update may have changed the path while this install waited.
@@ -379,8 +379,8 @@ impl Command for InstallCli {
         super::linux_only(platform, Privilege::Root)
     }
 
-    fn run(input: InstallInput, _: &Context) -> Result<Installed, CliError> {
-        install(&input)
+    fn run(input: InstallInput, context: &Context) -> Result<Installed, CliError> {
+        install(&input, context.deadline())
     }
 }
 

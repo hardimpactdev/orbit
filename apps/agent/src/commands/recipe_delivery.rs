@@ -54,10 +54,11 @@ fn verify(
     {
         return Err(VerificationError::Invalid {});
     }
-    let _held = lock::acquire(update_lock, deadline).map_err(|error| match error {
-        lock::LockError::Busy(_) => VerificationError::Busy {},
-        lock::LockError::Io(_, _) => VerificationError::LockFailed {},
-    })?;
+    let _held =
+        lock::acquire(update_lock, lock::answer_by(deadline)).map_err(|error| match error {
+            lock::LockError::Busy(_) => VerificationError::Busy {},
+            lock::LockError::Io(_, _) => VerificationError::LockFailed {},
+        })?;
     for (component, expected, observed) in [
         ("agent", &input.agent_sha256, file_sha256(binary).ok()),
         ("cli", &input.cli_version, cli_version()),

@@ -403,7 +403,7 @@ macro_rules! migration_command {
             const SUMMARY: &'static str = $summary;
             const MUTATES: bool = $mutates;
             const TIMEOUT: Duration = Duration::from_secs(3600);
-            const RESOURCES: &'static [&'static str] = &["packages"];
+            const RESOURCES: &'static [&'static str] = if $mutates { &["packages"] } else { &[] };
             type Input = Input;
             type Output = Value;
             type Error = Failure;

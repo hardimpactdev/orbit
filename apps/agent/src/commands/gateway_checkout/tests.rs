@@ -5,7 +5,7 @@ fn checkout_mutation_can_acquire_its_declared_locks() {
     let (_work, files, input) = fixture();
     let held = crate::command::lock::acquire_all(
         &files.root.join("locks"),
-        &Prepare::target(&input).unwrap(),
+        Prepare::target(&input).as_deref(),
         Prepare::RESOURCES,
         std::time::Instant::now(),
     )

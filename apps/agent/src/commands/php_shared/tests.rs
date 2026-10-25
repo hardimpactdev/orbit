@@ -344,7 +344,7 @@ fn a_shared_pool_mutation_takes_its_lock_without_locking_itself_twice() {
     let wanted = input(&[]);
     let locks = crate::command::lock::acquire_all(
         &files.root.join("locks"),
-        &Converge::target(&wanted).unwrap(),
+        Converge::target(&wanted).as_deref(),
         Converge::RESOURCES,
         std::time::Instant::now(),
     )

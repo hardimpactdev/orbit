@@ -18,6 +18,24 @@ pub const LOCK_ROOT_LINUX: &str = "/run/orbit-agent/locks";
 pub const LOCK_DIR_ENV: &str = "ORBIT_AGENT_LOCK_DIR";
 /// The lock that installation, CLI replacement, and final recipe verification hold.
 pub const UPDATE_LOCK_LINUX: &str = "/run/lock/orbit-self-update.lock";
+/// The time a lock wait leaves before the command deadline, so a busy lock is reported as busy, not as a timeout.
+const ANSWER_MARGIN: Duration = Duration::from_millis(250);
+
+/// When a lock wait inside a command must end: early enough to answer with a typed refusal before `deadline`.
+pub fn answer_by(deadline: Instant) -> Instant {
+    deadline
+        .checked_sub(ANSWER_MARGIN)
+        .unwrap_or(deadline)
+        .max(Instant::now().min(deadline))
+}
+
+fn pause_until(deadline: Instant) {
+    thread::sleep(
+        deadline
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_millis(100)),
+    );
+}
 
 /// Creates the lock directory of one account under `root`: `<root>/<uid>`, owned by that account with mode 0700, so no
 /// other account can hold, replace, or link one of its locks. The root process that starts a Linux mutation calls it.
@@ -228,7 +246,7 @@ fn acquire_in_cgroup(
                         if Instant::now() >= deadline {
                             return Err(LockError::Busy(path.into()));
                         }
-                        thread::sleep(Duration::from_millis(100));
+                        pause_until(deadline);
                     }
                 }
                 // Keep the inode stable. The next holder sees this record under the same flock,
@@ -242,7 +260,7 @@ fn acquire_in_cgroup(
                 });
             }
             Err(rustix::io::Errno::WOULDBLOCK) if Instant::now() < deadline => {
-                thread::sleep(Duration::from_millis(100));
+                pause_until(deadline);
             }
             Err(rustix::io::Errno::WOULDBLOCK) => return Err(LockError::Busy(path.into())),
             Err(error) => return Err(LockError::Io(path.into(), error.to_string())),
@@ -265,17 +283,20 @@ pub fn path_for(directory: &Path, name: &str) -> PathBuf {
     directory.join(format!("{safe}.lock"))
 }
 
-/// Takes the target lock and then each resource lock in sorted order.
+/// Takes the target lock, when the command has one, and then each resource lock in sorted order.
 pub fn acquire_all(
     directory: &Path,
-    target: &str,
+    target: Option<&str>,
     resources: &[&str],
     deadline: Instant,
 ) -> Result<Vec<Held>, LockError> {
     let mut sorted: Vec<&str> = resources.to_vec();
     sorted.sort_unstable();
     sorted.dedup();
-    let mut held = vec![acquire(&path_for(directory, target), deadline)?];
+    let mut held = Vec::new();
+    if let Some(target) = target {
+        held.push(acquire(&path_for(directory, target), deadline)?);
+    }
     for resource in sorted {
         held.push(acquire(&path_for(directory, resource), deadline)?);
     }
@@ -305,6 +326,35 @@ mod tests {
         let second = acquire(&path, Instant::now() + Duration::from_millis(300));
         assert_eq!(second.unwrap_err(), LockError::Busy(path.clone()));
         assert!(started.elapsed() >= Duration::from_millis(300));
+    }
+
+    #[test]
+    fn resources_lock_without_a_target() {
+        let directory = temporary();
+        let held = acquire_all(&directory, None, &["packages"], Instant::now()).unwrap();
+        assert_eq!(held.len(), 1);
+        assert_eq!(
+            acquire_all(&directory, None, &["packages"], Instant::now()).unwrap_err(),
+            LockError::Busy(path_for(&directory, "packages"))
+        );
+    }
+
+    #[test]
+    fn a_busy_wait_ends_at_its_deadline_not_a_whole_pause_later() {
+        let directory = temporary();
+        let path = path_for(&directory, "target");
+        let _first = acquire(&path, Instant::now()).unwrap();
+        let deadline = Instant::now() + Duration::from_millis(130);
+        assert!(acquire(&path, deadline).is_err());
+        assert!(Instant::now() < deadline + Duration::from_millis(30));
+    }
+
+    #[test]
+    fn the_answer_time_leaves_a_margin_before_the_deadline() {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        assert_eq!(answer_by(deadline), deadline - ANSWER_MARGIN);
+        let close = Instant::now() + Duration::from_millis(10);
+        assert!(answer_by(close) <= close);
     }
 
     #[test]
@@ -443,7 +493,7 @@ mod tests {
         let directory = temporary();
         let held = acquire_all(
             &directory,
-            "instance:3",
+            Some("instance:3"),
             &["caddy", "apt", "caddy"],
             Instant::now(),
         )

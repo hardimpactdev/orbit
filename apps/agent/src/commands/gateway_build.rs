@@ -409,11 +409,13 @@ pub(super) fn hold_step(path: &Path, deadline: Instant) -> Result<lock::Held, Er
         Err(_) => return Err(Failure::LockUnavailable {}.into()),
     }
     step_path(path)?;
-    lock::acquire(path, deadline.min(Instant::now() + Duration::from_secs(30))).map_err(|error| {
-        match error {
-            lock::LockError::Busy(_) => Failure::InProgress {}.into(),
-            lock::LockError::Io(..) => Failure::LockUnavailable {}.into(),
-        }
+    lock::acquire(
+        path,
+        lock::answer_by(deadline).min(Instant::now() + Duration::from_secs(30)),
+    )
+    .map_err(|error| match error {
+        lock::LockError::Busy(_) => Failure::InProgress {}.into(),
+        lock::LockError::Io(..) => Failure::LockUnavailable {}.into(),
     })
 }
 fn resolve(input: &PrepareInput, layout: &Layout, host: &mut impl Host) -> Result<String, Error> {

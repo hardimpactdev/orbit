@@ -26,6 +26,11 @@ pub fn entry<C: Command>() -> Entry {
         !C::MUTATES || C::OUTPUT_MAX_BYTES == 0,
         "binary output is read-only"
     );
+    assert!(
+        C::MUTATES || C::RESOURCES.is_empty(),
+        "{}: only a mutation locks shared resources",
+        C::NAME
+    );
     Entry {
         name: C::NAME,
         summary: C::SUMMARY,
@@ -50,32 +55,44 @@ fn run<C: Command>(input: Value, context: &Context) -> Outcome {
             )
         }
     };
-    let _locks = if C::MUTATES {
-        match C::target(&input) {
-            Some(target) => match super::lock::lock_directory()
-                .map_err(|reason| {
-                    super::lock::LockError::Io(super::lock::LOCK_ROOT_LINUX.into(), reason)
-                })
-                .and_then(|directory| {
-                    super::lock::acquire_all(&directory, &target, C::RESOURCES, context.deadline())
-                }) {
-                Ok(held) => held,
-                Err(super::lock::LockError::Busy(path)) => {
-                    return Outcome::refused(
-                        "agent.target_busy",
-                        "Another command holds the lock of this target.",
-                        json!({"lock": path}),
-                    )
-                }
-                Err(super::lock::LockError::Io(path, reason)) => {
-                    return Outcome::refused(
-                        "agent.lock_unavailable",
-                        "The lock of this target cannot be opened.",
-                        json!({"lock": path, "reason": reason}),
-                    )
-                }
-            },
-            None => Vec::new(),
+    with_locks::<C>(input, context, super::lock::lock_directory)
+}
+
+/// Takes the target and resource locks of a mutation in `directory`, then runs it.
+fn with_locks<C: Command>(
+    input: C::Input,
+    context: &Context,
+    directory: fn() -> Result<std::path::PathBuf, String>,
+) -> Outcome {
+    let target = C::target(&input);
+    let _locks = if C::MUTATES && (target.is_some() || !C::RESOURCES.is_empty()) {
+        match directory()
+            .map_err(|reason| {
+                super::lock::LockError::Io(super::lock::LOCK_ROOT_LINUX.into(), reason)
+            })
+            .and_then(|directory| {
+                super::lock::acquire_all(
+                    &directory,
+                    target.as_deref(),
+                    C::RESOURCES,
+                    super::lock::answer_by(context.deadline()),
+                )
+            }) {
+            Ok(held) => held,
+            Err(super::lock::LockError::Busy(path)) => {
+                return Outcome::refused(
+                    "agent.target_busy",
+                    "Another command holds the lock of this target.",
+                    json!({"lock": path}),
+                )
+            }
+            Err(super::lock::LockError::Io(path, reason)) => {
+                return Outcome::refused(
+                    "agent.lock_unavailable",
+                    "The lock of this target cannot be opened.",
+                    json!({"lock": path, "reason": reason}),
+                )
+            }
         }
     } else {
         Vec::new()
@@ -297,6 +314,61 @@ mod tests {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b == b'-'));
         }
+    }
+
+    /// A mutation that declares only shared resources still holds them.
+    struct ResourceOnly;
+    impl Command for ResourceOnly {
+        const NAME: &'static str = "test.resource-only";
+        const SUMMARY: &'static str = "Test";
+        const MUTATES: bool = true;
+        const TIMEOUT: Duration = Duration::from_secs(5);
+        const RESOURCES: &'static [&'static str] = &["packages"];
+        type Input = Value;
+        type Output = Value;
+        type Error = crate::commands::agent::StatusError;
+        fn privilege(_: Platform) -> Option<Privilege> {
+            Some(Privilege::Account)
+        }
+        fn run(_: Value, _: &Context) -> Result<Value, Self::Error> {
+            Ok(json!({"ran": true}))
+        }
+    }
+    fn resource_locks() -> Result<std::path::PathBuf, String> {
+        static DIRECTORY: OnceLock<std::path::PathBuf> = OnceLock::new();
+        Ok(DIRECTORY
+            .get_or_init(|| {
+                let directory = std::env::temp_dir().join(format!(
+                    "orbit-agent-registry-{}-{}",
+                    std::process::id(),
+                    rand::random::<u64>()
+                ));
+                std::fs::create_dir_all(&directory).unwrap();
+                directory
+            })
+            .clone())
+    }
+
+    #[test]
+    fn a_resource_only_mutation_holds_its_resources_and_reports_busy_before_its_deadline() {
+        let directory = resource_locks().unwrap();
+        let held = super::super::lock::acquire(
+            &super::super::lock::path_for(&directory, "packages"),
+            std::time::Instant::now(),
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_millis(400);
+        let context = Context::new(Platform::Linux, deadline);
+        match with_locks::<ResourceOnly>(json!({}), &context, resource_locks) {
+            Outcome::Refused { code, .. } => assert_eq!(code, "agent.target_busy"),
+            other => panic!("expected a busy refusal, got {other:?}"),
+        }
+        assert!(std::time::Instant::now() < deadline);
+        drop(held);
+        assert!(matches!(
+            with_locks::<ResourceOnly>(json!({}), &context, resource_locks),
+            Outcome::Ok(_)
+        ));
     }
 
     #[test]

@@ -460,7 +460,7 @@ fn bootstrap(
     {
         let _lock = lock::acquire(
             &files.path("/run/lock/orbit-wireguard-peer.lock"),
-            deadline.min(Instant::now() + Duration::from_secs(30)),
+            lock::answer_by(deadline).min(Instant::now() + Duration::from_secs(30)),
         )
         .map_err(|_| failed("peer-lock"))?;
         packages(files, host, recovery, input)?;
