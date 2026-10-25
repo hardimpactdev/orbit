@@ -39,6 +39,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -302,7 +303,7 @@ it('starts a cache-enabled new task workspace cold at main tip when cache refs a
                     : $this->runner->run($invocation);
             }
         };
-        $this->source = new RemoteDevelopmentInstanceSourceLifecycle($this->ssh, $this->agents, $this->accounts, $this->boundary, app(RepositoryReadAccess::class), new TaskVmGit($runner, $this->sandbox.'/mirror', ['https', 'file']));
+        $this->source = new RemoteDevelopmentInstanceSourceLifecycle($this->ssh, $this->agents, $this->accounts, $this->boundary, app(RepositoryReadAccess::class), new TaskVmGit($runner, app(WorkspaceAgentCommandRunner::class), $this->sandbox.'/mirror', ['https', 'file']));
     }
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'No baseline', 'brief' => 'No cache.', 'status' => TaskGroupStatus::Running]);
     orb76_task_vm($this->node)->update(['group_id' => $group->id]);

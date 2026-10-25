@@ -9,11 +9,12 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Models\Node;
+use Closure;
 use JsonException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
-final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner
+final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, AgentCommandRunner, GuestAgentCommandRunner, WorkspaceAgentCommandRunner
 {
     public const string VersionMismatch = 'agent.version_mismatch';
 
@@ -37,6 +38,12 @@ final readonly class NativeAgentCommandRunner implements AdmissionAgentRunner, A
     public function run(Node $node, string $command, array $input = [], ?float $deadlineSeconds = null): array
     {
         return $this->runWith($this->transports->for($node), $node, $command, $input, $deadlineSeconds);
+    }
+
+    #[\Override]
+    public function runInWorkspace(Node $node, Closure $execute, string $command, array $input = [], ?float $deadlineSeconds = null): array
+    {
+        return $this->runWith(new WorkspaceAgentTransport($this->transports->for($node), $execute), $node, $command, $input, $deadlineSeconds);
     }
 
     #[\Override]

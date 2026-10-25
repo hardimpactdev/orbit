@@ -104,6 +104,50 @@ function agentRunnerNode(): Node
     ]);
 }
 
+it('keeps the workspace executor around the read, mismatch installation, and resend', function (): void {
+    $node = agentRunnerNode();
+    $base = new ScriptedAgentTransport([]);
+    $journaled = new ScriptedAgentTransport([
+        agentRefusal('agent.version_mismatch'),
+        agentResult(['ok' => true, 'data' => ['replaced' => true]]),
+        agentResult(['ok' => true, 'data' => ['haves' => [], 'baseline' => null, 'head' => null, 'branch' => 'main']]),
+    ]);
+    $commands = [];
+    $execute = static function (RemoteCommand $command) use ($journaled, &$commands): CommandResult {
+        $commands[] = $command;
+
+        return $journaled->run($command->arguments, $command->protectedInput, $command->timeout);
+    };
+
+    $result = agentRunner($base)->runInWorkspace($node, $execute, 'task-vms.read-git-refs', ['checkout' => '/home/orbit/worktree'], 42.0);
+
+    expect($result)->toBe(['haves' => [], 'baseline' => null, 'head' => null, 'branch' => 'main'])
+        ->and($base->calls)->toBeEmpty()
+        ->and($base->staged)->toHaveCount(1)
+        ->and(array_map(static fn (RemoteCommand $command): string => $command->arguments[array_key_last($command->arguments)], $commands))
+        ->toBe(['task-vms.read-git-refs', 'agent.install', 'task-vms.read-git-refs'])
+        ->and($commands[0]->arguments)->toBe(['/usr/local/bin/orbit-agent', 'command', 'task-vms.read-git-refs'])
+        ->and($commands[1]->arguments)->toBe(['sudo', '-n', '/var/tmp/orbit-agent-candidate-1', 'command', 'agent.install'])
+        ->and($commands[0]->maxOutputBytes)->toBe(AgentTransport::ResultBytes)
+        ->and($commands[0]->timeout)->toBeLessThanOrEqual(57.0)
+        ->and($journaled->calls[2]['envelope']['deadline_ms'])->toBeLessThanOrEqual($journaled->calls[0]['envelope']['deadline_ms']);
+});
+
+it('does not bypass a workspace executor refusal or dispatch another command', function (): void {
+    $base = new ScriptedAgentTransport([]);
+    $calls = 0;
+    $execute = static function (RemoteCommand $command) use (&$calls): CommandResult {
+        $calls++;
+        throw new RuntimeException('Workspace lease no longer held.');
+    };
+
+    expect(fn () => agentRunner($base)->runInWorkspace(agentRunnerNode(), $execute, 'task-vms.read-git-refs', ['checkout' => '/home/orbit/worktree']))
+        ->toThrow(RuntimeException::class, 'Workspace lease no longer held.')
+        ->and($calls)->toBe(1)
+        ->and($base->calls)->toBeEmpty()
+        ->and($base->staged)->toBeEmpty();
+});
+
 it('sends the command name and an envelope with the pin, its deadline, and the typed input, and returns the data', function (): void {
     $transport = new ScriptedAgentTransport([agentResult(['ok' => true, 'data' => ['version' => '0.5.0']])]);
     $node = agentRunnerNode();

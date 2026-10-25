@@ -90,7 +90,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             try {
                 $project = $instance->project;
                 $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($source['repository'], $project->source_access), 'instance.ci_caches_unavailable');
-                $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
+                $this->git->send($project, $instance->node, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
             } catch (ProcessCancelledException $exception) {
                 throw $exception;
             } catch (\RuntimeException) {
@@ -191,7 +191,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $selectBaseline = $owner instanceof Task && ! $owner->reviewsIncomingPullRequest()
             && $instance->seed_commit === null && $tips[$this->selectedBranch($instance)] === null
             && $this->importsCiCaches($instance);
-        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
+        $this->git->send($project, $instance->node, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed', selectBaseline: $selectBaseline);
     }
 
     private function defaultBranch(Instance $instance): string

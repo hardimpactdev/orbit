@@ -3910,6 +3910,20 @@
       ]
     },
     {
+      "name": "task-vms.read-git-refs",
+      "summary": "Read checkout refs and its worktree-private CI baseline for pack transfer.",
+      "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "task_vm.git_input_invalid",
+        "task_vm.git_unreadable"
+      ]
+    },
+    {
       "name": "caddy.install-certificate",
       "summary": "Atomically publish an owned Caddy certificate pair, restoring it if reload fails.",
       "mutates": true,

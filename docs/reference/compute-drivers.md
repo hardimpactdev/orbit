@@ -596,11 +596,13 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 #### Send branches to the VM
 
 1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
-2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
+2. It calls `task-vms.read-git-refs` through the agent runner as the checkout account. The Gateway keeps IDs that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
 4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. The [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) setup step reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
+
+The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`. Calls inside a Tasks lease retain the workspace executor and its remote operation journal, including an agent installation after a pin mismatch.
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 

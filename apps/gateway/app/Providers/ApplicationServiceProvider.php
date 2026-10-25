@@ -219,6 +219,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\NativeAgentViewConverger;
@@ -592,6 +593,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         ));
         $this->app->bind(AgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->bind(GuestAgentCommandRunner::class, NativeAgentCommandRunner::class);
+        $this->app->bind(WorkspaceAgentCommandRunner::class, NativeAgentCommandRunner::class);
         $this->app->bind(AdmissionAgentRunner::class, NativeAgentCommandRunner::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([ValkeyConnectionUpdateHook::class, PostgresConnectionUpdateHook::class], DatabaseConnectionUpdateHook::class);

@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\TaskVms\TaskVmGit;
@@ -21,6 +22,7 @@ use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\HostPathGuardedProcessRunner;
+use Tests\Support\LocalGitRefAgent;
 use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
@@ -56,8 +58,10 @@ abstract class TestCase extends BaseTestCase
         // Tests point GitHub URLs at local repositories, so a credentialed checkout fetch may use them.
         $app['config']->set('orbit.git.checkout_protocols', ['https', 'file']);
         // Each test gets its own task VM mirrors in the test's ORBIT_HOME, and tests point GitHub URLs at local repositories.
+        $app->singleton(WorkspaceAgentCommandRunner::class, LocalGitRefAgent::class);
         $app->singleton(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
             $app->make(ProcessRunner::class),
+            $app->make(WorkspaceAgentCommandRunner::class),
             rtrim(Config::string('orbit.home'), '/').'/task-vm-git/'.bin2hex(random_bytes(4)),
             ['https', 'file'],
         ));

@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -218,8 +219,9 @@ describe('publish and fetch', function (): void {
             Queue::assertPushed(PublishTaskVmCommit::class, 1);
             $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
             expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, $branch])
-                // Required source objects arrive first; the optional cache/baseline transfer follows.
-                ->and($transport->sent)->toHaveCount(4);
+                // Each transfer reads refs through the agent and sends its pack through the transport.
+                ->and(app(WorkspaceAgentCommandRunner::class)->calls)->toHaveCount(2)
+                ->and($transport->sent)->toHaveCount(2);
 
             $job->handle($publisher);
             expect(TaskVm::query()->where('group_id', $group->id)->sole()->publish_started_at)->not->toBeNull();

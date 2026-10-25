@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitReadEnvironment;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\TaskVms\TaskVmGit;
+use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
@@ -37,7 +39,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         GitRemoteRedirect::global($this->root.'/origin.git', $this->url);
         (new Process(['git', 'init', '--quiet', '-b', 'task-1574', $this->root.'/vm']))->mustRun();
         $this->project = Project::query()->create(['name' => 'CI', 'slug' => 'ci', 'repository_url' => $this->url, 'default_branch' => 'main']);
-        $this->git = new TaskVmGit(app(ProcessRunner::class), $this->root.'/mirrors', ['https', 'file']);
+        $this->git = new TaskVmGit(app(ProcessRunner::class), app(WorkspaceAgentCommandRunner::class), $this->root.'/mirrors', ['https', 'file']);
         $this->access = GitReadEnvironment::forGitHubToken('ghs_ciCacheReadOnlyToken');
         $this->run = function (RemoteCommand $command): CommandResult {
             expect(implode(' ', $command->arguments).($command->input ?? ''))->not->toContain('ghs_ciCacheReadOnlyToken');
@@ -58,7 +60,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
     it('carries a matching cache ref with code through the mirror without exposing credentials', function (): void {
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', $this->cacheRef]))->toBe($this->cacheCommit)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($this->sha)
@@ -83,7 +85,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         $tips = $this->git->fetch($this->project, ['main', 'other'], $this->access, 'tasks.fetch_failed');
         ci_ref_git($this->root.'/vm', ['symbolic-ref', 'HEAD', 'refs/heads/'.$unbornBranch]);
 
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($cached)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'origin/main']))->toBe($tip)
@@ -95,7 +97,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         $other = str_repeat('a', 40);
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':refs/orbit/ci-cache/'.$other]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
 
         expect(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/']))->toBe('')
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($this->sha);
@@ -104,13 +106,13 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
     it('prunes upstream-deleted cache refs but preserves the recorded task baseline when main moves', function (): void {
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
         ci_ref_git($this->root.'/vm', ['checkout', '--quiet', '-B', 'task-1574', 'refs/remotes/origin/main']);
         ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'new main']);
         $next = ci_ref_git($this->root.'/source', ['rev-parse', 'HEAD']);
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', 'main', ':'.$this->cacheRef]);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed');
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($next)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($this->sha)
@@ -138,9 +140,9 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
                 return $this->runner->run($invocation);
             }
         };
-        $git = new TaskVmGit($runner, $this->root.'/mirrors', ['https', 'file']);
+        $git = new TaskVmGit($runner, app(WorkspaceAgentCommandRunner::class), $this->root.'/mirrors', ['https', 'file']);
         $tips = $git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
+        $git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', selectBaseline: true);
         ci_ref_git($this->root.'/vm', ['checkout', '--quiet', '-b', 'task-cold', 'origin/main']);
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'HEAD']))->toBe($this->sha)
@@ -161,7 +163,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
 
             return ($this->run)($command);
         };
-        $this->git->send($this->project, $this->root.'/vm', $tips, $run, 'tasks.fetch_failed');
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $run, 'tasks.fetch_failed');
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($this->sha)
             ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/orbit/ci-cache/']))->toBe('');
@@ -172,7 +174,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         ci_ref_git($this->root.'/vm', ['fetch', '--quiet', $this->root.'/origin.git', 'main']);
         ci_ref_git($this->root.'/vm', ['checkout', '--quiet', '-B', 'main', 'FETCH_HEAD']);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', cachesOnly: true);
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', cachesOnly: true);
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', $this->cacheRef]))->toBe($this->cacheCommit)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'HEAD']))->toBe($this->sha)
@@ -186,7 +188,7 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
         ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'new main']);
         ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', 'main']);
         $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
-        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', cachesOnly: true);
+        $this->git->send($this->project, new Node(['name' => 'task-vm']), $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', cachesOnly: true);
 
         expect(ci_ref_git($this->root.'/vm', ['rev-parse', $this->cacheRef]))->toBe($this->cacheCommit)
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($this->sha);

@@ -10,6 +10,9 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
+use App\Infrastructure\AgentCommands\AgentRunnerFailure;
+use App\Infrastructure\AgentCommands\WorkspaceAgentCommandRunner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -19,6 +22,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
+use App\Models\Node;
 use App\Models\Project;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -61,17 +65,6 @@ final readonly class TaskVmGit
 
     /** The automatic garbage collection threshold that {@see collectGarbage()} applies, Git's default. */
     private const int GcAutoObjects = 6700;
-
-    /** Prints the commit IDs of the checkout's refs. */
-    private const string ReadRefs = <<<'BASH'
-        command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" for-each-ref --format='%(objectname)'
-        baseline=$(command git -C "$1" rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)
-        printf 'baseline %s\n' "$baseline"
-        branch=$(command git -C "$1" symbolic-ref --quiet --short HEAD || true)
-        printf 'branch %s\n' "$branch"
-        head=$(command git -C "$1" rev-parse --verify --quiet HEAD || true)
-        printf 'head %s\n' "$head"
-        BASH;
 
     /** Indexes the pack on stdin, then sets each `<ref> <commit>` pair, or deletes the ref for `-`. */
     private const string Apply = <<<'BASH'
@@ -119,6 +112,7 @@ final readonly class TaskVmGit
      */
     public function __construct(
         private ProcessRunner $processes,
+        private WorkspaceAgentCommandRunner $agents,
         private ?string $directory = null,
         private array $protocols = ['https'],
         private int $maxPackBytes = self::MaxPackBytes,
@@ -246,13 +240,13 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException
      */
-    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false, bool $selectBaseline = false): void
+    public function send(Project $project, Node $node, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false, bool $selectBaseline = false): void
     {
         if (! $cachesOnly) {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, false, false);
+            $this->transfer($project, $node, $checkout, $tips, $run, $errorCode, false, false);
         }
         try {
-            $this->transfer($project, $checkout, $tips, $run, $errorCode, true, $selectBaseline);
+            $this->transfer($project, $node, $checkout, $tips, $run, $errorCode, true, $selectBaseline);
         } catch (ProcessCancelledException $exception) {
             throw $exception;
         } catch (\RuntimeException) {
@@ -264,15 +258,19 @@ final readonly class TaskVmGit
      * @param  array<string, string|null>  $tips
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function transfer(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
+    private function transfer(Project $project, Node $node, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly, bool $selectBaseline): void
     {
-        $state = $run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout;
-        $haves = $this->commitIds($state);
+        try {
+            $state = $this->agents->runInWorkspace($node, $run, 'task-vms.read-git-refs', ['checkout' => $checkout]);
+        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
+            throw new RuntimeConvergenceException('task-vm-git-refs', $errorCode, 'The checkout refs could not be read.', previous: $exception);
+        }
+        $haves = $this->commitIds(is_array($state['haves'] ?? null) ? $state['haves'] : []);
         $default = is_string($project->default_branch) ? $project->default_branch : '';
-        $recorded = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
-        $head = preg_match('/^head ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
+        $recorded = $this->commitId($state['baseline'] ?? null);
+        $head = $this->commitId($state['head'] ?? null);
         $tip = $tips[$default] ?? null;
-        $onDefault = $head !== null && str_contains($state, "branch {$default}\n");
+        $onDefault = $head !== null && ($state['branch'] ?? null) === $default;
         $baseline = $onDefault ? ($tip ?? $recorded) : ($recorded ?? $tip);
         $scratch = $this->scratch($errorCode);
         try {
@@ -474,13 +472,17 @@ final readonly class TaskVmGit
         return $pack;
     }
 
-    /** @return list<string> unique commit IDs in `$stdout`, at most {@see MaxHaves} */
-    private function commitIds(string $stdout): array
+    /**
+     * @param  array<mixed>  $haves
+     * @return list<string> unique commit IDs, at most {@see MaxHaves}
+     */
+    private function commitIds(array $haves): array
     {
         $ids = [];
-        foreach (preg_split('/\R/', trim($stdout)) ?: [] as $line) {
-            if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $line) === 1) {
-                $ids[$line] = true;
+        foreach ($haves as $value) {
+            $id = $this->commitId($value);
+            if ($id !== null) {
+                $ids[$id] = true;
             }
             if (count($ids) >= self::MaxHaves) {
                 break;
@@ -488,6 +490,11 @@ final readonly class TaskVmGit
         }
 
         return array_keys($ids);
+    }
+
+    private function commitId(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $value) === 1 ? $value : null;
     }
 
     private function commit(string $mirror, string $ref, string $errorCode): string
