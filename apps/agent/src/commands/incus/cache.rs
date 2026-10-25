@@ -108,6 +108,10 @@ impl Command for MountCache {
     fn privilege(platform: Platform) -> Option<Privilege> {
         crate::commands::linux_only(platform, Privilege::Root)
     }
+    /// The same VM lock as `incus.vm`, so a device change never races the VM's own lifecycle.
+    fn target(input: &Input) -> Option<String> {
+        Some(format!("incus-vm:{}:{}", input.project, input.name))
+    }
     fn run(input: Input, context: &Context) -> Result<Mounted, Error> {
         run(&mut Native(context), &input)
     }

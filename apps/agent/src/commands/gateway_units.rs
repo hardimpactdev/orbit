@@ -373,7 +373,7 @@ impl Command for Converge {
         "Converge fixed release units and host retention without restarting release services.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(1500);
-    const RESOURCES: &'static [&'static str] = &["apt"];
+    const RESOURCES: &'static [&'static str] = &["packages"];
     type Input = Input;
     type Output = Changed;
     type Error = Error;

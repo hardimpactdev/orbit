@@ -348,8 +348,9 @@ impl Command for WriteUrl {
     type Output = Written;
     type Error = ReleaseError;
 
+    /// Root holds the same `environment:` lock as `instances.write-environment`; the write itself runs as the owner.
     fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
+        super::linux_only(platform, Privilege::Owner)
     }
 
     fn target(input: &UrlInput) -> Option<String> {
@@ -357,7 +358,9 @@ impl Command for WriteUrl {
     }
 
     fn run(input: UrlInput, _: &Context) -> Result<Written, ReleaseError> {
-        write_url(&input)
+        let owner = input.owner.clone();
+        identity::on_account_thread(&owner, move || write_url(&input))
+            .map_err(|_| refused("the owner identity can be taken"))?
     }
 }
 

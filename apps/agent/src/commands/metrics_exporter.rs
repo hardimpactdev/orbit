@@ -636,7 +636,7 @@ macro_rules! exporter_command {
                 "Snapshot, converge, remove, or restore one Metrics exporter.";
             // Snapshots share the same lock so fleet rollback never records half of a local transaction.
             const MUTATES: bool = true;
-            const RESOURCES: &'static [&'static str] = &["apt", "firewall"];
+            const RESOURCES: &'static [&'static str] = &["firewall", "packages"];
             const TIMEOUT: Duration = Duration::from_secs(420);
             type Input = Input;
             type Output = Output;

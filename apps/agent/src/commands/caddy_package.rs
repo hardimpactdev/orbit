@@ -269,7 +269,7 @@ impl Command for InstallPackage {
         "Install the pinned Caddy package when the Node is below the version floor.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(600);
-    const RESOURCES: &'static [&'static str] = &["apt"];
+    const RESOURCES: &'static [&'static str] = &["packages"];
     type Input = PackageInput;
     type Output = Package;
     type Error = PackageError;

@@ -532,6 +532,7 @@ impl Command for InstallPrerequisites {
     const SUMMARY: &'static str =
         "Install a role's packages, and the Composer home and JavaScript runtime of an application role.";
     const MUTATES: bool = true;
+    const RESOURCES: &'static [&'static str] = &["packages"];
     const TIMEOUT: Duration = Duration::from_secs(900);
     type Input = PrerequisiteInput;
     type Output = Prerequisites;
@@ -540,6 +541,10 @@ impl Command for InstallPrerequisites {
     /// Packages and `/usr/local/bin` belong to root.
     fn privilege(platform: Platform) -> Option<Privilege> {
         super::linux_only(platform, Privilege::Root)
+    }
+
+    fn target(_: &PrerequisiteInput) -> Option<String> {
+        Some("roles:prerequisites".into())
     }
 
     fn run(input: PrerequisiteInput, _: &Context) -> Result<Prerequisites, PrerequisiteError> {

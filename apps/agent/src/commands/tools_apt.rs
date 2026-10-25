@@ -247,6 +247,7 @@ macro_rules! mutation {
             const SUMMARY: &'static str = $summary;
             const MUTATES: bool = true;
             const TIMEOUT: Duration = Duration::from_secs(900);
+            const RESOURCES: &'static [&'static str] = &["packages"];
             type Input = Input;
             type Output = Done;
             type Error = Error;

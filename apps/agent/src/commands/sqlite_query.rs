@@ -129,7 +129,7 @@ fn query(input: &Input, write: bool, deadline: Instant) -> Result<Output, Error>
 
 fn execute(input: Input, write: bool, context: &Context) -> Result<Output, Error> {
     validate(&input)?;
-    let (uid, gid, _) = identity::account(&input.owner).map_err(|_| Error::Unreadable {})?;
+    let (uid, _, _) = identity::account(&input.owner).map_err(|_| Error::Unreadable {})?;
     if uid == 0 {
         return Err(Error::Unreadable {});
     }
@@ -137,42 +137,13 @@ fn execute(input: Input, write: bool, context: &Context) -> Result<Output, Error
     if identity::effective_uid() == uid {
         return query(&input, write, deadline);
     }
-    #[cfg(target_os = "linux")]
-    {
-        if identity::effective_uid() != 0 {
-            return Err(Error::Unreadable {});
-        }
-        let name =
-            std::ffi::CString::new(input.owner.as_str()).map_err(|_| Error::Unreadable {})?;
-        let mut groups = vec![0 as libc::gid_t; 256];
-        let mut count = groups.len() as libc::c_int;
-        // SAFETY: getgrouplist writes at most count entries into this live buffer.
-        if unsafe { libc::getgrouplist(name.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0 {
-            return Err(Error::Unreadable {});
-        }
-        groups.truncate(count as usize);
-        // A dedicated thread permanently drops all three IDs. Raw Linux syscalls affect only that
-        // thread, leaving the supervisor's identity intact. No database is opened before the drop.
-        std::thread::spawn(move || {
-            // SAFETY: all pointers are live; raw set* calls change only this thread's credentials.
-            let dropped = unsafe {
-                libc::syscall(libc::SYS_setgroups, groups.len(), groups.as_ptr()) == 0
-                    && libc::syscall(libc::SYS_setresgid, gid, gid, gid) == 0
-                    && libc::syscall(libc::SYS_setresuid, uid, uid, uid) == 0
-            };
-            if !dropped {
-                return Err(Error::Unreadable {});
-            }
-            query(&input, write, deadline)
-        })
-        .join()
-        .map_err(|_| Error::Failed {})?
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = gid;
-        Err(Error::Unreadable {})
-    }
+    let owner = input.owner.clone();
+    identity::on_account_thread(&owner, move || query(&input, write, deadline)).map_err(
+        |error| match error {
+            identity::AccountThreadError::Identity => Error::Unreadable {},
+            identity::AccountThreadError::Ended => Error::Failed {},
+        },
+    )?
 }
 
 pub struct Query;

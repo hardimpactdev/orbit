@@ -572,6 +572,7 @@ impl Command for ServiceRuntime {
     // A snapshot can recover the previous transaction before reading the state.
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(180);
+    const RESOURCES: &'static [&'static str] = &["firewall"];
     type Input = Input;
     type Output = Output;
     type Error = ServiceMetricsError;

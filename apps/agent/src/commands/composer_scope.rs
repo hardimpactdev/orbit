@@ -248,6 +248,7 @@ impl Command for Materialize {
     const SUMMARY: &'static str =
         "Install Composer prerequisites and prepare the account-owned shared scope.";
     const MUTATES: bool = true;
+    const RESOURCES: &'static [&'static str] = &["packages"];
     const TIMEOUT: Duration = Duration::from_secs(900);
     type Input = Input;
     type Output = Done;

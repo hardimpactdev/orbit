@@ -269,7 +269,7 @@ impl Command for CleanImage {
         "Remove a never-enrolled image builder's identities before publication.";
     const MUTATES: bool = true;
     const TIMEOUT: Duration = Duration::from_secs(120);
-    const RESOURCES: &'static [&'static str] = &["pi-runtime"];
+    const RESOURCES: &'static [&'static str] = &["packages", "pi-runtime"];
     type Input = Input;
     type Output = Cleaned;
     type Error = Error;

@@ -19,7 +19,7 @@ use App\Models\Instance;
 
 /**
  * A development Instance's Laravel metadata and URL through the Node agent's `instances.inspect-development-profile`
- * and `instances.write-development-url`, which run as the managed account.
+ * and `instances.write-development-url`, which read and write as the managed account.
  */
 final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator, RouteApplicationUrlWriter
 {

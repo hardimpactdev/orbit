@@ -194,6 +194,11 @@ impl Command for WriteValkeyAcl {
         super::linux_only(platform, Privilege::Root)
     }
 
+    /// Each volume has one candidate file.
+    fn target(input: &AclInput) -> Option<String> {
+        Some(format!("valkey-acl:{}", input.volume))
+    }
+
     fn run(input: AclInput, _: &Context) -> Result<Written, ValkeyAclError> {
         write(&input)
     }
