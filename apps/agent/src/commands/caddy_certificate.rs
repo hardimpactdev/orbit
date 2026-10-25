@@ -197,12 +197,12 @@ fn metadata(path: &Path) -> Result<Option<fs::Metadata>, Error> {
         Err(_) => Err(failed("inspect")),
     }
 }
-trait Runtime {
+pub(super) trait Runtime {
     fn valid(&mut self, certificate: &Path, key: &Path) -> bool;
     fn active(&mut self) -> io::Result<bool>;
     fn reload(&mut self) -> io::Result<()>;
 }
-struct Native;
+pub(super) struct Native;
 impl Runtime for Native {
     fn valid(&mut self, certificate: &Path, key: &Path) -> bool {
         let public = caddy::public_key("certificate", certificate);
