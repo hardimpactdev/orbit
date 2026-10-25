@@ -6,6 +6,7 @@ namespace App\Domain\Doctor;
 
 enum DatabaseServerDoctorIssueCode: string implements DoctorIssueCode
 {
+    case TestDatabaseMissing = 'database_server.test_database_missing';
     case ReplicationMismatch = 'database_server.replication_mismatch';
     case PublicationMismatch = 'database_server.publication_mismatch';
     case LoginFailed = 'database_server.login_failed';

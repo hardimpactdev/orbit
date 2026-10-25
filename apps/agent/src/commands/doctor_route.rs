@@ -307,44 +307,6 @@ impl Command for InspectCustomProxy {
         inspect_proxy(&input, Path::new("/etc/caddy/Caddyfile"), &mut Native)
     }
 }
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DnsInput {
-    domain: String,
-    address: Ipv4Addr,
-}
-#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
-pub struct DnsObserved {
-    matches: bool,
-}
-fn resolve_dns(
-    input: &DnsInput,
-    runtime: &mut impl Runtime,
-) -> Result<DnsObserved, InspectionError> {
-    if !valid_domain(&input.domain) {
-        return Err(InspectionError::Invalid {});
-    }
-    Ok(DnsObserved {
-        matches: runtime.dns(&input.domain) == Some(input.address),
-    })
-}
-pub struct ResolveRouteDns;
-impl Command for ResolveRouteDns {
-    const NAME: &'static str = "doctor.resolve-route-dns";
-    const SUMMARY: &'static str =
-        "Compare the first system IPv4 DNS answer for a Route with its expected address.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(10);
-    type Input = DnsInput;
-    type Output = DnsObserved;
-    type Error = InspectionError;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-    fn run(input: Self::Input, _: &Context) -> Result<Self::Output, Self::Error> {
-        resolve_dns(&input, &mut Native)
-    }
-}
 
 #[cfg(test)]
 #[path = "doctor_route_tests.rs"]

@@ -241,6 +241,14 @@ Tasks workspace scripts, their operation journal, and `gateway.task-workspace-ow
 
 The agent has no job table or general receipt ledger. Operations own recovery, and domain commands retain only the evidence their existing recovery needs. Cancellation finishes the current operation step and starts no next step. A lost result fails for inspection or resumes only through an existing resumable operation step. Detached Tasks checks and topologies keep their own supervision; they are not a generic command runner.
 
+### Fixed read-only task analysis
+
+`tasks.analyze` is one fixed, read-only profile of the detached Tasks check supervision. It is not a generic command runner and not an agent command. [Tasks](/reference/tasks#analyze-an-external-groups-repository) owns its typed input, report, provenance, and recovery.
+
+The repository's tracked `bin/task-analyze` is the only entry point, pinned by content digest and run with no arguments. Callers cannot choose the shell, arguments, environment, path, report location, model, or analyzer. It runs as the workspace owner without model or GitHub credentials, and it writes, commits, pushes, and approves nothing.
+
+It adds no Gateway Node script and no exception to the [script ratchet](/reference/remote-programs#inline-scripts). Other deterministic task steps, and every Node mutation, still need named agent commands or a separately reviewed fixed contract.
+
 ### Future Mac session execution
 
 Command mode currently runs as the enrolled macOS account. A future LaunchAgent can receive the same envelope in that user's login session and show Touch ID or password confirmation for root work. That path is not built. It must authenticate the SSH-started process beyond its user ID, prevent project code from replacing the executable, and name the command in each prompt. The executing process must still check its own binary digest and declared privilege.

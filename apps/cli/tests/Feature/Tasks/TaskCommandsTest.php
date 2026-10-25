@@ -25,8 +25,10 @@ use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
@@ -123,6 +125,13 @@ describe('omitted and invalid input', function (): void {
         'subtask cancel without consent' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
         'subtask cancel with an invalid subtask' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => 'x', '--yes' => true], 'tasks.subtask_invalid'],
         'subtask destroy without consent' => ['tasks:subtask:destroy', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
+        'group comment without group' => ['tasks:group:comment:create', [], 'tasks.group_required'],
+        'group comments without group' => ['tasks:group:comment:list', [], 'tasks.group_required'],
+        'group comment without type' => ['tasks:group:comment:create', ['group' => '1', '--body' => 'B', '--author' => 'driver'], 'tasks.comment_type_required'],
+        'group comment with unknown type' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'approved', '--body' => 'B', '--author' => 'driver'], 'tasks.comment_type_invalid'],
+        'group comment without body' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--author' => 'nick'], 'tasks.comment_body_required'],
+        'group comment with blank body' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--body' => '  ', '--author' => 'nick'], 'tasks.comment_body_invalid'],
+        'group comment without author' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--body' => 'B'], 'tasks.comment_author_required'],
         'comment without type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_required'],
         'comment with an unknown type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'approved', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_invalid'],
         'comment without body' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--author' => 'nick'], 'tasks.comment_body_required'],
@@ -186,6 +195,21 @@ describe('requests', function (): void {
         $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
             && $request->resolveEndpoint() === '/api/v1/task-groups/13/tasks/57'
             && (string) $request->body() === '{"position":3}');
+    });
+
+    it('writes and reads group assistance without looking up or selecting a child', function (): void {
+        $mock = MockClient::global([
+            ...gateway_fixture_mock('tasks/tasks-group-comment-create/requested'),
+            ...gateway_fixture_mock('tasks/tasks-group-comment-list/default'),
+        ]);
+        expect(Artisan::call('tasks:group:comment:create', ['group' => '13', '--type' => 'assistance_requested', '--body' => 'May I republish?', '--author' => 'driver', '--json' => true]))->toBe(0)
+            ->and(Artisan::call('tasks:group:comment:list', ['group' => '13', '--json' => true]))->toBe(0);
+        $mock->assertSentCount(2);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupCommentRequest
+            && $request->resolveEndpoint() === '/api/v1/task-groups/13/comments'
+            && (string) $request->body() === '{"type":"assistance_requested","body":"May I republish?","author":"driver"}');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupCommentsRequest
+            && $request->resolveEndpoint() === '/api/v1/task-groups/13/comments');
     });
 
     it('filters the list and sends the comment thread', function (): void {

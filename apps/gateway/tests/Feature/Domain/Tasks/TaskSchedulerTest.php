@@ -57,6 +57,7 @@ use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -219,7 +220,7 @@ function scheduler_recording_spawner(): AgentSpawner
 
             $thread = test_agent_thread($task->parent, 'implementer-'.$task->position, $task);
             app(TaskWorkspaceLease::class)->turn($task->parent, TaskThreadRole::Implementer, 'thread:'.$thread->id, $thread->id);
-            app(TaskWorkspaceLease::class)->dispatch($thread);
+            app(TaskWorkspaceLease::class)->dispatch($thread, key: $thread->external_id.'-turn');
 
             return $thread->id;
         }
@@ -439,7 +440,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
     $task = $group->tasks()->sole();
-    app(TaskWorkspaceLease::class)->dispatch($task->implementerThread);
+    app(TaskWorkspaceLease::class)->dispatch($task->implementerThread, key: $task->implementerThread->external_id.'-turn');
     app(TaskScheduler::class)->settleImplementer($task);
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
@@ -1744,7 +1745,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     expect($driver->calls)->toHaveCount(1)
         ->and($first->fresh()?->review_notified_attempt)->not->toBe($first->fresh()?->review_attempt);
 
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-1');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$thread->external_id]);
     $first->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     $scheduler->settleImplementer($first->fresh());
@@ -1761,7 +1762,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
         ->and(mb_strlen($continued))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-2');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$thread->external_id]);
     $driver->failNextSend = true;
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
@@ -1776,7 +1777,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'review-turn-3');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$replacement->external_id]);
     $second->update(['status' => TaskStatus::Running]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     TaskCheck::query()->create([
@@ -2096,7 +2097,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
             $sha = str_repeat('c', 40);
@@ -2731,7 +2732,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
 
@@ -3390,7 +3391,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
     {
         public int $calls = 0;
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->calls++;
 
@@ -3461,7 +3462,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
         public function __construct(private string $sha) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->calls++;
             $leases = app(TaskWorkspaceLease::class);

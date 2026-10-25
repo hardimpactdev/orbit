@@ -2532,6 +2532,8 @@ export interface paths {
         /**
          * process:update
          * @description Update an installed Process specification or one Project process definition.
+         *
+         *     Installed updates preserve omitted fields. Public and private Process Routes stay active when their single resolved TCP listener keeps the same address and host port. Otherwise the Gateway returns process.route_upstream_changed (409), naming the Route. Process removal remains refused with process.has_routes.
          */
         patch: operations["process-update"];
         trace?: never;
@@ -3573,6 +3575,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * tasks:analyze
+         * @description Starts keyed tasks.analyze with exactly subtask, plan, plan_sha256, base, head, and tree. Runs only tracked executable bin/task-analyze in the owned external workspace with a fixed stdin envelope, no agent and no TaskCheck. Retains bounded complete exact-byte evidence and native provenance. Outcomes ready, action_required, blocked, and changed are evidence, never approval. Uses the provisioned initial merge base and fresh whole-worktree identity, including untracked files. Recovery adopts the same reserved execution and report; cancellation retains the fence until terminal descendant proof. See /reference/tasks#analyze-a-repository.
+         */
+        post: operations["tasks-analyze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/cancel": {
         parameters: {
             query?: never;
@@ -3604,9 +3626,33 @@ export interface paths {
         put?: never;
         /**
          * Run a Task group check
-         * @description Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, and redacted output. A passed handoff commits without a CI push; a lost check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.
+         * @description Starts tasks.check on the Gateway with subtask and phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, a workspace, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for VM resume, a check lease, and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, redacted output, and ci. Baseline/no-policy returns ci null. Project policy may require a fresh sanitized handoff commit, non-force handoff-branch push, and passed hosted CI before a usable candidate. Pending, missing, unreadable, infrastructure, or configuration evidence waits with delayed reads and no worker held; code/workflow failure succeeds with outcome failed. Cancellation stops observation, not GitHub workflows; started pushes reconcile before release. External review-and-merge admission remains closed; a lost local check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.
          */
         post: operations["tasks-check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * tasks:group:comment:list
+         * @description List group-owned comments, newest first, including after completion.
+         */
+        get: operations["tasks-group-comment-list"];
+        put?: never;
+        /**
+         * tasks:group:comment:create
+         * @description Record group assistance or an answer after all subtasks end; start no work.
+         */
+        post: operations["tasks-group-comment-create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3667,6 +3713,23 @@ export interface paths {
          * @description Starts tasks.publish on the Gateway with check and optional pull_request (title and body), returning HTTP 202. Requires an open external group and a workspace. Refuses tasks.commit_not_checked (422) and tasks.head_moved (409). Waits for VM resume and PublishTaskVmCommit, without polling the VM. Pushes task-{id} without force; identical tips skip the push. Failures include tasks.not_fast_forward, tasks.workflows_permission, tasks.push_failed, and tasks.publish_failed. Looks for an open pull request before opening or updating it, runs no brief coverage, and requests no reviewers. Returns branch, commit, pull_request_number, and pull_request_url. Cancels a queued push before start; after start cancellation waits for the job to end. Group ending returns operation.target_busy until it ends. Supports Idempotency-Key. See /reference/tasks#publish-an-external-group.
          */
         post: operations["tasks-publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/script": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** tasks:script */
+        post: operations["tasks-script"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3789,7 +3852,7 @@ export interface paths {
         put?: never;
         /**
          * Run one agent turn
-         * @description Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model and reviewer check. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.
+         * @description Starts tasks.turn on the Gateway and returns HTTP 202 with the queued operation. Takes subtask, role, prompt, thread and optional model, reviewer check, and analysis reference {operation, plan_sha256}. Analysis must be successful usable evidence for this child, fresh under the turn lease before first send; dispatched recovery keeps the same complete prompt and key. Requires an open external group and its current subtask with a workspace. Waits for VM resume, workspace admission and the Pi turn. Returns the receipt, thread state, workspace evidence and token metrics without advancing work or raising assistance. Durable owns restart resume and provider retries. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.
          */
         post: operations["tasks-turn"];
         delete?: never;
@@ -19650,6 +19713,117 @@ export interface operations {
             };
         };
     };
+    "tasks-analyze": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Numeric current subtask ID */
+                    subtask: number;
+                    /** @description Complete cumulative native manifest. At most 32 KiB of RFC 8785 canonical JSON. Entries already sorted by UTF-8 (path, change, from-or-empty); no conflicting/duplicate endpoints. Completeness is a provenance assertion, not mechanical approval. */
+                    plan: {
+                        id: string;
+                        revision: number;
+                        source: {
+                            brief_id: string;
+                            revision_sha256: string;
+                        };
+                        asserted_by: string;
+                        /** @constant */
+                        complete: true;
+                        paths: ({
+                            /** @enum {string} */
+                            change: "add" | "modify" | "delete";
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            path: string;
+                        } | {
+                            /** @constant */
+                            change: "rename";
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            from: string;
+                            /** @description A UTF-8 repository-relative file, at most 512 bytes. No absolute/drive paths, backslashes, control characters, leading/trailing whitespace, glob/dot/.git components, directories, or symlink escapes. */
+                            path: string;
+                        })[];
+                    };
+                    /** @description SHA-256 of RFC 8785 canonical manifest JSON. */
+                    plan_sha256: string;
+                    base: string;
+                    head: string;
+                    tree: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "tasks-cancel": {
         parameters: {
             query?: never;
@@ -19802,6 +19976,138 @@ export interface operations {
             };
             /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-group-comment-list": {
+        parameters: {
+            query?: {
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed" | "provider_retry";
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskComment"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-group-comment-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description assistance_requested or resolution
+                     * @enum {string}
+                     */
+                    type: "assistance_requested" | "resolution";
+                    /** @description Comment text */
+                    body: string;
+                    /** @description Who wrote the comment */
+                    author: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskComment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The group uses tick orchestration (`tasks.not_orchestrated`), has ended (`tasks.group_closed`), or has an open subtask (`tasks.assistance_subtask_open`). No comment or assistance change is recorded. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19986,6 +20292,88 @@ export interface operations {
                         title: string;
                         body: string;
                     };
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). A malformed Idempotency-Key also returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-script": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A permanent key scoped to this operation kind. The same target and input return the existing operation with HTTP 202; different target or input returns operation.idempotency_conflict (409). */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    subtask: number;
+                    script: string;
+                    args: string[];
                 };
             };
         };
@@ -20641,6 +21029,10 @@ export interface operations {
                     model?: string;
                     /** @description Conditionally required. */
                     check?: number;
+                    analysis?: {
+                        operation: number;
+                        plan_sha256: string;
+                    };
                 };
             };
         };

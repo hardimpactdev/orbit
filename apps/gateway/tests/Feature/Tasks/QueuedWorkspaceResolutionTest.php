@@ -247,7 +247,7 @@ it('relays the exact running direction answer once after a workspace wait and se
     expect($driver->calls)->toHaveCount(1);
     expect(app(TaskWorkspaceLease::class)->status($group)[0]['holder']['thread_id'])->toBe($reviewer->id);
 
-    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'relay-complete');
+    $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: $driver->acceptedTurnKeys[$reviewer->external_id]);
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
     ]));

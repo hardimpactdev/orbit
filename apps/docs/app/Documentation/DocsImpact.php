@@ -70,13 +70,7 @@ final readonly class DocsImpact
      */
     public function report(?string $base, array $plannedPaths): array
     {
-        $paths = $plannedPaths;
-        if ($base !== null) {
-            $paths = [...$paths, ...$this->git(['diff', '--name-only', '--diff-filter=ACDMRTUXB', $base]), ...$this->git(['ls-files', '--others', '--exclude-standard'])];
-        }
-        $paths = $this->expandDirectories($paths);
-        $paths = array_values(array_unique(array_map($this->normalize(...), $paths)));
-        sort($paths);
+        $paths = $this->paths($base, $plannedPaths);
         $impacts = [];
         $surfaces = [];
         $errors = [];
@@ -217,6 +211,22 @@ final readonly class DocsImpact
         ];
     }
 
+    /** @param list<string> $plannedPaths
+     * @return list<string>
+     */
+    public function paths(?string $base, array $plannedPaths): array
+    {
+        $paths = array_map($this->normalize(...), $this->expandDirectories($plannedPaths));
+        if ($base !== null) {
+            // Git filenames are data: preserve Unicode, whitespace and backslashes for the caller's validation.
+            $paths = [...$paths, ...$this->git(['diff', '--no-renames', '--name-only', '-z', '--diff-filter=ACDMRTUXB', $base]), ...$this->git(['ls-files', '-z', '--others', '--exclude-standard'])];
+        }
+        $paths = array_values(array_unique($paths));
+        sort($paths, SORT_STRING);
+
+        return $paths;
+    }
+
     /**
      * @return array{
      *   report: array{base: ?string, paths: list<string>, impacted_pages: list<array{page: string, reasons: list<string>}>, surfaces: list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}>, surfaces_handled_by_generator: list<array{generator: string, paths: list<string>, status: string, current: bool}>, errors: list<string>, verdict: string},
@@ -266,7 +276,7 @@ final readonly class DocsImpact
     /** @return list<array{page: string, pattern: string, message: string}> */
     public function coverageFindings(): array
     {
-        $tracked = $this->git(['ls-files']);
+        $tracked = $this->git(['ls-files', '-z']);
         $trackedSet = [];
         foreach ($tracked as $trackedPath) {
             $trackedSet[$trackedPath] = true;
@@ -447,7 +457,7 @@ final readonly class DocsImpact
 
                 continue;
             }
-            $children = $this->git(['ls-files', '--', $path]);
+            $children = $this->git(['ls-files', '-z', '--', $path]);
             foreach ($this->filesUnder($absolute) as $file) {
                 if ($file->isFile()) {
                     $children[] = $path.'/'.substr($file->getPathname(), strlen($absolute) + 1);
@@ -614,7 +624,7 @@ final readonly class DocsImpact
         $this->generator($generators, 'bin/cli-contract', $path);
         $this->generator($generators, 'bin/docs-openapi', $path);
         $families = [];
-        foreach ($this->git(['ls-files', 'apps/cli/app/Commands']) as $commandPath) {
+        foreach ($this->git(['ls-files', '-z', 'apps/cli/app/Commands']) as $commandPath) {
             $contents = $this->read($commandPath);
             if (preg_match('/protected\s+\$signature\s*=\s*[\'"]([^\'"]+)/', $contents, $signature) !== 1) {
                 continue;
@@ -824,7 +834,7 @@ final readonly class DocsImpact
         }
         $owners = [];
         $modelResources = [];
-        foreach ($this->git(['ls-files', 'apps/gateway/app/Models']) as $modelPath) {
+        foreach ($this->git(['ls-files', '-z', 'apps/gateway/app/Models']) as $modelPath) {
             $modelSource = $this->read($modelPath);
             $modelName = pathinfo($modelPath, PATHINFO_FILENAME);
             $modelTableName = preg_match('/(?:protected|public)\s+\$table\s*=\s*[\'"]([^\'"]+)[\'"]/', $modelSource, $modelTable) === 1
@@ -1244,7 +1254,7 @@ final readonly class DocsImpact
         if (str_contains($path, '/Controllers/Api/')) {
             $controllerActions[$basename] = [];
         } elseif (str_contains($path, '/Requests/')) {
-            foreach ($this->git(['ls-files', 'apps/gateway/app/Http/Controllers/Api']) as $controllerPath) {
+            foreach ($this->git(['ls-files', '-z', 'apps/gateway/app/Http/Controllers/Api']) as $controllerPath) {
                 $controllerSource = $this->sourceForPath($controllerPath, null) ?? '';
                 if (! str_contains($controllerSource, $basename)) {
                     continue;
@@ -1266,7 +1276,7 @@ final readonly class DocsImpact
                 }
             }
         }
-        $routeFiles = $this->git(['ls-files', 'apps/gateway/routes']);
+        $routeFiles = $this->git(['ls-files', '-z', 'apps/gateway/routes']);
         if (str_starts_with($path, 'apps/gateway/routes/') && ! in_array($path, $routeFiles, true)) {
             $routeFiles[] = $path;
         }
@@ -1737,13 +1747,16 @@ final readonly class DocsImpact
      */
     private function git(array $args): array
     {
-        $command = 'git -C '.escapeshellarg($this->root).' '.implode(' ', array_map(escapeshellarg(...), $args)).' 2>/dev/null';
-        $output = [];
-        exec($command, $output, $status);
-        if ($status !== 0) {
+        $process = proc_open(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', $this->root, ...$args], [1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+        if (! is_resource($process)) {
+            throw new RuntimeException('Unable to read repository paths with git.');
+        }
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        if (proc_close($process) !== 0 || $output === false) {
             throw new RuntimeException('Unable to read repository paths with git.');
         }
 
-        return array_values(array_filter(array_map(trim(...), $output), static fn (string $value): bool => $value !== ''));
+        return array_values(array_filter(explode(in_array('-z', $args, true) ? "\0" : "\n", $output), static fn (string $value): bool => $value !== ''));
     }
 }

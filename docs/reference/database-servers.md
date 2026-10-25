@@ -155,6 +155,20 @@ PostgreSQL also creates `<name>_test_test_1` through `<name>_test_test_N`, all o
 
 PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 
+## Repair a PostgreSQL test pool
+
+Repeat the original `database:create` request for an Instance-owned PostgreSQL connection. The server, Instance, locale and worker count must match creation, including defaults. A different request returns `database.slug_conflict` (409).
+
+```bash
+orbit database:create app-dev --server=beast-pg --instance=606 --test-processes=4
+```
+
+Orbit checks the recorded `<name>_test` and exact worker names as admin, then creates only missing members with the recorded locale and managed Instance ownership. It reapplies managed ownership and public-schema grants and revokes PUBLIC database access on every recorded member, including existing ones. This completes a repair interrupted after CREATE but before the grants.
+
+The primary database, member data and identities, credentials, attachments and unrecorded names stay unchanged. A primary database that is missing is not recreated by pool repair. Existing pool names owned by another role or a missing managed role return `database.name_conflict` (409) before any change; Orbit never adopts a foreign database. Repair and database removal share the server lock.
+
+A successful retry returns the same connection with status 200. A failure keeps the connection record and any members already restored, so repeat the same request to finish. Stop the affected test run before repair. Repeating repair on a complete pool converges the same grants without recreating databases. Use [Doctor](#check-a-server-with-doctor) to find missing members, and check the [connection budget](/reference/database-connections#test-databases) before restarting tests.
+
 ## Create an ACL user on a Valkey server
 
 On a `redis` server, `database:create` with `--server` creates one Valkey ACL user and records a `redis` connection that logs in as that user. The user can reach only the keys that match its patterns, with only the commands it is allowed.
@@ -234,7 +248,19 @@ On a Valkey server, the Gateway connects to the Node's WireGuard address and the
 
 ## Remove a database
 
-`database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. Then it deletes the record. A failed drop keeps the record, and a repeat drops again.
+`database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
+
+Before preflight, the active Gateway locks every server in the removal set in server-ID order. It holds these process-owned file locks through all checks, drops, admission restoration, and record deletion. An overlapping removal returns `database.server_in_use` (409) before it checks or restores any database. A crashed Gateway process releases its locks immediately, so retry can recover the durable PostgreSQL fence.
+
+Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
+
+PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
+
+The admin database `postgres` keeps the original admission values and database OIDs in the admin-only `orbit_admin.database_removal_fences` table. Journaling and fencing commit together. A crash before commit rolls both back; a crash after commit retains the journal for retry. Retrying either completes removal or restores admission before returning a refusal. A changed database OID stops recovery instead of changing a replacement database.
+
+PostgreSQL advisory locks serialize journal changes and protect the final check and drops in one admin session. A lost session releases its lock, so a crash does not leave a timed lock blocking retry. A failed restore keeps the journal and connection records and returns a server error; retry the removal to recover.
+
+A blocker returns `database.in_use` (409), names the affected databases or users, and leaves databases, users, attachments, and records unchanged. Stop clients and remove or move the blocking dependencies, then retry. Orbit never force-disconnects clients. A server or transport failure after dropping starts can still interrupt removal; retain the record and repeat the same command to finish.
 
 On a Valkey server, `database:destroy` deletes the connection's ACL user with `ACL DELUSER` and runs `ACL SAVE`. The user's keys stay. A connection without a username, such as one linked by adoption, logs in as `default`, so destroying it deletes only the record.
 
@@ -248,10 +274,11 @@ A Node that runs a server cannot be removed. [Node removal](/reference/node-prov
 
 ## Check a server with Doctor
 
-The [Doctor](/cli/doctor) family `database_server` checks each Valkey server and each SQL server that opted in whose Process has the desired state `running`. It connects as the Gateway does and reports drift when:
+The [Doctor](/cli/doctor) family `database_server` checks Valkey servers, SQL servers that opted into private endpoint checks, and PostgreSQL servers with recorded users or test databases. The Process must have the desired state `running`. It connects as the Gateway does and reports drift when:
 
 | Code | Meaning | Remedy |
 | --- | --- | --- |
+| `database_server.test_database_missing` | A recorded PostgreSQL serial test database or worker is missing. The issue names the connection and member. | [Repair the pool](#repair-a-postgresql-test-pool). |
 | `database_server.open` | A client without a password can run a command. | On an adopted server, [close it](#close-an-adopted-server) after its clients have moved. On another server, [repair it](#repair-a-valkey-server). |
 | `database_server.acl_file_missing` | Valkey does not run with the ACL file `/data/users.acl`. | [Repair the server](#repair-a-valkey-server). |
 | `database_server.acl_mismatch` | The live users differ from the recorded users. | [Repair the server](#repair-a-valkey-server). |
@@ -261,7 +288,7 @@ The recorded users are `default` with the admin password and all rights, and one
 
 Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
 
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication). PostgreSQL servers with recorded users also get the [replication attribute check](#logical-replication-users).
+An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication). PostgreSQL servers with recorded users also get the [replication attribute check](#logical-replication-users). Running PostgreSQL servers with recorded test databases get the pool membership check even before endpoint opt-in. A failed admin query reports `database_server.inspection_failed`, not missing members.
 
 ## Repair a Valkey server
 
@@ -291,7 +318,7 @@ The server commands return these codes.
 | `database.server_slug_conflict` | 409 | Another server has the slug. |
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
-| `database.server_in_use` | 409 | A connection still points to the server, an ACL change is running, or closing would lock out a client. |
+| `database.server_in_use` | 409 | A connection still points to the server, another database removal or ACL change is running, or closing would lock out a client. |
 | `database.server_connection_managed` | 409 | A change would replace a managed PostgreSQL or Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
@@ -300,11 +327,12 @@ The server commands return these codes.
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
-| `database.name_conflict` | 409 | The name is taken on the server. |
+| `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
+| `database.name_conflict` | 409 | The name is taken on the server, a recorded test member has a foreign owner, or its managed role is missing. |
+| `database.slug_conflict` | 409 | The connection slug exists and the request is not an identical PostgreSQL pool retry. |
 | `process.required_by_database_server` | 409 | `process:destroy` names a server's Process, or `process:update` names a Valkey server's Process. |
 | `database.server_command_failed` | 502 | An admin command on the server failed. The message holds no SQL output, rule, or password. |
 
-PostgreSQL refuses database removal while clients remain connected; stop those clients and retry. Orbit does not force-disconnect them.
 
 ## Why it works this way
 
@@ -371,3 +399,17 @@ Replication consumers need the same current and future table reads as a managed 
 ### PostgreSQL workers exist before tests start
 
 PostgreSQL has no database prefix grant. Giving an Instance `CREATEDB` would let it create databases outside its managed set. Orbit therefore creates a bounded pool as admin, using its normal managed ownership and public-schema grants. This serves the mission principles **One way, one name** and **Lean**. Hand-written grants, bespoke roles, a repository-specific parallel-testing provider, and a custom test runner are rejected. Stock Laravel probes each worker database and reuses it when the connection succeeds. The Instance can migrate and reset tables as owner without the right to create databases.
+
+### Keep one managed owner for PostgreSQL tests
+
+The Instance role keeps ownership of its serial test database and workers, including the right to drop them. This preserves the existing managed ownership and schema rule and supports Laravel's `migrate:fresh`, which drops tables and recreates the schema's objects. A separate non-login database owner could block Laravel's database drop, but adds another role lifecycle and an ownership migration for every existing pool. It also cannot make `--recreate-databases` work without `CREATEDB`. We keep the existing ownership model under **One way, one name** and **Lean**; no ownership migration is needed.
+
+Laravel's `--recreate-databases` and `--drop-databases` remain unsupported: dropping an owned database succeeds, but recreating it fails with `NOCREATEDB`. A failed worker probe takes the same destructive path. Orbit detects lost members with Doctor and restores them through the original create request. A separate repair command was rejected because it would add a second path for creating the same managed databases. Connection headroom and bounded parallelism prevent the observed exhaustion trigger; Orbit does not reserve server connections.
+
+### Check the whole database set before removal
+
+Database removal follows Orbit’s existing refusal rule for connected clients. `DROP DATABASE ... WITH (FORCE)` was rejected because it would disconnect clients without a separate choice and still fails on logical replication slots, subscriptions, and prepared transactions. Preflight checks every planned database and every role being removed before destructive SQL runs. The Gateway holds locks on every server until the removal ends. This prevents another removal from restoring its fences between server batches.
+
+A durable admission fence closes the worker-start race between that check and the drops. The server stores the journal beside its catalog so the snapshot and fence share one PostgreSQL transaction. A Gateway-only snapshot would create another crash window between the two systems.
+
+PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure failure still requires a retry. Avoid changing server dependencies through another admin connection during removal. Missing databases and users count as removed on retry.

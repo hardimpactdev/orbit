@@ -1,0 +1,9 @@
+Creating comment...
+
+┌  Create comment
+│
+├  ● Creating comment
+│
+└  Operation failed.
+
+Group assistance comments require all subtasks to have ended.

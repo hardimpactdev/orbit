@@ -1,0 +1,20 @@
+Waiting for a worker...
+Waiting for workspace...
+Analyzing repository...
+Retaining complete evidence...
+
+┌  Analyze task group [1]
+│
+├  ● Started on a worker
+│    Operation 2.
+│
+├  ● Workspace ready
+│
+├  ● Analyzed repository
+│
+├  ● Retained complete evidence
+│
+└  Analysis changed the tree. This is not usable turn evidence.
+
+Operation: 2
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

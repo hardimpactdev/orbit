@@ -16,6 +16,10 @@ covers:
 
 A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the first subtask writes the documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, merge, CI, the local checks, and the main caches that make those checks fast.
 
+The docs-first amendment for [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) supplies complete candidate-bound evidence to existing turns; it is not another baseline or handoff lane. Its native implementation follows independent docs review. Run Orbit's existing checker with the complete cumulative plan, preserve all diagnostics and check-mode generator outcomes, and keep the docs gate that checks actual files at handoff.
+
+Edits invalidate the author evidence; analyze the current checked candidate for review rather than rerunning baseline. Unknown execution or descendants stay fenced until terminal proof, and a lost reply never authorizes a duplicate run or send. Record measured duration and zero mechanical LLM calls without claiming savings or live interruption proof from documentation checks.
+
 ## Review on Incus
 
 Orbit's independent reviewer checks the complete change and reproduces the feature on an [Incus topology](/reference/incus-topologies) before merge. Use the machines allocated to the review, and verify which source commit runs there. Exercise the feature and its important failure cases, then inspect the resulting state changes.
@@ -151,6 +155,16 @@ The [Feature delivery merge gate](#full-suites-gate-merges) defines the required
 
 Full suites include architecture tests and tests that start PHP subprocesses. CI has no separate lanes for them and no affected-test selector.
 
+The WireGuard key and Instance environment concurrency proofs fork the booted test application, then open fresh connections to private, committed SQLite databases. Socket acknowledgements establish readiness and real lock contention before the holder can finish. The environment capacity race starts with 1,023 stored keys and makes two competing one-key writes, so it tests the 1,024-key boundary without doing bulk setup inside the race. Remote projection and environment I/O stay faked; SQLite transactions, file locks, HTTP middleware, and interrupted Activity finalization stay real.
+
+The tests for PostgreSQL statements and pool integrity share a fixture that reduces process startup. Each case copies a never-started cluster seed and starts its own foreground PostgreSQL 18 server. The server's readiness message replaces `pg_ctl` polling. One `psql` client accepts commands through Symfony's input stream and acknowledges each result; reconnecting to `postgres` after each command releases the prior session and its role.
+
+An explicit `\quit` still ends the real client, including transaction rollback, and the next command starts a fresh client. Clusters and clients remain private to each case. Only the process that created the seed removes it, so a forked contender cannot delete its parent’s fixture.
+
+When a pool-integrity test releases a blocking PDO session, the fixture waits up to one second for that exact backend to leave `pg_stat_activity` before retrying removal. Closing the client alone does not prove that the server has finished disconnecting it. A regression pauses only that private backend and resumes it after observing the pending exit, so the check does not depend on scheduler timing.
+
+The privileged MySQL removal test keeps its real Docker server but sends SQL through PDO to the container's private loopback port. Each call opens a fresh connection and consumes every result set, preserving session isolation and SQL errors without starting Docker and MySQL clients for each statement. Separate connections still prove active sessions and metadata locks block removal; outside definers and incoming foreign keys remain real server checks.
+
 CLI and Docs limit each local test to two seconds through stock PHPUnit configuration: `enforceTimeLimit`, `defaultTimeLimit`, and the small, medium, and large test timeouts. Every size has the same limit, with no exceptions. `failOnRisky` makes an over-limit test fail the suite. PHPUnit warnings also fail the suite, including the warning when the required `pcntl` extension is missing. Configuration tests pin these settings in both projects. These are per-test limits, not limits on a suite or CI step.
 
 The generated-merge end-to-end proof runs outside Pest through Docs' `composer merge:check`, included in `composer check` and CI's project quality step. The check runs its Python cases sequentially with the real external tools, not under PHPUnit's per-test limit. No proof work runs in Pest setup or hooks.
@@ -281,7 +295,9 @@ Inside each container, the `runner` user runs the runner service, with no `sudo`
 
 Each container also has Ubuntu's `postgresql-18` and `postgresql-client-18` packages. Setup installs `postgresql-common` first and sets `create_main_cluster = false` in `/etc/postgresql-common/createcluster.conf` before installing the server. Every run keeps automatic cluster creation off and disables and stops the `postgresql` service. Jobs use `/usr/lib/postgresql/18/bin/initdb` and `pg_ctl` as `runner` to start a throwaway cluster on a Unix socket. Docker service containers need nesting, which is blocked, and egress rules block the Services Node's PostgreSQL.
 
-Gateway's PostgreSQL statement test starts a disposable PostgreSQL 18 cluster on a unique Unix socket, with no TCP listener, and removes it after the test. Hosted Gateway jobs install `postgresql-18`. CI fails rather than skipping if the binaries are absent. Local runs may set `ORBIT_POSTGRES18_BIN` to a PostgreSQL 18 bin directory; otherwise the test skips when `/usr/lib/postgresql/18/bin/initdb` is unavailable.
+Database server API tests fake the admin command boundary, including repair and removal. They check HTTP responses, command intent and recorded state without starting PostgreSQL or running psql. Native SQL regressions live in the database-server infrastructure tests. These retain real Laravel worker probes, interrupted CREATE/grant recovery, PostgreSQL privileges and removal fences.
+
+Gateway's PostgreSQL tests initialize one private seed per test worker and copy it for each disposable PostgreSQL 18 cluster. The seed is never started and is removed when the worker exits. Each test starts its own cluster on a unique Unix socket, with no TCP listener, and removes it afterward. This avoids repeated `initdb` work while keeping database state isolated. Hosted Gateway jobs install `postgresql-18`. CI fails rather than skipping if the binaries are absent. Local runs may set `ORBIT_POSTGRES18_BIN` to a PostgreSQL 18 bin directory; otherwise the test skips when `/usr/lib/postgresql/18/bin/initdb` is unavailable.
 
 The job installs Node 24 with the Node setup step, and each shard uses all detected container CPUs. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 
@@ -643,6 +659,8 @@ Workspace TMPDIR proofs acknowledge readiness and hold checks open through priva
 Copy the initial committed Git repository into each private checkout. The analysis stand-in uses shell builtins for its temporary-file text writes and reads. Status and snapshot probes have separate private cases, each retaining the TMPDIR identity, mode and child ACL checks before real cancellation.
 
 A scheduler proof with fixed collaborators reuses its real scheduler graph within one case, including successive handoffs, CI-state reads and failure-budget ticks. Resolve a fresh graph after rebinding a collaborator. The fixture shares the immutable subtask runner only while building one graph and preserves caller-owned bindings. It does not cache the scheduler across cases. Freeze the clock before starting a handoff age-boundary proof so elapsed test execution cannot cross the boundary before an explicit time advance.
+
+Scheduler signer doubles accept the optional commit receipt even though native tick does not use it. Prove receipt recovery separately with real Git and isolated repositories.
 
 Task VM source fixtures use the same local executor for finite Bash programs. Each case owns its repositories, cache publications and imports. Proofs of removal, cancellation and streamed output still run the actual processes.
 

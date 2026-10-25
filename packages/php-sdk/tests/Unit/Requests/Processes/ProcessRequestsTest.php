@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
@@ -484,4 +485,21 @@ it('transports an explicit image reset for a runtime switch', function (): void 
     $request = new UpdateProcessRequest(41, runtime: 'systemd', ports: [], volumes: [], clearImage: true);
 
     expect($request->body()->all())->toBe(['runtime' => 'systemd', 'ports' => [], 'volumes' => [], 'image' => null]);
+});
+
+it('preserves the Route listener refusal from a Process update', function (): void {
+    $mock = new MockClient([UpdateProcessRequest::class => MockResponse::make([
+        'error' => ['code' => 'process.route_upstream_changed', 'message' => 'Route [sync.example.com] needs its listener.',
+            'details' => ['route_id' => 12, 'domain' => 'sync.example.com']],
+    ], 409)]);
+
+    try {
+        process_connector($mock)->send(new UpdateProcessRequest(processId: 267, ports: []))->dto();
+        $this->fail('Expected GatewayApiException.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->errorCode())->toBe('process.route_upstream_changed')
+            ->and($exception->getMessage())->toBe('Route [sync.example.com] needs its listener.')
+            ->and($exception->details())->toBe(['route_id' => 12, 'domain' => 'sync.example.com']);
+    }
+    expect($mock->getLastRequest()?->body()->all())->toBe(['ports' => []]);
 });

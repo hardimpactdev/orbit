@@ -6,12 +6,41 @@ use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\Concerns\TestDatabases;
-use Symfony\Component\Process\Process;
+use Symfony\Component\Process\Exception\ProcessFailedException;
+
+require_once __DIR__.'/../../../Support/PostgresServer.php';
+
+it('reuses one psql client with fresh sessions and preserves explicit exit and SQL failures', function (): void {
+    postgres_statements_server(function (Closure $psql): void {
+        $psql("\\set fixture_client reused\nCREATE ROLE session_role; CREATE DATABASE session_database;");
+        expect($psql("\\connect session_database\nSET ROLE session_role; SELECT current_database() || '|' || current_user;"))
+            ->toBe('session_database|session_role');
+        expect($psql("\\echo :fixture_client\nSELECT current_database() || '|' || current_user;"))
+            ->toBe("reused\npostgres|orbit_test");
+        $psql("BEGIN; CREATE TABLE uncommitted (id int);\n\\quit\n");
+        expect($psql("SELECT to_regclass('uncommitted') IS NULL;"))->toBe('t');
+        expect(fn () => $psql('SELECT 1/0;'))->toThrow(ProcessFailedException::class, 'division by zero');
+        expect($psql('SELECT 42;'))->toBe('42');
+    });
+});
+
+it('keeps the immutable PostgreSQL seed after a forked contender exits', function (): void {
+    postgres_statements_server(fn (Closure $psql) => expect($psql('SELECT 1;'))->toBe('1'));
+    $pid = pcntl_fork();
+    if ($pid === -1) {
+        throw new RuntimeException('Could not fork a PostgreSQL fixture contender.');
+    }
+    if ($pid === 0) {
+        exit(0);
+    }
+    pcntl_waitpid($pid, $status);
+    expect(pcntl_wexitstatus($status))->toBe(0);
+    postgres_statements_server(fn (Closure $psql) => expect($psql('SELECT 2;'))->toBe('2'));
+});
 
 it('applies PostgreSQL statements with builtin locale, owner and current and future reader grants on PG18', function (): void {
     postgres_statements_server(function (Closure $psql): void {
@@ -44,10 +73,11 @@ it('reuses precreated PostgreSQL workers through stock Laravel without CREATEDB 
         $sql = new PostgresStatements;
         $pool = new PostgresTestDatabases;
         $names = ['parallel', ...$pool->names('parallel_test', 2)];
-        $psql($sql->ensureUser('parallel_owner', 'fixture-password'));
+        $create = $sql->ensureUser('parallel_owner', 'fixture-password');
         foreach ($names as $name) {
-            $psql($sql->createDatabase($name, 'C.UTF-8').$sql->grantAll($name, 'parallel_owner'));
+            $create .= $sql->createDatabase($name, 'C.UTF-8').$sql->grantAll($name, 'parallel_owner');
         }
+        $psql($create);
         expect($psql("SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text FROM pg_roles WHERE rolname = 'parallel_owner';"))->toBe('false|false|false');
         $psql("\\connect parallel\nSET ROLE parallel_owner; CREATE TABLE application_data (id bigint); INSERT INTO application_data VALUES (42); RESET ROLE;\n");
         $psql($sql->ensureUser('unrelated_owner', 'unrelated-password').$sql->createDatabase('unrelated').$sql->grantAll('unrelated', 'unrelated_owner'));
@@ -80,49 +110,16 @@ it('reuses precreated PostgreSQL workers through stock Laravel without CREATEDB 
             expect(DB::table('worker_data')->pluck('token')->all())->toBe([2]);
             Schema::drop('worker_data');
             expect(fn () => DB::statement('CREATE DATABASE unmanaged_worker'))->toThrow(QueryException::class, 'permission denied to create database');
+            $psql('ALTER DATABASE parallel_test_test_1 CONNECTION LIMIT 0;');
+            ParallelTesting::resolveTokenUsing(fn (): int => 1);
+            expect(fn () => $probe->ensure('parallel_test'))->toThrow(QueryException::class, 'permission denied to create database');
+            expect($psql("SELECT datname FROM pg_database WHERE datname IN ('parallel', 'parallel_test', 'parallel_test_test_1', 'parallel_test_test_2') ORDER BY datname;"))->toBe("parallel\nparallel_test\nparallel_test_test_2");
         } finally {
             DB::purge('pgsql_pool');
             config()->set('database.default', $default);
             ParallelTesting::resolveTokenUsing(null);
         }
         expect($psql("\\connect parallel\nSELECT id FROM application_data;"))->toBe('42');
-        foreach ($names as $name) {
-            $psql($sql->dropDatabase($name));
-        }
-        $psql($sql->dropUser('parallel_owner'));
+        $psql(implode('', array_map($sql->dropDatabase(...), $names)).$sql->dropUser('parallel_owner'));
     });
 });
-
-/** @param Closure(Closure(string): string, string): void $test */
-function postgres_statements_server(Closure $test): void
-{
-    $bin = rtrim(getenv('ORBIT_POSTGRES18_BIN') ?: '/usr/lib/postgresql/18/bin', '/').'/';
-    if (! is_executable($bin.'initdb')) {
-        if (getenv('CI')) {
-            test()->fail('The CI runner requires PostgreSQL 18 binaries.');
-        }
-        test()->markTestSkipped('PostgreSQL 18 binaries are unavailable.');
-    }
-    $directory = sys_get_temp_dir().'/orbit-pg-statements-'.bin2hex(random_bytes(8));
-    mkdir($directory, 0700);
-    $run = static function (array $arguments, ?string $input = null) use ($directory): string {
-        $process = new Process($arguments, env: ['PGHOST' => $directory, 'PGPORT' => '5432', 'PGUSER' => 'orbit_test', 'PGDATABASE' => 'postgres']);
-        $process->setInput($input);
-        $process->mustRun();
-
-        return trim($process->getOutput());
-    };
-    $psql = static fn (string $sql): string => $run([$bin.'psql', '-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1'], $sql);
-    $started = false;
-    try {
-        $run([$bin.'initdb', '-D', $directory.'/data', '-U', 'orbit_test', '--auth=trust', '--no-locale', '--encoding=UTF8', '--no-sync']);
-        $run([$bin.'pg_ctl', '-D', $directory.'/data', '-l', $directory.'/log', '-o', '-F -k '.$directory." -h '' -c wal_level=logical", '-w', 'start']);
-        $started = true;
-        $test($psql, $directory);
-    } finally {
-        if ($started) {
-            $run([$bin.'pg_ctl', '-D', $directory.'/data', '-m', 'immediate', '-w', 'stop']);
-        }
-        (new Filesystem)->deleteDirectory($directory);
-    }
-}

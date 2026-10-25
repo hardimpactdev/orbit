@@ -62,6 +62,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
@@ -260,6 +261,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
+use App\Infrastructure\DatabaseServers\NativeDatabaseRemovalLock;
 use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
@@ -723,6 +725,12 @@ final class ApplicationServiceProvider extends ServiceProvider
         );
         $this->app->singleton(ManagedUserAccountResolver::class, AgentManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
+        $this->app->scoped(
+            DatabaseRemovalLock::class,
+            static fn (): DatabaseRemovalLock => new NativeDatabaseRemovalLock(
+                directory: rtrim(Config::string('orbit.home'), '/').'/locks/database-removal',
+            ),
+        );
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
         $this->app->scoped(
             MetricsCredentialOperationLock::class,

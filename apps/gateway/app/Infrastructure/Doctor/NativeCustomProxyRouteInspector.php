@@ -10,7 +10,11 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
+use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
+use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
@@ -84,10 +88,19 @@ final readonly class NativeCustomProxyRouteInspector implements CustomProxyRoute
             $edge = null;
         }
         try {
-            $dns = $this->agents->run($node, 'doctor.resolve-route-dns', [
-                'domain' => $route->domain, 'address' => $node->wireguard_ip,
-            ], $this->deadline->cap(10.0));
-            $dnsMatches = is_bool($dns['matches'] ?? null) ? $dns['matches'] : null;
+            $server = app(GatewayPrivateDnsResolver::class)->vpnDnsAddress(app(VpnSettings::class));
+            if ($server === null) {
+                throw new DoctorInspectionException;
+            }
+            $codec = new PrivateDnsMessageCodec;
+            $query = $codec->encodeQuery($route->domain, id: random_int(0, 65535));
+            $upstream = app()->makeWith(SocketPrivateDnsUpstream::class, [
+                'host' => $server,
+                'port' => 53,
+                'timeoutSeconds' => $this->deadline->cap(2.0),
+            ]);
+            $addresses = $codec->decodeAAnswer($upstream->resolve($query), $query);
+            $dnsMatches = $addresses === [$node->wireguard_ip];
         } catch (Throwable) {
             $dnsMatches = null;
         }

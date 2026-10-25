@@ -61,9 +61,15 @@ The orchestrator decides what happens next, and the Gateway does it on the group
 - The orchestrator owns the lifecycle, every state change, and every time budget.
 - The Gateway owns every effect. A key starts each operation once, and a step that cannot run again safely never runs twice.
 - Tasks owns the visible record: board states, task records, assistance, and agent sessions.
-- The operation that holds an external group is its one holder and its one sender. It starts the group's checks and sends its turns. `tasks:tick` sends nothing for an external group, so ADR 0224's rule of one sender per group still holds. [What the tick keeps](#what-the-tick-keeps) lists its remaining work.
+- The operation that holds an external group is its one holder and its one sender. It starts the group's checks or fixed read-only analysis and sends its turns. Only `tasks.turn` sends to Pi; `tasks.analyze` starts no agent and has no lifecycle authority. `tasks:tick` sends nothing for an external group, so ADR 0224's rule of one sender per group still holds. [What the tick keeps](#what-the-tick-keeps) lists its remaining work.
 - The operations are orchestrator-neutral. Any caller with Gateway access can use them.
 - An orchestrator never runs a command, an agent, or a Git push itself.
+
+### First additive follow-up: post-child group assistance
+
+An external group may own assistance comments once every child has ended. [Group assistance after all children end](/reference/tasks#group-assistance-after-all-children-end) owns the API, CLI, SDK, and MCP contract, guards, state/effect boundaries, duplicate audit-comment semantics, and rollout/rollback. The group row is locked while the guards and assistance write run. Existing comments store the group ID in both ownership columns; group-owned relationships explicitly remove only the subtask scope, and child histories stay isolated.
+
+This is a narrow record-keeping addition, not an operation or a lifecycle decision. Requests use explicit operator direction replacement; resolutions clear only group direction. No turn, check, topology, retry, state transition, scheduler relay, or approval follows a comment. It avoids dummy children and a permanent comment idempotency registry. Independent requests while children are open retain their current rules. Swamp caller adoption, review/merge and topology support, consult policy, and tick retirement remain separate decisions.
 
 ### Workspaces
 
@@ -95,16 +101,17 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 | --- | --- | --- | --- |
 | `tasks:provision` | `tasks.provision` | Claims the group's task VM and creates its workspace | The [claim](/reference/tasks#claim-and-provision) |
 | `tasks:check` | `tasks.check` | Runs the baseline or the handoff check of a subtask | The [Project check](/reference/tasks#project-check) and its supervision |
-| `tasks:turn` | `tasks.turn` | Runs one agent turn on a subtask | The [Pi driver](/reference/tasks#drivers) |
+| `tasks:analyze` | `tasks.analyze` | Runs fixed read-only repository analysis on a typed plan and candidate | Existing detached check supervision and repository-owned `bin/task-analyze` |
+| `tasks:turn` | `tasks.turn` | Runs one agent turn on a subtask, optionally bound to stored analysis | The [Pi driver](/reference/tasks#drivers) |
 | `tasks:publish` | `tasks.publish` | Pushes a checked commit and opens or updates the pull request | The [approval push](/reference/tasks#pull-request-and-settle-metrics) |
 
 #### Rules for every operation
 
-- The target is the group. A check or a turn names its subtask as an input. The Gateway serves the operation, because the VM's Node exists only while the group runs.
+- The target is the group. An analysis, check, or turn names its subtask as an input. The Gateway serves the operation, because the VM's Node exists only while the group runs.
 - A group has one operation at a time. Another operation on the group answers `409 operation.target_busy`.
 - A group whose `orchestration` is `tick` answers `409 tasks.not_orchestrated`.
 - An ended group answers `409 tasks.group_closed`.
-- A check, a turn, or a publish on a group without a workspace answers `409 tasks.no_workspace`.
+- An analysis, check, turn, or publish on a group without a workspace answers `409 tasks.no_workspace`.
 - A subtask that is not in the group answers `404`. The current subtask is the open subtask with the lowest position. Any other subtask answers `409 tasks.subtask_not_current`, so at most one subtask runs at a time.
 - An operation on a parked VM first queues its resume, as [Park and resume](/reference/compute-drivers#park-and-resume) does for work of the group, and waits for it.
 - The Gateway retries no effect for an external group. A retry is the orchestrator's decision. Durable owns restart resume and provider retries within a Pi turn.
@@ -118,29 +125,52 @@ Each effect becomes an operation that wraps the code Tasks runs today:
 - A failed provision ends the group `failed`, and the existing cleanup removes its VM. To try again, the orchestrator creates a new group, as [Task lifecycle](/reference/tasks#task-lifecycle) already requires.
 - The step ends with the group `running`. A routed workspace ends `active` with its Route; an unrouted one ends `source_resolved`. No subtask starts, and no check runs.
 - The workspace starts at the default branch, as it does today.
-- The result holds the workspace Instance, its Node, and the start commit.
+- The result holds the workspace Instance, its Node, the start commit, and nullable `analysis_base` under the [public provision identity contract](/reference/tasks#public-provision-identity). It copies the immutable recorded pin, not a fresh ref lookup; a start commit cannot substitute for a merge base. Missing or invalid pins remain unavailable on reads and replay.
 
 To stop a waiting provision, the orchestrator cancels the group with `tasks:cancel`.
 
 #### Check
 
-`tasks.check` takes a `subtask` and a `phase`: `baseline` or `handoff`. It runs that check as Tasks runs it today: detached in the workspace, with deliverable verification. A baseline after an implementer started in the group answers `409 tasks.baseline_done`.
+`tasks.check` keeps its request exactly `{ subtask, phase }`: a positive integer subtask ID and `baseline` or `handoff`. Its optional `Idempotency-Key` uses the [shared start contract](/reference/operations#retry-a-start-with-a-key); Swamp always supplies one. There is no caller-selected CI switch, check name, branch, or SHA. The detached check verifies deliverables in the workspace. A baseline after an implementer started in the group answers `409 tasks.baseline_done`.
 
-- A handoff check takes its own check lease after the implementer's turn has released its lease. It does not start inside the turn's receipt scope.
-- A handoff check that passes commits the checked tree, as an approval does today, and records the commit.
-- The result holds the `outcome`: `passed`, `failed`, or `changed`, as the [Project check](/reference/tasks#project-check) defines them. A failing check is a result, not an operation failure.
-- The result also holds each deliverable's result, the check ID, the commit, HEAD and the tree hash, and the redacted [check output](/reference/tasks#check-output).
-- A `lost` check keeps the group held, as today. Once ADR 0223's terminal rule for a lost check is built, the operation stays `waiting` until Orbit proves the check ended. Until then, and whenever that proof never comes, the orchestrator cancels the group.
+The hosted handoff CI prerequisite extends this existing operation. Its implementation does not open external review-and-merge admission. Create and topology append retain `tasks.orchestration_unsupported`; the wider ADR stays in progress.
 
-The commit moves the point where Orbit commits. Today an approval commits the reviewed tree. For an external group, the handoff check commits it, so a review and a publish both refer to one recorded commit.
+- A handoff check takes its own check lease after the implementer's turn releases its lease. It does not start inside the turn's receipt scope. Baseline and Projects without hosted handoff CI keep their existing path.
+- When `Project::handoffCheckName()` is non-null, the existing commit step creates one fresh commit per new operation, with `allowEmpty: true` even for an unchanged checked tree. Its subtask-title/summary message removes CI-skip directives under the [handoff policy](/reference/tasks#handoff-ci). Sanitizing a proposed message while reusing an inherited commit is not enough. The step records the commit on the check and verifies its tree against the passed tree. Same-operation replay or recovery retains that commit, including after a lost reply; a newly authorized operation with a new key creates a new one, even after cancelled CI on unchanged work.
+- Two persisted steps follow commit: handoff push, then hosted CI read. Before push, operation state pins the required check name and `task-{group}-handoff` branch. Recovery uses that plan, not Project edits made after planning. This policy follows `reviewsAndMerges()` today, not a new input. Push only the recorded commit to that branch, without force or a pull request. Reconcile the existing VM push record and remote tip before repeating an interrupted push; never push the task branch or make a second CI commit.
+- Extract and reuse `TaskHandoffCi`'s push, classification and output helpers without its scheduler callbacks. An external operation never calls the tick-guarded `test()`, posts a reminder or assistance, sends a next turn, or implicitly merges main.
+- The result keeps `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, and redacted `output`. `head` is the pre-commit check snapshot; **`commit` is the candidate HEAD**. Add `ci: null | { branch, commit, check_name, state, fault, pushed_at, observed_at, runs, suites }`. [Check an external group](/reference/tasks#check-an-external-group) owns the field types and bounded, redacted evidence. Baseline/no-policy returns `ci: null`. Persist the same CI evidence in operation state while waiting; add no second check-status schema.
+- Pending, missing or unreadable CI leaves the operation `waiting`, retaining its target with delayed bounded reads and no worker held. No suite after 600 seconds or completed suites missing the named job reports the existing fault classification while waiting. The orchestrator owns the wall-clock budget, cancel and assistance decisions. Infrastructure or configuration evidence never silently becomes a failed-code charge or a fixup.
+- A code/workflow failure ends the operation `succeeded` with `outcome: failed`, check `failed_step: ci`, and redacted evidence. A pass ends with `outcome: passed`; if the workspace moves after the check, the outcome is `changed`. A local pass is not a completed candidate while required CI waits.
+- Cancellation stops a local check or queued push under the existing stop rules. A started push is reconciled before ownership ends; uncertain local work stays fenced. Once only hosted CI waits, cancellation ends observation without cancelling GitHub workflows or erasing pushed-branch/check evidence. A `lost` local check keeps the group held until its end or stop is proven; group cancellation follows the existing unreachable-workspace rule.
+
+Only a completed successful `tasks.check` with `outcome: passed`, a handoff `TaskCheck`, non-null commit, checked tree and satisfied deliverables supplies a candidate. Its identity comes from the operation ID, check ID, owning child, commit and tree, never a caller-supplied SHA. Reviewer admission and publish admission use one shared hosted-CI eligibility predicate: for a Project requiring CI, the owning handoff operation must have succeeded with passed CI on that check and commit. A locally passed `TaskCheck` alone, including one left by cancelled observation, passes neither consumer. This narrow guard does not deliver final-review publication gating; the orchestrator still owns the lifecycle and the wider contract for review and merge remains separate.
+
+#### Fixed repository analysis
+
+This additive amendment authorizes one fixed read-only profile, not a generic command operation. It serves [Deterministic first](/mission#principles): mechanical repository analysis makes zero LLM calls. The [Tasks analysis contract](/reference/tasks#analyze-an-external-groups-repository) owns the complete typed plan, bounded report, provenance, error codes, and turn binding. The fixed profile and optional turn reference implement this boundary. Their delivery does not establish live docs-workflow or interruption proof.
+
+The [public metadata amendment](/reference/tasks#public-analysis-failure-metadata) uses the existing operation `result` for a closed allowlisted failure object while retaining `failed` and the original typed code. It carries only a validated exact size or null, never text extracted from exceptions or diagnostic tails. Tasks validates and checkpoints these fields after terminal proof and before lease release, then uses the existing failed-outcome result facility. The generic runner does not learn Tasks failure codes or expose private operation state. Provision publishes its already recorded pin through the same public result boundary. No endpoint, table, ledger, worker, or execution framework is added. An independent reviewer using the native model must approve the exact commit before runtime implementation. This docs-only amendment supplies no new runtime or live failure/recovery proof.
+
+`tasks.analyze` requires a key and exact `{subtask, plan, plan_sha256, base, head, tree}` input. It runs tracked no-argument `bin/task-analyze` with validated stdin as the workspace owner. The manifest is cumulative across the feature and includes proposed files and both rename endpoints. Its RFC 8785 hash binds source revision and planning provenance. Fresh identities bind the execution to its base, HEAD, repository, workspace, and entrypoint, plus the whole worktree with untracked files. The 256-entry/32 KiB plan, 48 KiB request, and complete 64 KiB/depth-24 report bounds refuse overflow, never truncate.
+
+Orbit reuses `DocsImpact::report` and its actual mappings, payload, generator checks, and handoff gate. Gateway owns generic envelope validation and provenance, not docs policy. Retain exact report bytes, digest, byte length, full plan, snapshots, execution identity, duration, exit code, and mechanical LLM count with the existing keyed operation. `ready`, `action_required`, `blocked`, and `changed` are distinct; exit 0 with errors cannot advance. Analysis creates no `TaskCheck`, commits/pushes nothing, changes no board state, and sends no turn. Baseline remains `{subtask, phase}`, not a per-child analysis lane.
+
+Persist `workspace_ready`, `analysis`, and `report` steps. The existing operation holder, lease, run-ID supervision, and journal remain the only execution path. Reserve before dispatch; recovery under the same key adopts that run and its report after a lost start, reply, or restart, without re-execution. Missing starts atomically tombstone the reservation; missing retained reports after dispatch fail only after terminal proof. Cancellation or unknown descendants retain the fence until stop is proven; a waiting operation frees the worker, not its target. Add no second worker, scanner, artifact table, or approval ledger. [Node agent: Fixed read-only task analysis](/reference/node-agent#fixed-read-only-task-analysis) amends the supervision boundary for this profile without relaxing the Node-script growth ratchet.
+
+When Swamp adopts the native contract, it owns the latest authorized plan and actual-versus-planned progression. This slice adds no Swamp change or write-mode generators. It neither opens the external review-and-merge/topology guards nor establishes the wider ADR's live interruption proof. Reuse the delivered hosted handoff CI prerequisite; do not rerun or reimplement ORB2064/PR1503.
 
 #### Turn
 
-`tasks.turn` takes a `subtask`, a `role` (`implementer`, `reviewer`, or `consult`), a `prompt`, a `thread`, and an optional `model`. The operation sends the turn through the Pi driver.
+`tasks.turn` takes a `subtask`, a `role` (`implementer`, `reviewer`, or `consult`), a `prompt`, a `thread`, an optional `model`, and optional `analysis: {operation, plan_sha256}`. The operation sends the turn through the Pi driver. Omitting analysis preserves ordinary behavior. Analysis is evidence for this existing turn, not a new role or approval path.
+
+For an analysis-bound turn, resolve `tasks.analyze` evidence from a successful terminal operation for the same group and current child. Require a usable `ready` or `action_required` outcome, verified digest, and full artifact. Under the turn lease immediately before the first send, compare fresh base, candidate, repository, workspace, and entrypoint identity. Review still requires its ordinary eligible handoff check and CI, with commit/tree matching the fresh analysis. Stale or unusable evidence sends nothing. Persist the full manifest, validated report, and Gateway provenance in the assembled prompt, labelled as repository evidence, with its reference/hash before dispatch. The 100,000-character limit applies to the combined prompt; overflow refuses rather than shortening evidence.
+
+Recovery after dispatch keeps the original prompt and Pi/Durable send key. A lost Pi send reply keeps the analysis-bound operation waiting under its dispatch lease; recovery retries the recorded key and full prompt so Pi can return the original send. A local dispatch journal records admission, not proof that Pi accepted the request. Recovery observes the exact Pi turn key or uses the confirmed completed-send record before skipping freshness. An unconfirmed send must pass freshness again before retrying; an unavailable or ambiguous observation keeps ownership waiting. If that read finds a stale candidate, observe the send key again: the in-flight request may have been accepted and started editing during the read. Confirmed acceptance keeps the original prompt and key, not a new admission. A negative observation cannot fence a delayed request. Without confirmed acceptance or protocol-level rejection, retain the original dispatch lease and wait without resending stale evidence or reporting a terminal refusal. This also covers a crash after journaling but before transmission; uncertainty has no timeout-based release. A terminal observation for another key cannot complete that dispatch lease. Recovery must not revalidate a tree the author intentionally edited and start again. After author edits and the normal handoff check, a reviewer needs fresh analysis of the checked candidate. Reviewers still assess docs meaning and waivers when the machine returns no-docs. The handoff gate still checks actual files.
 
 - `thread` is `new` or a thread of the group with the same role, or a reviewer thread for `consult`. Another thread answers `422 tasks.thread_role_mismatch`. A continued thread keeps its model: a `model` with a thread ID answers `422 tasks.model_fixed`.
 - A Claude model answers `422 tasks.model_refused`, as the [Pi driver](/reference/tasks#drivers) refuses it. A model that the VM does not offer fails the step with `model.unavailable`.
-- A `reviewer` turn takes the `check` ID of a passed handoff check. The workspace HEAD must be that check's commit, or the start answers `409 tasks.head_moved`. After the turn, Orbit resets the checkout to that commit and removes untracked files, and the result records any difference it removed. A `consult` turn runs read-only on a reviewer thread. Orbit does not reset after it, because the implementer's uncommitted work is in the tree; the result shows any change.
+- A `reviewer` turn takes the `check` ID of an [eligible checked candidate](#check), including the owning operation's passed CI when the Project requires it. The workspace HEAD must be that check's commit, or the start answers `409 tasks.head_moved`. After the turn, Orbit resets the checkout to that commit and removes untracked files, and the result records any difference it removed. A `consult` turn runs read-only on a reviewer thread. Orbit does not reset after it, because the implementer's uncommitted work is in the tree; the result shows any change.
 - Orbit keeps its fixed instructions: no fetch or push, a read-only reviewer, the turn command, and the workspace's MCP configuration. The task prompt is the orchestrator's. Orbit adds no rubric, reminder, or nudge.
 - The send key of the Pi server message is the `Idempotency-Key`, or `operation-{id}` without one, so a repeat never starts a second turn.
 - The turn's agent session attaches to its subtask, and the board shows it.
@@ -151,11 +181,11 @@ A Pi server restart leaves the turn `working` while Durable resumes it, and the 
 
 #### Publish
 
-`tasks.publish` takes the `check` ID of a passed handoff check and an optional `pull_request` with `title` and `body`. It imports that check's commit from the VM into the Gateway mirror and pushes it to `task-{id}`, as an approval does today. A push is never forced. With `pull_request`, it opens the group's pull request against the default branch, or updates an open one for the branch. Without it, the step only pushes. It runs no brief coverage and requests no reviewers. The VM and the agent never hold a GitHub token.
+`tasks.publish` takes the `check` ID of an [eligible checked candidate](#check) and an optional `pull_request` with `title` and `body`. It shares reviewer admission's hosted-CI predicate; a local pass alone is not enough when CI is required. It imports that check's commit from the VM into the Gateway mirror and pushes it to `task-{id}`, as an approval does today. A push is never forced. With `pull_request`, it opens the group's pull request against the default branch, or updates an open one for the branch. Without it, the step only pushes. It runs no brief coverage and requests no reviewers. The VM and the agent never hold a GitHub token.
 
 | Case | Result |
 | --- | --- |
-| The check did not pass, or belongs to another group | `422 tasks.commit_not_checked` |
+| The check is ineligible under the shared candidate rule, or belongs to another group | `422 tasks.commit_not_checked` |
 | The workspace HEAD is no longer the check's commit | `409 tasks.head_moved` |
 | `task-{id}` exists and is not an ancestor of the commit | The step fails with `tasks.not_fast_forward` |
 | `task-{id}` already points at the commit | Succeeds without a push |
@@ -195,7 +225,7 @@ A test lists every entry point that sends a turn, starts a check, or changes a c
 
 #### A waiting step
 
-This amends [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations). A claim that waits for a VM, a VM resume, a check, a turn, and a push can each outlast the 1,600-second deadline. None of them may hold the single `operations` worker.
+This amends [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations). A claim that waits for a VM, a VM resume, an analysis, a check, a turn, and a push can each outlast the 1,600-second deadline. None of them may hold the single `operations` worker.
 
 An operation gains the non-terminal status `waiting`, and its current step the same status. A waiting operation has no running job and keeps its target. A delayed job calls the workspace lease's reconcile for the group, as the tick does for a tick group. Reconcile releases a turn's lease when the turn ends, records the check's reading, and updates the thread state and metrics that the board shows. The delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls reconcile. The API, the list filter, and the MCP enums gain the status.
 
@@ -233,8 +263,8 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - **The orchestrator as a second sender.** It would call Pi or the task drivers directly. That breaks the one-sender rule of [ADR 0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender).
 - **Step 1 after ADR 0224.** The first external run would wait for ADR 0223's remaining steps and all of ADR 0224, and much of ADR 0224 reworks the tick engine that step 3 removes.
 - **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would not run unchanged on UpCloud overflow.
-- **A generic command operation.** Feature work needs only the checks and the agent. A generic run would need [named agent commands](/reference/node-agent#commands), because check supervision is not a generic command runner.
-- **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes a passed handoff check, so it pushes only the commit that the check recorded. The orchestrator owns the review gate.
+- **A generic command operation.** Checks, one fixed read-only repository analysis profile, and agent turns cover this slice. Analysis accepts typed data, not caller shell, environment, path, or model selection; it grants no generator-write authority. Extending existing supervision for this named profile does not make it a generic command runner. Other deterministic mutations still need [named agent commands](/reference/node-agent#commands) or a separately reviewed fixed contract; hiding source in data or adding a Gateway script is not an alternative.
+- **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes an eligible checked candidate, so it pushes only the commit that the check recorded, with passed hosted CI from its owning operation when required. The orchestrator owns the review gate.
 - **A long step as one blocking step.** A 15-minute test suite would hold the single `operations` worker and stall every deploy.
 - **Per-step jobs for every operation.** The target would be free between steps. Only a waiting step ends its job, and it keeps the target.
 - **Endpoints named after one orchestrator.** They would tie Orbit to one tool.
@@ -249,12 +279,12 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 - Until step 3, task work has two modes, as the Principle line states.
 - Step 1 does not wait for ADR 0224. ADR 0224 continues for tick groups, Orbit's among them, until step 3. Its "One resume" build step no longer includes Pi restart resume or provider retries after #1464.
 - Topology subtasks and review-and-merge Projects, Orbit itself among them, stay on the tick until an amendment covers them.
-- An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Only a deterministic step without an agent waits for a command operation using [named agent commands](/reference/node-agent#commands).
+- An update that an agent turn makes is ordinary feature work, so a dependency-update group runs as an external group. Fixed read-only analysis is now the narrow deterministic profile above. Other deterministic steps, including write-mode generators, still require a separately reviewed mutation contract and do not inherit its authority.
 - The orchestrator becomes a dependency for task work. Its availability, licensing, and storage are outside Orbit.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web, apps/docs
-- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), which gains the waiting step and its cancel rule; [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations; [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), whose one sender per group is the tick for a tick group and the holding operation for an external group. When ADR 0224 is built, a `tasks.*` operation can set the group holder, `TaskTurnDispatcher` gains those operations as callers beside the tick, and the holder dispatches the status job. Its "One resume" step shrinks with step 2
-- Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the four operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/pi-server) and `apps/pi-server` for step 2
+- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), which gains the waiting step and its cancel rule; [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations; [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), whose one sender per group is the tick for a tick group and the holding operation for an external group. When ADR 0224 is built, a `tasks.*` operation can set the group holder, `TaskTurnDispatcher` gains `tasks.turn` as a caller beside the tick, and the holder dispatches the status job. Sender inventory remains the tick for tick groups and the holding turn operation for external groups; fixed analysis only starts its supervised run and never sends to Pi. Its "One resume" step shrinks with step 2
+- Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the five operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/pi-server) and `apps/pi-server` for step 2
 - Verify: Gateway feature tests for each operation, its idempotency conflict, and each refusal; an Incus E2E that runs an external group from provision to a pull request, kills the Gateway worker during a waiting check, and reads the same result after recovery

@@ -50,7 +50,29 @@ it('sends the complete base recipe as typed data with the delivery pin and one P
     expect($payload['php']['extras'])->toBe('refuse');
     expect($payload['recipe']['tools'])->not->toHaveKeys(['rust', 'cargo', 'orbit-agent', 'pi', 'php8.4-cli', 'php8.5-cli']);
     expect($payload['rust'])->toHaveKeys(['rust', 'cargo', 'rust-std', 'clippy', 'rustfmt']);
+    $document = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
+    expect($payload['recipe']['architecture'])->toBe('amd64')
+        ->and($payload['recipe']['snapshot'])->toBe($document['ubuntu']['snapshot']);
+    foreach (RecipeLoader::IncusPackages as $name) {
+        expect($payload['recipe']['tools'][$name]['version'])->toBe($document['tools'][$name]['artifacts']['amd64']['version'])
+            ->and($payload['recipe']['tools'][$name]['artifacts'])->toBe($document['tools'][$name]['artifacts']);
+    }
 });
+
+it('installs OpenTelemetry only in app-dev image profiles', function (string $profile, bool $enabled): void {
+    [$programs, $agents, $guest, $recipe] = nativePhaseFixture();
+    $agents->answer = static fn ($guest, string $command): array => nativePhaseObservation($command === 'image.inspect-phase' ? 'missing' : 'complete');
+    $state = [];
+
+    $programs->poll($guest, $recipe, $profile, 'packages', '23', $state);
+
+    $payload = $agents->calls[1]['input']['recipe'];
+    expect($payload['php']['opentelemetry'])->toBe($enabled);
+    foreach (['8.4', '8.5'] as $version) {
+        expect(in_array("php{$version}-opentelemetry", array_column($payload['php']['versions'][$version]['packages'], 'name'), true))->toBe($enabled)
+            ->and($payload['php']['versions'][$version]['extensions'])->not->toContain('opentelemetry');
+    }
+})->with(['app-dev' => ['app-dev', true], 'app-prod' => ['app-prod', false], 'base' => ['base', false], 'ci-runner' => ['ci-runner', false]]);
 
 it('refuses a stored recipe from another delivery before observing or restarting a phase', function (): void {
     [$programs, $agents, $guest, $recipe] = nativePhaseFixture();

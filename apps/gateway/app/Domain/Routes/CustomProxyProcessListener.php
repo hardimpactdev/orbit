@@ -9,6 +9,8 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
+use App\Models\RouteCustomProxy;
 
 final readonly class CustomProxyProcessListener
 {
@@ -16,6 +18,13 @@ final readonly class CustomProxyProcessListener
     {
         $node = $process->owner;
         $address = $node instanceof Node ? $this->publicAddress($node, $ingress) : null;
+
+        return $this->resolvePublicAtAddress($process, $address);
+    }
+
+    private function resolvePublicAtAddress(Process $process, ?string $address): CustomProxyUpstream
+    {
+        $node = $process->owner;
         $ports = $process->runtime_config['ports'] ?? [];
         $listeners = [];
 
@@ -39,6 +48,36 @@ final readonly class CustomProxyProcessListener
         }
 
         return $listeners[0];
+    }
+
+    public function assertPreservesRoutes(Process $candidate): void
+    {
+        $proxies = RouteCustomProxy::query()->where('process_id', $candidate->id)->with('route')->orderBy('route_id')->get();
+
+        foreach ($proxies as $proxy) {
+            $route = $proxy->route;
+            if (! $route instanceof Route) {
+                continue;
+            }
+            try {
+                $address = parse_url($proxy->upstream, PHP_URL_HOST);
+                $upstream = $route->publication === RoutePublication::Public
+                    ? $this->resolvePublicAtAddress($candidate, is_string($address) ? $address : null)
+                    : $this->resolve($candidate);
+                if ($upstream->url() === $proxy->upstream) {
+                    continue;
+                }
+            } catch (ResourceOperationException) {
+                // An unresolved listener also invalidates the stored Route upstream.
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'process.route_upstream_changed',
+                message: "Update would change or remove the upstream listener for Route [{$route->domain}] ({$route->id}).",
+                status: 409,
+                details: ['route_id' => $route->id, 'domain' => $route->domain],
+            );
+        }
     }
 
     public function publicAddress(Node $node, Node $ingress): ?string
@@ -76,7 +115,7 @@ final readonly class CustomProxyProcessListener
         $resolved = [];
 
         foreach ($ports as $spec) {
-            if (! is_string($spec)) {
+            if (! is_string($spec) || (str_contains($spec, '/') && ! str_ends_with($spec, '/tcp'))) {
                 continue;
             }
 

@@ -1,0 +1,37 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ScriptTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/script",
+    "status": 202,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "tasks.script",
+            "target_type": "task_group",
+            "target_id": 1,
+            "input": {
+                "subtask": 2,
+                "script": "scripts/dependencies",
+                "args": [
+                    "routine"
+                ]
+            },
+            "status": "queued",
+            "sequence": 1,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": null,
+            "cancel_requested": false,
+            "attempts": 0,
+            "triggered_by": "tick-node",
+            "created_at": "2026-10-25T12:00:00+00:00",
+            "started_at": null,
+            "finished_at": null,
+            "poll_after_seconds": 2
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

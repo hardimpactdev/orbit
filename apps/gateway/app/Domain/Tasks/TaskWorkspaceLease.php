@@ -688,6 +688,10 @@ final class TaskWorkspaceLease
 
                 return;
             }
+            if (in_array($holder->kind, ['analysis', 'script'], true)) {
+                // The operation adopts its reserved run and complete artifact; no TaskCheck row is involved.
+                return;
+            }
             if ($holder->pid !== null) {
                 $check = $holder->check_id !== null ? TaskCheck::query()->find($holder->check_id)
                     : TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
@@ -779,12 +783,13 @@ final class TaskWorkspaceLease
 
                     return;
                 }
-                if (! in_array($observation?->state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true)) {
+                $adopted = $holder->getAttribute('adopted');
+                if (! in_array($observation?->state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true)
+                    || (! $adopted && $observation->state === AgentThreadState::Idle)) {
                     return;
                 }
                 $turn = $observation->turnId;
-                $previous = $holder->getAttribute('previous_turn_id');
-                if (! is_string($turn) || $turn === '' || (! $holder->getAttribute('adopted') && $turn === $previous)) {
+                if (! is_string($turn) || $turn === '' || (! $adopted && $turn !== $holder->dispatch_key)) {
                     return;
                 }
                 $holder->update(['dispatch_completed' => true]);

@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
 
@@ -60,6 +61,34 @@ describe('tasks contract', function (): void {
 
     it('renders a refused external turn', function (): void {
         run_task_contract('tasks/tasks-turn/not-orchestrated', 'tasks:turn', ['group' => '1', '--subtask' => '2', '--role' => 'implementer', '--prompt' => 'Implement exactly this prompt.', '--thread' => 'new'], 1);
+    });
+
+    it('renders native complete analysis outcomes honestly in human and JSON modes', function (string $fixture): void {
+        Sleep::fake(syncWithCarbon: true);
+        $queued = json_decode(gateway_fixture('tasks/tasks-analyze/queued')['body'], true, flags: JSON_THROW_ON_ERROR)['data']['input'];
+        $terminal = json_decode(gateway_fixture($fixture)['body'], true, flags: JSON_THROW_ON_ERROR)['data'];
+        $path = $this->orbitHome.'/plan.json';
+        file_put_contents($path, json_encode($queued['plan'], JSON_THROW_ON_ERROR));
+        $arguments = ['group' => '1', '--subtask' => (string) $queued['subtask'], '--plan' => $path, '--plan-sha256' => $queued['plan_sha256'], '--base' => $queued['base'], '--head' => $queued['head'], '--tree' => $queued['tree'], '--idempotency-key' => 'analysis.c1'];
+        try {
+            foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+                run_contract(['tasks/tasks-analyze/queued', $fixture, 'realtime/realtime-show/unconfigured'], 'tasks:analyze', [...$arguments, ...$mode], $fixture.'.'.$extension, $terminal['status'] === 'failed' ? 1 : 0);
+            }
+        } finally {
+            Sleep::fake(false);
+        }
+    })->with(['tasks/tasks-analyze/ready', 'tasks/tasks-analyze/action_required', 'tasks/tasks-analyze/blocked', 'tasks/tasks-analyze/changed',
+        'tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable']);
+
+    it('renders the immutable public provision identity without interpreting the pin', function (string $fixture): void {
+        run_task_contract($fixture, 'operation:show', ['operation' => '1'], 0);
+    })->with(['tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable']);
+
+    it('renders the native analysis refusal without generic success', function (): void {
+        $input = json_decode(gateway_fixture('tasks/tasks-analyze/queued')['body'], true, flags: JSON_THROW_ON_ERROR)['data']['input'];
+        $path = $this->orbitHome.'/plan.json';
+        file_put_contents($path, json_encode($input['plan'], JSON_THROW_ON_ERROR));
+        run_task_contract('tasks/tasks-analyze/not-orchestrated', 'tasks:analyze', ['group' => '1', '--subtask' => '2', '--plan' => $path, '--plan-sha256' => $input['plan_sha256'], '--base' => $input['base'], '--head' => $input['head'], '--tree' => $input['tree'], '--idempotency-key' => 'analysis.c1'], 1);
     });
 
     it('renders a refused provision', function (): void {
@@ -153,6 +182,16 @@ describe('tasks contract', function (): void {
         'a number field' => ['[{"id":"docs","type":"review","description":1}]'],
         'invalid JSON' => ['[{'],
     ]);
+
+    it('renders group assistance comments and refusals', function (): void {
+        $request = ['group' => '1', '--type' => 'assistance_requested', '--body' => 'Work item X, publish-retry, cycle 2, gate: may I republish?', '--author' => 'driver'];
+        run_task_contract('tasks/tasks-group-comment-create/requested', 'tasks:group:comment:create', $request, 0);
+        run_task_contract('tasks/tasks-group-comment-create/resolved', 'tasks:group:comment:create', [...$request, '--type' => 'resolution', '--body' => 'Approved for this work item, stage and cycle.', '--author' => 'nick'], 0);
+        run_task_contract('tasks/tasks-group-comment-create/subtask-open', 'tasks:group:comment:create', $request, 1);
+        run_task_contract('tasks/tasks-group-comment-create/group-closed', 'tasks:group:comment:create', $request, 1);
+        run_task_contract('tasks/tasks-group-comment-list/default', 'tasks:group:comment:list', ['group' => '1'], 0);
+        run_task_contract('tasks/tasks-group-comment-list/empty', 'tasks:group:comment:list', ['group' => '1'], 0);
+    });
 
     it('renders comments and agent threads', function (): void {
         run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);

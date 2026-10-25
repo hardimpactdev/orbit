@@ -377,7 +377,6 @@ pub fn all() -> Vec<Entry> {
         entry::<doctor_route::InspectApplicationUrls>(),
         entry::<doctor_public_route::InspectPublicRoute>(),
         entry::<doctor_route::InspectCustomProxy>(),
-        entry::<doctor_route::ResolveRouteDns>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
         entry::<health::AwaitHealthy>(),

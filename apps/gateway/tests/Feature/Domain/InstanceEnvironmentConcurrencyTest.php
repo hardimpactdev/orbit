@@ -6,6 +6,8 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Instances\UpdateInstanceEnvironmentAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -22,6 +24,8 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
@@ -29,12 +33,14 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Dotenv\Dotenv;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 use Tests\Support\EnvironmentConcurrencySchemaFixture;
 use Tests\Support\FakesEnvironmentSyncInspection;
+use Tests\Support\ForkedGatewayProcess;
 
 beforeAll(fn () => EnvironmentConcurrencySchemaFixture::prepare(orb207_concurrency_worker_script()));
 afterAll(fn () => EnvironmentConcurrencySchemaFixture::forget());
@@ -64,51 +70,45 @@ it('copies the complete migrated concurrency schema and reference rows without s
     }
 });
 
-it('serializes concurrent complete-result validation through SQLite immediate transactions', function (): void {
+it('serializes concurrent complete-result validation through SQLite immediate transactions', function (string $holder): void {
     $directory = sys_get_temp_dir().'/orbit-env-concurrency-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);
     $database = "{$directory}/gateway.sqlite";
-    $script = "{$directory}/worker.php";
-    $barrier = "{$directory}/go";
-    file_put_contents($script, orb207_concurrency_worker_script());
     EnvironmentConcurrencySchemaFixture::copyTo($database);
     $setup = $import = $update = null;
 
     try {
-        $setup = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup']);
-        $setup->mustRun();
+        $setup = new ForkedGatewayProcess($database, $directory.'/setup.output', function (): int {
+            [$instance] = orb207_concurrency_fixture();
+            $value = new InstanceEnvironmentValue(['env_value' => 'value'])->getAttributes()['env_value'];
+            $rows = [];
+            for ($index = 0; $index < 1_023; $index++) {
+                $rows[] = ['instance_id' => $instance->id, 'env_key' => "KEY_{$index}", 'env_value' => $value];
+            }
+            DB::table('instance_environment_values')->insert($rows);
 
-        $import = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'import']);
-        $update = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'update']);
+            return 0;
+        });
+        $setup->run();
+        expect($setup->isSuccessful())->toBeTrue($setup->getErrorOutput());
+
+        $import = new ForkedGatewayProcess($database, $directory.'/import.output', fn ($socket): int => orb207_concurrency_worker($socket, $directory, 'import', $holder === 'import'));
+        $update = new ForkedGatewayProcess($database, $directory.'/update.output', fn ($socket): int => orb207_concurrency_worker($socket, $directory, 'update', $holder === 'update'));
         $import->start();
         $update->start();
 
-        $deadline = microtime(true) + 5;
-        while (
-            (! file_exists("{$directory}/import.ready")
-            || ! file_exists("{$directory}/update.ready"))
-            && microtime(true) < $deadline
-        ) {
-            usleep(1_000);
-        }
-
-        if (! file_exists("{$directory}/import.ready") || ! file_exists("{$directory}/update.ready")) {
-            touch($barrier);
-            $import->wait();
-            $update->wait();
-            throw new RuntimeException(json_encode([
-                'import' => [$import->getOutput(), $import->getErrorOutput()],
-                'update' => [$update->getOutput(), $update->getErrorOutput()],
-            ], JSON_THROW_ON_ERROR));
-        }
-
-        expect(file_exists("{$directory}/import.ready"))
-            ->toBeTrue()
-            ->and(file_exists("{$directory}/update.ready"))
-            ->toBeTrue();
-        touch($barrier);
-        $import->wait();
-        $update->wait();
+        expect($import->receive())->toBe('ready')->and($update->receive())->toBe('ready');
+        $first = $holder === 'import' ? $import : $update;
+        $second = $holder === 'import' ? $update : $import;
+        $first->send('begin');
+        expect($first->receive())->toBe('transaction-held');
+        $second->send('begin');
+        expect($second->receive())->toBe('transaction-blocked');
+        expect($import->isRunning())->toBeTrue()->and($update->isRunning())->toBeTrue();
+        $first->send('commit');
+        $first->wait();
+        $second->send('retry');
+        $second->wait();
 
         expect($import->isSuccessful())->toBeTrue()->and($update->isSuccessful())->toBeTrue();
         $results = [
@@ -128,42 +128,45 @@ it('serializes concurrent complete-result validation through SQLite immediate tr
             'keys' => $inspect->query("SELECT env_key FROM instance_environment_values WHERE env_key IN ('EXTRA', 'KEY_0', 'KEY_1023') ORDER BY env_key")->fetchAll(PDO::FETCH_COLUMN),
         ];
         expect($stored['count'])
-            ->toBeIn([1, 1_024])
+            ->toBe(1_024)
             ->and($stored['keys'])
-            ->toBeIn([['EXTRA'], ['KEY_0', 'KEY_1023']]);
+            ->toBe($holder === 'import' ? ['KEY_0', 'KEY_1023'] : ['EXTRA', 'KEY_0']);
     } finally {
-        $setup?->stop(0);
-        $import?->stop(0);
-        $update?->stop(0);
+        $setup?->stop();
+        $import?->stop();
+        $update?->stop();
         new Filesystem()->deleteDirectory($directory);
     }
-});
+})->with(['import first' => 'import', 'update first' => 'update']);
 
 it('holds one cross-process owner through synchronization so a later update remains stored-only', function (): void {
     $directory = sys_get_temp_dir().'/orbit-env-sync-concurrency-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);
     $database = "{$directory}/gateway.sqlite";
-    $script = "{$directory}/worker.php";
-    file_put_contents($script, orb212_sync_concurrency_worker_script());
     EnvironmentConcurrencySchemaFixture::copyTo($database);
     $setup = $sync = $update = null;
 
     try {
-        $setup = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'setup']);
-        $setup->mustRun();
-        $sync = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'sync']);
+        $setup = new ForkedGatewayProcess($database, $directory.'/setup.output', function (): int {
+            [$instance] = orb207_concurrency_fixture();
+            $instance->environmentValues()->create(['env_key' => 'INITIAL', 'env_value' => 'before-sync']);
+
+            return 0;
+        });
+        $setup->run();
+        expect($setup->isSuccessful())->toBeTrue($setup->getErrorOutput());
+        $sync = new ForkedGatewayProcess($database, $directory.'/sync.output', fn ($socket): int => orb212_sync_concurrency_worker($socket, $directory, 'sync'));
         $sync->start();
-        orb212_wait_for_file("{$directory}/sync.ready", $sync);
+        expect($sync->receive())->toBe('sync-ready');
 
-        $update = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'update']);
+        $update = new ForkedGatewayProcess($database, $directory.'/update.output', fn ($socket): int => orb212_sync_concurrency_worker($socket, $directory, 'update'));
         $update->start();
-        orb212_wait_for_file("{$directory}/update.started", $update);
-        usleep(150_000);
-
+        expect($update->receive())->toBe('update-blocked');
         expect($update->isRunning())->toBeTrue()->and(file_exists("{$directory}/update.result"))->toBeFalse();
 
-        touch("{$directory}/release");
+        $sync->send('release');
         $sync->wait();
+        $update->send('retry');
         $update->wait();
 
         expect($sync->isSuccessful())
@@ -184,14 +187,12 @@ it('holds one cross-process owner through synchronization so a later update rema
             ->toContain('INITIAL=')
             ->not->toContain('PENDING');
 
-        $inspect = new Process([PHP_BINARY, $script, base_path(), $database, $directory, 'inspect']);
-        $inspect->mustRun();
-        expect(json_decode($inspect->getOutput(), true, flags: JSON_THROW_ON_ERROR))
+        expect(json_decode((string) file_get_contents("{$directory}/inspect.result"), true, flags: JSON_THROW_ON_ERROR))
             ->toBe(['INITIAL' => 'before-sync', 'PENDING' => 'after-sync']);
     } finally {
-        $setup?->stop(0);
-        $sync?->stop(0);
-        $update?->stop(0);
+        $setup?->stop();
+        $sync?->stop();
+        $update?->stop();
         new Filesystem()->deleteDirectory($directory);
     }
 });
@@ -497,232 +498,125 @@ function orb207_concurrency_worker_script(): string
         $app->useStoragePath("{$directory}/storage");
         $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-        if ($mode === 'schema') {
-            Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
-            exit(0);
-        }
-
-        if ($mode === 'setup') {
-            $orbitApp = App\Models\Project::query()->create([
-                'name' => 'Concurrent worker',
-                'slug' => 'concurrent-worker',
-                'repository_url' => 'https://example.test/concurrent-worker.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-            ]);
-            $node = App\Models\Node::query()->create([
-                'name' => 'concurrent-worker',
-                'status' => 'active',
-                'platform' => 'linux',
-                'public_ssh_host' => '192.0.2.220',
-                'wireguard_ip' => '10.44.0.220',
-                'user' => 'orbit',
-            ]);
-            $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-            $instance = App\Models\Instance::query()->create([
-                'project_id' => $orbitApp->id,
-                'node_id' => $node->id,
-                'name' => 'default',
-                'environment' => 'development',
-                'checkout_path' => '/srv/orbit/apps/concurrent-worker/default',
-                'source_is_laravel' => false,
-                'provisioning_step' => 'active',
-                'status' => 'source_resolved',
-            ]);
-            $route = App\Models\Route::query()->create([
-                'project_id' => $orbitApp->id,
-                'node_id' => $node->id,
-                'domain' => 'concurrent-worker.example.test',
-                'provenance' => 'explicit',
-                'publication' => 'private',
-                'status' => 'pending',
-            ]);
-            $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-            $route->update(['status' => 'active']);
-            $instance->update(['status' => 'active']);
-            exit(0);
-        }
-
-        $instance = App\Models\Instance::query()->firstOrFail();
-        $context = app(App\Domain\Instances\Environment\InstanceEnvironmentContextResolver::class)
-            ->resolve($instance, false);
-        touch("{$directory}/{$mode}.ready");
-        while (! file_exists("{$directory}/go")) {
-            usleep(1_000);
-        }
-
-        try {
-            $store = app(App\Domain\Instances\Environment\InstanceEnvironmentStore::class);
-            if ($mode === 'import') {
-                $values = [];
-                for ($index = 0; $index < 1_024; $index++) {
-                    $values["KEY_{$index}"] = 'value';
-                }
-                $store->import($context, $values, false);
-            } else {
-                $store->update($context, 'EXTRA', 'value');
-            }
-            $result = ['status' => 'ok'];
-        } catch (App\Domain\Shared\ResourceOperationException $exception) {
-            $result = ['status' => 'invalid', 'code' => $exception->errorCode];
-        } catch (Throwable $exception) {
-            $result = ['status' => get_class($exception), 'message' => $exception->getMessage()];
-        }
-
-        file_put_contents("{$directory}/{$mode}.result", json_encode($result, JSON_THROW_ON_ERROR));
+        Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
         PHP;
 }
 
-function orb212_wait_for_file(string $path, Process $process): void
+/** @param resource $socket */
+function orb207_concurrency_worker(mixed $socket, string $directory, string $mode, bool $holder): int
 {
-    $deadline = microtime(true) + 5;
-
-    while (! file_exists($path) && $process->isRunning() && microtime(true) < $deadline) {
-        usleep(1_000);
+    $instance = Instance::query()->firstOrFail();
+    $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, false);
+    ForkedGatewayProcess::write($socket, 'ready');
+    if (ForkedGatewayProcess::read($socket) !== 'begin') {
+        throw new RuntimeException('The environment transaction barrier was not released.');
     }
 
-    if (! file_exists($path)) {
-        throw new RuntimeException(json_encode([
-            'stdout' => $process->getOutput(),
-            'stderr' => $process->getErrorOutput(),
-        ], JSON_THROW_ON_ERROR));
+    if ($holder) {
+        Event::listen(TransactionBeginning::class, function (TransactionBeginning $event) use ($socket): void {
+            if ($event->connection->transactionLevel() !== 1) {
+                return;
+            }
+            ForkedGatewayProcess::write($socket, 'transaction-held');
+            if (ForkedGatewayProcess::read($socket) !== 'commit') {
+                throw new RuntimeException('The environment transaction holder was not released.');
+            }
+        });
+    } else {
+        DB::connection()->beforeStartingTransaction(function () use ($socket): void {
+            if (DB::connection()->transactionLevel() !== 0) {
+                return;
+            }
+            $pdo = DB::connection()->getPdo();
+            $pdo->exec('PRAGMA busy_timeout=0');
+            try {
+                $pdo->exec('BEGIN IMMEDIATE TRANSACTION');
+                $pdo->exec('ROLLBACK');
+                ForkedGatewayProcess::write($socket, 'unexpectedly-acquired');
+            } catch (PDOException $exception) {
+                if (($exception->errorInfo[1] ?? null) !== 5) {
+                    throw $exception;
+                }
+                ForkedGatewayProcess::write($socket, 'transaction-blocked');
+            } finally {
+                $pdo->exec('PRAGMA busy_timeout=5000');
+            }
+            if (ForkedGatewayProcess::read($socket) !== 'retry') {
+                throw new RuntimeException('The environment transaction contender was not released.');
+            }
+        });
     }
+
+    try {
+        $store = app(InstanceEnvironmentStore::class);
+        if ($mode === 'import') {
+            $store->import($context, ['KEY_1023' => 'value'], false);
+        } else {
+            $store->update($context, 'EXTRA', 'value');
+        }
+        $result = ['status' => 'ok'];
+    } catch (ResourceOperationException $exception) {
+        $result = ['status' => 'invalid', 'code' => $exception->errorCode];
+    }
+    file_put_contents("{$directory}/{$mode}.result", json_encode($result, JSON_THROW_ON_ERROR));
+
+    return 0;
 }
 
-function orb212_sync_concurrency_worker_script(): string
+/** @param resource $socket */
+function orb212_sync_concurrency_worker(mixed $socket, string $directory, string $mode): int
 {
-    return <<<'PHP'
-        <?php
-
-        declare(strict_types=1);
-
-        [$script, $base, $database, $directory, $mode] = $argv;
-        $environment = [
-            'APP_ENV' => 'testing',
-            'APP_KEY' => 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-            'DB_CONNECTION' => 'sqlite',
-            'DB_DATABASE' => $database,
-            'ORBIT_HOME' => "{$directory}/orbit-home",
-        ];
-        foreach ($environment as $name => $value) {
-            putenv("{$name}={$value}");
-            $_ENV[$name] = $value;
-            $_SERVER[$name] = $value;
-        }
-        require "{$base}/vendor/autoload.php";
-        $app = require "{$base}/bootstrap/app.php";
-        $app->useStoragePath("{$directory}/storage");
-        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-
-        final class Orb212Preflight implements App\Domain\Instances\Environment\InstanceOperationPreflight
+    $instance = Instance::query()->firstOrFail();
+    app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock(
+        $directory.'/locks', new CommandDeadline,
+        wait: function (int $microseconds) use ($socket): void {
+            ForkedGatewayProcess::write($socket, 'update-blocked');
+            if (ForkedGatewayProcess::read($socket) !== 'retry') {
+                throw new RuntimeException('The environment lock contender was not released.');
+            }
+        },
+    ));
+    if ($mode === 'sync') {
+        app()->instance(InstanceOperationPreflight::class, new class implements InstanceOperationPreflight
         {
-            use \Tests\Support\FakesEnvironmentSyncInspection;
+            use FakesEnvironmentSyncInspection;
 
-            public function assertEnvironmentReadable(App\Domain\Instances\Environment\InstanceEnvironmentContext $context): void {}
+            public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
-            public function assertEnvironmentWritable(
-                App\Domain\Instances\Environment\InstanceEnvironmentContext $context,
-                int $requiredCapacityBytes,
-            ): void {}
-        }
-
-        final readonly class Orb212Writer implements App\Domain\Instances\Environment\InstanceEnvironmentReader, App\Domain\Instances\Environment\InstanceEnvironmentWriter
+            public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}
+        });
+        $writer = new class($socket, $directory) implements InstanceEnvironmentReader, InstanceEnvironmentWriter
         {
-            public function __construct(private string $directory) {}
+            /** @param resource $socket */
+            public function __construct(private mixed $socket, private string $directory) {}
 
-            public function read(App\Domain\Instances\Environment\InstanceEnvironmentContext $context): string
+            public function read(InstanceEnvironmentContext $context): string
             {
                 return '';
             }
 
-            public function write(
-                App\Domain\Instances\Environment\InstanceEnvironmentContext $context,
-                #[SensitiveParameter]
-                string $contents,
-            ): App\Domain\Instances\Environment\InstanceEnvironmentWriteResult {
+            public function write(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents): InstanceEnvironmentWriteResult
+            {
                 file_put_contents("{$this->directory}/sync.contents", $contents);
-                touch("{$this->directory}/sync.ready");
-                $deadline = microtime(true) + 5;
-                while (! file_exists("{$this->directory}/release") && microtime(true) < $deadline) {
-                    usleep(1_000);
+                ForkedGatewayProcess::write($this->socket, 'sync-ready');
+                if (ForkedGatewayProcess::read($this->socket) !== 'release') {
+                    throw new RuntimeException('The synchronization writer was not released.');
                 }
 
-                if (! file_exists("{$this->directory}/release")) {
-                    throw new RuntimeException('The synchronization release barrier timed out.');
-                }
-
-                return App\Domain\Instances\Environment\InstanceEnvironmentWriteResult::changed();
+                return InstanceEnvironmentWriteResult::changed();
             }
-        }
+        };
+        app()->instance(InstanceEnvironmentReader::class, $writer);
+        app()->instance(InstanceEnvironmentWriter::class, $writer);
+        $result = app(SynchronizeInstanceEnvironmentAction::class)->execute($instance);
+    } else {
+        $result = app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'PENDING', 'after-sync');
+        file_put_contents("{$directory}/inspect.result", json_encode(
+            $instance->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all(),
+            JSON_THROW_ON_ERROR,
+        ));
+    }
+    file_put_contents("{$directory}/{$mode}.result", json_encode($result->toArray(), JSON_THROW_ON_ERROR));
 
-        if ($mode === 'setup') {
-            $orbitApp = App\Models\Project::query()->create([
-                'name' => 'Concurrent sync worker',
-                'slug' => 'concurrent-sync-worker',
-                'repository_url' => 'https://example.test/concurrent-sync-worker.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-            ]);
-            $node = App\Models\Node::query()->create([
-                'name' => 'concurrent-sync-worker',
-                'status' => 'active',
-                'platform' => 'linux',
-                'public_ssh_host' => '192.0.2.221',
-                'wireguard_ip' => '10.44.0.221',
-                'user' => 'orbit',
-            ]);
-            $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-            $instance = App\Models\Instance::query()->create([
-                'project_id' => $orbitApp->id,
-                'node_id' => $node->id,
-                'name' => 'default',
-                'environment' => 'development',
-                'checkout_path' => '/srv/orbit/apps/concurrent-sync-worker/default',
-                'source_is_laravel' => false,
-                'provisioning_step' => 'active',
-                'status' => 'source_resolved',
-            ]);
-            $route = App\Models\Route::query()->create([
-                'project_id' => $orbitApp->id,
-                'node_id' => $node->id,
-                'domain' => 'concurrent-sync-worker.example.test',
-                'provenance' => 'explicit',
-                'publication' => 'private',
-                'status' => 'pending',
-            ]);
-            $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-            $route->update(['status' => 'active']);
-            $instance->update(['status' => 'active']);
-            $instance->environmentValues()->create(['env_key' => 'INITIAL', 'env_value' => 'before-sync']);
-            exit(0);
-        }
-
-        $instance = App\Models\Instance::query()->firstOrFail();
-
-        if ($mode === 'inspect') {
-            echo json_encode($instance->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all(), JSON_THROW_ON_ERROR);
-            exit(0);
-        }
-
-        try {
-            if ($mode === 'sync') {
-                app()->instance(App\Domain\Instances\Environment\InstanceOperationPreflight::class, new Orb212Preflight);
-                $writer = new Orb212Writer($directory);
-                app()->instance(App\Domain\Instances\Environment\InstanceEnvironmentReader::class, $writer);
-                app()->instance(App\Domain\Instances\Environment\InstanceEnvironmentWriter::class, $writer);
-                $result = app(App\Actions\Instances\SynchronizeInstanceEnvironmentAction::class)->execute($instance);
-            } else {
-                touch("{$directory}/update.started");
-                $result = app(App\Actions\Instances\UpdateInstanceEnvironmentAction::class)
-                    ->execute($instance, 'PENDING', 'after-sync');
-            }
-            file_put_contents("{$directory}/{$mode}.result", json_encode($result->toArray(), JSON_THROW_ON_ERROR));
-        } catch (Throwable $exception) {
-            file_put_contents("{$directory}/{$mode}.result", json_encode([
-                'class' => get_class($exception),
-                'message' => $exception->getMessage(),
-            ], JSON_THROW_ON_ERROR));
-            throw $exception;
-        }
-        PHP;
+    return 0;
 }

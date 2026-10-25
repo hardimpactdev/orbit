@@ -83,6 +83,7 @@ use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ShowScheduleRequest;
+use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
@@ -90,14 +91,17 @@ use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ScriptTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
@@ -302,7 +306,9 @@ describe('repository guidance bootstrap', function (): void {
             UpdateTaskGroupRequest::class,
             ProvisionTaskGroupRequest::class,
             CheckTaskGroupRequest::class,
+            ScriptTaskGroupRequest::class,
             TurnTaskGroupRequest::class,
+            AnalyzeTaskGroupRequest::class,
             PublishTaskGroupRequest::class,
             CancelTaskGroupRequest::class,
             CompleteTaskGroupRequest::class,
@@ -311,6 +317,8 @@ describe('repository guidance bootstrap', function (): void {
             DestroySubtaskRequest::class,
             CancelSubtaskRequest::class,
             CreateTaskCommentRequest::class,
+            CreateTaskGroupCommentRequest::class,
+            ListTaskGroupCommentsRequest::class,
             ListTaskCommentsRequest::class,
             ListTaskQuestionsRequest::class,
             CloseTaskQuestionRequest::class,
@@ -568,7 +576,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($publicContract)
             ->toContain('- Reverb apps: create, list, show, destroy, rotate, registry sync, and operation show; add and remove an app on an Instance.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, provision, check, script, analyze, turn, publish, cancel, and complete, subtask create, update, destroy, and cancel, subtask comment create and list, group assistance comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')

@@ -4344,19 +4344,6 @@
       ]
     },
     {
-      "name": "doctor.resolve-route-dns",
-      "summary": "Compare the first system IPv4 DNS answer for a Route with its expected address.",
-      "mutates": false,
-      "timeout_seconds": 10,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "doctor.projection_invalid"
-      ]
-    },
-    {
       "name": "caddy.remove-certificate",
       "summary": "Remove only an owned role or extension Caddy certificate pair under its publication lock.",
       "mutates": true,

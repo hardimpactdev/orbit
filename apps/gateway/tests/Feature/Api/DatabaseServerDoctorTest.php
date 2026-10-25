@@ -13,6 +13,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Process;
+use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeValkeyServerAdmin;
 
 beforeEach(function (): void {
@@ -164,4 +165,37 @@ it('keeps an open finding when admin login fails and hides raw failures', functi
     expect(array_column($response->json('data.nodes.0.families.0.issues'), 'code'))
         ->toBe(['database_server.open', 'database_server.inspection_failed']);
     expect($response->getContent())->not->toContain('doctor-admin-secret')->not->toContain('raw server failure');
+});
+
+describe('PostgreSQL test pool inspection', function (): void {
+    it('reports missing serial test databases before endpoint opt-in without recorded users or writes', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        DatabaseUser::query()->delete();
+        $this->connection->update(['driver' => 'pgsql', 'database' => 'app', 'test_database' => 'app_test']);
+        $sql = new FakeDatabaseServerAdmin;
+        app()->instance(DatabaseServerAdmin::class, $sql);
+
+        $this->postJson('/api/v1/doctor', $this->request)->assertOk()
+            ->assertJsonPath('data.nodes.0.families.0.checked', 1)
+            ->assertJsonPath('data.nodes.0.families.0.issues.0.code', 'database_server.test_database_missing')
+            ->assertJsonPath('data.nodes.0.families.0.issues.0.observed', 'app_test')
+            ->assertJsonPath('data.nodes.0.families.0.issues.0.kind', 'drift')
+            ->assertJsonPath('data.healthy', false);
+        expect($sql->sql())->toBe("SELECT datname FROM pg_database WHERE datname IN ('app_test');\n");
+        expect($sql->readyChecks)->toBe([]);
+    });
+
+    it('reports a failed pool query as unverifiable instead of missing members', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        DatabaseUser::query()->delete();
+        $this->connection->update(['driver' => 'pgsql', 'database' => 'app', 'test_database' => 'app_test', 'test_processes' => 2]);
+        $sql = new FakeDatabaseServerAdmin;
+        $sql->failOn = 'SELECT datname';
+        app()->instance(DatabaseServerAdmin::class, $sql);
+
+        $this->postJson('/api/v1/doctor', $this->request)->assertOk()
+            ->assertJsonPath('data.nodes.0.families.0.status', 'unverifiable')
+            ->assertJsonPath('data.nodes.0.families.0.issues.0.code', 'database_server.inspection_failed')
+            ->assertJsonCount(1, 'data.nodes.0.families.0.issues');
+    });
 });

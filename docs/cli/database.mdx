@@ -80,7 +80,7 @@ orbit database:create app-dev --server=services-postgres --instance=60 --test-pr
 orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
 ```
 
-The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. An identical Instance-owned PostgreSQL create retry [restores missing test pool members](/reference/database-servers#repair-a-postgresql-test-pool) and returns the recorded connection. Other duplicate slugs return `database.slug_conflict` and leave the existing record unchanged.
 
 Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
 
@@ -258,7 +258,7 @@ orbit database:destroy app --force
 ```
 
 <Warning>
-The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user.
+The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user. The [whole-set preflight](/reference/database-servers#remove-a-database) returns `database.in_use` (409) for connected clients or blocking dependencies before dropping anything. Stop clients or remove the dependencies, then retry.
 
 The Gateway returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 </Warning>

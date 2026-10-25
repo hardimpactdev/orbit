@@ -38,7 +38,7 @@ class InputTerminal extends Terminal
     }
 
     #[\Override]
-    public function read(): string
+    public function read(bool $submitOnEndOfTransmission = false): string
     {
         $this->assertInputAvailable();
         // PHP memory streams omit the blocking flag from their metadata.
@@ -63,7 +63,7 @@ class InputTerminal extends Terminal
             throw new PromptAborted('Unable to read input.', 'read_failed');
         }
 
-        if (str_contains($input, Key::CTRL_C) || str_contains($input, Key::CTRL_D)) {
+        if (str_contains($input, Key::CTRL_C) || (! $submitOnEndOfTransmission && str_contains($input, Key::CTRL_D))) {
             throw new PromptAborted;
         }
 

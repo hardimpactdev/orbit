@@ -665,12 +665,20 @@ Route::prefix('v1')->group(function (): void {
                 ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
             Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
+            Route::post('task-groups/{group}/comments', [TaskGroupsController::class, 'storeGroupComment'])
+                ->whereNumber('group')->name('tasks:group:comment:create');
+            Route::get('task-groups/{group}/comments', [TaskGroupsController::class, 'groupComments'])
+                ->whereNumber('group')->name('tasks:group:comment:list');
             Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
             Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
                 ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
             Route::post('task-groups/{group}/publish', [TaskGroupsController::class, 'publish'])
                 ->whereNumber('group')->name('tasks:publish');
+            Route::post('task-groups/{group}/analyze', [TaskGroupsController::class, 'analyze'])
+                ->whereNumber('group')->name('tasks:analyze');
+            Route::post('task-groups/{group}/script', [TaskGroupsController::class, 'script'])
+                ->whereNumber('group')->name('tasks:script');
             Route::post('task-groups/{group}/check', [TaskGroupsController::class, 'check'])
                 ->whereNumber('group')->name('tasks:check');
             Route::post('task-groups/{group}/turn', [TaskGroupsController::class, 'turn'])

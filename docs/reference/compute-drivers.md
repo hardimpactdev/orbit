@@ -620,6 +620,8 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
+The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this VM push job and record for the operation's recorded commit on `task-{group}-handoff`, without force or a pull request. It adds no push journal or VM runner. Same-operation recovery reconciles the recorded push and remote tip before repeating work. Cancellation invalidates a queued push; a started push must reconcile before ownership ends. Once only CI waits, cancellation stops observation, not GitHub workflows, and retains the pushed evidence. The Gateway still refuses external review-and-merge groups. The tick-owned publication flow below keeps its existing ownership.
+
 A VM sends its pack at its own pace, so the task tick does not publish. The push of an approved commit records the commit and `task-<id>` on the task VM row as `queued`, and queues the job `PublishTaskVmCommit` on the [Git queue](#jobs). The approval stays in review, without a failure. Each later tick reads the row:
 
 - `queued`: the job waits or runs. The tick changes nothing.
@@ -802,6 +804,8 @@ Create starts a VM that exists but is stopped, and fails with the `incus start` 
 Incus uses Zabbly's signed `lts-7.0` repository for Ubuntu 26.04. Each artifact records its exact Debian `version`, because architecture build timestamps differ. The tool `version` names their shared 7.0.x point release. The recipe pins `incus`, `incus-base`, and `incus-client` for amd64 and arm64. Zabbly bundles QEMU, qemu-img, virtiofsd, firmware, and the agent. Hosts remove the obsolete separate Ubuntu `incus-agent` package. Rebuilt images start from stock; their stock agent unit runs `/run/incus_agent/incus-agent`, supplied by the outer host. The installer does not replace that unit.
 
 `bin/recipe-artifacts bump` authenticates Sury and Zabbly indexes and updates their complete package sets together. It verifies the pinned signing key digests, `InRelease` signatures, package index hashes, and Incus Debian file digests. The nightly job opens one artifact bump PR under the [shared artifact update policy](#bump-the-php-build). Only changed Incus artifacts are downloaded; merge verification reads signed indexes without downloading Debian files. The existing [artifact mirror](#the-recipe-artifact-mirror) retains the same content-addressed Debian files used by Git and Sury. Managed machines have no rolling Zabbly APT source. Review the [7.0 release notes](https://discuss.linuxcontainers.org/t/incus-7-0-lts-has-been-released/26641) and [7.0.1 fixes](https://discuss.linuxcontainers.org/t/incus-7-0-1-lts-has-been-released/26942) for new requirements. The 7.0 line is supported until June 2031.
+
+The bump tests own fixed Incus versions and fake indexes, with distinct builds per architecture. Nightly artifact and snapshot updates therefore change no expected test result. Tests that decode or send the recipe compare with the document under test.
 
 The `ci-runner` role selects the complete Incus package set. Configured task VM hosts also add that set to their role-selected recipe tools. Other roles do not select Incus merely because it is installed; inventory those hosts separately before planning an upgrade.
 

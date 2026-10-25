@@ -20,6 +20,8 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 When removing a command, remove its response fixtures and CLI replay tests together. `bin/cli-contract --changed` accepts that retirement. A remaining fixture without a replay still fails; a replay that uses a deleted fixture still runs and fails.
 
+The docs-first addition for [fixed repository analysis](/cli/tasks#orbit-tasksanalyze) uses existing operation following, cancellation, and failure rendering, not a new progress mechanism. Runtime verification must keep complete bounded report/provenance bytes in JSON while making the human outcome (`ready`, `action_required`, `blocked`, or `changed`) distinct from operation status and scanner exit. A valid blocked report is not a generic green success, and following cancellation is not proof that descendants have stopped. Its native request/refusal contract stays in Tasks; exact help, human renderings, and terminal verification belong to runtime delivery.
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.
@@ -61,6 +63,8 @@ Choose a prompt by the values the command admits.
 | Several choices from a dynamic searchable set | Multisearch |
 | Open value with optional suggestions | Suggest |
 | One existing registry entity shown in several columns | Interactive data list |
+
+In a textarea, Enter adds a line and Ctrl+D submits the value. Ctrl+C cancels. Outside a textarea, Ctrl+D cancels rather than accepting a default. A closed input stream always cancels.
 
 Use Laravel Prompts for prompts and tables. An interactive data list means its columnar datatable primitive, with stable selector keys, row highlighting, keyboard selection, and a `Press / to search` hint. Display columns never become identity. A grouped property display is not an interactive data list. Do not substitute the console framework's question or table helpers for these primitives.
 
@@ -206,6 +210,8 @@ The Tasks JSON rendering preserves the distinction between a watched branch pull
 `tasks:question:close` reuses the progress tree and prints the closed question as `tasks:question:list` does. Its recordings are [closed.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/closed.human.txt) and the failure envelope [already-closed.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-question-close/already-closed.json).
 
 Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
+
+`tasks:analyze` keeps a failed operation failed: human output names its failed step and error code, while JSON retains the operation and its closed [public failure metadata](/reference/tasks#public-analysis-failure-metadata). `operation:show --json` also preserves the [immutable provision identity](/reference/tasks#public-provision-identity), including an unavailable `analysis_base: null`. Consumers read these fields from the operation result, never from human text. The `failure-overflow`, `failure-unavailable`, `pinned`, and `unavailable` recordings under [Tasks expectations](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/tasks) check human and JSON rendering.
 
 `tasks:status` includes workspace lease holders and queued actors in its human detail tree. JSON preserves the typed `workspace_leases` array. A busy checkout is a wait, so its queued actors do not appear as command failures. Doctor reports unresolved ownership without clearing it. See the [workspace lease contract](/reference/tasks#workspace-lease).
 

@@ -41,10 +41,12 @@ use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
@@ -368,6 +370,26 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->postJson("/api/v1/task-questions/{$question->id}/close", $close)->assertOk(), 'tasks/tasks-question-close/closed', CloseTaskQuestionRequest::class, 'POST /api/v1/task-questions/{question}/close');
         record_fixture($this->postJson("/api/v1/task-questions/{$question->id}/close", [...$close, 'status' => 'answered'])->assertConflict(), 'tasks/tasks-question-close/already-closed', CloseTaskQuestionRequest::class, 'POST /api/v1/task-questions/{question}/close');
+    });
+
+    it('records group assistance comments and refusals', function (): void {
+        $group = Task::topLevel()->create([
+            'project_id' => $this->project->id, 'title' => 'Post-child assistance', 'brief' => 'Decide whether to republish.',
+            'orchestration' => 'external', 'status' => TaskGroupStatus::Running,
+        ]);
+        $url = "/api/v1/task-groups/{$group->id}/comments";
+        $route = ' /api/v1/task-groups/{group}/comments';
+        record_fixture($this->getJson($url)->assertOk(), 'tasks/tasks-group-comment-list/empty', ListTaskGroupCommentsRequest::class, 'GET'.$route);
+        $payload = ['type' => 'assistance_requested', 'body' => 'Work item X, publish-retry, cycle 2, gate: may I republish?', 'author' => 'driver'];
+        record_fixture($this->postJson($url, $payload)->assertCreated(), 'tasks/tasks-group-comment-create/requested', CreateTaskGroupCommentRequest::class, 'POST'.$route);
+        $this->travel(1)->seconds();
+        $answer = ['type' => 'resolution', 'body' => 'Approved for this work item, stage and cycle.', 'author' => 'nick'];
+        record_fixture($this->postJson($url, $answer)->assertCreated(), 'tasks/tasks-group-comment-create/resolved', CreateTaskGroupCommentRequest::class, 'POST'.$route);
+        record_fixture($this->getJson($url)->assertOk(), 'tasks/tasks-group-comment-list/default', ListTaskGroupCommentsRequest::class, 'GET'.$route);
+        $group->tasks()->create(['title' => 'Appended child', 'brief' => 'More work.', 'position' => 1]);
+        record_fixture($this->postJson($url, $payload)->assertConflict(), 'tasks/tasks-group-comment-create/subtask-open', CreateTaskGroupCommentRequest::class, 'POST'.$route);
+        $group->update(['status' => TaskGroupStatus::Completed]);
+        record_fixture($this->postJson($url, $answer)->assertConflict(), 'tasks/tasks-group-comment-create/group-closed', CreateTaskGroupCommentRequest::class, 'POST'.$route);
     });
 
     it('records comments and agent threads', function (): void {

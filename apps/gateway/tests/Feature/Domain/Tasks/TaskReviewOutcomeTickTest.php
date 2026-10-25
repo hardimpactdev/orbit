@@ -773,6 +773,7 @@ it('supersedes an uncertain correction after completed direction without erasing
                 $arguments = $implementer ? [...$arguments, '--outcome=ready_for_review', '--deliverable=corrected=Implemented', '--deliverable=repro=Passed'] : [...$arguments, '--outcome=answered', '--cause=scope'];
                 (new Process($arguments, cwd: $this->checkout, env: ['PATH' => $this->pythonPath]))->mustRun();
                 if ($implementer) {
+                    $this->state->implementer = 'done';
                     $this->state->turnId = $key;
                     $this->state->messageId = $key;
                     file_put_contents($this->checkout.'/.git/orbit/run', $key);

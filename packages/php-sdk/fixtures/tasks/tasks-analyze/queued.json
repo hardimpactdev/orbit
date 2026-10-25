@@ -1,0 +1,53 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\AnalyzeTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/analyze",
+    "status": 202,
+    "body": {
+        "data": {
+            "id": 2,
+            "kind": "tasks.analyze",
+            "target_type": "task_group",
+            "target_id": 1,
+            "input": {
+                "subtask": 2,
+                "plan": {
+                    "asserted_by": "orchestrator",
+                    "complete": true,
+                    "id": "feature-2068",
+                    "paths": [
+                        {
+                            "change": "add",
+                            "path": "apps/gateway/new.php"
+                        }
+                    ],
+                    "revision": 1,
+                    "source": {
+                        "brief_id": "project:46/brief:2",
+                        "revision_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    }
+                },
+                "plan_sha256": "952001f3ff3d2c6ebf08bc2ee4ccbd0112bc130ec93cfe2d0f67fd9033952199",
+                "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "status": "queued",
+            "sequence": 1,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": null,
+            "cancel_requested": false,
+            "attempts": 0,
+            "triggered_by": "tick-node",
+            "created_at": "2026-10-22T12:00:00+00:00",
+            "started_at": null,
+            "finished_at": null,
+            "poll_after_seconds": 2
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

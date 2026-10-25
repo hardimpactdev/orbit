@@ -458,27 +458,49 @@ class ArtifactMirrorTest(unittest.TestCase):
                                 self.apt / 'mirror' / filename, artifact['sha256']) and call.kwargs == {'algorithm': 'sha256'} for call in download.call_args_list))
 
 
-DOCUMENT = build.load(build.RECIPE)
+def incus_document(version='7.0.1'):
+    builds = {'amd64': f'1:{version}-ubuntu26.04-202609250211',
+              'arm64': f'1:{version}-ubuntu26.04-202609250512'}
+    return {
+        'ubuntu': {'release': '26.04', 'snapshot': '20261014T000000Z'},
+        'architectures': list(builds),
+        'tools': {name: {'source': 'artifact', 'version': version, 'artifacts': {
+            arch: {'version': native,
+                   'url': f'https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/{name}_{native[2:]}_{arch}.deb',
+                   'sha256': hashlib.sha256(f'{name}:{arch}:{native}'.encode()).hexdigest()}
+            for arch, native in builds.items()}} for name in artifacts.INCUS_PACKAGES},
+    }
+
+
+DOCUMENT = incus_document()
 
 
 class IncusBumpTest(unittest.TestCase):
-    def indexes(self):
+    def indexes(self, document=None):
+        document = DOCUMENT if document is None else document
         indexes = {}
-        for arch in DOCUMENT['architectures']:
+        for arch in document['architectures']:
             indexes[arch] = '\n\n'.join('\n'.join([
                 'Package: ' + name, 'Architecture: ' + arch,
                 'Version: ' + pin['artifacts'][arch]['version'],
                 'Filename: ' + pin['artifacts'][arch]['url'].split('lts-7.0/', 1)[1],
                 'SHA256: ' + pin['artifacts'][arch]['sha256']])
-                for name, pin in DOCUMENT['tools'].items() if name in artifacts.INCUS_PACKAGES)
+                for name, pin in document['tools'].items() if name in artifacts.INCUS_PACKAGES)
         return indexes
 
     def test_selects_architecture_versions_and_ignores_feature_releases(self):
         document = copy.deepcopy(DOCUMENT)
         indexes = self.indexes()
-        indexes['amd64'] += '\n\nPackage: incus\nArchitecture: amd64\nVersion: 1:7.1.0-ubuntu26.04-202610010000\n'
+        for arch, feature in self.indexes(incus_document('7.1.0')).items():
+            indexes[arch] += '\n\n' + feature
         self.assertEqual(vars(artifacts)['bump_incus_recipe'](document, indexes), [])
         self.assertEqual(document['tools']['incus']['version'], '7.0.1')
+        self.assertEqual(document, DOCUMENT)
+
+    def test_new_lts_build_selects_each_architecture_and_updates_the_complete_set(self):
+        document = incus_document('7.0.0')
+        self.assertEqual(len(vars(artifacts)['bump_incus_recipe'](document, self.indexes())), 3)
+        self.assertEqual(document, DOCUMENT)
 
     def test_partial_build_and_untrusted_paths_do_not_change_pins(self):
         for damaged in (self.indexes()['arm64'].replace('Package: incus-client', 'Package: absent'),

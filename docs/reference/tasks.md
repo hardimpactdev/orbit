@@ -4,11 +4,11 @@ description: "How the optional Gateway Tasks extension runs tasks. It covers the
 covers:
   - "apps/gateway/app/{Data/Tasks,Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
-  - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
+  - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
   - "apps/gateway/database/migrations/2026_12_{03_000000_allow_cold_recipe_image_rebuilds,31_000000_add_task_vm_publish_error_code}.php"
 ---
 
@@ -94,7 +94,33 @@ Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a 
 
 The operation reserves the group and uses the same VM allocation and workspace provisioning as a scheduler claim. When capacity is full or the VM is still provisioning, the operation stays `waiting` and the group stays `reserved`. Delayed reads continue the claim when the VM is ready. Task VMs that are disabled or misconfigured, or a VM that fails, fail the operation with the task VM error, such as `task_vm.invalid_config`. Any provisioning failure ends the group `failed`, clears its reservation, and leaves VM removal to existing cleanup. A retry needs a new group.
 
-Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit }`, naming the workspace Instance, its Node, and its start commit.
+Success leaves the group `running`, its routed workspace `active` with its Route, or its unrouted workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask starts and no check runs. The operation result is `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, its Node, its start commit, and its immutable analysis pin. `starting_commit` is not necessarily the analysis base.
+
+##### Public provision identity
+
+`analysis_base` is null when the pin is unavailable, otherwise exactly `{base, instance_id, repository, branch}`. `base` is a full lowercase 40- or 64-hex Git commit object ID. `instance_id` is a positive integer equal to result `instance_id`; `repository` is the recorded Project repository identity and `branch` is the recorded workspace branch, both nonempty strings.
+
+Validate the repository with the existing Git-origin rules (no HTTPS credentials, SSH password, query, or fragment) and the branch with the existing Git-branch rules. An unsafe identity recorded by provision makes the entire public pin unavailable; never publish credentials or redact a secret into a different supposedly exact identity. These are the identities used by [analysis admission](#fixed-execution-and-complete-report), not new caller inputs. Existing result `node_id` identifies the provisioned Node; it is not a moving location lookup.
+
+Provision records the pin once under its workspace lease, before release. The public object copies that validated record, not the current Project settings, workspace HEAD, `starting_commit`, or remote refs. Pin capture uses the initial merge base described [below](#complete-typed-plan). A divergent starting commit can therefore differ from `analysis_base.base`. Persist the result's identity with the existing provision checkpoints so recovery after release and before terminal result persistence retains that same pin. Reads, recovery, and replay under the same key never recalculate it, fetch, or adopt a supplied base. Later default-branch movement, another child, VM parking, or VM destruction cannot change the terminal result.
+
+A recorded null base, absent pin, invalid object ID, incomplete or invalid identity, or pin for another provisioned Instance yields `analysis_base: null`. Do not return a partial object, fail an otherwise successful provision solely for unavailable analysis, or repair the pin from today's `origin/main`. A terminal result recorded without an `analysis_base` member also means unavailable; reads do not backfill or mutate old results. Analysis still fails closed with `tasks.analysis_unavailable` when no valid matching pin exists; a different supplied base remains `tasks.analysis_stale`. Publication of the pin does not authorize a base update or bypass fresh workspace checks.
+
+For example, this successful result names a starting commit on a divergent workspace and an earlier fixed merge base:
+
+```json
+{
+  "instance_id": 634,
+  "node_id": 91,
+  "starting_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "analysis_base": {
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "instance_id": 634,
+    "repository": "https://github.com/example/project.git",
+    "branch": "task-2074"
+  }
+}
+```
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
 
@@ -110,9 +136,245 @@ A workspace is required (`409 tasks.no_workspace`). A subtask outside the group 
 
 A parked VM queues its resume first. The operation waits for readiness and for its own check lease, after any implementer turn releases ownership. It starts no check inside a turn's receipt scope. The detached [Project check](#project-check) runs in the workspace. A baseline runs Project setup first; a handoff verifies deliverables. Delayed reads claim the waiting operation, then reconcile the group's workspace lease to record the reading. A busy lease keeps the operation `waiting`. A lost start reply also keeps the operation `waiting`, with its recorded check and lease held until recovery proves the check ended or confirms its stop.
 
-The result holds `outcome` (`passed`, `failed`, or `changed`), each deliverable's result, `check_id`, `commit`, `head`, `tree`, and redacted `output`. Each deliverable result holds its `id`, `outcome` (`passed`, `failed`, or `not_checked`), and `failures`. Baselines and review deliverables use `not_checked`. A failed check succeeds as an operation with outcome `failed`. The human CLI shows the check outcome and check ID, plus the commit when one exists; its exit status follows the operation status. A passed handoff commits the checked tree and records the commit on the check. It pushes no handoff CI branch: external groups cannot use review and merge. A lost check keeps the group held and the operation `waiting`; cancel the group to end it.
+The request stays exactly `{ subtask: positive integer, phase: baseline|handoff }`, with the existing optional idempotency key; Swamp always supplies a key. There is no caller-selected CI switch, check name, branch, or SHA.
 
-A direct `operation:cancel` stops a waiting check as `tasks:check:cancel` does. Orbit records the cancel request first. An unconfirmed stop returns `502 tasks.check_unreachable`, keeps the operation `waiting`, and retries the stop on its next delayed read. Group cancel and complete end the open operation first. When the VM does not answer, they end it `cancelled` without that 502 and follow the existing [unreachable Node rule](#cancel-a-stuck-task).
+Hosted handoff CI implements the narrow check prerequisite in [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#check), not the wider external review-and-merge contract. External review-and-merge create and topology append still return `tasks.orchestration_unsupported`. Tests use isolated external fixtures whose Project requires CI; they do not change production admission or enable a live Project. Ordinary external groups without this policy keep their existing path.
+
+The result keeps `outcome` (`passed`, `failed`, or `changed`), `deliverables`, `check_id`, `commit`, `head`, `tree`, and redacted `output`, and adds `ci`. Each deliverable result holds its `id`, `outcome` (`passed`, `failed`, or `not_checked`), and `failures`. Baselines and review deliverables use `not_checked`. `head` is the pre-commit check snapshot; **`commit` is the candidate HEAD**, not `head`. The human CLI shows the check outcome and check ID, plus the commit when one exists; its exit status follows the operation status, so consumers must inspect `outcome`.
+
+For a handoff whose `Project::handoffCheckName()` is non-null, the existing commit step creates one fresh sanitized commit, even for an unchanged checked tree (`allowEmpty: true`), records it on the check, and verifies its tree against the passed tree. The [handoff policy](#handoff-ci) owns message sanitization. The commit and `refs/orbit/check-operations/{operation}` receipt are written in one Git reference transaction. Recovery reads that receipt before checking the old snapshot, so a lost reply cannot create a second candidate. An uncertain remote result retains the workspace fence.
+
+Same-operation replay/recovery retains that commit, including after an interrupted reply; it creates no second commit. A newly authorized operation with a new key creates a fresh commit even if the previous workflow was cancelled and the checked tree is unchanged. Baseline and Projects without this policy retain their commit behavior and return `ci: null`. The policy follows `reviewsAndMerges()` today, not an independent caller option.
+
+Two persisted steps follow commit: handoff push, then hosted CI read. Operation state records the required check name and `task-{group}-handoff` branch before push. Recovery reads that same plan; later Project edits cannot change which check must pass for the candidate. Push only the operation's recorded commit, without force, to that handoff branch. Never open a pull request on it, push the task branch, or create another commit for CI.
+
+Reconcile the existing VM push record and remote tip before repeating a push after an interrupted reply. The operation reuses the handoff push, shared GitHub check snapshot, classification and output helpers, not `TaskHandoffCi::test()` or its scheduler callbacks.
+
+`ci` is null for baseline/no-policy, or has this shape. The same evidence is persisted in operation state while waiting; it is not a second check-status schema.
+
+| CI field | Contract |
+| --- | --- |
+| `branch` | The pinned `task-{group}-handoff` branch |
+| `commit` | The exact recorded handoff commit, equal to result `commit` |
+| `check_name` | The required hosted check name pinned before push |
+| `state` | `passed`, `failed`, `pending`, `missing`, or `unreadable` |
+| `fault` | `change`, `infrastructure`, `configuration`, or null |
+| `pushed_at`, `observed_at` | ISO 8601 times, or null before the corresponding push/read |
+| `runs` | Existing `GitHubCheckRun::toArray()` records: `name`, `conclusion`, `url`, `id`, `started_at`, `status`, `head_sha`, `app_slug`, `output_title`, `output_summary`, `check_suite_id` |
+| `suites` | Existing `GitHubCheckSuite::toArray()` records: `id`, `status`, `conclusion`, `app_slug` |
+
+CLI `--json`, the PHP SDK's `OperationResponse::result`, and MCP operation reads carry the same result. No new API, CLI verb, SDK request or MCP input is added. Regenerate OpenAPI, recorded SDK fixtures, MCP tools and web types when their emitted contracts change; generic operation-result schemas can leave those generated bytes unchanged. This documentation prerequisite changes no generated runtime contract.
+
+Run and suite text uses the redacted, bounded [check-output rule](#check-output), not raw logs. Pending, missing or unreadable CI keeps the operation `waiting`, with delayed bounded reads, the group target held, and no worker held. A local pass is not a completed usable candidate while required hosted CI waits. The operation result remains terminal evidence; waiting CI evidence lives in operation state. The operation dispatches one VM push and observes its persisted record; a failed push remains waiting with infrastructure evidence rather than reusing the tick scheduler's retry policy. The orchestrator may cancel and investigate it.
+
+| Hosted CI observation | Operation and check result |
+| --- | --- |
+| Required check passes on the recorded commit | `succeeded`, `outcome: passed` |
+| Code/workflow failure under the shared classification | `succeeded`, `outcome: failed`; check `failed_step: ci`, with redacted failure evidence |
+| Pending, missing, or unreadable | `waiting`; keep the evidence and read again after a delay |
+| Infrastructure/configuration evidence, including no suite after 600 seconds or completed suites classified as configuration because the named job is missing | Report the existing classification while waiting; never silently charge a failed-code budget or start a fixup |
+| Post-check workspace movement | `succeeded`, `outcome: changed`; no usable candidate |
+
+The orchestrator owns the wall-clock budget and may cancel observation and park for assistance. The Gateway posts no reminder, assistance or next turn, and never implicitly merges main. The [tick handoff CI](#handoff-ci) classification and output helpers are shared, but its lifecycle actions are not. A lost local check keeps the group held and the operation `waiting`; cancel the group to end it.
+
+Only a completed successful `tasks.check` with `outcome: passed`, a handoff `TaskCheck`, non-null commit, checked tree and satisfied deliverables supplies a checked candidate. Its source is the operation ID, check ID, owning child, commit and tree, never a caller-supplied SHA. Reviewer and publish admission share one hosted-CI eligibility predicate. When the Project requires CI, the owning handoff operation must have succeeded with passed CI on that check/commit. A locally passed check alone, including one left by cancelled CI observation, is ineligible for both consumers. This is a narrow consumer guard, not final-review publication gating or supported external review-and-merge admission.
+
+Land this prerequisite without changing admission or orchestration ownership. Swamp adoption and the wider review-and-merge contract are separate. Roll back caller adoption first. Before reverting runtime support, cancel or finish affected operations through the existing operation API and reconcile any started push; uncertain local work stays fenced. Preserve recorded check/commit/CI evidence and the already pushed branch until normal group cleanup. A rollback never weakens candidate eligibility, opens admission, changes a group's orchestration, or cancels GitHub workflows.
+
+A direct `operation:cancel` stops a waiting local check as `tasks:check:cancel` does. Orbit records the cancel request first. An unconfirmed stop returns `502 tasks.check_unreachable`, keeps the operation `waiting`, and retries the stop on its next delayed read. Group cancel and complete end the open operation first. When the VM does not answer, they end it `cancelled` without that 502 and follow the existing [unreachable Node rule](#cancel-a-stuck-task).
+
+For hosted handoff CI, cancel stops a queued push under the existing publish stop rules; a started push must be reconciled before ownership ends. Once only hosted CI waits, cancel ends observation, not GitHub workflows. It does not erase the already pushed branch or check evidence. A cancelled observation cannot supply an eligible candidate even if its local `TaskCheck` remains passed.
+
+#### Run a tracked repository script
+
+`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The operation holds the group target and the existing workspace lease. It does not create a check, agent turn, commit, or dependency record.
+
+`script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. Orbit pins the script digest, HEAD, whole-workspace tree, and literal argument list before dispatch and verifies them again in the owned process. Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
+
+Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
+
+The detached runner uses the existing run receipt and cgroup supervision. Lost start replies reconcile the reserved run; they never blindly dispatch it again. A reservation proven not started is tombstoned and fails as `tasks.script_not_started`. An unavailable tracked executable fails as `tasks.script_unavailable`. Unknown process or lease ownership keeps the operation waiting and the workspace fenced. Cancellation must prove the process and descendants terminal before releasing ownership. A script has a fixed one-hour limit. An interrupted run reports failure after terminal proof; it is not an automatic retry.
+
+## Analyze an external group's repository
+
+The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#fixed-repository-analysis). Repository analysis and turn evidence do not establish live interruption or docs-workflow proof. They do not open external review-and-merge or topology admission.
+
+`POST /api/v1/task-groups/{group}/analyze` starts `tasks.analyze`, served by the Gateway with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller command, argument list, environment, executable, working directory, report path, model, or analyzer selector. API, SDK, CLI `tasks:analyze`, and generated MCP metadata share the native request contract; clients do not define competing schemas or aliases.
+
+The usual access, current-open-child, group target hold, parked-VM resume, and workspace rules apply. Tick groups, ended groups, missing workspaces, foreign or noncurrent children, and busy groups keep their existing refusals. The start returns HTTP 202 with `{data: OperationData, meta: {request_id}}`. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation). The result is null until terminal. Analysis changes no board or child state, starts no Pi turn, creates no `TaskCheck` candidate, commits or pushes nothing, and advances no workflow stage. Baseline and handoff checks keep their existing inputs and purpose.
+
+##### Complete typed plan
+
+The planning owner asserts the complete cumulative inventory before feature runtime edits. Include source, tests, docs, generated outputs, and new files that do not exist yet. The initial docs child plans the whole feature, not just its own edits. Later revisions retain the group's earlier paths. Shape validation cannot prove completeness of future work; the reviewer compares the inventory with the brief and deliverables.
+
+| Manifest field | Contract |
+| --- | --- |
+| `id` | Stable identifier, 1–64 characters from `A-Z a-z 0-9 _ -` |
+| `revision` | Positive integer; increases for every change |
+| `source` | `{brief_id, revision_sha256}` identifying the source brief; the digest hashes its exact bytes before prompt formatting |
+| `asserted_by` | Nonempty planning actor identifier, at most 128 characters |
+| `complete` | Must be `true`; a partial plan is refused |
+| `paths` | Nonempty list of `{change: add\|modify\|delete, path}` or `{change: rename, from, path}`; rename contributes both endpoints to analysis |
+
+Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist; delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
+
+Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
+
+`base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with `origin/main`, fixed across children.
+
+Provision calls `analysis-base` in the existing task-check program. It finds the merge base of the Instance's starting commit and local `refs/remotes/origin/main`. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
+
+Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
+
+Gateway verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots under the lease before dispatch and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, lease, execution identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
+
+##### Fixed execution and complete report
+
+Persist steps `workspace_ready`, `analysis`, and `report` on the existing operation. Reserve one run identity before dispatch. Existing detached check supervision runs only tracked regular executable `bin/task-analyze`, at the pinned digest, with no arguments and validated JSON on stdin containing the plan, base, candidate, and Gateway-issued execution identity. It runs as the workspace owner without model or GitHub credentials or approval authority. Missing entrypoint or tooling is unavailable; there is no shell, host-checkout, or agent fallback. This narrow read-only profile is the [one fixed analysis exception](/reference/node-agent#fixed-read-only-task-analysis) to the supervision boundary; it adds no Gateway Node script or script-ratchet exception.
+
+Orbit's repository adapter calls the existing `DocsImpact::report(base, paths)` with the complete flattened inventory once. The scanner still unions planned paths, actual tracked changes, and untracked files, retaining deletions and both rename endpoints and inspecting current and base surfaces. Keep its mappings and payload validation in the repository, not Gateway policy. Validate all existing report fields: `base`, `paths`, `impacted_pages` with every reason, `surfaces` with ownership and generator status, `surfaces_handled_by_generator`, `errors`, and `verdict`. Reuse the existing report unchanged, not a second scanner or replacement docs report model. Validate its base and path union against input and actual workspace. Generator checks run in check mode only, never write mode.
+
+Stdout is exactly one strict UTF-8 JSON envelope:
+
+```json
+{
+  "schema": 1,
+  "execution_id": "gateway-reserved-run",
+  "plan_sha256": "<lowercase SHA-256>",
+  "base": "<full Git object ID>",
+  "head": "<full Git object ID>",
+  "tree": "<full Git object ID>",
+  "status": "ready",
+  "diagnostics": [],
+  "report": {"schema": "orbit.docs-impact.v1", "data": {"...": "complete existing DocsImpact report"}}
+}
+```
+
+The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
+
+Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Stderr is only a separate bounded, redacted diagnostic tail. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Gateway validates the generic envelope and bounds, cross-checks identities against stored execution, and pins its own snapshots. The repository validates payload semantics. Repository evidence is never privileged instructions.
+
+On a nonzero exit, the adapter can instead emit a bounded failure object on stdout: `{schema: 1, error: {code, required_bytes}}`. The only codes are `tasks.analysis_unavailable` with null `required_bytes`, and `tasks.analysis_report_too_large` with the full envelope's required byte count above 65536. These are failures, never report artifacts.
+
+The existing runner carries the complete bytes unchanged. Gateway validates the closed shape and types, then retains the typed code and size after terminal proof, before release. The [public failure result](#public-analysis-failure-metadata) carries this safe diagnostic without exception text or stderr. The report bound is unchanged.
+
+| Valid repository report | Analysis status |
+| --- | --- |
+| `no_docs_change`, empty errors, all required generator checks passed | `ready` |
+| `docs_required`, no unresolved errors and no missing, stale, or failed generators | `action_required`: provide to the docs author; not permission to start feature runtime edits before docs review |
+| Errors, contradictory verdicts, unresolved or unowned surfaces, unavailable or failed generators | `blocked`, even if the scanner process exits 0 |
+
+A valid completion stores `{outcome, artifact, provenance}` in the keyed operation result. `outcome` is `ready`, `action_required`, `blocked`, or `changed`. A valid blocked report may finish with operation status `succeeded`; that status alone never authorizes a turn. Movement of the checkout produces unusable `changed` evidence and preserves any complete report for inspection only. A nonzero exit, invalid or missing report, overflow, or unknown execution outcome cannot produce ready or action-required evidence.
+
+`artifact` is `{sha256, bytes, content}`. Hash and byte length describe the exact UTF-8 stdout bytes; `content` holds those bytes as a JSON string. Verify and parse the complete content, not reserialized JSON or a log tail. Retain the full bounded bytes beside existing operation state, with a response budget large enough for JSON encoding and all bounded fields. Keyed operation and artifact retention survive VM destruction. Existing access checks govern reads; the VM reader addresses only this operation's run record, not arbitrary files. Add no artifact service, durable table, or approval ledger.
+
+Gateway-owned provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `lease_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC and duration uses a monotonic clock. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
+
+##### Replay, stop, and fencing
+
+Read-only analysis takes the same exclusive group holder and workspace lease as author and check work. No author, check, publish, or write-mode generator may overlap it. An existing lease waits without dispatch. Release the operations worker during waits, not the group target or workspace fence; other targets can still run. Out-of-band edits invalidate the result. Temporary analysis or cache work outside candidate paths must also terminate before release.
+
+After access checks, same key, target, and input replay the stored operation before mutable eligibility checks. Changed input conflicts. Lost start replies, worker restarts, or lost result replies adopt the reserved run and its retained exact report bytes without another scanner invocation. When recovering a missing start, supervision atomically tombstones that reserved identity before concluding that it never ran. The tombstone ends that attempt without dispatch; a new attempt requires a new key.
+
+Once dispatched, a missing retained report fails for inspection only after local terminal proof. Never rerun it under the same key, including after artifact or Gateway persistence loss. Terminal replay stays terminal and starts nothing.
+
+Cancellation before dispatch prevents execution. After dispatch, request stop and reconcile the exact process or unit and its descendants. A timeout, missing PID, elapsed budget, or transport loss is not terminal proof. Unknown or unreachable work remains waiting and fenced until termination is proven, including during cancellation. Malformed transport likewise ends `failed` only after local terminal proof, preserving the failure code and safe diagnostics. Reuse existing stop and journal recovery; add no worker or supervision framework. Cancellation never turns saved evidence into approval or bypasses the existing unreachable-workspace cleanup rule.
+
+Changing plan revision or digest, source brief, base, repository, entrypoint content, HEAD, whole tree, or owning workspace invalidates use for a new turn. Keep prior evidence immutable and authorize a new operation and key. A changed in-flight plan must stop progression and reconcile the existing owner before a new request; do not overwrite its input. Gateway checks the supplied evidence identity, not the caller's latest intentions. The latest authorized plan and actual-versus-planned progression belong to later Swamp adoption, not a new Gateway ledger.
+
+##### Analysis-bound turn evidence
+
+Existing `tasks.turn` gains optional `analysis: {operation, plan_sha256}`: a positive operation ID and lowercase SHA-256. Omission preserves ordinary turns. Resolve a terminal successful `tasks.analyze` for the same group and current child. Verify the reference digest, complete artifact and usable outcome; only `ready` or `action_required` can supply evidence. A blocked or changed report, foreign child, or nonterminal operation cannot.
+
+Immediately before the first Pi send, compare fresh candidate, base, repository, workspace, and entrypoint identity under the existing turn lease. Stale evidence refuses without a send. Reviewer admission still requires its ordinary eligible handoff check, including required hosted CI; the check's commit and tree must also match the fresh analysis. Analysis is not a checked candidate or a substitute for that eligibility rule.
+
+Add the full manifest, validated envelope, and Gateway provenance to the caller's semantic prompt, labelled as repository evidence. Enforce the existing 100,000-character bound on the combined prompt, including fixed instructions and evidence, before sending. Overflow refuses with no send; no summary, shortened tail, truncation, or host-file mount substitutes for the report. A smaller task or plan, or a separately reviewed transport design, is required.
+
+Persist the exact assembled prompt, reference, and hash in turn state before dispatch. Verify that retained reference and complete prompt hash before reuse; a corrupt binding fails without another send and does not release an uncertain owner. After confirmed acceptance, same-key recovery retains the original Pi/Durable send identity and persisted prompt. It recovers the original turn rather than revalidating the intentionally edited checkout and starting a second send.
+
+A local dispatch journal alone does not prove acceptance. If an unconfirmed request now has stale evidence, wait under the original lease without resending; a negative observation does not stop a delayed request from arriving later. A terminal observation for another key cannot release that lease. Uncertain work has no timeout-based release, including after a crash between journaling and transmission. Freshness checks govern first admission and unconfirmed retries, not recovery of a confirmed dispatched turn.
+
+The initial report is input to its author turn. Author edits intentionally invalidate its candidate identity. After the normal handoff commit and check, analyze the current checked candidate again before an evidence-bound reviewer turn. Preserve initial and current operation IDs in caller evidence. Rework or entry to the next child needs fresh evidence when the plan or candidate changes; never rerun baseline for this purpose.
+
+##### Public analysis failure metadata
+
+A terminal `tasks.analyze` failure can carry a non-null operation `result` without becoming successful. Its entire failure result is exactly `{schema: 1, error: {code, required_bytes}}`; no `outcome`, `artifact`, report fragment, or success provenance is included. Operation `status` remains `failed`, and `error.code` must equal the operation's original `error_code`. The existing failed-step identity is preserved. The successful `{outcome, artifact, provenance}` result is unchanged.
+
+| Failure result field | Contract |
+| --- | --- |
+| `schema` | Integer `1` |
+| `error` | Object containing exactly `code` and `required_bytes` |
+| `error.code` | Only `tasks.analysis_report_too_large` or `tasks.analysis_unavailable` |
+| `error.required_bytes` | For overflow, an exact validated JSON integer from 65537 through 9007199254740991 inclusive, or null if the exact size is unknown; for unavailable tooling, always null |
+
+The integer ceiling is the largest integer exactly representable by all supported JSON consumers. Reject strings, booleans, fractions, non-finite numbers, negative or in-bound overflow sizes, and larger integers; never round or clamp. The adapter's overflow failure object requires a known integer in that range, not null. Null in the public overflow result is reserved for overflow detected by the Gateway when the exact length of the complete envelope is unavailable. The bounded two-code object is the diagnostic; there is no free-text `message` field to redact or parse.
+
+For example, an operation read for a validated adapter overflow includes these fields (other ordinary operation fields and steps are omitted here):
+
+```json
+{
+  "kind": "tasks.analyze",
+  "status": "failed",
+  "error_code": "tasks.analysis_report_too_large",
+  "result": {
+    "schema": 1,
+    "error": {
+      "code": "tasks.analysis_report_too_large",
+      "required_bytes": 216325
+    }
+  }
+}
+```
+
+Unavailable tooling uses `error_code: tasks.analysis_unavailable` and `result: {"schema":1,"error":{"code":"tasks.analysis_unavailable","required_bytes":null}}`. This does not add metadata to synchronous admission-error responses. Failures before an owned analysis run is reserved, other analysis codes, and non-analysis operations retain their existing result behavior; they cannot acquire this payload merely because an exception or output contains one of these code strings.
+
+Accept an adapter failure only from complete bounded strict UTF-8 stdout of the exact reserved owned run, after a nonzero exit and authoritative local terminal proof. Validate the same closed schema, duplicate-key/depth/number rules, completion identity, and run/workspace/lease binding used by the analysis transport.
+
+The adapter object has no caller-supplied provenance: association comes from the Gateway reservation and supervised run record. Wrong-run, foreign-owner, zero-exit, malformed, unknown-code, extra-field, or forged completion data cannot supply a size or tooling diagnosis. Reject malformed failure objects as `tasks.analysis_report_invalid` with null result, rather than salvaging an embedded number. No arbitrary runner hint, exception message, output tail, stderr, or private operation-state dump is a metadata source.
+
+For Gateway-detected overflow, publish an exact size only when the complete byte count is validated against the owned supervised completion; a tail, prefix, buffer limit, or unverified `report_bytes` value is not the full envelope's size. Otherwise return null for the size while retaining `tasks.analysis_report_too_large`. Never measure the small failure object's length as the required report size. The 65536-byte/depth-24 report bound remains absolute: the 216325-byte full report, its 162390-byte compact form, and a 69452-byte report are all unusable. Do not emit any partial report or raise the bound.
+
+Persist only validated typed failure fields in the existing terminal checkpoint after terminal proof and before releasing the workspace lease. Recovery validates that checkpoint and its original operation, run, workspace, and lease association, releases only that owner, and produces the same failed outcome through the existing operation-result facility. Persist terminal status, original error code, failed step, and result together. A crash before release, after release, or before terminal result persistence cannot discard the exact known size, dispatch again, or turn failure into success. Do not derive metadata from a checkpoint's exception text when typed fields are absent.
+
+Queued, running, or waiting operations expose no terminal result. Unknown termination, unknown descendants, transport loss, and foreign ownership retain fencing and do not publish terminal failure metadata. Cancellation retains the existing stop rules and never fabricates a failed analysis result; a cancelled operation does not expose this payload. A cancel request after terminal failure leaves its recorded result unchanged. Repeated HTTP reads, sequence-filtered reads, same-key replay, and VM cleanup preserve the terminal payload under existing access checks and keyed retention.
+
+##### Metadata compatibility and generated surfaces
+
+These additions use only existing operation reads and `result`; no endpoint, request option, top-level operation field, table, or ledger is added. API get/list reads and same-key start replies, CLI `--json`, PHP SDK `OperationResponse::result`, and MCP operation reads carry the same nested fields. Clients branch on `kind`, `status`, and the documented result shape, not on whether `result` is non-null. The CLI still exits unsuccessfully and displays the original failure code; human display and step output are not machine metadata contracts.
+
+Older records and older Gateways can lack provision `analysis_base` or return null for failed-analysis `result`. Treat those as explicit unavailable base or unknown required size; retain the original typed code and full supported operation. Do not parse error strings, guess values, or reinterpret a missing field as success. This is absence handling in additive public data, not a second execution or compatibility path. No read-time backfill or new request variant is supported.
+
+Implementation must check native OpenAPI, recorded SDK fixtures, generated MCP tools, and web operation types against the same contract, and add API/CLI/SDK/MCP parity coverage. Regenerate emitted artifacts only when their generator inputs change; a generic object-valued `result` can leave generated schemas unchanged, but not excuse missing value-preservation tests. Roll out the producer before caller adoption. On rollback, stop adoption first, reconcile active owners through existing cancellation/recovery, and preserve terminal results and pins without recomputation or extraction from old logs.
+
+Implementation regressions must fail before the change through actual public operation HTTP reads, not only private state assertions. Exercise the real adapter's oversized-report and unavailable-tooling outcomes, repeated reads and same-key replies, crashes around terminal checkpoint/release/result persistence, malformed and forged payloads, unsafe sizes, non-analysis failures, unknown termination, cancellation, and foreign ownership.
+
+A divergent starting-commit fixture must prove the public base equals the immutable pin accepted by analyze, not the start commit; move `origin/main` and replay without changing that pin. Missing or invalid pins remain unavailable. Keep existing report, lease, provision, check, and turn regressions, test limits, and script ratchet intact; reuse valid unchanged proof rather than blindly rerunning full suites.
+
+##### Analysis failures and delivery limits
+
+| Condition | Response or terminal evidence |
+| --- | --- |
+| Missing key, invalid shape, digest, path, unknown fields, or oversized request | HTTP 422 `validation.failed`; no dispatch |
+| Missing or nonancestor base, mismatched HEAD or tree | HTTP 409 `tasks.analysis_stale`; no dispatch |
+| Missing entrypoint or tooling | HTTP 422 `tasks.analysis_unavailable` before dispatch, or failed operation with that code when discovered later |
+| Invalid, missing, truncated, or wrong-identity report | `tasks.analysis_report_invalid`; unusable |
+| Envelope overflow | Failed `tasks.analysis_report_too_large`; [typed size or null](#public-analysis-failure-metadata), no partial artifact |
+| Exit 0 with report errors, unresolved surface, or missing/failed/stale generator | Valid `outcome: blocked`, with all diagnostics |
+| Nonzero exit or checkout mutation | `tasks.analysis_failed`, or valid `outcome: changed` saved for inspection; no green fallback |
+| Lost transport or unknown termination | Waiting with the same owner and run; retain fencing |
+| Foreign, nonterminal, or unusable analysis on a turn | HTTP 422 `tasks.analysis_not_usable`; no send |
+| Stale evidence at first-send preparation | HTTP 409 `tasks.analysis_stale`; no send |
+| Combined prompt overflow | HTTP 422 `tasks.analysis_prompt_too_large`; no send |
+
+An admission defect discovered after admission fails the operation with the same code only once safe to release. Existing access and task errors remain unchanged. Tests use real checker output in isolated Git fixtures, covering new and untracked files, deleted and renamed sources, unresolved ownership, generator failures, invalid plans and complete-report transport, changed identities, competing leases, cancellation and unknown descendants. Fault injection covers reservation, dispatch, terminal artifact persistence, Gateway result persistence, and turn preparation/send. Prove same-run/report and same-send recovery, not just a green mocked verdict. Ordinary baseline/no-policy checks and turns without analysis retain their request, result, and recovery behavior.
+
+Overflow fixtures use fewer, longer valid paths to exceed the report byte limit without hundreds of per-path Git lookups. They still run the actual checker and verify the reported required size. Keep the test time limits unchanged.
+
+At handoff, the existing [docs-impact gate](/contributor-guide#2-write-the-documentation) is authoritative. It checks actual files and retains accepted `exceptions` evidence. Review still judges meaning, ownership, completeness, and branch-local page-specific waivers. Machine no-docs is neither semantic approval nor a waiver; required generator checks remain required. Later Swamp adoption compares actual files, including deletes and both rename endpoints, with the full authorized plan: an omission blocks progression until revised, reviewed, and reanalyzed. This native slice supplies evidence, not that lifecycle gate.
+
+No Swamp client change, write-mode generator lane, generic shell API, second scanner, agent role, or approval ledger is authorized here. A needed write generator parks the future deterministic docs workflow until its mutation lane is separately demonstrated and reviewed; it must not fall back to an unowned host checkout or a mechanical agent turn. External review-and-merge/topology admission, live docs-workflow and interruption proof, incoming-PR orchestration, and tick retirement remain separate work. This slice does not rerun ORB2064/PR1503.
+
+Before rollback, stop new analysis requests and reconcile active analysis and evidence-bound turn owners. Restore a compatible release only after added steps are terminal. Preserve keyed operations, reports, provenance, and original turn identities; an older binary must not replay unknown new step plans. No live mode change, database rollback, or tick ownership transfer is needed.
 
 #### Run an external turn
 
@@ -124,7 +386,8 @@ The shared task-operation rules apply. A missing workspace returns HTTP 409 `tas
 | --- | --- |
 | `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |
 | `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
-| `check` | A reviewer needs a passed handoff check for this subtask with a recorded commit; otherwise 422 `tasks.commit_not_checked`. HEAD must equal that commit, or the start returns 409 `tasks.head_moved` |
+| `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
+| `analysis` | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
 
 The operation holds the group and sends one turn through Pi. The send key is its `Idempotency-Key`, or `operation-{id}`. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
 
@@ -140,7 +403,7 @@ Direct operation cancellation interrupts the held subtask turn and confirms that
 
 `tasks:publish <group> --check=<id> [--title=… --body=…]` starts `tasks.publish` through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body } }`. Supply title and body together. It uses the [shared task-operation rules](#provision-an-external-group), requires a workspace (`409 tasks.no_workspace`), and accepts `--idempotency-key` and `--json`. The PHP SDK and generated MCP tool expose the same inputs.
 
-The check must be a passed handoff check belonging to a subtask of this group, with its recorded commit. Otherwise admission returns `422 tasks.commit_not_checked`. HEAD must still be that commit (`409 tasks.head_moved`). A parked VM queues its resume first; HEAD is checked after readiness as well as at admission when the VM is ready.
+The check must be an [eligible checked candidate](#check-an-external-group) belonging to a subtask of this group, with its recorded commit. Publish shares reviewer admission's hosted-CI predicate: when the Project requires CI, a local pass alone does not count; the owning handoff operation must have succeeded with passed CI on that check/commit. Otherwise admission returns `422 tasks.commit_not_checked`. HEAD must still be that commit (`409 tasks.head_moved`). A parked VM queues its resume first; HEAD is checked after readiness as well as at admission when the VM is ready. This prerequisite adds no final-review publication gate and does not open external review-and-merge admission.
 
 The operation reuses the approval push: `PublishTaskVmCommit` imports the checked commit into the Gateway mirror and pushes it to `task-{id}`. A delayed operation read claims `waiting` as `running`, then reads the job record; it never polls the VM. If a started job is redelivered after losing its outcome, it fetches the remote branch through the Gateway mirror. An identical tip records success without another transfer or push; an ancestor allows the unforced push, and a divergent tip fails with `tasks.not_fast_forward`. A pending cancel resolves after that outcome is recorded.
 
@@ -199,6 +462,8 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `tasks:group:comment:create` | `POST /api/v1/task-groups/{group}/comments` | Gateway |
+| `tasks:group:comment:list` | `GET /api/v1/task-groups/{group}/comments` | Gateway |
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
@@ -669,6 +934,10 @@ For an owner recorded on another Gateway host, pass `--gateway-node=ID`. Orbit u
 
 Remote operations and separate turns still need their own terminal evidence. A rebooted managed check ends as interrupted and failed; a result from its previous boot cannot pass a gate or establish a causal after-tree.
 
+Before an opening turn, Orbit journals its request key and forwards that same key to the driver, including when Orbit generates it. A dispatched keyed turn completes its lease only when Pi reports `done` or `failed` for that exact key. `idle`, an unreadable prior observation, and terminal state for another key prove no completion. This preserves the fence while a delayed request may still arrive.
+
+A pre-existing turn adopted without a dispatch journal has no request key to match. Orbit retains that owner until it observes a nonempty turn ID in `idle`, `done`, or `failed`.
+
 A permanently lost Pi runtime can leave a dispatched turn without terminal evidence. The lease remains held, and the operator release command refuses it. There is no supported force-release or expiry for that turn; restoring authoritative runtime evidence or a separately reviewed recovery procedure is required. A ghost teardown with no Instance, saved endpoint, or authoritative provider destruction has the same evidence limit.
 
 Remote receipts, operation lock files and binding seals are retained. Removing a tombstone or seal could admit a delayed original; unlinking a lock while an old process holds its inode could create a second lock. Orbit has no automatic pruning procedure yet. Storage must remain available; age alone never permits deleting recovery evidence.
@@ -950,6 +1219,20 @@ Each entry contains the task id, kind, question, and reason. A resolution includ
 
 Ending a task clears its direction, observation, or ordinary failure request. Only a typed `removal_failure` may keep or request assistance on an ended group; it replaces any open direction request. `tasks:status` lists every task that still asks for assistance. An operator's `assistance_requested` comment flags an open subtask and its open task as direction requests, with the comment body as the question. It cannot reopen an ended task.
 
+#### Group assistance after all children end
+
+An external, non-terminal group with no open child can own an assistance comment. Use `POST /api/v1/task-groups/{group}/comments`, CLI `tasks:group:comment:create GROUP --type=assistance_requested --body='Work item X, publish-retry, cycle 2, gate: may I republish?' --author=driver`, or MCP `tasks-group-comment-create`. The PHP SDK exposes `CreateTaskGroupCommentRequest`. The body accepts only `type` (`assistance_requested` or `resolution`), nonblank `body` (at most 100,000 characters), and `author` (at most 255 characters). Agent-thread and receipt inputs are not supported. The response is `201 {data: TaskCommentData, meta: {request_id}}`.
+
+The Gateway locks the group and rechecks orchestration, status, and children before inserting the comment. Tick groups return `409 tasks.not_orchestrated`, terminal groups return `409 tasks.group_closed`, and groups with any child not `completed`, `failed`, or `cancelled` return `409 tasks.assistance_subtask_open`. Invalid input returns 422; missing groups and Node access follow the existing task routes. Appending an open child closes this write path until that child ends; use the child route rather than changing old children to bypass the guard.
+
+An `assistance_requested` comment explicitly replaces the group's current request with `direction`, using the body as both question and reason, under the same operator replacement rule as child comments. A `resolution` clears only a current group `direction` request. It never clears a failure, removal failure, or a child's request. Neither comment changes a status or child, starts a turn, check, topology, retry, scheduler relay, publication, completion, or approval. The board and `tasks:status` use the existing assistance fields. A recorded answer is input, not permission to pass an orchestrator's gate.
+
+Read group-owned history with `GET /api/v1/task-groups/{group}/comments`, CLI `tasks:group:comment:list GROUP`, MCP `tasks-group-comment-list`, or SDK `ListTaskGroupCommentsRequest`. Reads require Gateway access and remain available after completion and VM removal. The API and SDK support the existing `type` and `limit` (1–100) filters; the CLI reads the full history. The API returns newest-first `200 {data: [TaskCommentData], meta: {request_id}}`. Group comments store both `task_group_id` and `task_id` as the group ID; they do not appear in a child's comment history. Activity, redaction, and broadcasts use the existing comment and assistance paths.
+
+Repeated identical assistance state writes change no state and add no assistance Activity. Comment insertion is not exactly once: a retry after a lost response may duplicate audit comments, as on the child route. There is no comment operation or permanent idempotency registry. Callers read the complete current request before retrying or resolving, and leave an observed operator replacement alone. Concurrent replacements keep the existing one-open-request semantics; this route has no versioned resolution protocol.
+
+Land this additive API before caller adoption. Swamp adoption is separate; until then Swamp still skips assistance after its children end. Roll back the caller first, retaining the API and readable comments until the operator explicitly resolves outstanding requests. Do not clear requests, reopen children, change orchestration or task status, or change live ownership as rollback. Later review/merge, topology support, consult policy, and tick retirement are outside this slice.
+
 #### Direction requests
 
 Every assistance request has a typed kind. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
@@ -1044,6 +1327,8 @@ File deliverables and reproduction commands use the subtask start commit. Docume
 
 ### Handoff CI
 
+This section describes the tick-owned handoff policy. The [external check contract](#check-an-external-group) reuses its commit sanitization, push, check classification and output helpers, but persists its own plan and evidence and leaves budgets, cancellation and next steps to the orchestrator. The hosted-CI prerequisite does not enable external review-and-merge admission. The tick's reminders, assistance, retry decisions and reviewer starts below do not apply to an external operation.
+
 The fast checks run in the task VM. The handoff's full test suite runs in CI on the exact handoff commit. The merge still needs the full suite on the final head, as [Merge on green](#merge-on-green) states.
 
 This applies to a [review-and-merge](#review-and-merge) Project, which has a `merge_check` such as `Required checks`. Orbit owns that Project's CI. Every other Project keeps the task check alone, also one with a `merge_check`. The Orbit Project's task check runs only fast quality checks, as [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists.
@@ -1061,7 +1346,9 @@ The push starts CI, so the Project's workflow must run its merge check on pushes
 
 The handoff reads and writes no pull request. No pull request has a handoff branch as head, so an unreviewed handoff commit never reaches the task's pull request, nor an outside author's branch. A conflict with the base is not a handoff concern: the task's pull request, opened after the last approval, merges against the latest base through the [merge gate](#merge-on-green).
 
-The handoff branch holds only commits for CI, and the workspace can leave its history, as when it follows an [incoming pull request](#incoming-pull-requests). So a handoff replaces the branch with `--force-with-lease`, only over the tip that Orbit just fetched.
+The handoff branch holds only commits for CI, and the workspace can leave its history, as when it follows an [incoming pull request](#incoming-pull-requests). So a tick-owned handoff replaces the branch with `--force-with-lease`, only over the tip that Orbit just fetched.
+
+An external check instead pushes its recorded commit without force and reconciles the existing VM push record and remote tip on recovery, as its [operation contract](#check-an-external-group) requires. A divergent tip is not permission to overwrite it.
 
 When the task ends, completed or cancelled, Orbit deletes `task-{id}-handoff` on origin once its workspace is gone. A branch or repository that is already gone, a 404 or a 422, counts as deleted. The branch holds nothing to keep, so a failed delete never holds the removal. The task asks for `removal_failure` assistance once, with a reason that starts with `Handoff branch not deleted: `, and nothing retries the delete by itself. Delete the branch on GitHub or restore the App access, then cancel or complete the task again. That repeated command tries the delete once more and clears the request when the branch is gone.
 
@@ -1792,9 +2079,17 @@ These reasons explain the design. Check them before you propose a change.
 
 A turn and its check are separate operations. The check waits for the turn to release the workspace, so a receipt scope cannot lend it the implementer's lease. Reusing detached check supervision keeps tick and external checks under one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
 
+The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
+
 ### An external turn records evidence without choosing the next step
 
 The orchestrator owns the prompt, gates, budgets, and assistance. The turn operation only sends, waits, and records evidence. Applying a blocked receipt inside Orbit would create a second lifecycle owner. Durable owns restart resume and provider retries, so the Gateway never starts a replacement turn for them. Reviewers reset to the passed handoff commit to preserve what was checked. Consults keep the tree because it contains the implementer's work.
+
+### Public analysis metadata reuses operation results
+
+A typed code without a typed size forces callers to parse exception text, which is neither stable nor safe. A closed failure result preserves the original failure status and carries only an allowlisted code and validated safe integer. Reusing `OperationOutcome`'s failed-result facility keeps the generic runner free of Tasks exception parsing. Saving typed fields before release lets recovery finish the same failure without keeping raw rejected reports or diagnostics. A new error endpoint, table, generic exception-details bag, or private-state projection would expose more than this consumer needs.
+
+The provisioned starting commit can be ahead of or divergent from the initial merge base. Publishing the already recorded pin gives callers the same identity analysis admits, without trusting caller input or a moving remote. Null is safer than recomputing a pin that provision did not record. Returning the pin does not make a stale workspace usable or create a base-update policy.
 
 ### Provision keeps effects separate from lifecycle decisions
 

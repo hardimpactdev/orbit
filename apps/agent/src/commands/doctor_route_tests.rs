@@ -370,34 +370,3 @@ fn custom_proxy_ipv6_uses_the_configured_address_and_refuses_non_loopback_target
         assert_eq!(runtime.calls, 0);
     }
 }
-
-#[test]
-fn dns_reads_match_mismatch_and_invalid_input_without_exposing_answers() {
-    let mut input = DnsInput {
-        domain: "app.test".into(),
-        address: "10.44.0.2".parse().unwrap(),
-    };
-    for _ in 0..2 {
-        assert_eq!(
-            resolve_dns(&input, &mut Fake::healthy()),
-            Ok(DnsObserved { matches: true })
-        );
-    }
-    assert_eq!(
-        resolve_dns(&input, &mut Fake::default()),
-        Ok(DnsObserved { matches: false })
-    );
-    input.domain = "--help".into();
-    let mut runtime = Fake::healthy();
-    assert_eq!(
-        resolve_dns(&input, &mut runtime),
-        Err(InspectionError::Invalid {})
-    );
-    assert_eq!(runtime.calls, 0);
-    input.domain = "localhost".into();
-    input.address = Ipv4Addr::LOCALHOST;
-    assert_eq!(
-        resolve_dns(&input, &mut Native),
-        Ok(DnsObserved { matches: true })
-    );
-}

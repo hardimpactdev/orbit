@@ -122,12 +122,28 @@ describe('machine recipe structure and identity', function (): void {
     });
 
     it('selects the exact architecture build of the complete Incus LTS set', function (): void {
-        $recipe = new RecipeLoader()->load();
+        $document = machine_recipe_document();
+        $versions = ['amd64' => '1:7.0.42-ubuntu26.04-202610010001', 'arm64' => '1:7.0.42-ubuntu26.04-202610010002'];
+        foreach (RecipeLoader::IncusPackages as $name) {
+            $document['tools'][$name]['version'] = '7.0.42';
+            foreach ($versions as $architecture => $version) {
+                $document['tools'][$name]['artifacts'][$architecture] = [
+                    'version' => $version,
+                    'url' => 'https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/'.$name.'_'.substr($version, 2).'_'.$architecture.'.deb',
+                    'sha256' => hash('sha256', $name.':'.$architecture),
+                ];
+            }
+        }
+        $recipe = machine_recipe_decode($document);
 
         foreach (RecipeLoader::IncusPackages as $name) {
             expect($recipe->profile('base'))->toContain($name);
-            expect($recipe->tools[$name]->forArchitecture('amd64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250211');
-            expect($recipe->tools[$name]->forArchitecture('arm64')->version)->toBe('1:7.0.1-ubuntu26.04-202609250512');
+            foreach ($versions as $architecture => $version) {
+                $artifact = $document['tools'][$name]['artifacts'][$architecture];
+                expect($recipe->tools[$name]->forArchitecture($architecture)->version)->toBe($version)
+                    ->and($recipe->tools[$name]->artifacts[$architecture]->location)->toBe($artifact['url'])
+                    ->and($recipe->tools[$name]->artifacts[$architecture]->digest)->toBe($artifact['sha256']);
+            }
         }
     });
 
@@ -293,7 +309,7 @@ describe('machine recipe structure and identity', function (): void {
         $document = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
         $topology = [...RecipeLoader::IncusPackages, 'dnsmasq-base', 'btrfs-progs', 'nftables'];
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
-            ->and($document['tools']['incus']['version'])->toBe('7.0.1');
+            ->and($recipe->tools['incus']->version)->toBe($document['tools']['incus']['version']);
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi'];
         $profiles = [

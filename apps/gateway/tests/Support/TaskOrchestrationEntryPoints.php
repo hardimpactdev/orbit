@@ -25,12 +25,15 @@ use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\ShowTasksStatusAction;
+use App\Actions\Tasks\StartTaskAnalysisAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
+use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\StoreTaskGroupCommentAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
@@ -62,9 +65,16 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\PrunePendingTaskThreads;
 use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAnalysisBase;
+use App\Domain\Tasks\TaskAnalysisEvidence;
+use App\Domain\Tasks\TaskAnalysisFailure;
+use App\Domain\Tasks\TaskAnalysisOperation;
+use App\Domain\Tasks\TaskAnalysisPlan;
+use App\Domain\Tasks\TaskAnalysisReport;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckedCandidate;
 use App\Domain\Tasks\TaskCheckOperation;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckReading;
@@ -82,6 +92,7 @@ use App\Domain\Tasks\TaskGitHubReviewObservations;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskHandoffCi;
+use App\Domain\Tasks\TaskHandoffCiChecks;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskObservationAvailability;
@@ -110,6 +121,7 @@ use App\Domain\Tasks\TaskReviewTrust;
 use App\Domain\Tasks\TaskRubricReminder;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskScriptOperation;
 use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -132,6 +144,7 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOperation;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceLeaseRecovery;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
@@ -227,11 +240,16 @@ final class TaskOrchestrationEntryPoints
 
     /** @var array<class-string, array<string, string>> */
     public const array EffectInfrastructure = [
+        StartTaskScriptAction::class => ['execute' => 'Explicit external tracked-script operation through shared TaskOperations admission; TaskScriptOperationTest exercises the boundary.'],
+        TaskScriptOperation::class => ['read' => 'Dispatches only the tracked script under its group operation hold and workspace lease.'],
+        StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis through shared TaskOperations admission; TaskAnalysisOperationTest exercises the boundary.'],
+        TaskAnalysisOperation::class => ['read' => 'Dispatches only the fixed read-only analysis under its owning operation and workspace lease.'],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         StartTaskCheckAction::class => ['execute' => 'Explicit external operation admitted through shared TaskOperations rules.'],
         TaskCheckOperation::class => ['read' => 'External check starts only after shared admission and its own check lease.'],
         StartTaskTurnAction::class => ['execute' => 'tasks.turn explicitly admits an external group through shared TaskOperations.'],
         TaskTurnOperation::class => [
+            'read' => 'Resumes the original external analysis-bound send under its persisted identity and workspace lease.',
             'send' => 'tasks.turn is the external group holder and sole turn sender.',
             'run' => 'Runs the external turn operation under its group hold.',
         ],
@@ -264,6 +282,35 @@ final class TaskOrchestrationEntryPoints
      * @var array<class-string, array<string, string>>
      */
     public const array OtherBoundaries = [
+        StartTaskAnalysisAction::class => ['execute' => 'Explicit external analysis admission is exercised by TaskAnalysisOperationTest.'],
+        TaskAnalysisOperation::class => [
+            'validate' => 'Requires the current child of an open external group without dispatch.',
+            'run' => 'Plans one owned fixed analysis without lifecycle advancement.',
+            'waitingStep' => 'Supplies analysis waiting and cancellation hooks.',
+            'read' => 'Reserves or recovers the same fixed analysis execution under the existing workspace lease.',
+            'stop' => 'Stops the exact reserved execution before releasing its lease.',
+            'abandon' => 'Removes queued ownership without repeating a dispatch.',
+        ],
+        TaskAnalysisBase::class => [
+            'fromRecord' => 'Validates the immutable provision pin for publication and analysis admission without effects.',
+        ],
+        TaskAnalysisFailure::class => [
+            'fromResult' => 'Revalidates closed retained analysis failure metadata without dispatch or lease effects.',
+        ],
+        TaskAnalysisEvidence::class => [
+            'resolve' => 'Validates same-child usable complete evidence without dispatch.',
+            'requireFresh' => 'Reads fixed base and fresh workspace identity under the caller lease; sends no turn.',
+            'candidateTree' => 'Reads the validated evidence candidate identity.',
+            'prompt' => 'Builds bounded untrusted evidence input without dispatch.',
+        ],
+        TaskAnalysisPlan::class => [
+            'parse' => 'Validates the closed canonical manifest and digest without effects.',
+            'path' => 'Validates an exact relative file path without effects.',
+        ],
+        TaskAnalysisReport::class => [
+            'validate' => 'Validates complete original report bytes and execution identity without effects.',
+            'rejectFailure' => 'Validates bounded typed adapter failures without dispatch or lease effects.',
+        ],
         StartTaskPublishAction::class => ['execute' => 'Explicit external publish through shared admission.'],
         TaskPublishOperation::class => [
             'requireCheck' => 'Requires the passed handoff commit of this group and unchanged HEAD.',
@@ -273,7 +320,26 @@ final class TaskOrchestrationEntryPoints
             'stop' => 'Invalidates an unstarted job or waits for a started push to finish.',
             'abandon' => 'Removes queued workspace ownership without retries.',
         ],
+        StartTaskScriptAction::class => ['execute' => 'Explicit external tracked-script start through shared admission.'],
+        TaskScriptOperation::class => [
+            'run' => 'Runs the tracked-script operation without advancing task lifecycle.',
+            'waitingStep' => 'Supplies the script receipt waiting hooks.',
+            'read' => 'Reconciles receipts and dispatches the pinned script under its own workspace lease.',
+            'stop' => 'Stops only the owned script and retains fencing until terminal proof.',
+            'abandon' => 'Reconciles terminal evidence before releasing queued or held script ownership.',
+        ],
         StartTaskCheckAction::class => ['execute' => 'Explicit external check start through shared admission.'],
+        TaskCheckedCandidate::class => [
+            'eligible' => 'Reads owning operation, checked snapshot, deliverables and hosted CI for reviewer/publish admission without dispatching work.',
+        ],
+        TaskHandoffCiChecks::class => [
+            'push' => 'Shared handoff publication; native and external callers own orchestration admission and workspace leases, with no lifecycle advancement here.',
+            'read' => 'Observes and classifies hosted CI without sending turns, raising assistance or advancing task lifecycle.',
+            'message' => 'Sanitizes the candidate commit message without executing task work.',
+        ],
+        TaskWorkspaceCommitReceipt::class => [
+            'ref' => 'Names the operation-keyed Git receipt without executing a workspace effect.',
+        ],
         TaskCheckOperation::class => [
             'requireCheck' => 'Validates the workspace, current subtask, and baseline eligibility.',
             'run' => 'Runs the external check operation without advancing task lifecycle.',
@@ -972,6 +1038,9 @@ final class TaskOrchestrationEntryPoints
         ],
         StoreTaskCommentAction::class => [
             'commitHeldDirectionReview' => 'Records a held direction resolution after its guarded send boundary.',
+        ],
+        StoreTaskGroupCommentAction::class => [
+            'execute' => 'Records external group assistance after all children end without sending a turn, starting a check, or claiming work; TaskGroupCommentsTest covers it.',
         ],
         StreamAgentThreadAction::class => [
             'execute' => 'Reads transcript events.',

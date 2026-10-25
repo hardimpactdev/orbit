@@ -12,10 +12,12 @@ use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
@@ -63,6 +65,8 @@ describe('task transport', function (): void {
         'subtask update' => [new UpdateSubtaskRequest(13, 57), Method::PATCH, '/api/v1/task-groups/13/tasks/57'],
         'subtask destroy' => [new DestroySubtaskRequest(13, 57), Method::DELETE, '/api/v1/task-groups/13/tasks/57'],
         'subtask cancel' => [new CancelSubtaskRequest(13, 57), Method::POST, '/api/v1/task-groups/13/tasks/57/cancel'],
+        'group comment create' => [new CreateTaskGroupCommentRequest(13, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/comments'],
+        'group comment list' => [new ListTaskGroupCommentsRequest(13), Method::GET, '/api/v1/task-groups/13/comments'],
         'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
@@ -70,6 +74,15 @@ describe('task transport', function (): void {
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
         'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/task-groups/13/agents/21'],
     ]);
+
+    it('transports only group assistance fields and preserves every supplied filter', function (): void {
+        expect(new CreateTaskGroupCommentRequest(13, 'resolution', '', '')->body()->all())
+            ->toBe('{"type":"resolution","body":"","author":""}')
+            ->and(new CreateTaskGroupCommentRequest(13, 'resolution', 'Done.', 'nick')->headers()->get('Content-Type'))->toBe('application/json')
+            ->and(new ListTaskGroupCommentsRequest(13)->query()->all())->toBe([])
+            ->and(new ListTaskGroupCommentsRequest(13, 'resolution', 1)->query()->all())->toBe(['type' => 'resolution', 'limit' => 1])
+            ->and(new ListTaskGroupCommentsRequest(13, '', 0)->query()->all())->toBe(['type' => '', 'limit' => 0]);
+    });
 
     it('sends the agent thread cursor only when one is given', function (): void {
         expect(new ShowTaskAgentRequest(13, 21)->query()->all())->toBe([])
@@ -139,6 +152,7 @@ describe('task transport', function (): void {
         expect($request)->not->toBeInstanceOf(HasBody::class)
             ->and((string) $mockClient->getLastPendingRequest()?->createPsrRequest()->getBody())->toBeEmpty();
     })->with([
+        'group comment list' => [new ListTaskGroupCommentsRequest(13)],
         'status' => [new ShowTasksStatusRequest],
         'question list' => [new ListTaskQuestionsRequest],
         'cancel' => [new CancelTaskGroupRequest(13)],
@@ -150,6 +164,18 @@ describe('task transport', function (): void {
 });
 
 describe('task responses from recorded Gateway fixtures', function (): void {
+    it('keeps group ownership and the ordinary conflict envelope', function (): void {
+        $comment = task_fixture_send('tasks-group-comment-create/requested', new CreateTaskGroupCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'));
+        expect($comment)->toBeInstanceOf(TaskCommentResponse::class)
+            ->and($comment->taskId)->toBe(1)->and($comment->taskGroupId)->toBe(1)->and($comment->agentThreadId)->toBeNull();
+        try {
+            task_fixture_send('tasks-group-comment-create/subtask-open', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'));
+            test()->fail('Expected a group admission refusal.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())->toBe('tasks.assistance_subtask_open');
+        }
+    });
+
     it('maps each recorded success to its typed DTO', function (string $fixture, GatewayRequest $request, string $class): void {
         $response = task_fixture_send($fixture, $request);
 
@@ -172,6 +198,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'subtask update' => ['tasks-subtask-update/updated', new UpdateSubtaskRequest(1, 1, position: 2), SubtaskResponse::class],
         'subtask destroy' => ['tasks-subtask-destroy/destroyed', new DestroySubtaskRequest(1, 1), SubtaskResponse::class],
         'subtask cancel' => ['tasks-subtask-cancel/cancelled', new CancelSubtaskRequest(1, 1), SubtaskResponse::class],
+        'group comment request' => ['tasks-group-comment-create/requested', new CreateTaskGroupCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'), TaskCommentResponse::class],
+        'group comment resolution' => ['tasks-group-comment-create/resolved', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'), TaskCommentResponse::class],
+        'group comment list' => ['tasks-group-comment-list/default', new ListTaskGroupCommentsRequest(1), TaskCommentsResponse::class],
+        'empty group comment list' => ['tasks-group-comment-list/empty', new ListTaskGroupCommentsRequest(1), TaskCommentsResponse::class],
         'comment create' => ['tasks-comment-create/created', new CreateTaskCommentRequest(1, 1, 'resolution', 'Body', 'nick'), TaskCommentResponse::class],
         'comment list' => ['tasks-comment-list/default', new ListTaskCommentsRequest(1, 1), TaskCommentsResponse::class],
         'question list' => ['tasks-question-list/default', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
@@ -546,6 +576,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             expect($exception->errorCode())->toBe($code);
         }
     })->with([
+        'group closed' => ['tasks-group-comment-create/group-closed', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'), 'tasks.group_closed'],
         'no subtasks' => ['tasks-create/no-subtasks', new CreateTaskGroupRequest(1, 'Empty', 'No subtasks.', 'todo'), 'tasks.no_subtasks'],
         'not in backlog' => ['tasks-update/not-in-backlog', new UpdateTaskGroupRequest(1, 'Too late'), 'tasks.not_in_backlog'],
         'subtask not running' => ['tasks-subtask-cancel/not-running', new CancelSubtaskRequest(1, 1), 'tasks.subtask_not_running'],

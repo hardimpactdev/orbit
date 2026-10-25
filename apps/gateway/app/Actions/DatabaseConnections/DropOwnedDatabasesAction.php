@@ -34,19 +34,18 @@ final readonly class DropOwnedDatabasesAction
             ->orderBy('id')
             ->get();
 
-        foreach ($connections as $connection) {
-            $this->drop($connection);
-        }
+        $this->serverDatabases->executeMany(array_values($connections->all()), function (DatabaseConnection $connection): void {
+            if ($connection->database_server_id === null) {
+                $this->drop($connection);
+            } else {
+                $this->deleteRecords($connection);
+            }
+        });
     }
 
     public function drop(DatabaseConnection $connection): void
     {
-        $deleteRecords = static function () use ($connection): void {
-            DB::transaction(static function () use ($connection): void {
-                DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
-                $connection->delete();
-            });
-        };
+        $deleteRecords = fn () => $this->deleteRecords($connection);
 
         if ($connection->database_server_id !== null) {
             $this->serverDatabases->execute($connection, $deleteRecords);
@@ -61,6 +60,14 @@ final readonly class DropOwnedDatabasesAction
         if ($connection->database_server_id === null) {
             $deleteRecords();
         }
+    }
+
+    private function deleteRecords(DatabaseConnection $connection): void
+    {
+        DB::transaction(static function () use ($connection): void {
+            DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
+            $connection->delete();
+        });
 
         $this->broadcaster->broadcast(
             RecordEventType::DatabaseDeleted,

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Documentation\DocsImpact;
+use App\Documentation\DocsImpactReport;
+use Symfony\Component\Process\Process;
 
 $GLOBALS['docsImpactFixtureRoots'] = [];
 
@@ -975,3 +977,112 @@ it('routes guarded workspace lease recovery to its maintained command contract',
     expect($report['errors'])->toBeEmpty()
         ->and(collect($report['surfaces'])->where('owner', 'docs/reference/tasks.md')->count())->toBeGreaterThan(0);
 });
+
+function taskAnalysisAdapterFixture(): string
+{
+    $root = docsImpactFixture();
+    $repository = dirname(__DIR__, 4);
+    foreach (['bin/task-analyze', 'apps/gateway/app/Support/StrictJson.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisPlan.php', 'apps/gateway/app/Domain/Tasks/TaskAnalysisReport.php'] as $path) {
+        if (! is_dir(dirname($root.'/'.$path))) {
+            mkdir(dirname($root.'/'.$path), 0777, true);
+        }
+        copy($repository.'/'.$path, $root.'/'.$path);
+    }
+    chmod($root.'/bin/task-analyze', 0755);
+    mkdir($root.'/apps/docs/vendor', 0777, true);
+    file_put_contents($root.'/apps/docs/vendor/autoload.php', '<?php require '.var_export($repository.'/apps/docs/vendor/autoload.php', true).';');
+
+    return $root;
+}
+
+function taskAnalysisAdapterCommit(string $root): string
+{
+    $git = new Process(['git', '-C', $root, 'add', '.']);
+    $git->mustRun();
+    $git = new Process(['git', '-C', $root, '-c', 'user.name=Docs', '-c', 'user.email=docs@example.test', 'commit', '-qm', 'adapter']);
+    $git->mustRun();
+    $git = new Process(['git', '-C', $root, 'rev-parse', 'HEAD']);
+    $git->mustRun();
+
+    return trim($git->getOutput());
+}
+
+/** @param list<array<string, string>> $paths
+ * @return array{int, string, string}
+ */
+function taskAnalysisAdapterRun(string $root, string $base, array $paths, array $arguments = []): array
+{
+    // Independently ordered closed-schema RFC 8785 value, not the implementation's canonicalizer.
+    $plan = ['asserted_by' => 'fixture', 'complete' => true, 'id' => 'fixture', 'paths' => $paths, 'revision' => 1, 'source' => ['brief_id' => 'fixture', 'revision_sha256' => str_repeat('a', 64)]];
+    $canonical = json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $process = new Process([PHP_BINARY, $root.'/bin/task-analyze', ...$arguments], $root);
+    $process->setInput(json_encode(['execution_id' => str_repeat('b', 32), 'plan' => $plan, 'plan_sha256' => hash('sha256', $canonical), 'base' => $base, 'head' => $base, 'tree' => str_repeat('c', 40)], JSON_THROW_ON_ERROR));
+    $status = $process->run();
+
+    return [$status, $process->getOutput(), $process->getErrorOutput()];
+}
+
+it('runs the real fixed adapter over planned paths and exact actual delete rename Unicode and untracked inventory', function (): void {
+    $root = taskAnalysisAdapterFixture();
+    file_put_contents($root.'/old.txt', 'tracked');
+    $base = taskAnalysisAdapterCommit($root);
+    rename($root.'/old.txt', $root.'/répertoire espace.txt');
+    unlink($root.'/apps/gateway/app/Domain/Tasks/RunTask.php');
+    file_put_contents($root.'/extra-é.txt', 'untracked');
+    $paths = [['change' => 'add', 'path' => 'apps/gateway/app/Domain/Tasks/Planned.php'], ['change' => 'delete', 'path' => 'apps/gateway/app/Domain/Tasks/RunTask.php'], ['change' => 'rename', 'from' => 'old.txt', 'path' => 'répertoire espace.txt']];
+    [$status, $bytes, $error] = taskAnalysisAdapterRun($root, $base, $paths);
+    expect($error)->toBe('')->and($status)->toBe(0);
+    $envelope = json_decode($bytes, true, flags: JSON_THROW_ON_ERROR);
+    $inventory = ['apps/gateway/app/Domain/Tasks/Planned.php', 'apps/gateway/app/Domain/Tasks/RunTask.php', 'extra-é.txt', 'old.txt', 'répertoire espace.txt'];
+    $report = new DocsImpact($root)->report($base, [...array_column($paths, 'path'), 'old.txt']);
+    expect($report['errors'])->toBe([]);
+    expect($envelope['report'])->toBe(['schema' => 'orbit.docs-impact.v1', 'data' => $report])
+        ->and($report['paths'])->toBe($inventory)->and($envelope['status'])->toBe('action_required')
+        ->and($envelope['execution_id'])->toBe(str_repeat('b', 32))->and($envelope['diagnostics'])->toBe([])
+        ->and(new DocsImpact($root)->paths($base, []))->toContain('old.txt', 'répertoire espace.txt');
+});
+
+it('maps the real scanner required generator results without write-mode generation', function (string $generatorStatus, string $outcome): void {
+    $root = taskAnalysisAdapterFixture();
+    if ($generatorStatus !== 'missing') {
+        $body = "#!/bin/sh\n[ \"\$#\" = 1 ] && [ \"\$1\" = --check ] || exit 99\n";
+        $body .= match ($generatorStatus) {
+            'passed' => "exit 0\n", 'stale' => "echo stale\nexit 1\n", default => "exit 1\n"
+        };
+        file_put_contents($root.'/bin/docs-openapi', $body);
+        chmod($root.'/bin/docs-openapi', 0755);
+    }
+    $base = taskAnalysisAdapterCommit($root);
+    [$status, $bytes, $error] = taskAnalysisAdapterRun($root, $base, [['change' => 'modify', 'path' => 'docs/openapi.json']]);
+    expect($error)->toBe('')->and($status)->toBe(0);
+    $envelope = json_decode($bytes, true, flags: JSON_THROW_ON_ERROR);
+    $report = $envelope['report']['data'];
+    expect($envelope['status'])->toBe($outcome)->and($report['surfaces_handled_by_generator'][0]['status'])->toBe($generatorStatus);
+    if ($generatorStatus === 'passed') {
+        expect($report['impacted_pages'])->toBe([]);
+        $report['verdict'] = 'docs_required';
+        expect(DocsImpactReport::status($report, $base, ['docs/openapi.json']))->toBe('action_required');
+    }
+})->with([['passed', 'ready'], ['missing', 'blocked'], ['failed', 'blocked'], ['stale', 'blocked']]);
+
+it('refuses unsafe actual inventory before scanner normalization or symlink reads', function (string $filename): void {
+    $root = taskAnalysisAdapterFixture();
+    $base = taskAnalysisAdapterCommit($root);
+    if ($filename === 'escape.md') {
+        symlink(__FILE__, $root.'/'.$filename);
+    } else {
+        file_put_contents($root.'/'.$filename, 'unsafe actual file');
+    }
+    [$status, $bytes, $error] = taskAnalysisAdapterRun($root, $base, [['change' => 'add', 'path' => 'planned.txt']]);
+    expect($status)->toBe(1)->and($bytes)->toBe('')->and($error)->not->toBe('');
+})->with(['back\\slash.txt', ' leading.txt', 'trailing.txt ', "\u{00a0}leading.txt", "trailing.txt\u{2003}", "control\n.txt", "invalid-\xff.txt", 'escape.md']);
+
+it('refuses untracked delete sources directory entries and caller arguments', function (string $mode): void {
+    $root = taskAnalysisAdapterFixture();
+    $base = taskAnalysisAdapterCommit($root);
+    $entry = match ($mode) {
+        'directory' => ['change' => 'modify', 'path' => 'docs'], 'delete' => ['change' => 'delete', 'path' => 'never-tracked.txt'], default => ['change' => 'add', 'path' => 'planned.txt']
+    };
+    [$status, $bytes, $error] = taskAnalysisAdapterRun($root, $base, [$entry], $mode === 'argument' ? ['--command=anything'] : []);
+    expect($status)->toBe(1)->and($bytes)->toBe('')->and($error)->not->toBe('');
+})->with(['directory', 'delete', 'argument']);

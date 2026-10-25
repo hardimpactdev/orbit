@@ -92,6 +92,49 @@ final readonly class PrivateDnsMessageCodec
         ).$question.$records;
     }
 
+    /** @return list<string> */
+    public function decodeAAnswer(string $message, string $request): array
+    {
+        $query = $this->decodeQuestion($request);
+        $answer = $this->decodeQuestion($message);
+        $header = unpack('nid/nflags/nqdcount/nancount/nnscount/narcount', $message);
+        if ($header === false
+            || $header['qdcount'] !== 1
+            || ($header['flags'] & 0xFA00) !== 0x8000
+            || ! in_array($header['flags'] & 0x000F, [0, 3], true)
+            || $answer->id !== $query->id
+            || $answer->question->normalizedName() !== $query->question->normalizedName()
+            || $answer->question->type !== DnsRecordType::A
+            || $answer->question->class !== self::ClassIn) {
+            throw new InvalidArgumentException('DNS response does not answer the A query.');
+        }
+
+        [, $offset] = $this->readName($message, 12);
+        if (substr($message, $offset, 4) !== pack('nn', DnsRecordType::A->value, self::ClassIn)) {
+            throw new InvalidArgumentException('DNS response does not answer the A query.');
+        }
+        $offset += 4;
+        $addresses = [];
+        for ($index = 0; $index < $header['ancount']; $index++) {
+            [$record, $offset] = $this->readRecord($message, $offset);
+            if ($record['type'] !== DnsRecordType::A->value
+                || $record['class'] !== self::ClassIn
+                || strtolower($record['name']) !== $query->question->normalizedName()) {
+                continue;
+            }
+            if (strlen($record['rdata']) !== 4) {
+                throw new InvalidArgumentException('DNS A record is not an IPv4 address.');
+            }
+            $address = inet_ntop($record['rdata']);
+            if (is_string($address)) {
+                $addresses[] = $address;
+            }
+        }
+        $this->skipRecords($message, $offset, $header['nscount'] + $header['arcount']);
+
+        return array_values(array_unique($addresses));
+    }
+
     public function encodeQuery(string $name, DnsRecordType $type = DnsRecordType::A, int $id = 1, ?string $ednsClientSubnet = null): string
     {
         $encodedName = $this->encodeName($name);
@@ -116,8 +159,13 @@ final readonly class PrivateDnsMessageCodec
         $jumped = false;
         $cursor = $offset;
         $end = $offset;
+        $visited = [];
 
         while ($cursor < strlen($message)) {
+            if (isset($visited[$cursor])) {
+                throw new InvalidArgumentException('DNS name pointer contains a cycle.');
+            }
+            $visited[$cursor] = true;
             $length = ord($message[$cursor]);
 
             if ($length === 0) {
@@ -125,7 +173,7 @@ final readonly class PrivateDnsMessageCodec
                     $end = $cursor + 1;
                 }
 
-                break;
+                return [implode('.', $labels), $end];
             }
 
             if (($length & 0xC0) === 0xC0) {
@@ -153,7 +201,7 @@ final readonly class PrivateDnsMessageCodec
             $cursor += $length;
         }
 
-        return [implode('.', $labels), $end];
+        throw new InvalidArgumentException('DNS name is truncated.');
     }
 
     private function encodeName(string $name): string
@@ -201,11 +249,11 @@ final readonly class PrivateDnsMessageCodec
     }
 
     /**
-     * @return array{0: array{type: int, rdata: string}, 1: int}
+     * @return array{0: array{name: string, type: int, class: int, rdata: string}, 1: int}
      */
     private function readRecord(string $message, int $offset): array
     {
-        [, $offset] = $this->readName($message, $offset);
+        [$name, $offset] = $this->readName($message, $offset);
         if (strlen($message) < $offset + 10) {
             throw new InvalidArgumentException('DNS record is truncated.');
         }
@@ -223,7 +271,9 @@ final readonly class PrivateDnsMessageCodec
 
         return [
             [
+                'name' => $name,
                 'type' => $fields['type'],
+                'class' => $fields['class'],
                 'rdata' => substr($message, $offset, $length),
             ],
             $offset + $length,

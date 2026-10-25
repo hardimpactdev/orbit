@@ -15,5 +15,5 @@ interface ProcessRuntimeLease
      * @param  Closure(Process): T  $operation
      * @return T
      */
-    public function run(Process $process, Closure $operation): mixed;
+    public function run(Process $process, Closure $operation, bool $wait = false): mixed;
 }

@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Jobs\RunOperation;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\TaskCheck;
 use Illuminate\Support\Facades\DB;
 
 /** Turns the Gateway queue on for a test, so a start request queues its operation on the database test queue. */
@@ -78,4 +79,19 @@ function operation_steps(Instance $instance, DeployInstanceAction|DeployDefaultI
     ));
 
     return new OperationDeploymentSteps($run, static function (): void {});
+}
+
+/** A completed no-policy handoff operation, for consumer tests that do not execute a local check. */
+function task_checked_operation(TaskCheck $check): Operation
+{
+    $task = $check->task()->firstOrFail();
+    $check->update(['head_after' => $check->head_before, 'tree_after' => $check->tree_before]);
+
+    return Operation::query()->create([
+        'kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $task->parent_id,
+        'input' => ['subtask' => $task->id, 'phase' => 'handoff'], 'status' => OperationStatus::Succeeded,
+        'sequence' => 1, 'attempts' => 1, 'state' => ['check_id' => $check->id, 'ci' => null],
+        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $check->commit_sha,
+            'head' => $check->head_after, 'tree' => $check->tree_after, 'ci' => null],
+    ]);
 }

@@ -93,6 +93,8 @@ A managed Valkey connection's driver, Node, address, port, username, and passwor
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
+| `database.server_in_use` | 409 | Another managed database removal holds a server in the planned set. Retry when it finishes. |
+| `database.in_use` | 409 | A session or dependency blocks managed database removal. Nothing is dropped. |
 | `database.server_missing` | 404 | No server has that slug. |
 | `database.server_inactive` | 409 | The server is not active yet. |
 | `database.slug_conflict` | 409 | Another connection has the slug. |
@@ -107,7 +109,7 @@ An Instance owns a database that Orbit created for it: by `database:create --ser
 
 A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-seed) also registers an owned connection named `<project>-<instance>` on the target Node. Its path is `<production_home>/database.sqlite`. Orbit attaches it under `DB` and synchronizes the production `.env` before the clone completes. An interrupted clone reuses the connection and attachment when it resumes; the candidate's `DB_*` values do not copy.
 
-[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Orbit never drops a database that it only registered.
+[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
 Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instances.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, streams it through the Gateway with `instances.read-sqlite-snapshot` and `instances.receive-sqlite-snapshot`, and verifies its size and digest before installation. Rust tests own WAL consistency, writer locks, file modes, and temporary-file cleanup; Gateway tests cover the requested operations and public errors.
 
@@ -125,7 +127,9 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 
 For PostgreSQL, synchronize the Instance environment, clear any cached Laravel configuration, then run `php artisan test --parallel --processes=4` with a process count no larger than the recorded pool. Plain `--parallel` uses the machine CPU count, so it is safe only when that count fits the pool. Leave `--recreate-databases` and `--drop-databases` off. Do not use `--without-databases`, which skips Laravel's worker switching.
 
-Laravel 13's `Illuminate\Testing\Concerns\TestDatabases::ensureTestDatabaseExists` connects to `<DB_DATABASE>_test_<token>` and queries for a table before attempting creation. An existing reachable worker database needs no creation. A missing or unreachable worker makes Laravel attempt creation, which the managed role cannot do. Correct the connection or provision a new pool instead of adding `CREATEDB`. Use Laravel's normal migration traits, such as `RefreshDatabase`, to prepare the schema; the empty pool does not run migrations itself.
+Laravel 13's `Illuminate\Testing\Concerns\TestDatabases::ensureTestDatabaseExists` connects to `<DB_DATABASE>_test_<token>` and queries for a table before attempting creation. An existing reachable worker database needs no creation. A missing or unreachable worker makes Laravel drop that worker before attempting creation, which the managed role cannot do. A transient connection failure, including server connection exhaustion, can therefore remove a worker. Stop the test run, correct the connection or budget, and [restore missing members](/reference/database-servers#repair-a-postgresql-test-pool) instead of adding `CREATEDB`. Use Laravel's normal migration traits, such as `RefreshDatabase`, to prepare the schema; the empty pool does not run migrations itself.
+
+A pool of N workers needs roughly N × (connections per worker) free server connections. Count connections to each database and extra application connections that a worker opens. Leave room for idle applications, other test runs, and admin connections when sizing PostgreSQL `max_connections`; the recorded pool size reserves databases, not connections. Reduce parallelism when the free budget is smaller. Doctor checks pool membership, not connection headroom.
 
 ## Add a connection on an Instance
 

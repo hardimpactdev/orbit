@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceCommitReceipt;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Models\Activity;
@@ -81,7 +82,7 @@ function ci_github(?string $commit = CI_HANDOFF): object
 
         public function __construct(public ?string $commit) {}
 
-        public function commit(Instance $instance, string $message, bool $allowEmpty = false): ?string
+        public function commit(Instance $instance, string $message, bool $allowEmpty = false, ?TaskWorkspaceCommitReceipt $receipt = null): ?string
         {
             $this->messages[] = $message;
             $this->allowEmpty[] = $allowEmpty;
@@ -565,3 +566,16 @@ it('judges only the newest workflow suite when GitHub supersedes a handoff run',
     'newest merge check failed' => ['completed', 'failure', true, 'failed'],
     'newest suite was cancelled too' => ['completed', 'cancelled', false, 'infrastructure'],
 ]);
+
+it('preserves tick change-failure precedence with a foreign or wrong-head required run', function (bool $foreign): void {
+    $github = ci_github();
+    $github->runs[CI_HANDOFF] = [ci_run('Gateway shards (3)', 'failure', CI_HANDOFF, 4),
+        new GitHubCheckRun('Required checks', 'success', null, 9, null, 'completed', $foreign ? CI_HANDOFF : str_repeat('e', 40), $foreign ? 'mintlify' : 'github-actions')];
+    [, $task] = ci_handoff();
+    ci_ticks();
+    $check = TaskCheck::query()->sole();
+    expect($check->status)->toBe(TaskCheckStatus::Failed);
+    expect($check->failed_step)->toBe(TaskHandoffCi::FailedStep);
+    expect($check->output)->toContain('Check Gateway shards (3) failed');
+    expect($task->fresh()->assistance_requested)->toBeFalse();
+})->with([true, false]);

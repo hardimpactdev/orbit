@@ -26,6 +26,8 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
+| [`tasks:group:comment:create`](#orbit-tasksgroupcommentcreate) | Request group direction or record an answer after all subtasks end; start no work. |
+| [`tasks:group:comment:list`](#orbit-tasksgroupcommentlist) | Read group-owned comments, including after completion. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
@@ -281,6 +283,34 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 | `tasks.subtask_not_running` | The subtask is neither a cancellable `todo` subtask nor a `running` subtask, or it moved on while Orbit stopped it. |
 | `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the task. |
 
+## orbit tasks:group:comment:create
+
+Record assistance on an external, non-terminal group after all its children have ended. This does not select or reopen a subtask. A request sets group Direction using explicit operator replacement semantics. A resolution clears group Direction only; it never clears a safety failure or a child's request. Neither sends work. The [post-child assistance contract](/reference/tasks#group-assistance-after-all-children-end) owns the guards and effects.
+
+```bash
+orbit tasks:group:comment:create [group] [--type=TYPE] [--body=TEXT] [--author=NAME] [--json]
+```
+
+| Option | Interactive default | Meaning |
+| --- | --- | --- |
+| `group` | select a task group | Numeric group ID; no subtask ID is accepted. |
+| `--type=TYPE` | select | `assistance_requested` or `resolution`. |
+| `--body=TEXT` | prompt | Nonblank text, at most 100,000 characters. Name the work item, stage, cycle and decision when asking. |
+| `--author=NAME` | local login name | Author, at most 255 characters. Required explicitly with `--json` or `-n`. |
+| `--json` | off | Return the comment and request ID as JSON. |
+
+A terminal prompts for missing inputs. A `--json` or `-n` call requires them before any network call. There is no agent-thread or receipt option. `tasks.not_orchestrated` refuses a tick group, `tasks.group_closed` refuses an ended group, and `tasks.assistance_subtask_open` refuses a group with an open child. Read the full current request before answering; there is no versioned matching-resolution protocol. Repeating a write may add another audit comment even when assistance state is unchanged.
+
+## orbit tasks:group:comment:list
+
+Read group-owned history, newest first, even after completion and VM removal. This history is separate from every child's comments. The command selects only a group when its ID is omitted in a terminal. With `--json` or `-n`, supply the ID.
+
+```bash
+orbit tasks:group:comment:list [group] [--json]
+```
+
+Human output shows each comment's type, author, time and body, followed by the request ID. An empty history says `No comments.` JSON returns `comments` and `request_id`. The API and SDK also accept the existing `type` and `limit` history filters.
+
 ## orbit tasks:comment:create
 
 Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and records the request in Activity. A `resolution` comment clears the flag. For a tick group, it goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. For an external group, it clears assistance and sends nothing. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
@@ -396,6 +426,8 @@ orbit tasks:turn 42 --subtask=43 --role=reviewer --prompt="Review the checked co
 
 `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
 
+Pair `--analysis=<operation-id>` with `--analysis-plan-sha256=<digest>` to attach complete usable [analysis evidence](#orbit-tasksanalyze). Neither option is valid alone. Freshness is checked under the workspace lease before the first accepted send; accepted-send recovery retains the exact combined prompt and original send key. A reviewer still needs an eligible ordinary `--check` on that candidate.
+
 ## Related
 
 - [`project`](/cli/project) lists the Projects that a task can belong to.
@@ -410,12 +442,28 @@ orbit tasks:check <group> --subtask=<id> --phase=baseline|handoff [--idempotency
 
 Run a baseline or handoff check through `tasks.check` on the Gateway. The group must use external orchestration and have a workspace. The subtask must be its current open subtask. A terminal prompts for missing inputs; machine mode requires them. The command follows waits for VM resume, workspace ownership, and the detached check. A failed check is a successful operation with `result.outcome=failed`; inspect the result, including deliverables and redacted output. A passed handoff records its commit. Ctrl-C stops following. Use `operation:cancel` to stop the check, or `tasks:cancel` to end the group. See [Check an external group](/reference/tasks#check-an-external-group).
 
+The agreed [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) adds `result.ci` to JSON output without changing these inputs or adding a caller-selected CI option. This is docs-first, not a runtime delivery claim: external review-and-merge admission remains unsupported. For a Project requiring CI, the operation also waits for its handoff push and hosted check on `result.commit`, the candidate HEAD; `result.head` is the earlier pre-commit snapshot. Baseline/no-policy returns `ci: null`. Waiting observation is not a usable passed candidate. Cancellation after push stops observation, not GitHub workflows, and retains check evidence. Reviewer and publish commands require the shared candidate eligibility rule, including passed CI from the owning successful operation when required.
+
+## orbit tasks:analyze
+
+```bash
+orbit tasks:analyze <group> --subtask=43 --plan=plan.json --plan-sha256=<digest> --base=<base> --head=<head> --tree=<tree> --idempotency-key=feature.analysis.c1 [--json]
+```
+
+`--plan` reads the complete manifest from a local JSON file without normalizing it. `--plan-sha256` is its canonical RFC 8785 SHA-256, not the file's raw-byte digest. `--base` is the full initial merge-base recorded by provision; `--head` and `--tree` identify the exact HEAD and whole workspace, including untracked files. All object IDs and digests are full lowercase values. Reuse `--idempotency-key` only for an exact retry. A terminal can select a missing group or subtask and prompt for other required inputs; noninteractive and JSON runs require them.
+
+`tasks:analyze` runs [fixed repository analysis](/reference/tasks#analyze-an-external-groups-repository) for one external group's current open child. The command carries the native `{subtask, plan, plan_sha256, base, head, tree}` request and requires an idempotency key. No caller command, environment, executable, model, or report path is accepted. The complete typed plan includes all cumulative feature paths, including new files and both rename endpoints, rather than repeated best-effort path hints.
+
+Follow the operation with the shared display and existing `operation:show` and `operation:cancel`. JSON retains the complete keyed `{outcome, artifact, provenance}` result; the artifact is exact bounded UTF-8 content, digest, and byte length, never a log tail or shortened report. Human output must distinguish `ready`, `action_required`, `blocked`, and `changed` from operation status. Exit 0 or `succeeded` is not docs approval. Ctrl-C stops following; explicit cancellation reconciles descendants before releasing workspace ownership. No new prompt, progress primitive, arbitrary shell facility, or write-mode generator is authorized.
+
+The existing `tasks:turn` carries optional native `analysis: {operation, plan_sha256}` evidence. Before the first accepted send it verifies fresh identity under the turn lease and persists the complete plan/report/provenance in the bounded combined prompt. Once Pi accepts the send, replay keeps that prompt and send identity despite intentional author edits. A local dispatch journal alone is not acceptance proof. Omission preserves ordinary turns; reviewer checked-candidate/CI admission remains unchanged.
+
 ## orbit tasks:publish
 
-Push a passed handoff check's commit for an external group. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
+Push an [eligible checked candidate's](/reference/tasks#check-an-external-group) commit for an external group. When hosted CI is required, the owning handoff operation must have succeeded with passed CI on that check/commit. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
 
 ```bash
 orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."
 ```
 
-The optional `group` argument is the numeric task group ID. `--check` supplies the passed handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.
+The optional `group` argument is the numeric task group ID. `--check` supplies the eligible handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.

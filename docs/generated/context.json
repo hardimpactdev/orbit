@@ -65,6 +65,7 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
@@ -1220,6 +1221,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Pi server",
                 "Project",
                 "Role",
@@ -2151,7 +2153,9 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
+                "Database server",
                 "Deployment",
                 "Extension",
                 "Gateway",
@@ -2586,8 +2590,10 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task check",
                 "Tool"
@@ -2882,6 +2888,7 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "apps/web"
             ],
@@ -2910,7 +2917,9 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0229"
+            ]
         },
         {
             "path": "docs/reference/tools.md",
@@ -2976,6 +2985,7 @@
                 "Route",
                 "Subtask",
                 "Task",
+                "Task check",
                 "Task workspace",
                 "Tool"
             ],

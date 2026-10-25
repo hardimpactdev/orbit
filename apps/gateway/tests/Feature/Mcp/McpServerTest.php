@@ -12,6 +12,7 @@ use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
@@ -315,7 +316,8 @@ describe('POST /mcp', function (): void {
         app(TaskExtensionState::class)->enable();
         $group = tick_group();
         Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
-        $check = $group->tasks()->firstOrFail()->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
+        $check = $group->tasks()->firstOrFail()->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'pid' => 0, 'process_started' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
+        task_checked_operation($check);
         $arguments = ['group' => $group->id, 'check' => $check->id, 'Idempotency-Key' => 'mcp.publish.c1'];
 
         $first = mcp_tool($this, $endpoint, 'tasks-publish', $arguments);
@@ -325,9 +327,29 @@ describe('POST /mcp', function (): void {
         expect($first['operation']['input'])->toBe(['check' => $check->id, 'pull_request' => null]);
         expect($first['poll']['tool'])->toBe('operation-show');
         expect($second['operation']['id'])->toBe($first['operation']['id']);
-        $this->assertDatabaseCount('operations', 1);
+        $this->assertDatabaseCount('operations', 2);
         $this->assertDatabaseCount('jobs', 1);
     })->with(['/mcp', '/mcp/search']);
+
+    it('preserves recorded public task failure metadata and pins through both generated operation tools', function (string $endpoint, string $fixture): void {
+        app(TaskExtensionState::class)->enable();
+        $record = json_decode((string) file_get_contents(fixture_path($fixture)), true, flags: JSON_THROW_ON_ERROR);
+        $data = $record['body']['data'];
+        $project = Project::query()->create(['name' => 'Metadata', 'slug' => 'metadata', 'repository_url' => 'git@github.com:acme/metadata.git']);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Metadata', 'brief' => 'Metadata.', 'status' => 'running', 'orchestration' => 'external']);
+        // Replay the producer's HTTP fixture through the generated transports, not a consumer-specific schema.
+        $operation = Operation::query()->create([
+            ...array_intersect_key($data, array_flip(['kind', 'status', 'sequence', 'failed_step', 'error_code', 'result'])),
+            'target_type' => 'task_group', 'target_id' => $group->id, 'input' => [],
+        ]);
+        $http = $this->getJson('/api/v1/operations/'.$operation->id)->assertOk()->json('data');
+        $shown = mcp_tool($this, $endpoint, 'operation-show', ['operation' => $operation->id, 'after_sequence' => 0])['data'];
+        $listed = mcp_tool($this, $endpoint, 'operation-list', ['kind' => $data['kind'], 'target_type' => 'task_group', 'target_id' => $group->id])['data'][0];
+        foreach ([$http, $shown, $listed] as $public) {
+            expect($public['status'])->toBe($data['status'])->and($public['error_code'])->toBe($data['error_code'])
+                ->and($public['failed_step'])->toBe($data['failed_step'])->and($public['result'])->toBe($data['result']);
+        }
+    })->with(['/mcp', '/mcp/search'])->with(['tasks/tasks-analyze/failure-overflow', 'tasks/tasks-analyze/failure-unavailable', 'tasks/tasks-provision/pinned', 'tasks/tasks-provision/unavailable']);
 
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
