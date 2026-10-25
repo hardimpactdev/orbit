@@ -20,10 +20,21 @@ use Symfony\Component\Process\Process;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeNodeCaddyBuilds;
 
+/**
+ * The full exporter state that `metrics.service-runtime` returns and accepts.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function service_metrics_state(array $overrides = []): array
+{
+    return [...['config' => null, 'unit' => null, 'rules' => [], 'active' => false, 'enabled' => false, 'binary' => false], ...$overrides];
+}
+
 beforeEach(function (): void {
     $this->builds = new FakeNodeCaddyBuilds;
     $this->pools = [];
-    $this->exporter = [];
+    $this->exporter = service_metrics_state();
     $this->agents = new FakeAgentCommandRunner()
         ->answer('php.inspect-production-pool', fn (): array => array_shift($this->pools))
         ->answer('metrics.service-runtime', fn (array $input): array => $input['operation'] === 'snapshot' ? $this->exporter : []);
@@ -73,7 +84,7 @@ it('snapshots exporter state only and restores by building the Node', function (
     $commandsBeforeRestore = count($this->agents->calls);
     $this->runtime->restore($target, $snapshot);
 
-    expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR))->toBe(['exporter' => [], 'pools' => []])
+    expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR))->toBe(['exporter' => service_metrics_state(), 'pools' => []])
         ->and(json_encode($this->agents->calls, JSON_THROW_ON_ERROR))->not->toContain('/etc/caddy')
         ->and(count($this->agents->calls))->toBe($commandsBeforeRestore + 1)
         ->and($this->builds->built)->toBe(['app-prod']);
@@ -96,7 +107,7 @@ it('restores the previous pool monitoring state after publication fails', functi
     $target = new ServiceMetricsNode($node, false, false, [$instance]);
     $enabledPool = "[orbit-metricapp]\nuser = metricapp\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/metricapp.sock.status\n";
     $disabledPool = "[orbit-metricapp]\nuser = metricapp\n";
-    $this->exporter = ['config' => 'prior-exporter-config'];
+    $this->exporter = service_metrics_state(['config' => 'prior-exporter-config']);
     $this->pools = [['pool' => $enabledPool, 'fingerprint' => 'before'], ['pool' => $disabledPool, 'fingerprint' => 'after']];
     $snapshot = $this->runtime->snapshot($target);
     $this->productionPhp->shouldReceive('convergeMonitoring')->once()->with($instance, false);
@@ -112,7 +123,7 @@ it('restores the previous pool monitoring state after publication fails', functi
 
     expect(json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR)['pools'][(string) $instance->id]['enabled'])->toBeTrue()
         ->and($this->agents->calls[array_key_last($this->agents->calls)]['input'])
-        ->toMatchArray(['operation' => 'apply', 'state' => ['config' => 'prior-exporter-config']]);
+        ->toMatchArray(['operation' => 'apply', 'state' => service_metrics_state(['config' => 'prior-exporter-config'])]);
 });
 
 it('includes a read-only runtime fingerprint in exporter config after monitoring convergence', function (): void {
@@ -129,17 +140,17 @@ it('includes a read-only runtime fingerprint in exporter config after monitoring
 
 it('restores exporter state without asking the exporter command to restore pool state', function (): void {
     $ingress = service_metrics_runtime_node('app-prod', '10.44.0.4', [RoleName::Ingress]);
-    $this->exporter = ['enabled' => true];
+    $this->exporter = service_metrics_state(['enabled' => true]);
     $snapshot = $this->runtime->snapshot(new ServiceMetricsNode($ingress, true, false));
     $state = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
     $commandsBeforeRestore = count($this->agents->calls);
 
     $this->runtime->restore(new ServiceMetricsNode($ingress, true, false), $snapshot);
 
-    expect($state)->toBe(['exporter' => ['enabled' => true], 'pools' => []])
+    expect($state)->toBe(['exporter' => service_metrics_state(['enabled' => true]), 'pools' => []])
         ->and(count($this->agents->calls))->toBe($commandsBeforeRestore + 1)
         ->and($this->agents->calls[$commandsBeforeRestore]['input'])
-        ->toMatchArray(['operation' => 'apply', 'state' => ['enabled' => true]])
+        ->toMatchArray(['operation' => 'apply', 'state' => service_metrics_state(['enabled' => true])])
         ->and($this->builds->built)->toBe(['app-prod']);
 });
 

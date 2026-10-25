@@ -580,7 +580,7 @@ The agent has these limits.
 
 - The agent reports presence, Process state, and task checkout Git state, and tails logs only for live log streams.
 - The observer reports state, and commands change it.
-- One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` run over SSH.
+- One-shot log reads, the Horizon queue, and `ufw status` are agent commands that SSH carries. Task workspace reads that gate an action still run as SSH programs.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
 - The delivery holds Linux builds for `x86_64` and `aarch64`. The observer runs only on Linux. Command mode builds and tests on macOS arm64, and the delivery includes command binaries for Apple silicon and Intel Macs.
 - The agent cannot trigger `orbit self-update`. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs it over SSH.
