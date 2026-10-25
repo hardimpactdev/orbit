@@ -40,13 +40,25 @@ final readonly class RecipeLoader
 
     public function load(?string $path = null, ?AgentDelivery $delivery = null): MachineRecipe
     {
+        return $this->read($path, fn (string $bytes): MachineRecipe => $this->resolve($bytes, $delivery ?? app(AgentDelivery::class)));
+    }
+
+    /** The recipe as written, with no agent pin: enough for checks that do not depend on this release's agent. */
+    public function source(?string $path = null): MachineRecipe
+    {
+        return $this->read($path, $this->decode(...));
+    }
+
+    /** @param  callable(string): MachineRecipe  $build */
+    private function read(?string $path, callable $build): MachineRecipe
+    {
         $path ??= resource_path('machine-software/recipe.json');
         $bytes = @file_get_contents($path);
         if ($bytes === false) {
             throw new InvalidArgumentException("Recipe [{$path}]: file is missing or unreadable.");
         }
         try {
-            return $this->resolve($bytes, $delivery ?? app(AgentDelivery::class));
+            return $build($bytes);
         } catch (InvalidArgumentException|JsonException $exception) {
             throw new InvalidArgumentException("Recipe [{$path}]: {$exception->getMessage()}", previous: $exception);
         }

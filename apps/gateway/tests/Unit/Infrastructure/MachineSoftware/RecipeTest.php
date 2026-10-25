@@ -813,6 +813,15 @@ describe('machine recipe command', function (): void {
         Http::assertNothingSent();
     });
 
+    it('checks the Ubuntu pins of the source recipe without an agent delivery manifest', function (): void {
+        $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe());
+        $this->app->instance(AgentDelivery::class, new AgentDelivery(sys_get_temp_dir().'/orbit-missing-'.bin2hex(random_bytes(6)).'/manifest.json', sys_get_temp_dir()));
+
+        expect(Artisan::call('orbit:machine-recipe', ['--validate-ubuntu' => true, '--json' => true, '--role' => 'operator']))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['recipe']['agent'])->toBeNull();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'operator'])->expectsOutputToContain('manifest')->assertFailed();
+    });
+
     it('fails the CI validation mode when an Ubuntu pin does not match the snapshot', function (): void {
         $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe('stale Ubuntu pin'));
 

@@ -28,7 +28,10 @@ final class MachineRecipeCommand extends Command
     {
         try {
             $path = $this->option('path');
-            $recipe = $loader->load(is_string($path) ? $path : null);
+            // Ubuntu pins do not depend on the release's agent, so that check needs no delivery manifest.
+            $recipe = $this->option('validate-ubuntu') && ! $this->option('validate')
+                ? $loader->source(is_string($path) ? $path : null)
+                : $loader->load(is_string($path) ? $path : null);
             $role = $this->option('role');
             $architecture = $this->option('architecture');
             $roles = is_string($role) ? [$role] : array_keys($recipe->profiles);
