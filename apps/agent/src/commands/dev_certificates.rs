@@ -4,6 +4,7 @@
 //! installs the leaf in both trees, trusts the Orbit root, and reloads Caddy.
 
 use super::caddy::{chown, group_id, public_key, reload_if_active};
+use super::recipe::Files;
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
@@ -49,17 +50,58 @@ fn openssl(arguments: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Runs a program as the managed account.
-fn as_user(user: &str, program: &str, arguments: &[&str]) -> Option<Vec<u8>> {
-    let mut command = Process::new(program);
-    command
-        .args(arguments)
-        .current_dir("/")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null());
-    identity::drop_to(&mut command, user).ok()?;
-    let output = command.output().ok()?;
-    output.status.success().then_some(output.stdout)
+/// The host boundary: accounts, the managed account's programs, the system trust store, and Caddy. Paths stay in
+/// [`Files`]; `openssl` reads run directly.
+trait Host {
+    /// The managed account's user and group IDs.
+    fn account(&self, user: &str) -> Option<(u32, u32)>;
+    fn caddy_group(&self) -> Option<u32>;
+    /// Runs a program as the managed account; its standard output on success.
+    fn as_user(&mut self, user: &str, program: &str, arguments: &[&str]) -> Option<Vec<u8>>;
+    /// Rebuilds the system bundle from the trust anchors.
+    fn update_trust(&mut self) -> bool;
+    fn reload_caddy(&mut self) -> io::Result<()>;
+}
+
+struct Native;
+
+impl Host for Native {
+    fn account(&self, user: &str) -> Option<(u32, u32)> {
+        identity::account(user).ok().map(|(uid, gid, _)| (uid, gid))
+    }
+
+    fn caddy_group(&self) -> Option<u32> {
+        group_id("caddy")
+    }
+
+    fn as_user(&mut self, user: &str, program: &str, arguments: &[&str]) -> Option<Vec<u8>> {
+        let mut command = Process::new(program);
+        command
+            .args(arguments)
+            .current_dir("/")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        identity::drop_to(&mut command, user).ok()?;
+        let output = command.output().ok()?;
+        output.status.success().then_some(output.stdout)
+    }
+
+    fn update_trust(&mut self) -> bool {
+        Process::new("update-ca-certificates")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    fn reload_caddy(&mut self) -> io::Result<()> {
+        reload_if_active("caddy")
+    }
+}
+
+/// Where a host path lives under the [`Files`] root.
+fn at(files: &Files, path: &Path) -> PathBuf {
+    files.root.join(path.strip_prefix("/").unwrap_or(path))
 }
 
 /// An extension of the certificate on one line, as the Gateway compares it.
@@ -160,34 +202,36 @@ fn current_is_valid(current: &Path, caddy_current: &Path, domain: &str, root_has
 }
 
 /// Installs the root as the trust anchor when it differs, and checks the leaf against the system bundle.
-fn trust(root: &Path, root_hash: &str, certificate: &Path) -> Result<(), LeafError> {
+fn trust(
+    files: &Files,
+    host: &mut impl Host,
+    root: &Path,
+    root_hash: &str,
+    certificate: &Path,
+) -> Result<(), LeafError> {
     let step = "certificate-trust";
-    if sha256(Path::new(TRUST_ANCHOR)).as_deref() != Some(root_hash) {
-        let staged = PathBuf::from(format!(
-            "{TRUST_ANCHOR}.orbit-{:016x}",
+    let anchor = files.path(TRUST_ANCHOR);
+    if sha256(&anchor).as_deref() != Some(root_hash) {
+        let staged = anchor.with_file_name(format!(
+            "orbit-managed-root-ca.crt.orbit-{:016x}",
             rand::random::<u64>()
         ));
         let written = fs::copy(root, &staged)
             .and_then(|_| fs::set_permissions(&staged, fs::Permissions::from_mode(0o644)))
-            .and_then(|()| chown(&staged, 0, 0))
-            .and_then(|()| fs::rename(&staged, TRUST_ANCHOR));
+            .and_then(|()| chown(&staged, files.uid, files.gid))
+            .and_then(|()| fs::rename(&staged, &anchor));
         if written.is_err() {
             let _ = fs::remove_file(&staged);
             return Err(failed(step));
         }
-        let updated = Process::new("update-ca-certificates")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
-        if !updated {
+        if !host.update_trust() {
             return Err(failed(step));
         }
     }
     openssl(&[
         "verify",
         "-CAfile",
-        TRUST_BUNDLE,
+        &files.path(TRUST_BUNDLE).to_string_lossy(),
         &certificate.to_string_lossy(),
     ])
     .map(|_| ())
@@ -220,19 +264,22 @@ fn valid_name(name: &str) -> bool {
         && !name.starts_with('.')
 }
 
-fn roots(input: &LeafInput) -> Result<(PathBuf, PathBuf), LeafError> {
-    if !valid_name(&input.scope) || !valid_name(&input.version) {
+fn roots(files: &Files, input: &LeafInput) -> Result<(PathBuf, PathBuf), LeafError> {
+    if !valid_name(&input.version) {
         return Err(failed("certificate-input"));
     }
-    Ok((
-        input.home.join(".orbit/certificates").join(&input.scope),
-        Path::new(CADDY_ROOT).join(&input.scope),
-    ))
+    scope_roots(
+        files,
+        &ScopeInput {
+            scope: input.scope.clone(),
+            home: input.home.clone(),
+        },
+    )
 }
 
-pub fn request(input: &LeafInput) -> Result<Requested, LeafError> {
+fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Requested, LeafError> {
     let step = "certificate-request";
-    let (root, caddy_root) = roots(input)?;
+    let (root, caddy_root) = roots(files, input)?;
     let current = root.join("current");
     if current_is_valid(
         &current,
@@ -241,6 +288,8 @@ pub fn request(input: &LeafInput) -> Result<Requested, LeafError> {
         &input.root_hash,
     ) {
         trust(
+            files,
+            host,
             &current.join("root.pem"),
             &input.root_hash,
             &current.join("cert.pem"),
@@ -249,7 +298,7 @@ pub fn request(input: &LeafInput) -> Result<Requested, LeafError> {
     }
     let versions = root.join("versions");
     let versions_text = versions.to_string_lossy().into_owned();
-    as_user(
+    host.as_user(
         &input.user,
         "install",
         &["-d", "-m", "0700", "--", &versions_text],
@@ -267,16 +316,17 @@ pub fn request(input: &LeafInput) -> Result<Requested, LeafError> {
     let key = format!("{candidate_text}/key.pem");
     let request = format!("{candidate_text}/request.pem");
     let subject = format!("/CN={}", input.domain);
-    as_user(
+    host.as_user(
         &input.user,
         "install",
         &["-d", "-m", "0700", "--", &candidate_text],
     )
     .ok_or_else(|| failed(step))?;
-    as_user(&input.user, "openssl", &["genrsa", "-out", &key, "2048"])
+    host.as_user(&input.user, "openssl", &["genrsa", "-out", &key, "2048"])
         .ok_or_else(|| failed(step))?;
-    as_user(&input.user, "chmod", &["0600", &key]).ok_or_else(|| failed(step))?;
-    as_user(
+    host.as_user(&input.user, "chmod", &["0600", &key])
+        .ok_or_else(|| failed(step))?;
+    host.as_user(
         &input.user,
         "openssl",
         &[
@@ -348,11 +398,16 @@ fn prepare_caddy_directories(
     Ok(())
 }
 
-pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
+fn publish(
+    files: &Files,
+    host: &mut impl Host,
+    input: &PublishInput,
+) -> Result<Published, LeafError> {
     let leaf = &input.leaf;
     let step = "certificate-publish";
-    let (root, caddy_root) = roots(leaf)?;
-    let (uid, gid, _) = identity::account(&leaf.user).map_err(|_| failed(step))?;
+    let (root, caddy_root) = roots(files, leaf)?;
+    let (uid, gid) = host.account(&leaf.user).ok_or_else(|| failed(step))?;
+    let caddy = host.caddy_group().ok_or_else(|| failed(step))?;
     let candidate = root
         .join("versions")
         .join(format!("{}.candidate", leaf.version));
@@ -393,21 +448,26 @@ pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     if !checks {
         return Err(failed(step));
     }
-    trust(&root_pem, &leaf.root_hash, &certificate)?;
+    trust(files, host, &root_pem, &leaf.root_hash, &certificate)?;
     let published = root.join("versions").join(&leaf.version);
     fs::rename(&candidate, &published).map_err(io_failed)?;
     swap_link(&root, &leaf.version, &published, Some((uid, gid))).map_err(io_failed)?;
 
-    let caddy = group_id("caddy").ok_or_else(|| failed(step))?;
     let caddy_versions = caddy_root.join("versions");
     let caddy_candidate = caddy_versions.join(format!("{}.candidate", leaf.version));
     let caddy_published = caddy_versions.join(&leaf.version);
-    prepare_caddy_directories(Path::new(CADDY_ROOT), &leaf.scope, &leaf.version, 0, caddy)
-        .map_err(io_failed)?;
+    prepare_caddy_directories(
+        &files.path(CADDY_ROOT),
+        &leaf.scope,
+        &leaf.version,
+        files.uid,
+        caddy,
+    )
+    .map_err(io_failed)?;
     install_file(
         &published.join("key.pem"),
         &caddy_candidate.join("key.pem"),
-        0,
+        files.uid,
         caddy,
         0o640,
     )
@@ -415,7 +475,7 @@ pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     install_file(
         &published.join("cert.pem"),
         &caddy_candidate.join("cert.pem"),
-        0,
+        files.uid,
         caddy,
         0o644,
     )
@@ -424,7 +484,7 @@ pub fn publish(input: &PublishInput) -> Result<Published, LeafError> {
     fs::rename(&caddy_candidate, &caddy_published).map_err(io_failed)?;
     swap_link(&caddy_root, &leaf.version, &caddy_published, None).map_err(io_failed)?;
     // A live site may already name this certificate, and a build whose render did not change does not reload.
-    reload_if_active("caddy").map_err(|_| failed(step))?;
+    host.reload_caddy().map_err(|_| failed(step))?;
     Ok(Published {})
 }
 
@@ -440,14 +500,37 @@ pub struct Presence {
     pub present: bool,
 }
 
-fn scope_roots(input: &ScopeInput) -> Result<(PathBuf, PathBuf), LeafError> {
+fn scope_roots(files: &Files, input: &ScopeInput) -> Result<(PathBuf, PathBuf), LeafError> {
     if !valid_name(&input.scope) {
         return Err(failed("certificate-input"));
     }
     Ok((
-        input.home.join(".orbit/certificates").join(&input.scope),
-        Path::new(CADDY_ROOT).join(&input.scope),
+        at(files, &input.home)
+            .join(".orbit/certificates")
+            .join(&input.scope),
+        files.path(CADDY_ROOT).join(&input.scope),
     ))
+}
+
+fn inspect(files: &Files, input: &ScopeInput) -> Result<Presence, LeafError> {
+    let (root, caddy_root) = scope_roots(files, input)?;
+    Ok(Presence {
+        present: root.join("current/cert.pem").is_file()
+            && caddy_root.join("current/cert.pem").is_file(),
+    })
+}
+
+fn remove(files: &Files, input: &ScopeInput) -> Result<Published, LeafError> {
+    let (root, caddy_root) = scope_roots(files, input)?;
+    for directory in [root, caddy_root] {
+        match fs::remove_dir_all(&directory) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                return Err(failed("certificate-remove"))
+            }
+            _ => {}
+        }
+    }
+    Ok(Published {})
 }
 
 pub struct RequestLeaf;
@@ -472,7 +555,7 @@ impl Command for RequestLeaf {
     }
 
     fn run(input: LeafInput, _: &Context) -> Result<Requested, LeafError> {
-        request(&input)
+        request(&Files::system(), &mut Native, &input)
     }
 }
 
@@ -498,7 +581,7 @@ impl Command for PublishLeaf {
     }
 
     fn run(input: PublishInput, _: &Context) -> Result<Published, LeafError> {
-        publish(&input)
+        publish(&Files::system(), &mut Native, &input)
     }
 }
 
@@ -520,11 +603,7 @@ impl Command for InspectLeaf {
     }
 
     fn run(input: ScopeInput, _: &Context) -> Result<Presence, LeafError> {
-        let (root, caddy_root) = scope_roots(&input)?;
-        Ok(Presence {
-            present: root.join("current/cert.pem").is_file()
-                && caddy_root.join("current/cert.pem").is_file(),
-        })
+        inspect(&Files::system(), &input)
     }
 }
 
@@ -550,218 +629,10 @@ impl Command for RemoveLeaf {
     }
 
     fn run(input: ScopeInput, _: &Context) -> Result<Published, LeafError> {
-        let (root, caddy_root) = scope_roots(&input)?;
-        for directory in [root, caddy_root] {
-            match fs::remove_dir_all(&directory) {
-                Err(error) if error.kind() != io::ErrorKind::NotFound => {
-                    return Err(failed("certificate-remove"))
-                }
-                _ => {}
-            }
-        }
-        Ok(Published {})
+        remove(&Files::system(), &input)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_directory_to_the_caddy_leaf_grants_group_access_on_creation_and_repair() {
-        use std::os::unix::fs::MetadataExt;
-        let root = std::env::temp_dir().join(format!(
-            "orbit-leaf-permissions-{:016x}",
-            rand::random::<u64>()
-        ));
-        let scope = root.join("app-instance-3");
-        let versions = scope.join("versions");
-        let candidate = versions.join("leaf.candidate");
-        let directories = [
-            root.as_path(),
-            scope.as_path(),
-            versions.as_path(),
-            candidate.as_path(),
-        ];
-        let owner = rustix::process::getuid().as_raw();
-        let group = rustix::process::getgid().as_raw();
-        for repair in [false, true] {
-            if repair {
-                for path in directories {
-                    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
-                }
-            }
-            prepare_caddy_directories(&root, "app-instance-3", "leaf", owner, group).unwrap();
-            for path in directories {
-                let metadata = fs::metadata(path).unwrap();
-                assert_eq!(
-                    (metadata.uid(), metadata.gid(), metadata.mode() & 0o777),
-                    (owner, group, 0o750),
-                    "{}",
-                    path.display()
-                );
-            }
-        }
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn validity_reads_openssl_dates_with_one_and_two_digit_days() {
-        let dates = "notBefore=Oct  3 12:00:00 2026 GMT\nnotAfter=Nov  4 12:00:00 2027 GMT\n";
-        assert_eq!(validity(dates), Some(397 * 86_400));
-        let dates = "notBefore=Oct 23 12:00:00 2026 GMT\nnotAfter=Nov 24 12:00:00 2027 GMT\n";
-        assert_eq!(validity(dates), Some(397 * 86_400));
-        assert_eq!(validity("notBefore=soon\n"), None);
-    }
-
-    fn run(directory: &Path, arguments: &[&str]) {
-        let status = Process::new("openssl")
-            .args(arguments)
-            .current_dir(directory)
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "openssl {arguments:?}");
-    }
-
-    /// A root, and a current leaf signed by it for `domain`, in the managed and Caddy trees under `root`.
-    fn leaf(
-        root: &Path,
-        domain: &str,
-        key_usage: &str,
-        algorithm: &[&str],
-    ) -> (PathBuf, PathBuf, String) {
-        let current = root.join("current");
-        let caddy = root.join("caddy");
-        fs::create_dir_all(&current).unwrap();
-        fs::create_dir_all(&caddy).unwrap();
-        run(
-            root,
-            &[
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-keyout",
-                "ca.key",
-                "-out",
-                "ca.pem",
-                "-days",
-                "30",
-                "-subj",
-                "/CN=Orbit test root",
-            ],
-        );
-        let mut key = vec!["genpkey"];
-        key.extend_from_slice(algorithm);
-        key.extend_from_slice(&["-out", "current/key.pem"]);
-        run(root, &key);
-        run(
-            root,
-            &[
-                "req",
-                "-new",
-                "-key",
-                "current/key.pem",
-                "-out",
-                "request.pem",
-                "-subj",
-                &format!("/CN={domain}"),
-            ],
-        );
-        fs::write(
-            root.join("leaf.ext"),
-            format!("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,{key_usage}\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:{domain}\n"),
-        )
-        .unwrap();
-        run(
-            root,
-            &[
-                "x509",
-                "-req",
-                "-in",
-                "request.pem",
-                "-CA",
-                "ca.pem",
-                "-CAkey",
-                "ca.key",
-                "-set_serial",
-                "1",
-                "-days",
-                "397",
-                "-extfile",
-                "leaf.ext",
-                "-out",
-                "current/cert.pem",
-            ],
-        );
-        fs::copy(root.join("ca.pem"), current.join("root.pem")).unwrap();
-        fs::copy(current.join("key.pem"), caddy.join("key.pem")).unwrap();
-        fs::copy(current.join("cert.pem"), caddy.join("cert.pem")).unwrap();
-        let hash = sha256(&current.join("root.pem")).unwrap();
-        (current, caddy, hash)
-    }
-
-    #[test]
-    fn only_a_current_rsa_leaf_with_the_exact_policy_is_reused() {
-        let cases: [(&str, &[&str], bool); 3] = [
-            (
-                "digitalSignature,keyEncipherment",
-                &["-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
-                true,
-            ),
-            (
-                "digitalSignature",
-                &["-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
-                false,
-            ),
-            (
-                "digitalSignature,keyEncipherment",
-                &["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"],
-                false,
-            ),
-        ];
-        for (usage, algorithm, reused) in cases {
-            let root =
-                std::env::temp_dir().join(format!("orbit-leaf-{:016x}", rand::random::<u64>()));
-            fs::create_dir_all(&root).unwrap();
-            let (current, caddy, hash) = leaf(&root, "acme.app-dev.orbit", usage, algorithm);
-            assert_eq!(
-                current_is_valid(&current, &caddy, "acme.app-dev.orbit", &hash),
-                reused,
-                "{usage} {algorithm:?}"
-            );
-            if reused {
-                assert!(!current_is_valid(
-                    &current,
-                    &caddy,
-                    "other.app-dev.orbit",
-                    &hash
-                ));
-                assert!(!current_is_valid(
-                    &current,
-                    &caddy,
-                    "acme.app-dev.orbit",
-                    &"0".repeat(64)
-                ));
-                fs::write(caddy.join("cert.pem"), "stale").unwrap();
-                assert!(!current_is_valid(
-                    &current,
-                    &caddy,
-                    "acme.app-dev.orbit",
-                    &hash
-                ));
-            }
-            let _ = fs::remove_dir_all(&root);
-        }
-    }
-
-    #[test]
-    fn scope_and_version_are_single_safe_names() {
-        assert!(valid_name("app-instance-7-hostname-change"));
-        assert!(!valid_name("../etc"));
-        assert!(!valid_name(".current"));
-        assert!(!valid_name(""));
-    }
-}
+#[path = "dev_certificates_tests.rs"]
+mod tests;
