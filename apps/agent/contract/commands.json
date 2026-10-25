@@ -4399,6 +4399,7 @@
         "macos": null
       },
       "errors": [
+        "http.url_invalid",
         "http.unhealthy"
       ]
     },

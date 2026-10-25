@@ -62,6 +62,8 @@ The role then converges in this order.
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
+The Gateway waits for Plausible with the agent's `http.await-healthy`: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+
 Plausible creates and migrates its PostgreSQL database each time it starts. Its Process runs the compiled `plausible` agent service from a read-only bind of the installed static Linux agent. The service runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` steps in order, then replaces itself with `/entrypoint.sh run`. A failed step stops startup. It keeps the image's non-root account and forwards stop signals during initialization. Agent installation restarts running managed containers that use a registered compiled service and that read-only binary mount, so the next start uses the new pin. Stopped containers stay stopped.
 
 The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
