@@ -128,11 +128,12 @@ The managed PHP build supports amd64 only. CI installs and verifies the same amd
 On a GitHub-hosted runner the action first builds the native agent from the checked-out source with `cargo build --release --locked`. Its cache speeds compilation but does not replace that build. The action then runs these steps:
 
 1. It restores `/var/cache/orbit/php-packages` from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.
-2. `sudo bin/php-build install --profile=ci-runner --ci --purge-extras` runs [`php.install-build`](/reference/compute-drivers#install-the-php-build), the installer that Nodes and images run too.
-3. A hosted runner image ships other PHP packages and the `ondrej/php` source. `--purge-extras` removes them, and only CI machines use it.
-4. `--ci` sets `zend.exception_ignore_args=0` for the CLI. The action installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
-5. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
-6. `bin/php-build verify --profile=ci-runner` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
+2. It gives the restored cache to root. The installer uses only a root-owned package cache.
+3. `sudo bin/php-build install --profile=ci-runner --ci --purge-extras` runs [`php.install-build`](/reference/compute-drivers#install-the-php-build), the installer that Nodes and images run too. The cache then goes back to the runner for the cache save.
+4. A hosted runner image ships other PHP packages and the `ondrej/php` source. `--purge-extras` removes them, and only CI machines use it.
+5. `--ci` sets `zend.exception_ignore_args=0` for the CLI. The action installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
+6. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
+7. `bin/php-build verify --profile=ci-runner` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
 
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify --profile=ci-runner`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 

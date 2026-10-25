@@ -740,7 +740,7 @@ jobs:
       - name: Build the macOS delivery
         run: scripts/build-delivery "$RUNNER_TEMP/agent-delivery" --target aarch64-apple-darwin --target x86_64-apple-darwin
       - name: Test command mode
-        run: cargo test --locked --lib command::
+        run: 'cargo test --locked --lib command::'
       - name: Test native Mac enrollment
         run: cargo test --locked --lib macos_enrollment
       - name: Upload the macOS delivery

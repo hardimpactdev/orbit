@@ -724,7 +724,7 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         'ci.yml:api-reference', 'ci.yml:agent', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
-        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage "$COVERAGE"')
+        ->and($steps['Install the recipe PHP build']['run'])->toStartWith("sudo chown -R root:root /var/cache/orbit/php-packages\nsudo python3 bin/php-build install --profile=ci-runner --ci --purge-extras --coverage \"\$COVERAGE\"\n")
         ->and($steps['Build the native PHP installer from this source']['run'])->toBe('cargo build --release --locked')
         ->and($steps['Build the native PHP installer from this source']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and(array_search('Build the native PHP installer from this source', array_keys($steps), true))->toBeLessThan(array_search('Install the recipe PHP build', array_keys($steps), true))
