@@ -5,10 +5,12 @@
 //! the previous release, and removes the others. One install lock serializes converges.
 
 use super::caddy::chown;
+use super::recipe::Files;
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fs,
     io::Write,
     net::{SocketAddr, TcpStream},
@@ -42,32 +44,91 @@ fn failed(step: &str, stderr: impl Into<String>) -> WebSocketError {
     }
 }
 
-fn run(step: &str, command: &mut Process) -> Result<(), WebSocketError> {
-    let output = command
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| failed(step, error.to_string()))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(failed(step, String::from_utf8_lossy(&output.stderr)))
+/// Why a program did not succeed.
+enum Refused {
+    /// The program could not run as the managed user.
+    Account(String),
+    /// The program failed, with its standard error.
+    Failed(String),
+}
+
+/// The host boundary: account lookup, fixed programs, systemd, and the listener probe. Paths stay in [`Files`].
+trait Host {
+    fn account(&self, user: &str, group: &str) -> Option<(u32, u32)>;
+    /// Runs a fixed program, as `user` when one is named.
+    fn run(
+        &mut self,
+        user: Option<&str>,
+        program: &str,
+        arguments: &[&OsStr],
+        environment: &[(&str, &str)],
+    ) -> Result<(), Refused>;
+    fn systemctl(&mut self, arguments: &[&str]) -> bool;
+    /// Waits up to 30 seconds for a TCP listener on the loopback port.
+    fn listening(&mut self, port: u16) -> bool;
+}
+
+struct Native;
+
+impl Host for Native {
+    fn account(&self, user: &str, group: &str) -> Option<(u32, u32)> {
+        Some((identity::passwd(user)?.uid, identity::group_id(group)?))
+    }
+
+    fn run(
+        &mut self,
+        user: Option<&str>,
+        program: &str,
+        arguments: &[&OsStr],
+        environment: &[(&str, &str)],
+    ) -> Result<(), Refused> {
+        let mut command = Process::new(program);
+        if let Some(user) = user {
+            identity::drop_to(&mut command, user).map_err(Refused::Account)?;
+        }
+        let output = command
+            .args(arguments)
+            .envs(environment.iter().copied())
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|error| Refused::Failed(error.to_string()))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(Refused::Failed(
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+            ))
+        }
+    }
+
+    fn systemctl(&mut self, arguments: &[&str]) -> bool {
+        Process::new("systemctl")
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    fn listening(&mut self, port: u16) -> bool {
+        listening(port, Duration::from_secs(30))
     }
 }
 
-fn as_user(user: &str, program: &str) -> Result<Process, WebSocketError> {
-    let mut command = Process::new(program);
-    identity::drop_to(&mut command, user).map_err(|reason| failed("account", reason))?;
-    Ok(command)
-}
-
-fn systemctl(arguments: &[&str]) -> bool {
-    Process::new("systemctl")
-        .args(arguments)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+fn run(
+    host: &mut impl Host,
+    step: &str,
+    user: Option<&str>,
+    program: &str,
+    arguments: &[&OsStr],
+    environment: &[(&str, &str)],
+) -> Result<(), WebSocketError> {
+    host.run(user, program, arguments, environment)
+        .map_err(|refused| match refused {
+            Refused::Account(reason) => failed("account", reason),
+            Refused::Failed(stderr) => failed(step, stderr),
+        })
 }
 
 fn random_name(prefix: &str) -> String {
@@ -90,7 +151,7 @@ fn write_file(path: &Path, content: &[u8], mode: u32) -> std::io::Result<()> {
     written
 }
 
-/// Waits up to 30 seconds for a TCP listener on the loopback port.
+/// Waits up to `wait` for a TCP listener on the loopback port.
 fn listening(port: u16, wait: Duration) -> bool {
     let end = Instant::now() + wait;
     let address = SocketAddr::from(([127, 0, 0, 1], port));
@@ -118,6 +179,11 @@ fn prune(releases: &Path, keep: &[&Path]) {
     }
 }
 
+/// Where the install path lives under the [`Files`] root.
+fn at(files: &Files, path: &Path) -> PathBuf {
+    files.root.join(path.strip_prefix("/").unwrap_or(path))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConvergeInput {
@@ -140,89 +206,127 @@ pub struct Converged {
 
 /// Prepares and checks a release; the caller removes it when anything fails.
 fn prepare(
+    host: &mut impl Host,
     input: &ConvergeInput,
     candidate: &Path,
     verify: &Path,
     uid: u32,
     gid: u32,
 ) -> Result<(), WebSocketError> {
-    let user = input.user.as_str();
+    let user = Some(input.user.as_str());
+    let release = candidate.as_os_str();
     fs::DirBuilder::new()
         .mode(0o755)
         .create(candidate)
         .and_then(|()| chown(candidate, uid, gid))
         .map_err(|error| failed("release", error.to_string()))?;
     run(
+        host,
         "clone",
-        as_user(user, "git")?
-            .args(["clone", "--quiet", "--no-checkout", "--", &input.repository])
-            .arg(candidate),
+        user,
+        "git",
+        &[
+            "clone".as_ref(),
+            "--quiet".as_ref(),
+            "--no-checkout".as_ref(),
+            "--".as_ref(),
+            input.repository.as_ref(),
+            release,
+        ],
+        &[],
     )?;
     run(
+        host,
         "fetch",
-        as_user(user, "git")?.arg("-C").arg(candidate).args([
-            "fetch",
-            "--quiet",
-            "origin",
-            &input.reference,
-        ]),
+        user,
+        "git",
+        &[
+            "-C".as_ref(),
+            release,
+            "fetch".as_ref(),
+            "--quiet".as_ref(),
+            "origin".as_ref(),
+            input.reference.as_ref(),
+        ],
+        &[],
     )?;
     run(
+        host,
         "checkout",
-        as_user(user, "git")?.arg("-C").arg(candidate).args([
-            "checkout",
-            "--quiet",
-            "--detach",
-            "FETCH_HEAD",
-        ]),
+        user,
+        "git",
+        &[
+            "-C".as_ref(),
+            release,
+            "checkout".as_ref(),
+            "--quiet".as_ref(),
+            "--detach".as_ref(),
+            "FETCH_HEAD".as_ref(),
+        ],
+        &[],
     )?;
+    let working_directory = format!("--working-dir={}", candidate.display());
     run(
+        host,
         "composer",
-        as_user(user, "composer")?
-            .env("COMPOSER_ALLOW_SUPERUSER", "1")
-            .args([
-                "install",
-                "--no-dev",
-                "--optimize-autoloader",
-                "--no-interaction",
-                "--no-progress",
-            ])
-            .arg(format!("--working-dir={}", candidate.display())),
+        user,
+        "composer",
+        &[
+            "install".as_ref(),
+            "--no-dev".as_ref(),
+            "--optimize-autoloader".as_ref(),
+            "--no-interaction".as_ref(),
+            "--no-progress".as_ref(),
+            working_directory.as_ref(),
+        ],
+        &[("COMPOSER_ALLOW_SUPERUSER", "1")],
     )?;
     let environment = candidate.join(".env");
     write_file(&environment, input.environment.as_bytes(), 0o600)
         .and_then(|()| chown(&environment, uid, gid))
         .map_err(|error| failed("environment", error.to_string()))?;
+    let artisan = candidate.join("artisan");
     run(
+        host,
         "artisan",
-        as_user(user, "/usr/bin/php")?
-            .arg(candidate.join("artisan"))
-            .args(["orbit:reverb:start", "--help"]),
+        user,
+        "/usr/bin/php",
+        &[
+            artisan.as_os_str(),
+            "orbit:reverb:start".as_ref(),
+            "--help".as_ref(),
+        ],
+        &[],
     )?;
     let unit = verify.join(format!("{SERVICE}.service"));
     fs::write(&unit, &input.unit).map_err(|error| failed("unit", error.to_string()))?;
     run(
+        host,
         "unit",
-        Process::new("systemd-analyze").arg("verify").arg(&unit),
+        None,
+        "systemd-analyze",
+        &["verify".as_ref(), unit.as_os_str()],
+        &[],
     )
 }
 
-pub fn converge(input: &ConvergeInput) -> Result<Converged, WebSocketError> {
-    let install = &input.install_path;
-    let (Some(parent), true) = (install.parent(), install.is_absolute()) else {
+fn converge(
+    files: &Files,
+    host: &mut impl Host,
+    input: &ConvergeInput,
+) -> Result<Converged, WebSocketError> {
+    if !input.install_path.is_absolute() || input.install_path.parent().is_none() {
         return Err(WebSocketError::Invalid {
             check: "the install path is absolute".into(),
         });
-    };
-    let (Some(account), Some(gid)) = (
-        identity::passwd(&input.user),
-        identity::group_id(&input.group),
-    ) else {
+    }
+    let Some((uid, gid)) = host.account(&input.user, &input.group) else {
         return Err(WebSocketError::Invalid {
             check: "the managed account exists".into(),
         });
     };
-    let uid = account.uid;
+    let install = &at(files, &input.install_path);
+    let parent = install.parent().expect("an absolute path below the root");
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o755)
@@ -257,7 +361,7 @@ pub fn converge(input: &ConvergeInput) -> Result<Converged, WebSocketError> {
         .create(&verify)
         .map_err(|error| failed("verify", error.to_string()))?;
 
-    let prepared = prepare(input, &candidate, &verify, uid, gid);
+    let prepared = prepare(host, input, &candidate, &verify, uid, gid);
     let _ = fs::remove_dir_all(&verify);
     if let Err(error) = prepared {
         let _ = fs::remove_dir_all(&candidate);
@@ -265,13 +369,18 @@ pub fn converge(input: &ConvergeInput) -> Result<Converged, WebSocketError> {
     }
 
     // Every check passed, so only now does the running service stop and its code change.
-    if systemctl(&["cat", &format!("{SERVICE}.service")]) && !systemctl(&["stop", SERVICE]) {
+    if host.systemctl(&["cat", &format!("{SERVICE}.service")])
+        && !host.systemctl(&["stop", SERVICE])
+    {
         let _ = fs::remove_dir_all(&candidate);
         return Err(failed("stop", "the running service did not stop"));
     }
     let metadata = fs::symlink_metadata(install).ok();
     let previous = match &metadata {
-        Some(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(install).ok(),
+        // The link names its release as `releases` does, so `prune` keeps it even below a symlinked parent.
+        Some(metadata) if metadata.file_type().is_symlink() => fs::read_link(install)
+            .ok()
+            .map(|target| parent.join(target)),
         Some(metadata) if metadata.is_dir() => {
             let previous = releases.join(random_name("previous"));
             fs::rename(install, &previous)
@@ -284,16 +393,17 @@ pub fn converge(input: &ConvergeInput) -> Result<Converged, WebSocketError> {
     symlink(&candidate, &link)
         .and_then(|()| fs::rename(&link, install))
         .map_err(|error| failed("activate", error.to_string()))?;
-    write_file(Path::new(UNIT), input.unit.as_bytes(), 0o644)
-        .and_then(|()| fs::set_permissions(UNIT, fs::Permissions::from_mode(0o644)))
+    let unit = files.path(UNIT);
+    write_file(&unit, input.unit.as_bytes(), 0o644)
+        .and_then(|()| fs::set_permissions(&unit, fs::Permissions::from_mode(0o644)))
         .map_err(|error| failed("unit", error.to_string()))?;
-    if !systemctl(&["daemon-reload"])
-        || !systemctl(&["enable", "--quiet", SERVICE])
-        || !systemctl(&["restart", SERVICE])
+    if !host.systemctl(&["daemon-reload"])
+        || !host.systemctl(&["enable", "--quiet", SERVICE])
+        || !host.systemctl(&["restart", SERVICE])
     {
         return Err(failed("restart", "systemd did not start the service"));
     }
-    if !listening(input.port, Duration::from_secs(30)) {
+    if !host.listening(input.port) {
         return Err(WebSocketError::NotListening { port: input.port });
     }
     let mut keep = vec![candidate.as_path()];
@@ -315,26 +425,32 @@ pub struct RemoveInput {
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Removed {}
 
-pub fn remove(input: &RemoveInput) -> Result<Removed, WebSocketError> {
+fn remove(
+    files: &Files,
+    host: &mut impl Host,
+    input: &RemoveInput,
+) -> Result<Removed, WebSocketError> {
     if !input.install_path.is_absolute() {
         return Err(WebSocketError::Invalid {
             check: "the install path is absolute".into(),
         });
     }
-    if systemctl(&["list-unit-files", "--", &format!("{SERVICE}.service")])
-        && !systemctl(&["disable", "--now", "--", SERVICE])
+    if host.systemctl(&["list-unit-files", "--", &format!("{SERVICE}.service")])
+        && !host.systemctl(&["disable", "--now", "--", SERVICE])
     {
         return Err(failed("disable", "the service did not stop"));
     }
-    if fs::remove_file(UNIT).is_err() && Path::new(UNIT).exists() {
+    let unit = files.path(UNIT);
+    if fs::remove_file(&unit).is_err() && unit.exists() {
         return Err(failed("unit", "the unit file stayed"));
     }
-    systemctl(&["daemon-reload"]);
-    systemctl(&["reset-failed", "--", &format!("{SERVICE}.service")]);
+    host.systemctl(&["daemon-reload"]);
+    host.systemctl(&["reset-failed", "--", &format!("{SERVICE}.service")]);
     if input.purge {
+        let install = at(files, &input.install_path);
         for path in [
-            input.install_path.clone(),
-            PathBuf::from(format!("{}.releases", input.install_path.display())),
+            install.clone(),
+            PathBuf::from(format!("{}.releases", install.display())),
         ] {
             match fs::symlink_metadata(&path) {
                 Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(&path),
@@ -378,7 +494,7 @@ impl Command for ConvergeRuntime {
     }
 
     fn run(input: ConvergeInput, _: &Context) -> Result<Converged, WebSocketError> {
-        converge(&input)
+        converge(&Files::system(), &mut Native, &input)
     }
 }
 
@@ -403,7 +519,7 @@ impl Command for RemoveRuntime {
     }
 
     fn run(input: RemoveInput, _: &Context) -> Result<Removed, WebSocketError> {
-        remove(&input)
+        remove(&Files::system(), &mut Native, &input)
     }
 }
 
@@ -424,123 +540,11 @@ impl Command for RuntimeActive {
 
     fn run(_: ActiveInput, _: &Context) -> Result<Active, WebSocketError> {
         Ok(Active {
-            active: systemctl(&["is-active", "--quiet", SERVICE]),
+            active: Native.systemctl(&["is-active", "--quiet", SERVICE]),
         })
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scratch() -> PathBuf {
-        let path = fs::canonicalize(std::env::temp_dir())
-            .unwrap()
-            .join(random_name("orbit-websocket-test"));
-        fs::create_dir_all(&path).unwrap();
-        path
-    }
-
-    #[test]
-    fn prune_keeps_only_the_new_and_previous_releases() {
-        let releases = scratch();
-        for name in [
-            "release.a",
-            "release.b",
-            "previous.c",
-            "release.new",
-            "other",
-        ] {
-            fs::create_dir_all(releases.join(name)).unwrap();
-        }
-
-        prune(
-            &releases,
-            &[&releases.join("release.new"), &releases.join("previous.c")],
-        );
-
-        let mut left: Vec<String> = fs::read_dir(&releases)
-            .unwrap()
-            .flatten()
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .collect();
-        left.sort();
-        assert_eq!(left, ["other", "previous.c", "release.new"]);
-        let _ = fs::remove_dir_all(&releases);
-    }
-
-    #[test]
-    fn waits_for_a_listener_and_gives_up_after_its_wait() {
-        // Other tests fork while holding their own fixtures. Keep this listener in a separate process
-        // so those children cannot keep its socket open after this test closes it.
-        let output = Process::new(std::env::current_exe().unwrap())
-            .args([
-                "--ignored",
-                "--exact",
-                "commands::websocket_runtime::tests::listener_wait_helper",
-                "--nocapture",
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    #[test]
-    #[ignore = "runs in its own process from the listener wait test"]
-    fn listener_wait_helper() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        assert!(listening(port, Duration::from_secs(1)));
-        drop(listener);
-        assert!(!listening(port, Duration::from_millis(200)));
-    }
-
-    #[test]
-    fn refuses_a_relative_path_or_unknown_account_before_any_change() {
-        let input = |path: &str, user: &str| ConvergeInput {
-            user: user.into(),
-            group: "root".into(),
-            install_path: path.into(),
-            repository: "https://example.test/reverb.git".into(),
-            reference: "main".into(),
-            port: 8790,
-            environment: String::new(),
-            unit: String::new(),
-        };
-        assert!(matches!(
-            converge(&input("opt/orbit/websocket", "root")),
-            Err(WebSocketError::Invalid { .. })
-        ));
-        assert!(matches!(
-            converge(&input("/opt/orbit/websocket", "orbit-no-such-user")),
-            Err(WebSocketError::Invalid { .. })
-        ));
-        assert!(matches!(
-            remove(&RemoveInput {
-                install_path: "relative".into(),
-                purge: true
-            }),
-            Err(WebSocketError::Invalid { .. })
-        ));
-    }
-
-    #[test]
-    fn writes_a_file_with_its_mode_through_one_rename() {
-        let base = scratch();
-        let path = base.join("unit");
-        write_file(&path, b"one", 0o600).unwrap();
-        write_file(&path, b"two", 0o600).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "two");
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-        assert_eq!(fs::read_dir(&base).unwrap().count(), 1);
-        let _ = fs::remove_dir_all(&base);
-    }
-}
+#[path = "websocket_runtime_tests.rs"]
+mod tests;
