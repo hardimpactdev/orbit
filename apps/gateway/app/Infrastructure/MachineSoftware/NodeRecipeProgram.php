@@ -224,6 +224,7 @@ final readonly class NodeRecipeProgram
             }
             $data['tools'][$name]['version'] = $pin->version;
         }
+
         return [
             'user' => $node->user,
             'snapshot' => $recipe->snapshot,
