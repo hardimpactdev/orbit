@@ -119,6 +119,21 @@ impl Command for MountCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_cache_device_takes_the_vm_lock() {
+        let input: Input =
+            serde_json::from_value(serde_json::json!({"project": "orbit-tasks", "name": "tvm-1"}))
+                .unwrap();
+        let vm: super::super::vm::Input = serde_json::from_value(serde_json::json!({
+            "vm": {"project": "orbit-tasks", "name": "tvm-1", "cidr": "10.251.77.0/24"},
+            "operation": {"kind": "stop"}
+        }))
+        .unwrap();
+        assert_eq!(
+            MountCache::target(&input),
+            super::super::vm::ChangeVm::target(&vm)
+        );
+    }
     struct Fake {
         calls: Vec<Vec<String>>,
         devices: Value,

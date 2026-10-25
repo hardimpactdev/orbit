@@ -195,7 +195,9 @@ Every root command that runs `apt-get` or `dpkg` holds the shared `packages` res
 
 Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test contract_file` in `apps/agent`.
 
-`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test schemas_file` rewrites it, and a Rust test keeps every input object closed to unknown fields. The PHP test fakes refuse a command, error code, or binary stream that the contract does not declare. They check each input in its wire form, where `{}` and `[]` differ, and each answer against the output schema. A test of the Gateway's own guard against a malformed result says so with `answerMalformed`.
+`apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
+
+The PHP test fakes refuse a command, error code, or binary stream that the contract does not declare. They check each input in its wire form, where `{}` and `[]` differ, and each answer against the output schema. A test of the Gateway's own guard against a malformed result says so with `answerMalformed`.
 
 These errors can come from any command:
 

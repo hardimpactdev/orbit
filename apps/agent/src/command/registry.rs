@@ -21,6 +21,16 @@ pub struct Entry {
     pub run: fn(Value, &Context) -> Outcome,
     /// The JSON Schemas of the input and the output.
     pub schemas: fn() -> Value,
+    /// The shared resources a mutation locks after its target.
+    pub resources: &'static [&'static str],
+    /// Decodes an input without running the command.
+    pub parse: fn(Value) -> Result<(), String>,
+}
+
+fn parse<C: Command>(input: Value) -> Result<(), String> {
+    serde_json::from_value::<C::Input>(input)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn schemas<C: Command>() -> Value {
@@ -51,6 +61,8 @@ pub fn entry<C: Command>() -> Entry {
         errors: <C::Error as CommandError>::CODES,
         run: run::<C>,
         schemas: schemas::<C>,
+        resources: C::RESOURCES,
+        parse: parse::<C>,
     }
 }
 
@@ -436,6 +448,102 @@ mod tests {
         }
     }
 
+    /// Commands that change one shared host resource hold its lock, so they serialize with each other.
+    #[test]
+    fn shared_host_mutations_hold_one_lock_per_resource() {
+        let packages = [
+            "caddy.install-package",
+            "docker.prepare-migration",
+            "docker.restore-migration-policies",
+            "gateway.converge-release-units",
+            "image.clean",
+            "metrics.cadvisor",
+            "metrics.node-exporter",
+            "nodes.bootstrap",
+            "php.configure-runtime",
+            "php.install-build",
+            "recipe.apply",
+            "recipe.install-javascript",
+            "roles.install-prerequisites",
+            "tools.apt-install",
+            "tools.apt-remove",
+            "tools.apt-update",
+            "tools.materialize-composer",
+            "tools.materialize-homebrew",
+        ];
+        let firewall = [
+            "firewall.gateway-vpn",
+            "firewall.route-lan",
+            "firewall.router-lan",
+            "firewall.rule",
+            "firewall.rules",
+            "firewall.task-vm-hub",
+            "image.firewall",
+            "incus.prepare-host",
+            "metrics.cadvisor",
+            "metrics.node-exporter",
+            "metrics.publication-firewall",
+            "metrics.service-runtime",
+        ];
+        for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {
+            for name in names {
+                let entry = find(name).unwrap_or_else(|| panic!("{name} is not registered"));
+                assert!(
+                    entry.mutates && entry.resources.contains(&resource),
+                    "{name} must lock {resource}"
+                );
+            }
+        }
+        for entry in all() {
+            assert!(
+                !entry.resources.contains(&"apt"),
+                "{} uses the old apt lock",
+                entry.name
+            );
+        }
+    }
+
+    /// Both `.env` writers run as root and lock the same key, so they serialize in one lock directory.
+    #[test]
+    fn both_environment_writers_share_a_privilege_and_a_lock() {
+        use crate::commands::{environment::WriteEnvironment, laravel::WriteUrl};
+        let directory = "/home/orbit/apps/shop";
+        let url = serde_json::from_value(json!({
+            "directory": directory, "owner": "orbit", "url": "https://shop.test", "app_key": "", "app_key_stored": false,
+            "app_name": "Shop", "app_name_stored": false, "require_artisan": true,
+        }))
+        .unwrap();
+        let environment = serde_json::from_value(json!({
+            "mode": "write", "base": directory, "user": "orbit", "maximum": 65536, "require_home": false,
+        }))
+        .unwrap();
+        assert_eq!(
+            WriteUrl::privilege(Platform::Linux),
+            WriteEnvironment::privilege(Platform::Linux)
+        );
+        assert_eq!(
+            WriteUrl::target(&url),
+            WriteEnvironment::target(&environment)
+        );
+        assert!(WriteUrl::target(&url).is_some());
+    }
+
+    /// Each Valkey volume has its own ACL lock.
+    #[test]
+    fn each_valkey_volume_has_its_own_acl_lock() {
+        use crate::commands::valkey_acl::WriteValkeyAcl;
+        let acl = |volume: &str| {
+            WriteValkeyAcl::target(
+                &serde_json::from_value(
+                    json!({"volume": volume, "image": "valkey/valkey:8", "acl": ""}),
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(acl("one").as_deref(), Some("valkey-acl:one"));
+        assert_ne!(acl("one"), acl("two"));
+    }
+
     /// Every input object refuses unknown fields, so a misspelled field fails instead of being ignored.
     #[test]
     fn every_input_object_refuses_unknown_fields() {
@@ -499,6 +607,128 @@ mod tests {
             loose.is_empty(),
             "inputs that accept unknown fields: {loose:?}"
         );
+    }
+
+    /// The smallest values a schema accepts, one per `oneOf`/`anyOf` branch with every required field, each with
+    /// its variants that add one unknown field to one struct object inside it. Maps take any key, so they get none.
+    fn samples(schema: &Value, root: &Value, depth: usize) -> Vec<(Value, Vec<Value>)> {
+        let leaf = |value: Value| vec![(value, Vec::new())];
+        let Some(object) = schema.as_object() else {
+            return leaf(Value::Null);
+        };
+        if depth > 8 {
+            return Vec::new();
+        }
+        if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+            return samples(
+                &root["$defs"][reference.trim_start_matches("#/$defs/")],
+                root,
+                depth + 1,
+            );
+        }
+        for key in ["oneOf", "anyOf"] {
+            if let Some(branches) = object.get(key).and_then(Value::as_array) {
+                return branches
+                    .iter()
+                    .flat_map(|branch| samples(branch, root, depth + 1))
+                    .collect();
+            }
+        }
+        if let Some(constant) = object.get("const") {
+            return leaf(constant.clone());
+        }
+        if let Some(first) = object
+            .get("enum")
+            .and_then(Value::as_array)
+            .and_then(|e| e.first())
+        {
+            return leaf(first.clone());
+        }
+        let types: Vec<&str> = match object.get("type") {
+            Some(Value::String(kind)) => vec![kind.as_str()],
+            Some(Value::Array(kinds)) => kinds.iter().filter_map(Value::as_str).collect(),
+            _ => vec![],
+        };
+        match types
+            .iter()
+            .copied()
+            .find(|kind| *kind != "null")
+            .unwrap_or("null")
+        {
+            "object" => {
+                let mut value = serde_json::Map::new();
+                let mut children = Vec::new();
+                for name in object
+                    .get("required")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    let Some((sample, variants)) =
+                        samples(&object["properties"][name], root, depth + 1)
+                            .into_iter()
+                            .next()
+                    else {
+                        return Vec::new();
+                    };
+                    value.insert(name.to_owned(), sample);
+                    children.push((name.to_owned(), variants));
+                }
+                let mut variants = Vec::new();
+                if !matches!(
+                    object.get("additionalProperties"),
+                    Some(Value::Object(_) | Value::Bool(true))
+                ) {
+                    let mut extended = value.clone();
+                    extended.insert("orbit_unknown_field".into(), json!(1));
+                    variants.push(Value::Object(extended));
+                }
+                for (name, child_variants) in children {
+                    for changed in child_variants {
+                        let mut copy = value.clone();
+                        copy.insert(name.clone(), changed);
+                        variants.push(Value::Object(copy));
+                    }
+                }
+                vec![(Value::Object(value), variants)]
+            }
+            "array" => leaf(json!([])),
+            "string" => leaf(json!(match object.get("format").and_then(Value::as_str) {
+                Some("ipv4" | "ip") => "10.0.0.1",
+                _ => "x",
+            })),
+            "integer" | "number" => leaf(json!(0)),
+            "boolean" => leaf(json!(false)),
+            _ => leaf(Value::Null),
+        }
+    }
+
+    /// serde ignores `deny_unknown_fields` in some shapes, such as a unit variant of an internally tagged enum, while
+    /// the schema still says closed. So every command's real decoder must refuse an unknown field at every level.
+    #[test]
+    fn every_command_decoder_refuses_unknown_fields() {
+        let mut probes = 0;
+        let mut accepted = Vec::new();
+        for entry in all() {
+            let input = &(entry.schemas)()["input"];
+            for (sample, variants) in samples(input, input, 0) {
+                if (entry.parse)(sample).is_err() {
+                    continue;
+                }
+                for changed in variants {
+                    probes += 1;
+                    if (entry.parse)(changed.clone()).is_ok() {
+                        accepted.push(format!("{}: {changed}", entry.name));
+                    }
+                }
+            }
+        }
+        assert!(
+            accepted.is_empty(),
+            "decoders that accept an unknown field: {accepted:#?}"
+        );
+        assert!(probes > 300, "only {probes} probes ran");
     }
 
     /// Gateway tests read `contract/schemas.json`. The same variable rewrites it.
