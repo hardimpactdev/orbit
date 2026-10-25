@@ -6,8 +6,8 @@ use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Instance;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
-use Tests\Support\ForkedPythonPrograms;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PythonPrograms;
 
 require_once __DIR__.'/../../../Support/TaskCheckRunnerFixtures.php';
 
@@ -67,25 +67,21 @@ scope['main'](arguments)
 with open(scope['RESULT']) as result:
     print(result.read())
 PYTHON;
-    $programs = new ForkedPythonPrograms;
-    try {
-        $capture = $programs->run($bootstrap, 'script-owned-profile', TaskUnitProgram::read('tasks/check')."\0".json_encode([
-            'script' => $script, 'checkout' => $instance->checkout_path, 'input' => $input,
-        ], JSON_THROW_ON_ERROR), ['ORBIT_SECRET_TEST' => 'never-inherit', 'COMPOSER_AUTH' => 'never-inherit']);
-        expect($capture->exitCode)->toBe(0, $capture->stderr);
-        $result = json_decode($capture->stdout, true, flags: JSON_THROW_ON_ERROR);
-        expect($result['exit_code'])->toBe(23)->and($result['output_bytes'])->toBe(120016)
-            ->and($result['tree_after'])->not->toBe($before['tree']);
-        expect(file_get_contents($instance->checkout_path.'/updated.lock'))->toBe('["routine","$(touch injected); * literal"]');
-        expect(file_exists($instance->checkout_path.'/injected'))->toBeFalse();
-        expect(file_get_contents($instance->checkout_path.'/.git/script-invocations'))->toBe("1\n");
-        $log = file_get_contents(dirname($script).'/check-starts/'.$id.'.log');
-        expect(strlen($log))->toBeLessThanOrEqual(102400)->and($log)->toEndWith("last diagnostic\n");
-        $recovered = $runner->recoverStart($instance, $id);
-        expect($recovered->runId)->toBe($id)->and($runner->readScript($instance, $recovered)['state'])->toBe('running');
-    } finally {
-        $programs->close();
-    }
+    $programs = new PythonPrograms;
+    $capture = $programs->run($bootstrap, 'script-owned-profile', TaskUnitProgram::read('tasks/check')."\0".json_encode([
+        'script' => $script, 'checkout' => $instance->checkout_path, 'input' => $input,
+    ], JSON_THROW_ON_ERROR), ['ORBIT_SECRET_TEST' => 'never-inherit', 'COMPOSER_AUTH' => 'never-inherit']);
+    expect($capture->exitCode)->toBe(0, $capture->stderr);
+    $result = json_decode($capture->stdout, true, flags: JSON_THROW_ON_ERROR);
+    expect($result['exit_code'])->toBe(23)->and($result['output_bytes'])->toBe(120016)
+        ->and($result['tree_after'])->not->toBe($before['tree']);
+    expect(file_get_contents($instance->checkout_path.'/updated.lock'))->toBe('["routine","$(touch injected); * literal"]');
+    expect(file_exists($instance->checkout_path.'/injected'))->toBeFalse();
+    expect(file_get_contents($instance->checkout_path.'/.git/script-invocations'))->toBe("1\n");
+    $log = file_get_contents(dirname($script).'/check-starts/'.$id.'.log');
+    expect(strlen($log))->toBeLessThanOrEqual(102400)->and($log)->toEndWith("last diagnostic\n");
+    $recovered = $runner->recoverStart($instance, $id);
+    expect($recovered->runId)->toBe($id)->and($runner->readScript($instance, $recovered)['state'])->toBe('running');
 });
 
 it('refuses altered, untracked, nonexecutable and symlinked repository scripts', function (string $mode): void {
@@ -132,7 +128,7 @@ SCRIPT
     $allocate->setInput('{}');
     $tmpdir = trim($allocate->mustRun()->getOutput());
     $script = $checkout.'/.git/orbit/check';
-    $programs = new ForkedPythonPrograms;
+    $programs = new PythonPrograms;
     try {
         $capture = $programs->run(<<<'PYTHON'
 import json, os, sys
@@ -160,7 +156,6 @@ PYTHON, 'script-tmpdir-cleanup', TaskUnitProgram::read('tasks/check')."\0".json_
             ->and($result['recorded_tmpdir'])->toBe($tmpdir)
             ->and(file_exists(dirname($script).'/check-tmpdir'))->toBeFalse();
     } finally {
-        $programs->close();
         File::deleteDirectory($tmpdir);
     }
 })->with(['success' => 0, 'failure' => 23]);
